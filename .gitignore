@@ -1,0 +1,9 @@
+node_modules/
+deps/
+server.log
+server.err.log
+*.obj
+*_mesh.json
+.DS_Store
+Thumbs.db
+

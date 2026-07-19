@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sirdizarm.github.io/BoltWorks3DAIStudio/ai/request.schema.json",
+  "title": "BoltWorks AI Rig Request",
+  "type": "object",
+  "required": ["kind", "version", "scene", "views", "requirements"],
+  "properties": {
+    "kind": { "const": "boltworks-rig-request" },
+    "version": { "const": 1 },
+    "scene": { "type": "object" },
+    "views": {
+      "type": "object",
+      "required": ["front", "back", "left", "right", "top", "isometric"],
+      "properties": {
+        "front": { "type": "string" },
+        "back": { "type": "string" },
+        "left": { "type": "string" },
+        "right": { "type": "string" },
+        "top": { "type": "string" },
+        "isometric": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "requirements": {
+      "type": "object",
+      "required": ["groundY", "coordinateSpace", "rotationUnit"],
+      "properties": {
+        "groundY": { "const": 0 },
+        "coordinateSpace": { "const": "world" },
+        "rotationUnit": { "const": "radians" },
+        "rigType": { "type": "string" },
+        "symmetry": { "type": "boolean" }
+      },
+      "additionalProperties": true
+    },
+    "instructions": { "type": "array", "items": { "type": "string" } }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,42 @@
+{
+  "kind": "boltworks-rig",
+  "version": 1,
+  "coordinateSpace": "world",
+  "rotationUnit": "radians",
+  "ground": {
+    "axis": "y",
+    "value": 0,
+    "contactBoneIds": ["left-foot-contact", "right-foot-contact"]
+  },
+  "source": {
+    "description": "Generic grounded humanoid example. Fit these positions to the supplied model and six saved views."
+  },
+  "bones": [
+    { "id": "root", "name": "Root", "parentId": null, "position": [0, 4.6, 0], "rotation": [0, 0, 0], "role": "root", "side": "center" },
+    { "id": "spine", "name": "Spine", "parentId": "root", "position": [0, 5.8, 0], "rotation": [0, 0, 0], "role": "spine", "side": "center" },
+    { "id": "chest", "name": "Chest", "parentId": "spine", "position": [0, 7.1, 0], "rotation": [0, 0, 0], "role": "chest", "side": "center" },
+    { "id": "neck", "name": "Neck", "parentId": "chest", "position": [0, 8.15, 0], "rotation": [0, 0, 0], "role": "neck", "side": "center" },
+    { "id": "head", "name": "Head", "parentId": "neck", "position": [0, 9.05, 0], "rotation": [0, 0, 0], "role": "head", "side": "center" },
+    { "id": "left-shoulder", "name": "Left Shoulder", "parentId": "chest", "position": [0.85, 7.65, 0], "rotation": [0, 0, 0], "role": "shoulder", "side": "left" },
+    { "id": "left-elbow", "name": "Left Elbow", "parentId": "left-shoulder", "position": [2.15, 7.55, 0], "rotation": [0, 0, 0], "role": "elbow", "side": "left" },
+    { "id": "left-wrist", "name": "Left Wrist", "parentId": "left-elbow", "position": [3.35, 7.5, 0], "rotation": [0, 0, 0], "role": "wrist", "side": "left" },
+    { "id": "right-shoulder", "name": "Right Shoulder", "parentId": "chest", "position": [-0.85, 7.65, 0], "rotation": [0, 0, 0], "role": "shoulder", "side": "right" },
+    { "id": "right-elbow", "name": "Right Elbow", "parentId": "right-shoulder", "position": [-2.15, 7.55, 0], "rotation": [0, 0, 0], "role": "elbow", "side": "right" },
+    { "id": "right-wrist", "name": "Right Wrist", "parentId": "right-elbow", "position": [-3.35, 7.5, 0], "rotation": [0, 0, 0], "role": "wrist", "side": "right" },
+    { "id": "left-hip", "name": "Left Hip", "parentId": "root", "position": [0.55, 4.45, 0], "rotation": [0, 0, 0], "role": "hip", "side": "left" },
+    { "id": "left-knee", "name": "Left Knee", "parentId": "left-hip", "position": [0.55, 2.45, 0], "rotation": [0, 0, 0], "role": "knee", "side": "left" },
+    { "id": "left-ankle", "name": "Left Ankle", "parentId": "left-knee", "position": [0.55, 0.35, 0], "rotation": [0, 0, 0], "role": "ankle", "side": "left" },
+    { "id": "left-foot-contact", "name": "Left Foot Contact", "parentId": "left-ankle", "position": [0.55, 0, 0.45], "rotation": [0, 0, 0], "role": "ground-contact", "side": "left", "contact": true },
+    { "id": "right-hip", "name": "Right Hip", "parentId": "root", "position": [-0.55, 4.45, 0], "rotation": [0, 0, 0], "role": "hip", "side": "right" },
+    { "id": "right-knee", "name": "Right Knee", "parentId": "right-hip", "position": [-0.55, 2.45, 0], "rotation": [0, 0, 0], "role": "knee", "side": "right" },
+    { "id": "right-ankle", "name": "Right Ankle", "parentId": "right-knee", "position": [-0.55, 0.35, 0], "rotation": [0, 0, 0], "role": "ankle", "side": "right" },
+    { "id": "right-foot-contact", "name": "Right Foot Contact", "parentId": "right-ankle", "position": [-0.55, 0, 0.45], "rotation": [0, 0, 0], "role": "ground-contact", "side": "right", "contact": true }
+  ],
+  "analysis": {
+    "modelBounds": { "minimumY": 0, "maximumY": 9.8 },
+    "groundCheck": "Both explicit foot contact bones are at Y = 0.",
+    "viewChecks": ["front", "back", "left", "right", "top", "isometric"]
+  },
+  "warnings": ["This is a scale example, not an automatic fit for every model."],
+  "notes": ["Keep bone IDs stable during correction passes."]
+}

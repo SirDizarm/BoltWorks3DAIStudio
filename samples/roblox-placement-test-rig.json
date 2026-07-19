@@ -1,0 +1,321 @@
+{
+  "version": 1,
+  "title": "Roblox Placement Test Rig",
+  "notes": [
+    "Small asymmetric model for testing Roblox Pack placement.",
+    "Every side has a different shape and color so swapped axes, mirrored parts, and lost rotations are easy to see.",
+    "Import this JSON into 3D Model Studio, export Roblox Pack, import all OBJ files into Roblox, then run the generated setup Lua."
+  ],
+  "groups": [
+    {
+      "id": "group-test-rig",
+      "name": "PlacementTestRig",
+      "parentId": null
+    },
+    {
+      "id": "group-left",
+      "name": "LeftSideRed",
+      "parentId": "group-test-rig"
+    },
+    {
+      "id": "group-right",
+      "name": "RightSideYellow",
+      "parentId": "group-test-rig"
+    },
+    {
+      "id": "group-front",
+      "name": "FrontBlue",
+      "parentId": "group-test-rig"
+    },
+    {
+      "id": "group-back",
+      "name": "BackGreen",
+      "parentId": "group-test-rig"
+    },
+    {
+      "id": "group-top",
+      "name": "TopPurple",
+      "parentId": "group-test-rig"
+    }
+  ],
+  "objects": [
+    {
+      "name": "Rig.Base.dark_plate",
+      "shape": "box",
+      "position": [0, -0.08, 0],
+      "rotation": [0, 0, 0],
+      "scale": [7.2, 0.16, 5.2],
+      "color": "#1f2428",
+      "roughness": 0.85,
+      "groupId": "group-test-rig",
+      "groupName": "PlacementTestRig"
+    },
+    {
+      "name": "Rig.Body.center_block",
+      "shape": "box",
+      "position": [0, 0.82, 0],
+      "rotation": [0, 0, 0],
+      "scale": [2.6, 1.5, 1.8],
+      "color": "#8c9697",
+      "roughness": 0.65,
+      "groupId": "group-test-rig",
+      "groupName": "PlacementTestRig"
+    },
+    {
+      "name": "Rig.Body.front_dark_panel",
+      "shape": "panel",
+      "position": [0, 0.86, -0.96],
+      "rotation": [90, 0, 0],
+      "scale": [1.8, 1.0, 1],
+      "color": "#101719",
+      "roughness": 0.7,
+      "groupId": "group-front",
+      "groupName": "FrontBlue"
+    },
+    {
+      "name": "Rig.Body.back_light_panel",
+      "shape": "panel",
+      "position": [0, 0.86, 0.96],
+      "rotation": [90, 0, 0],
+      "scale": [1.25, 0.75, 1],
+      "color": "#d6e0dc",
+      "roughness": 0.55,
+      "groupId": "group-back",
+      "groupName": "BackGreen"
+    },
+    {
+      "name": "LeftSideRed.red_sphere_marker",
+      "shape": "sphere",
+      "position": [-2.35, 0.82, -0.58],
+      "rotation": [0, 0, 0],
+      "scale": [0.52, 0.52, 0.52],
+      "color": "#d83a35",
+      "roughness": 0.45,
+      "groupId": "group-left",
+      "groupName": "LeftSideRed"
+    },
+    {
+      "name": "LeftSideRed.red_wedge_arrow",
+      "shape": "wedge",
+      "position": [-2.55, 0.55, 0.55],
+      "rotation": [0, 0, -90],
+      "scale": [0.75, 0.55, 0.8],
+      "color": "#b72525",
+      "roughness": 0.55,
+      "groupId": "group-left",
+      "groupName": "LeftSideRed"
+    },
+    {
+      "name": "LeftSideRed.tall_left_bar",
+      "shape": "box",
+      "position": [-3.25, 0.78, 0],
+      "rotation": [0, 0, 0],
+      "scale": [0.22, 1.35, 2.3],
+      "color": "#7b161b",
+      "roughness": 0.7,
+      "groupId": "group-left",
+      "groupName": "LeftSideRed"
+    },
+    {
+      "name": "RightSideYellow.yellow_pyramid_marker",
+      "shape": "pyramid",
+      "position": [2.35, 0.75, 0.58],
+      "rotation": [0, 0, 0],
+      "scale": [0.72, 0.86, 0.72],
+      "color": "#d8bd32",
+      "roughness": 0.5,
+      "groupId": "group-right",
+      "groupName": "RightSideYellow"
+    },
+    {
+      "name": "RightSideYellow.yellow_cylinder_pin",
+      "shape": "cylinder",
+      "position": [2.55, 0.52, -0.52],
+      "rotation": [0, 0, 90],
+      "scale": [0.22, 1.0, 0.22],
+      "color": "#f1d24f",
+      "roughness": 0.45,
+      "groupId": "group-right",
+      "groupName": "RightSideYellow"
+    },
+    {
+      "name": "RightSideYellow.tall_right_bar",
+      "shape": "box",
+      "position": [3.25, 0.78, 0],
+      "rotation": [0, 0, 0],
+      "scale": [0.22, 1.35, 2.3],
+      "color": "#9e8423",
+      "roughness": 0.7,
+      "groupId": "group-right",
+      "groupName": "RightSideYellow"
+    },
+    {
+      "name": "FrontBlue.blue_cone_nose",
+      "shape": "cone",
+      "position": [0, 0.72, -2.0],
+      "rotation": [90, 0, 0],
+      "scale": [0.72, 1.0, 0.72],
+      "color": "#2f80ed",
+      "roughness": 0.48,
+      "groupId": "group-front",
+      "groupName": "FrontBlue"
+    },
+    {
+      "name": "FrontBlue.cyan_tube_crossbar",
+      "shape": "tube",
+      "position": [0, 1.55, -1.38],
+      "rotation": [0, 90, 0],
+      "scale": [0.38, 0.38, 1.7],
+      "color": "#50e6ff",
+      "roughness": 0.35,
+      "groupId": "group-front",
+      "groupName": "FrontBlue"
+    },
+    {
+      "name": "FrontBlue.left_front_small_cube",
+      "shape": "box",
+      "position": [-1.0, 0.28, -2.05],
+      "rotation": [0, 25, 0],
+      "scale": [0.42, 0.42, 0.42],
+      "color": "#68a9ff",
+      "roughness": 0.5,
+      "groupId": "group-front",
+      "groupName": "FrontBlue"
+    },
+    {
+      "name": "BackGreen.green_arch_gate",
+      "shape": "arch",
+      "position": [0, 0.72, 2.05],
+      "rotation": [0, 180, 0],
+      "scale": [1.1, 1.1, 0.48],
+      "color": "#49b86e",
+      "roughness": 0.55,
+      "groupId": "group-back",
+      "groupName": "BackGreen"
+    },
+    {
+      "name": "BackGreen.green_ring_marker",
+      "shape": "ring",
+      "position": [1.05, 1.16, 1.5],
+      "rotation": [90, 0, 0],
+      "scale": [0.55, 0.55, 0.55],
+      "color": "#8ee070",
+      "roughness": 0.45,
+      "groupId": "group-back",
+      "groupName": "BackGreen"
+    },
+    {
+      "name": "BackGreen.back_low_box",
+      "shape": "box",
+      "position": [-1.1, 0.3, 1.82],
+      "rotation": [0, -20, 0],
+      "scale": [0.72, 0.38, 0.38],
+      "color": "#2a7041",
+      "roughness": 0.65,
+      "groupId": "group-back",
+      "groupName": "BackGreen"
+    },
+    {
+      "name": "TopPurple.purple_half_sphere",
+      "shape": "halfSphere",
+      "position": [0, 1.72, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1.15, 0.55, 1.15],
+      "color": "#9b59d0",
+      "roughness": 0.5,
+      "groupId": "group-top",
+      "groupName": "TopPurple"
+    },
+    {
+      "name": "TopPurple.orange_top_prism",
+      "shape": "prism",
+      "position": [-0.82, 2.1, 0.45],
+      "rotation": [0, 0, 35],
+      "scale": [0.58, 0.45, 0.75],
+      "color": "#f39c12",
+      "roughness": 0.48,
+      "groupId": "group-top",
+      "groupName": "TopPurple"
+    },
+    {
+      "name": "TopPurple.white_top_tetrahedron",
+      "shape": "tetrahedron",
+      "position": [0.85, 2.03, -0.35],
+      "rotation": [0, 30, 12],
+      "scale": [0.52, 0.52, 0.52],
+      "color": "#f3f6f4",
+      "roughness": 0.45,
+      "groupId": "group-top",
+      "groupName": "TopPurple"
+    },
+    {
+      "name": "CutDemo.frustum_front_right",
+      "shape": "pyramidFrustum",
+      "position": [1.55, 0.48, -1.72],
+      "rotation": [0, 35, 0],
+      "scale": [0.65, 0.75, 0.65],
+      "color": "#c78cdd",
+      "roughness": 0.55,
+      "groupId": "group-test-rig",
+      "groupName": "PlacementTestRig"
+    },
+    {
+      "name": "CutDemo.cut_top_cylinder",
+      "shape": "cylinder",
+      "position": [-1.55, 0.52, 1.55],
+      "rotation": [0, 0, 0],
+      "scale": [0.48, 0.9, 0.48],
+      "color": "#5dade2",
+      "roughness": 0.48,
+      "cuts": {
+        "top": 0.3
+      },
+      "groupId": "group-test-rig",
+      "groupName": "PlacementTestRig"
+    },
+    {
+      "name": "Rotated.axis_test_stair",
+      "shape": "stair",
+      "position": [0, 0.33, 1.45],
+      "rotation": [0, 45, 0],
+      "scale": [0.8, 0.55, 0.8],
+      "color": "#d7dbdd",
+      "roughness": 0.62,
+      "groupId": "group-test-rig",
+      "groupName": "PlacementTestRig"
+    },
+    {
+      "name": "Rotated.curved_panel_side_flag",
+      "shape": "curvedPanel",
+      "position": [-1.7, 1.35, -1.2],
+      "rotation": [0, -35, 18],
+      "scale": [0.7, 0.75, 0.7],
+      "color": "#16a085",
+      "roughness": 0.42,
+      "groupId": "group-test-rig",
+      "groupName": "PlacementTestRig"
+    },
+    {
+      "name": "Axis.X_positive_white_bar",
+      "shape": "box",
+      "position": [1.95, 1.82, 0],
+      "rotation": [0, 0, 0],
+      "scale": [1.15, 0.12, 0.12],
+      "color": "#ffffff",
+      "roughness": 0.4,
+      "groupId": "group-test-rig",
+      "groupName": "PlacementTestRig"
+    },
+    {
+      "name": "Axis.Z_negative_black_bar",
+      "shape": "box",
+      "position": [0, 1.82, -1.45],
+      "rotation": [0, 0, 0],
+      "scale": [0.12, 0.12, 0.95],
+      "color": "#111111",
+      "roughness": 0.4,
+      "groupId": "group-test-rig",
+      "groupName": "PlacementTestRig"
+    }
+  ]
+}

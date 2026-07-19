@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://sirdizarm.github.io/BoltWorks3DAIStudio/ai/response.schema.json",
+  "title": "BoltWorks AI Rig Response",
+  "allOf": [
+    { "$ref": "./rig.schema.json" },
+    {
+      "type": "object",
+      "required": ["analysis"],
+      "properties": {
+        "analysis": {
+          "type": "object",
+          "required": ["modelBounds", "groundCheck", "viewChecks"],
+          "properties": {
+            "modelBounds": { "type": "object" },
+            "groundCheck": { "type": "string" },
+            "viewChecks": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  ]
+}

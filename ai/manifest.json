@@ -1,0 +1,42 @@
+{
+  "name": "BoltWorks 3D AI Studio Rig Exchange",
+  "version": 1,
+  "status": "foundation",
+  "canonicalUrl": "https://sirdizarm.github.io/BoltWorks3DAIStudio/ai/",
+  "coordinateSystem": {
+    "handedness": "right-handed",
+    "upAxis": "Y",
+    "groundAxis": "Y",
+    "groundValue": 0,
+    "horizontalAxes": ["X", "Z"],
+    "rotationOrder": "XYZ",
+    "rotationUnit": "radians",
+    "preferredBoneSpace": "world",
+    "studioUnit": "stud",
+    "metersPerStud": 0.28
+  },
+  "entryPoints": {
+    "humanGuide": "./index.html",
+    "riggingGuide": "./rigging-guide.md",
+    "coordinateGuide": "./coordinate-system.md",
+    "requestSchema": "./request.schema.json",
+    "responseSchema": "./response.schema.json",
+    "rigSchema": "./rig.schema.json",
+    "groundedHumanoidExample": "./examples/humanoid-grounded.rig.json"
+  },
+  "requiredInputPackage": [
+    "BoltWorks scene JSON",
+    "front PNG",
+    "back PNG",
+    "left PNG",
+    "right PNG",
+    "top PNG",
+    "isometric PNG"
+  ],
+  "plannedSceneCapture": {
+    "groundModes": ["grid", "texture", "model"],
+    "backgroundModes": ["color", "image", "scene"],
+    "lightingPresets": true,
+    "implemented": false
+  }
+}

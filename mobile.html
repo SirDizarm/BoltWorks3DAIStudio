@@ -1,0 +1,765 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>3D Model Mobile Viewer</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2340c7a5'/%3E%3Cstop offset='100%25' stop-color='%23e1b14b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='6' y='6' width='52' height='52' rx='12' fill='url(%23g)'/%3E%3Cpath d='M18 23h12c6.5 0 11 3.7 11 9.3 0 5.8-4.8 9.7-11.8 9.7H18zm9.8 21.5c8.7 0 15.7-4.8 15.7-12.2 0-7.2-6.2-11.8-15.1-11.8H15v24z' fill='%2307110e'/%3E%3Cpath d='M33.5 22.5h16v4h-16zm0 8.5h12.5v4H33.5zm0 8.5h16v4h-16z' fill='%2307110e' opacity='.9'/%3E%3C/svg%3E" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0b0e10;
+      --panel: #171c1f;
+      --line: #334047;
+      --text: #f1f5f5;
+      --muted: #aab7bb;
+      --accent: #40c7a5;
+      --warn: #e1b14b;
+      font-family: Inter, ui-sans-serif, system-ui, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      overflow: hidden;
+    }
+    .app {
+      height: 100%;
+      display: grid;
+      grid-template-rows: minmax(0, 1fr) auto;
+    }
+    .viewer {
+      position: relative;
+      min-height: 0;
+      background: #080b0d;
+    }
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      touch-action: none;
+    }
+    .hud {
+      position: absolute;
+      left: 10px;
+      top: 10px;
+      right: 10px;
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+      pointer-events: none;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .chip {
+      padding: 6px 8px;
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: 8px;
+      background: rgba(15, 18, 20, .76);
+      backdrop-filter: blur(8px);
+    }
+    .sheet {
+      border-top: 1px solid var(--line);
+      background: var(--panel);
+      padding: 10px;
+      display: grid;
+      gap: 8px;
+      max-height: 48vh;
+      overflow: auto;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      font-weight: 800;
+    }
+    .brand span:first-child {
+      display: inline-flex;
+      gap: 8px;
+      align-items: center;
+    }
+    .mark {
+      width: 28px;
+      height: 28px;
+      display: grid;
+      place-items: center;
+      border-radius: 7px;
+      color: #07110e;
+      background: linear-gradient(135deg, var(--accent), var(--warn));
+      font-weight: 900;
+    }
+    textarea {
+      width: 100%;
+      min-height: 132px;
+      resize: vertical;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #0f1315;
+      color: var(--text);
+      padding: 10px;
+      font: 12px/1.45 ui-monospace, SFMono-Regular, Consolas, monospace;
+    }
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 8px;
+    }
+    button {
+      min-height: 42px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #20272b;
+      color: var(--text);
+      font: inherit;
+      font-weight: 650;
+    }
+    button.primary {
+      background: var(--accent);
+      color: #06110e;
+      border-color: transparent;
+    }
+    button.warn { color: #ff837d; }
+    .status {
+      min-height: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      white-space: pre-wrap;
+    }
+    @media (min-width: 850px) {
+      .app {
+        grid-template-columns: minmax(0, 1fr) 380px;
+        grid-template-rows: 1fr;
+      }
+      .sheet {
+        max-height: none;
+        border-top: 0;
+        border-left: 1px solid var(--line);
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="app">
+    <section class="viewer">
+      <canvas id="canvas"></canvas>
+      <div class="hud">
+        <span class="chip" id="stats">No model loaded</span>
+        <span class="chip">Drag orbit | pinch zoom</span>
+      </div>
+    </section>
+    <section class="sheet">
+      <div class="brand">
+        <span><span class="mark">3D</span> Mobile JSON Viewer</span>
+        <span id="savedState" class="status"></span>
+      </div>
+      <textarea id="jsonInput" spellcheck="false" placeholder="Paste model JSON here. Supports saved project JSON with objects, or AI build plans with actions."></textarea>
+      <div class="actions">
+        <button id="renderBtn" class="primary">Render</button>
+        <button id="frameBtn">Frame</button>
+        <button id="downloadBtn">Download</button>
+        <button id="clearBtn" class="warn">Clear</button>
+      </div>
+      <div class="status" id="status">Paste JSON, tap Render, then orbit the model.</div>
+    </section>
+  </main>
+
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "./node_modules/three/build/three.module.js",
+        "three/addons/": "./node_modules/three/examples/jsm/"
+      }
+    }
+  </script>
+  <script type="module">
+    import * as THREE from "three";
+    import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
+    const canvas = document.querySelector("#canvas");
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x080b0d);
+    const camera = new THREE.PerspectiveCamera(55, 1, .05, 1000);
+    camera.position.set(5, 4, 6);
+    const orbit = new OrbitControls(camera, renderer.domElement);
+    orbit.enableDamping = true;
+    orbit.target.set(0, 1, 0);
+
+    const grid = new THREE.GridHelper(18, 18, 0x607078, 0x253038);
+    scene.add(grid);
+    scene.add(new THREE.HemisphereLight(0xeaf8ff, 0x1a2020, 1.8));
+    const key = new THREE.DirectionalLight(0xffffff, 3);
+    key.position.set(4, 8, 5);
+    key.castShadow = true;
+    scene.add(key);
+    const fill = new THREE.PointLight(0x40c7a5, 18, 14);
+    fill.position.set(-4, 3, -4);
+    scene.add(fill);
+
+    const modelRoot = new THREE.Group();
+    scene.add(modelRoot);
+    let currentJson = null;
+
+    const els = {
+      input: document.querySelector("#jsonInput"),
+      status: document.querySelector("#status"),
+      stats: document.querySelector("#stats"),
+      savedState: document.querySelector("#savedState")
+    };
+
+    function log(message) {
+      els.status.textContent = message;
+    }
+
+    function round(value) {
+      return Math.round(value * 1000) / 1000;
+    }
+
+    function addQuad(positions, a, b, c, d) {
+      positions.push(...a, ...b, ...c, ...a, ...c, ...d);
+    }
+
+    function geometryFromPositions(positions) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
+      return geometry;
+    }
+
+    function addBoxToPositions(positions, center, size) {
+      const [cx, cy, cz] = center;
+      const [sx, sy, sz] = size.map(v => v / 2);
+      const p = [
+        [cx - sx, cy - sy, cz - sz], [cx + sx, cy - sy, cz - sz], [cx + sx, cy + sy, cz - sz], [cx - sx, cy + sy, cz - sz],
+        [cx - sx, cy - sy, cz + sz], [cx + sx, cy - sy, cz + sz], [cx + sx, cy + sy, cz + sz], [cx - sx, cy + sy, cz + sz]
+      ];
+      addQuad(positions, p[0], p[1], p[2], p[3]);
+      addQuad(positions, p[5], p[4], p[7], p[6]);
+      addQuad(positions, p[4], p[0], p[3], p[7]);
+      addQuad(positions, p[1], p[5], p[6], p[2]);
+      addQuad(positions, p[3], p[2], p[6], p[7]);
+      addQuad(positions, p[4], p[5], p[1], p[0]);
+    }
+
+    function makeWedgeGeometry() {
+      const v = [
+        [-.5, -.5, -.5], [.5, -.5, -.5], [.5, -.5, .5], [-.5, -.5, .5],
+        [-.5, .5, -.5], [.5, .5, -.5]
+      ];
+      const faces = [
+        [0, 1, 2], [0, 2, 3],
+        [0, 4, 5], [0, 5, 1],
+        [3, 2, 5], [3, 5, 4],
+        [0, 3, 4],
+        [1, 5, 2]
+      ];
+      return geometryFromPositions(faces.flatMap(face => face.flatMap(i => v[i])));
+    }
+
+    function makeRingLikeGeometry({ innerRadius = .28, outerRadius = .5, depth = .1, segments = 48, start = 0, end = Math.PI * 2, axis = "z" } = {}) {
+      const positions = [];
+      const span = end - start;
+      for (let i = 0; i < segments; i++) {
+        const a0 = start + span * i / segments;
+        const a1 = start + span * (i + 1) / segments;
+        const o0 = [Math.cos(a0) * outerRadius, Math.sin(a0) * outerRadius];
+        const o1 = [Math.cos(a1) * outerRadius, Math.sin(a1) * outerRadius];
+        const i0 = [Math.cos(a0) * innerRadius, Math.sin(a0) * innerRadius];
+        const i1 = [Math.cos(a1) * innerRadius, Math.sin(a1) * innerRadius];
+        const z0 = -depth / 2;
+        const z1 = depth / 2;
+        const p = ([x, y], z) => axis === "y" ? [x, z, y] : [x, y, z];
+        addQuad(positions, p(o0, z1), p(o1, z1), p(i1, z1), p(i0, z1));
+        addQuad(positions, p(o1, z0), p(o0, z0), p(i0, z0), p(i1, z0));
+        addQuad(positions, p(o1, z1), p(o0, z1), p(o0, z0), p(o1, z0));
+        addQuad(positions, p(i0, z1), p(i1, z1), p(i1, z0), p(i0, z0));
+      }
+      if (span < Math.PI * 2 - .001) {
+        for (const angle of [start, end]) {
+          const o = [Math.cos(angle) * outerRadius, Math.sin(angle) * outerRadius];
+          const i = [Math.cos(angle) * innerRadius, Math.sin(angle) * innerRadius];
+          const p = ([x, y], z) => axis === "y" ? [x, z, y] : [x, y, z];
+          addQuad(positions, p(o, depth / 2), p(i, depth / 2), p(i, -depth / 2), p(o, -depth / 2));
+        }
+      }
+      return geometryFromPositions(positions);
+    }
+
+    function makeHollowBoxGeometry() {
+      const positions = [];
+      addBoxToPositions(positions, [0, .42, 0], [1, .16, .16]);
+      addBoxToPositions(positions, [0, -.42, 0], [1, .16, .16]);
+      addBoxToPositions(positions, [-.42, 0, 0], [.16, .68, .16]);
+      addBoxToPositions(positions, [.42, 0, 0], [.16, .68, .16]);
+      return geometryFromPositions(positions);
+    }
+
+    function makeCurvedPanelGeometry() {
+      return makeRingLikeGeometry({ innerRadius: .58, outerRadius: .68, depth: 1, segments: 24, start: THREE.MathUtils.degToRad(55), end: THREE.MathUtils.degToRad(125), axis: "y" });
+    }
+
+    function makeArchGeometry() {
+      const positions = [];
+      const arch = makeRingLikeGeometry({ innerRadius: .34, outerRadius: .5, depth: .24, segments: 28, start: 0, end: Math.PI, axis: "z" });
+      const source = arch.getAttribute("position");
+      for (let i = 0; i < source.count; i++) positions.push(source.getX(i), source.getY(i) + .18, source.getZ(i));
+      arch.dispose();
+      addBoxToPositions(positions, [-.42, -.32, 0], [.16, .8, .24]);
+      addBoxToPositions(positions, [.42, -.32, 0], [.16, .8, .24]);
+      return geometryFromPositions(positions);
+    }
+
+    function makeStairGeometry() {
+      const positions = [];
+      for (let i = 0; i < 4; i++) addBoxToPositions(positions, [0, -.5 + (i + 1) / 8, -.5 + (i + .5) / 4], [1, (i + 1) / 4, .25]);
+      return geometryFromPositions(positions);
+    }
+
+    function makeHemisphereGeometry({ radius = .55, heightScale = 1, segments = 24, rings = 10 } = {}) {
+      const positions = [];
+      for (let y = 0; y < rings; y++) {
+        const phi0 = y / rings * Math.PI / 2;
+        const phi1 = (y + 1) / rings * Math.PI / 2;
+        for (let x = 0; x < segments; x++) {
+          const theta0 = x / segments * Math.PI * 2;
+          const theta1 = (x + 1) / segments * Math.PI * 2;
+          const point = (phi, theta) => [
+            Math.sin(phi) * Math.cos(theta) * radius,
+            Math.cos(phi) * radius * heightScale,
+            Math.sin(phi) * Math.sin(theta) * radius
+          ];
+          addQuad(positions, point(phi0, theta0), point(phi0, theta1), point(phi1, theta1), point(phi1, theta0));
+        }
+      }
+      const center = [0, 0, 0];
+      for (let x = 0; x < segments; x++) {
+        const theta0 = x / segments * Math.PI * 2;
+        const theta1 = (x + 1) / segments * Math.PI * 2;
+        const p0 = [Math.cos(theta0) * radius, 0, Math.sin(theta0) * radius];
+        const p1 = [Math.cos(theta1) * radius, 0, Math.sin(theta1) * radius];
+        positions.push(...center, ...p0, ...p1);
+      }
+      return geometryFromPositions(positions);
+    }
+
+    function makePrismGeometry() {
+      const positions = [];
+      const front = [[-.5, -.42, .5], [.5, -.42, .5], [0, .48, .5]];
+      const back = [[-.5, -.42, -.5], [.5, -.42, -.5], [0, .48, -.5]];
+      positions.push(...front[0], ...front[1], ...front[2]);
+      positions.push(...back[0], ...back[2], ...back[1]);
+      addQuad(positions, back[0], front[0], front[2], back[2]);
+      addQuad(positions, front[1], back[1], back[2], front[2]);
+      addQuad(positions, back[1], front[1], front[0], back[0]);
+      return geometryFromPositions(positions);
+    }
+
+    function makeHeartGeometry() {
+      const shape = new THREE.Shape();
+      shape.moveTo(0, .24);
+      shape.bezierCurveTo(-.52, .72, -1.02, .12, -.52, -.34);
+      shape.bezierCurveTo(-.2, -.64, 0, -.82, 0, -.82);
+      shape.bezierCurveTo(0, -.82, .2, -.64, .52, -.34);
+      shape.bezierCurveTo(1.02, .12, .52, .72, 0, .24);
+      const geometry = new THREE.ExtrudeGeometry(shape, {
+        depth: .2,
+        bevelEnabled: true,
+        bevelThickness: .025,
+        bevelSize: .025,
+        bevelSegments: 2
+      });
+      geometry.center();
+      geometry.scale(.78, .78, 1);
+      geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
+      return geometry;
+    }
+
+    const shapeFactories = {
+      box: () => new THREE.BoxGeometry(1, 1, 1),
+      sphere: () => new THREE.SphereGeometry(.55, 24, 14),
+      cylinder: () => new THREE.CylinderGeometry(.48, .48, 1, 24),
+      cone: () => new THREE.ConeGeometry(.55, 1, 24),
+      torus: () => new THREE.TorusGeometry(.42, .14, 12, 32),
+      panel: () => new THREE.BoxGeometry(1, 1, .08),
+      wedge: makeWedgeGeometry,
+      hollowBox: makeHollowBoxGeometry,
+      tube: () => makeRingLikeGeometry({ innerRadius: .32, outerRadius: .5, depth: 1, segments: 32, axis: "y" }),
+      curvedPanel: makeCurvedPanelGeometry,
+      ring: () => makeRingLikeGeometry({ innerRadius: .28, outerRadius: .5, depth: .1, segments: 36, axis: "z" }),
+      arch: makeArchGeometry,
+      hemisphere: makeHemisphereGeometry,
+      dome: () => makeHemisphereGeometry({ radius: .55, heightScale: .55, segments: 24, rings: 8 }),
+      capsule: () => new THREE.CapsuleGeometry(.32, .7, 6, 18),
+      pyramid: () => {
+        const geometry = new THREE.ConeGeometry(.68, 1, 4);
+        geometry.rotateY(Math.PI / 4);
+        return geometry;
+      },
+      prism: makePrismGeometry,
+      tetrahedron: () => new THREE.TetrahedronGeometry(.68, 0),
+      pyramidFrustum: () => {
+        const geometry = new THREE.ConeGeometry(.28, .68, 1, 4);
+        geometry.rotateY(Math.PI / 4);
+        return geometry;
+      },
+      heart: makeHeartGeometry,
+      stair: makeStairGeometry
+    };
+
+    const shapeAliases = {
+      cube: "box",
+      hollowbox: "hollowBox",
+      hollow_box: "hollowBox",
+      "hollow box": "hollowBox",
+      curvedpanel: "curvedPanel",
+      curved_panel: "curvedPanel",
+      "curved panel": "curvedPanel",
+      halfsphere: "hemisphere",
+      half_sphere: "hemisphere",
+      "half sphere": "hemisphere",
+      hemi: "hemisphere",
+      pyramidfrustum: "pyramidFrustum",
+      pyramid_frustum: "pyramidFrustum",
+      "pyramid frustum": "pyramidFrustum",
+      truncatedpyramid: "pyramidFrustum",
+      truncated_pyramid: "pyramidFrustum",
+      "truncated pyramid": "pyramidFrustum",
+      tetra: "tetrahedron",
+      stairs: "stair"
+    };
+
+    function normalizeShapeName(shape = "box") {
+      const value = String(shape || "box").trim();
+      const key = value.toLowerCase();
+      return shapeFactories[value] ? value : (shapeAliases[key] || shapeAliases[key.replace(/[-\s]/g, "_")] || shapeAliases[key.replace(/[-_\s]/g, "")] || key);
+    }
+
+    function geometryFromData(data) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(data.positions || [], 3));
+      if (data.normals?.length === data.positions?.length) geometry.setAttribute("normal", new THREE.Float32BufferAttribute(data.normals, 3));
+      if (data.uvs?.length) geometry.setAttribute("uv", new THREE.Float32BufferAttribute(data.uvs, 2));
+      if (data.indices?.length) geometry.setIndex(data.indices);
+      if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+      geometry.computeBoundingSphere();
+      return geometry;
+    }
+
+    function cutSpecFromObject(spec = {}) {
+      const result = {};
+      const readDirect = side => {
+        const keys = side === "top"
+          ? ["top-remove", "top_cut", "top-cut", "topRemove", "topCut", "removeTop", "cutTop"]
+          : ["bottom-remove", "bottom_cut", "bottom-cut", "bottomRemove", "bottomCut", "removeBottom", "cutBottom"];
+        for (const key of keys) if (spec[key] !== undefined) return spec[key];
+        if (spec.cut?.[side] !== undefined) return spec.cut[side];
+        if (spec.cuts?.[side] !== undefined) return spec.cuts[side];
+        if (spec.clip?.[side] !== undefined) return spec.clip[side];
+        if (typeof spec.modifiers === "object" && spec.modifiers?.[side] !== undefined) return spec.modifiers[side];
+        const keyPattern = new RegExp(`^${side}[-_ ]?(?:remove|cut):(.+)$`, "i");
+        for (const key of Object.keys(spec)) {
+          const match = key.match(keyPattern);
+          if (match) return match[1];
+        }
+        return null;
+      };
+      const readText = side => {
+        const text = [spec.modifier, spec.modifiers, spec.edit, spec.command]
+          .filter(value => typeof value === "string")
+          .join(" ");
+        const match = text.match(new RegExp(`${side}\\s*[-_ ]\\s*(?:remove|cut)\\s*:\\s*([+-]?[0-9.]+\\s*%?|[+-]?[0-9.]+\\s*(?:u|unit|units|stud|studs)?)`, "i"));
+        return match ? match[1] : null;
+      };
+      for (const side of ["top", "bottom"]) {
+        const value = readDirect(side) ?? readText(side);
+        if (value !== null && value !== undefined && value !== "") result[side] = value;
+      }
+      return Object.keys(result).length ? result : null;
+    }
+
+    function cutDistance(value, span) {
+      if (value === null || value === undefined || value === "") return 0;
+      if (typeof value === "string") {
+        const text = value.trim().toLowerCase();
+        const number = Number.parseFloat(text);
+        if (!Number.isFinite(number)) return 0;
+        if (text.endsWith("%")) return span * Math.max(0, Math.min(.98, number / 100));
+        if (/(u|unit|units|stud|studs)$/.test(text)) return Math.max(0, Math.min(span * .98, number));
+        return number <= 1 ? span * Math.max(0, Math.min(.98, number)) : Math.max(0, Math.min(span * .98, number));
+      }
+      const number = Number(value);
+      if (!Number.isFinite(number)) return 0;
+      return number <= 1 ? span * Math.max(0, Math.min(.98, number)) : Math.max(0, Math.min(span * .98, number));
+    }
+
+    function geometryClipVertex(position, uv, index) {
+      return {
+        point: new THREE.Vector3(position.getX(index), position.getY(index), position.getZ(index)),
+        uv: uv ? new THREE.Vector2(uv.getX(index), uv.getY(index)) : null
+      };
+    }
+
+    function lerpClipVertex(a, b, t) {
+      return {
+        point: a.point.clone().lerp(b.point, t),
+        uv: a.uv && b.uv ? a.uv.clone().lerp(b.uv, t) : null
+      };
+    }
+
+    function pushClipTriangle(buffers, a, b, c) {
+      buffers.positions.push(...a.point.toArray(), ...b.point.toArray(), ...c.point.toArray());
+      if (buffers.hasUv) {
+        for (const vertex of [a, b, c]) {
+          const uv = vertex.uv || new THREE.Vector2(.5, .5);
+          buffers.uvs.push(uv.x, uv.y);
+        }
+      }
+    }
+
+    function clipGeometrySide(geometry, side, value) {
+      const source = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+      source.computeBoundingBox();
+      const min = source.boundingBox.min.y;
+      const max = source.boundingBox.max.y;
+      const span = max - min;
+      const amount = cutDistance(value, span);
+      if (span <= .0001 || amount <= .0001) return source;
+      const plane = side === "top" ? max - amount : min + amount;
+      const keepSign = side === "top" ? 1 : -1;
+      const position = source.getAttribute("position");
+      const uv = source.getAttribute("uv");
+      const buffers = { positions: [], uvs: [], hasUv: Boolean(uv) };
+      const capCandidates = [];
+      const inside = vertex => keepSign * (vertex.point.y - plane) <= .00001;
+      const intersection = (a, b) => {
+        const t = (a.point.y - plane) / (a.point.y - b.point.y);
+        const vertex = lerpClipVertex(a, b, t);
+        vertex.point.y = plane;
+        return vertex;
+      };
+      const collectCap = polygon => {
+        for (const vertex of polygon) if (Math.abs(vertex.point.y - plane) < .0001) capCandidates.push(vertex);
+      };
+
+      for (let i = 0; i < position.count; i += 3) {
+        let polygon = [geometryClipVertex(position, uv, i), geometryClipVertex(position, uv, i + 1), geometryClipVertex(position, uv, i + 2)];
+        const clipped = [];
+        for (let j = 0; j < polygon.length; j++) {
+          const current = polygon[j];
+          const next = polygon[(j + 1) % polygon.length];
+          const currentInside = inside(current);
+          const nextInside = inside(next);
+          if (currentInside && nextInside) clipped.push(next);
+          else if (currentInside && !nextInside) clipped.push(intersection(current, next));
+          else if (!currentInside && nextInside) clipped.push(intersection(current, next), next);
+        }
+        polygon = clipped;
+        if (polygon.length >= 3) {
+          collectCap(polygon);
+          for (let j = 1; j < polygon.length - 1; j++) pushClipTriangle(buffers, polygon[0], polygon[j], polygon[j + 1]);
+        }
+      }
+
+      const unique = new Map();
+      for (const vertex of capCandidates) {
+        const key = vertex.point.toArray().map(value => Math.round(value * 10000)).join(",");
+        if (!unique.has(key)) unique.set(key, vertex);
+      }
+      const cap = [...unique.values()];
+      if (cap.length >= 3) {
+        const center = new THREE.Vector3();
+        for (const vertex of cap) center.add(vertex.point);
+        center.multiplyScalar(1 / cap.length);
+        cap.sort((a, b) => Math.atan2(a.point.z - center.z, a.point.x - center.x) - Math.atan2(b.point.z - center.z, b.point.x - center.x));
+        const desiredNormal = new THREE.Vector3(0, side === "top" ? 1 : -1, 0);
+        const centerVertex = { point: center, uv: new THREE.Vector2(.5, .5) };
+        for (let i = 0; i < cap.length; i++) {
+          const a = cap[i];
+          const b = cap[(i + 1) % cap.length];
+          const normal = new THREE.Vector3().subVectors(a.point, center).cross(new THREE.Vector3().subVectors(b.point, center));
+          if (normal.dot(desiredNormal) >= 0) pushClipTriangle(buffers, centerVertex, a, b);
+          else pushClipTriangle(buffers, centerVertex, b, a);
+        }
+      }
+
+      source.dispose();
+      const clippedGeometry = new THREE.BufferGeometry();
+      clippedGeometry.setAttribute("position", new THREE.Float32BufferAttribute(buffers.positions, 3));
+      if (buffers.hasUv && buffers.uvs.length / 2 === buffers.positions.length / 3) clippedGeometry.setAttribute("uv", new THREE.Float32BufferAttribute(buffers.uvs, 2));
+      clippedGeometry.computeVertexNormals();
+      clippedGeometry.computeBoundingSphere();
+      return clippedGeometry;
+    }
+
+    function applyGeometryCuts(geometry, spec = {}) {
+      const cuts = cutSpecFromObject(spec);
+      if (!cuts) return geometry;
+      let result = geometry;
+      if (cuts.top !== undefined) {
+        const next = clipGeometrySide(result, "top", cuts.top);
+        if (next !== result) result.dispose();
+        result = next;
+      }
+      if (cuts.bottom !== undefined) {
+        const next = clipGeometrySide(result, "bottom", cuts.bottom);
+        if (next !== result) result.dispose();
+        result = next;
+      }
+      return result;
+    }
+
+    function materialFor(spec) {
+      const material = new THREE.MeshStandardMaterial({
+        color: spec.color || "#40c7a5",
+        roughness: spec.roughness ?? .6,
+        metalness: .05
+      });
+      if (spec.textureUrl) {
+        const texture = new THREE.TextureLoader().load(spec.textureUrl);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.flipY = spec.textureFlipY ?? true;
+        texture.center.set(.5, .5);
+        texture.rotation = THREE.MathUtils.degToRad(spec.textureRotation || 0);
+        material.map = texture;
+      }
+      return material;
+    }
+
+    function createMesh(spec) {
+      const shape = normalizeShapeName(spec.shape || "box");
+      const baseGeometry = spec.geometry ? geometryFromData(spec.geometry) : (shapeFactories[shape]?.() || shapeFactories.box());
+      const geometry = applyGeometryCuts(baseGeometry, spec);
+      const mesh = new THREE.Mesh(geometry, materialFor(spec));
+      mesh.name = spec.name || shape;
+      mesh.position.fromArray(spec.position || [0, .5, 0]);
+      mesh.rotation.set(
+        THREE.MathUtils.degToRad(spec.rotation?.[0] || 0),
+        THREE.MathUtils.degToRad(spec.rotation?.[1] || 0),
+        THREE.MathUtils.degToRad(spec.rotation?.[2] || 0)
+      );
+      mesh.scale.fromArray(spec.scale || [1, 1, 1]);
+      mesh.castShadow = true;
+      mesh.receiveShadow = true;
+      return mesh;
+    }
+
+    function flattenObjects(items = []) {
+      const output = [];
+      for (const item of items) {
+        if (item.shape || item.geometry || item.op === "add") output.push(item);
+        if (item.children) output.push(...flattenObjects(item.children));
+      }
+      return output;
+    }
+
+    function normalizeJson(data) {
+      if (Array.isArray(data.objects)) return { version: data.version || 1, objects: flattenObjects(data.objects) };
+      if (Array.isArray(data.scene?.objects)) return { version: 1, objects: flattenObjects(data.scene.objects) };
+      if (Array.isArray(data.actions)) return { version: 1, objects: data.actions.filter(action => !action.op || action.op === "add") };
+      if (Array.isArray(data)) return { version: 1, objects: flattenObjects(data) };
+      throw new Error("JSON needs objects, scene.objects, or actions.");
+    }
+
+    function clearModel() {
+      while (modelRoot.children.length) {
+        const child = modelRoot.children.pop();
+        child.traverse(node => {
+          node.geometry?.dispose?.();
+          if (node.material?.map) node.material.map.dispose();
+          node.material?.dispose?.();
+        });
+      }
+      currentJson = null;
+      localStorage.removeItem("mobileModelJson");
+      els.stats.textContent = "No model loaded";
+      els.savedState.textContent = "";
+    }
+
+    function renderJson(text) {
+      const parsed = normalizeJson(JSON.parse(text));
+      clearModel();
+      currentJson = parsed;
+      for (const spec of parsed.objects) modelRoot.add(createMesh(spec));
+      localStorage.setItem("mobileModelJson", JSON.stringify(parsed, null, 2));
+      els.savedState.textContent = "saved";
+      els.stats.textContent = `${parsed.objects.length} part${parsed.objects.length === 1 ? "" : "s"}`;
+      log(`Rendered ${parsed.objects.length} part${parsed.objects.length === 1 ? "" : "s"}.`);
+      frameModel();
+    }
+
+    function frameModel() {
+      const box = new THREE.Box3().setFromObject(modelRoot);
+      if (box.isEmpty()) return;
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const radius = Math.max(size.x, size.y, size.z, 2);
+      orbit.target.copy(center);
+      camera.position.copy(center).add(new THREE.Vector3(radius * .8, radius * .55, radius));
+      camera.near = Math.max(.01, radius / 100);
+      camera.far = Math.max(100, radius * 20);
+      camera.updateProjectionMatrix();
+      orbit.update();
+    }
+
+    function downloadJson() {
+      const text = currentJson ? JSON.stringify(currentJson, null, 2) : els.input.value.trim();
+      if (!text) {
+        log("Nothing to download yet.");
+        return;
+      }
+      const blob = new Blob([text], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `mobile-model-${new Date().toISOString().replace(/[:.]/g, "-")}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function resize() {
+      const rect = canvas.parentElement.getBoundingClientRect();
+      renderer.setSize(rect.width, rect.height, false);
+      camera.aspect = rect.width / Math.max(1, rect.height);
+      camera.updateProjectionMatrix();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+      resize();
+      orbit.update();
+      renderer.render(scene, camera);
+    }
+
+    document.querySelector("#renderBtn").addEventListener("click", () => {
+      try {
+        renderJson(els.input.value);
+      } catch (error) {
+        log(`Could not render JSON: ${error.message}`);
+      }
+    });
+    document.querySelector("#frameBtn").addEventListener("click", frameModel);
+    document.querySelector("#downloadBtn").addEventListener("click", downloadJson);
+    document.querySelector("#clearBtn").addEventListener("click", () => {
+      clearModel();
+      els.input.value = "";
+      log("Cleared.");
+    });
+
+    const saved = localStorage.getItem("mobileModelJson");
+    if (saved) {
+      els.input.value = saved;
+      try { renderJson(saved); } catch { localStorage.removeItem("mobileModelJson"); }
+    }
+
+    animate();
+  </script>
+</body>
+</html>

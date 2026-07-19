@@ -1,0 +1,323 @@
+{
+  "version": 1,
+  "objects": [
+
+    {
+      "id": "base",
+      "name": "Ground",
+      "shape": "box",
+      "position": [0, -0.2, 0],
+      "rotation": [0, 0, 0],
+      "scale": [30, 0.2, 30],
+      "color": "#4a4a4a",
+      "roughness": 1
+    },
+
+
+    {
+      "id": "box1",
+      "name": "Box",
+      "shape": "box",
+      "position": [-10, 1, 0],
+      "rotation": [0,0,0],
+      "scale": [1,1,1],
+      "color": "#ff5555"
+    },
+
+    {
+      "id": "sphere1",
+      "shape": "sphere",
+      "position": [-6,1,0],
+      "rotation": [0,0,0],
+      "scale": [1,1,1],
+      "color": "#55ff55"
+    },
+
+    {
+      "id": "torus1",
+      "shape": "torus",
+      "position": [-2,1,0],
+      "rotation": [90,0,0],
+      "scale": [1,1,0.2],
+      "color": "#55ffff"
+    },
+
+    {
+      "id": "tube1",
+      "shape": "tube",
+      "position": [2,1,0],
+      "rotation": [0,0,0],
+      "scale": [0.4,2,0.4],
+      "color": "#ffaa55"
+    },
+
+    {
+      "id": "wedge1",
+      "shape": "wedge",
+      "position": [6,1,0],
+      "rotation": [0,0,0],
+      "scale": [2,1,1],
+      "color": "#8888ff"
+    },
+
+    {
+      "id": "panel1",
+      "shape": "curvedPanel",
+      "position": [10,1,0],
+      "rotation": [0,0,0],
+      "scale": [1.5,1.5,1.5],
+      "color": "#55ffcc"
+    },
+
+
+    {
+      "id": "box2",
+      "shape": "box",
+      "position": [-10,1,4],
+      "rotation": [45,45,0],
+      "scale": [1,1,1],
+      "color": "#ff5555"
+    },
+
+    {
+      "id": "sphere2",
+      "shape": "sphere",
+      "position": [-6,1,4],
+      "rotation": [45,45,45],
+      "scale": [1,1,1],
+      "color": "#55ff55"
+    },
+
+    {
+      "id": "torus2",
+      "shape": "torus",
+      "position": [-2,1,4],
+      "rotation": [45,45,45],
+      "scale": [1,1,0.2],
+      "color": "#55ffff"
+    },
+
+    {
+      "id": "tube2",
+      "shape": "tube",
+      "position": [2,1,4],
+      "rotation": [45,45,45],
+      "scale": [0.4,2,0.4],
+      "color": "#ffaa55"
+    },
+
+    {
+      "id": "wedge2",
+      "shape": "wedge",
+      "position": [6,1,4],
+      "rotation": [45,45,45],
+      "scale": [2,1,1],
+      "color": "#8888ff"
+    },
+
+    {
+      "id": "panel2",
+      "shape": "curvedPanel",
+      "position": [10,1,4],
+      "rotation": [45,45,45],
+      "scale": [1.5,1.5,1.5],
+      "color": "#55ffcc"
+    },
+
+
+    {
+      "id": "box3",
+      "shape": "box",
+      "position": [-10,1,8],
+      "rotation": [0,0,0],
+      "scale": [3,0.5,1],
+      "color": "#ff5555"
+    },
+
+    {
+      "id": "sphere3",
+      "shape": "sphere",
+      "position": [-6,1,8],
+      "rotation": [0,0,0],
+      "scale": [1,2,1],
+      "color": "#55ff55"
+    },
+
+    {
+      "id": "torus3",
+      "shape": "torus",
+      "position": [-2,1,8],
+      "rotation": [90,0,0],
+      "scale": [2,2,0.1],
+      "color": "#55ffff"
+    },
+
+    {
+      "id": "tube3",
+      "shape": "tube",
+      "position": [2,1,8],
+      "rotation": [0,0,0],
+      "scale": [0.3,4,0.3],
+      "color": "#ffaa55"
+    },
+
+    {
+      "id": "wedge3",
+      "shape": "wedge",
+      "position": [6,1,8],
+      "rotation": [0,0,0],
+      "scale": [3,0.5,2],
+      "color": "#8888ff"
+    },
+
+    {
+      "id": "panel3",
+      "shape": "curvedPanel",
+      "position": [10,1,8],
+      "rotation": [0,0,0],
+      "scale": [3,2,2],
+      "color": "#55ffcc"
+    },
+
+
+    {
+      "id": "r1",
+      "shape": "box",
+      "position": [-10,1,12],
+      "rotation": [17,233,81],
+      "scale": [1.2,0.8,2],
+      "color": "#ff8888"
+    },
+
+    {
+      "id": "r2",
+      "shape": "sphere",
+      "position": [-6,1,12],
+      "rotation": [120,75,201],
+      "scale": [1.5,1,0.7],
+      "color": "#88ff88"
+    },
+
+    {
+      "id": "r3",
+      "shape": "torus",
+      "position": [-2,1,12],
+      "rotation": [250,42,97],
+      "scale": [1.5,0.8,0.2],
+      "color": "#88ffff"
+    },
+
+    {
+      "id": "r4",
+      "shape": "tube",
+      "position": [2,1,12],
+      "rotation": [77,33,140],
+      "scale": [0.5,3,0.3],
+      "color": "#ffcc88"
+    },
+
+    {
+      "id": "r5",
+      "shape": "wedge",
+      "position": [6,1,12],
+      "rotation": [312,91,55],
+      "scale": [2,0.7,1.5],
+      "color": "#aaaaff"
+    },
+
+    {
+      "id": "r6",
+      "shape": "curvedPanel",
+      "position": [10,1,12],
+      "rotation": [88,155,277],
+      "scale": [2,1,1],
+      "color": "#88ffdd"
+    },
+
+
+    {
+      "id": "c1",
+      "shape": "sphere",
+      "position": [-10,1,16],
+      "scale": [1,1,1],
+      "color": "#ff0000"
+    },
+
+    {
+      "id": "c2",
+      "shape": "sphere",
+      "position": [-6,1,16],
+      "scale": [1,1,1],
+      "color": "#00ff00"
+    },
+
+    {
+      "id": "c3",
+      "shape": "sphere",
+      "position": [-2,1,16],
+      "scale": [1,1,1],
+      "color": "#0000ff"
+    },
+
+    {
+      "id": "c4",
+      "shape": "sphere",
+      "position": [2,1,16],
+      "scale": [1,1,1],
+      "color": "#ffff00"
+    },
+
+    {
+      "id": "c5",
+      "shape": "sphere",
+      "position": [6,1,16],
+      "scale": [1,1,1],
+      "color": "#ff00ff"
+    },
+
+    {
+      "id": "c6",
+      "shape": "sphere",
+      "position": [10,1,16],
+      "scale": [1,1,1],
+      "color": "#00ffff"
+    },
+
+
+    {
+      "id": "combo1",
+      "shape": "box",
+      "position": [-8,2,22],
+      "rotation": [33,78,145],
+      "scale": [3,0.3,1],
+      "color": "#ff8844"
+    },
+
+    {
+      "id": "combo2",
+      "shape": "torus",
+      "position": [-2,2,22],
+      "rotation": [133,48,225],
+      "scale": [2,1,0.1],
+      "color": "#44ffff"
+    },
+
+    {
+      "id": "combo3",
+      "shape": "tube",
+      "position": [4,2,22],
+      "rotation": [87,142,17],
+      "scale": [0.2,5,0.2],
+      "color": "#ffff44"
+    },
+
+    {
+      "id": "combo4",
+      "shape": "curvedPanel",
+      "position": [10,2,22],
+      "rotation": [120,240,320],
+      "scale": [3,2,1],
+      "color": "#44ff88"
+    }
+  ]
+}

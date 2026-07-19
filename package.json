@@ -1,0 +1,15 @@
+{
+  "name": "boltworks-3d-ai-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node tools/server.mjs",
+    "check": "node tools/smoke-check.mjs",
+    "build:web": "node tools/build-web.mjs"
+  },
+  "dependencies": {
+    "jimp": "^1.6.1",
+    "three": "0.165.0"
+  }
+}

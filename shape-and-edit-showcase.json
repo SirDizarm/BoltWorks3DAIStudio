@@ -1,0 +1,323 @@
+{
+  "version": 1,
+  "title": "3D Model Studio Shape And Edit Showcase",
+  "notes": [
+    "Import this JSON into 3D Model Studio to show all available primitive shapes.",
+    "The back row demonstrates edit-style instructions: rotate, scale, top-remove, bottom-cut, and simple extension made from separate editable parts.",
+    "Cut fields can be written as top-remove, bottom-cut, or cuts.top/cuts.bottom. Values can be percentages, decimals, or local-unit numbers."
+  ],
+  "objects": [
+    {
+      "name": "large dark display plate",
+      "shape": "box",
+      "position": [0, -0.08, 0],
+      "scale": [18, 0.16, 11],
+      "color": "#22282b",
+      "roughness": 0.85
+    },
+    {
+      "name": "front row rail",
+      "shape": "box",
+      "position": [0, 0.03, -3.55],
+      "scale": [17.2, 0.08, 0.08],
+      "color": "#49d5c3",
+      "roughness": 0.35
+    },
+    {
+      "name": "middle row rail",
+      "shape": "box",
+      "position": [0, 0.03, 0],
+      "scale": [17.2, 0.08, 0.08],
+      "color": "#c7aa45",
+      "roughness": 0.5
+    },
+    {
+      "name": "back edit demo rail",
+      "shape": "box",
+      "position": [0, 0.03, 3.45],
+      "scale": [17.2, 0.08, 0.08],
+      "color": "#b65454",
+      "roughness": 0.55
+    },
+    {
+      "name": "01 cube primitive",
+      "shape": "box",
+      "position": [-7.5, 0.6, -4.25],
+      "scale": [0.9, 0.9, 0.9],
+      "color": "#7f8c8d",
+      "roughness": 0.65
+    },
+    {
+      "name": "02 sphere primitive",
+      "shape": "sphere",
+      "position": [-5.8, 0.62, -4.25],
+      "scale": [0.9, 0.9, 0.9],
+      "color": "#5dade2",
+      "roughness": 0.45
+    },
+    {
+      "name": "03 cylinder primitive",
+      "shape": "cylinder",
+      "position": [-4.1, 0.6, -4.25],
+      "scale": [0.9, 1.0, 0.9],
+      "color": "#48c9b0",
+      "roughness": 0.55
+    },
+    {
+      "name": "04 cone primitive",
+      "shape": "cone",
+      "position": [-2.4, 0.6, -4.25],
+      "scale": [0.9, 1.1, 0.9],
+      "color": "#ec7063",
+      "roughness": 0.5
+    },
+    {
+      "name": "05 torus primitive",
+      "shape": "torus",
+      "position": [-0.7, 0.65, -4.25],
+      "rotation": [90, 0, 0],
+      "scale": [0.95, 0.95, 0.95],
+      "color": "#f5b041",
+      "roughness": 0.45
+    },
+    {
+      "name": "06 flat panel primitive",
+      "shape": "panel",
+      "position": [1.0, 0.6, -4.25],
+      "rotation": [0, 0, 0],
+      "scale": [1.1, 1.1, 1],
+      "color": "#ccd1d1",
+      "roughness": 0.6
+    },
+    {
+      "name": "07 wedge primitive",
+      "shape": "wedge",
+      "position": [2.7, 0.6, -4.25],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#52be80",
+      "roughness": 0.5
+    },
+    {
+      "name": "08 hollow box primitive",
+      "shape": "hollowBox",
+      "position": [4.4, 0.6, -4.25],
+      "scale": [1.1, 1.1, 1.1],
+      "color": "#af7ac5",
+      "roughness": 0.5
+    },
+    {
+      "name": "09 tube primitive",
+      "shape": "tube",
+      "position": [6.1, 0.6, -4.25],
+      "rotation": [0, 0, 90],
+      "scale": [0.9, 0.9, 0.9],
+      "color": "#45b39d",
+      "roughness": 0.45
+    },
+    {
+      "name": "10 curved panel primitive",
+      "shape": "curvedPanel",
+      "position": [7.8, 0.6, -4.25],
+      "rotation": [0, 0, 0],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#73c6b6",
+      "roughness": 0.48
+    },
+    {
+      "name": "11 ring primitive",
+      "shape": "ring",
+      "position": [-7.5, 0.62, -2.65],
+      "rotation": [90, 0, 0],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#f7dc6f",
+      "roughness": 0.5
+    },
+    {
+      "name": "12 arch primitive",
+      "shape": "arch",
+      "position": [-5.8, 0.7, -2.65],
+      "scale": [1.1, 1.1, 1.1],
+      "color": "#58d68d",
+      "roughness": 0.5
+    },
+    {
+      "name": "13 half sphere primitive",
+      "shape": "hemisphere",
+      "position": [-4.1, 0.2, -2.65],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#85c1e9",
+      "roughness": 0.45
+    },
+    {
+      "name": "14 dome primitive",
+      "shape": "dome",
+      "position": [-2.4, 0.2, -2.65],
+      "scale": [1.1, 1.0, 1.1],
+      "color": "#aed6f1",
+      "roughness": 0.45
+    },
+    {
+      "name": "15 capsule primitive",
+      "shape": "capsule",
+      "position": [-0.7, 0.85, -2.65],
+      "scale": [0.75, 1.2, 0.75],
+      "color": "#f1948a",
+      "roughness": 0.45
+    },
+    {
+      "name": "16 pyramid primitive",
+      "shape": "pyramid",
+      "position": [1.0, 0.6, -2.65],
+      "scale": [1.1, 1.1, 1.1],
+      "color": "#e59866",
+      "roughness": 0.5
+    },
+    {
+      "name": "17 prism primitive",
+      "shape": "prism",
+      "position": [2.7, 0.65, -2.65],
+      "rotation": [0, 20, 0],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#bb8fce",
+      "roughness": 0.5
+    },
+    {
+      "name": "18 tetrahedron primitive",
+      "shape": "tetrahedron",
+      "position": [4.4, 0.62, -2.65],
+      "scale": [1.1, 1.1, 1.1],
+      "color": "#f8c471",
+      "roughness": 0.5
+    },
+    {
+      "name": "19 pyramid frustum primitive",
+      "shape": "pyramidFrustum",
+      "position": [6.1, 0.6, -2.65],
+      "scale": [1.2, 1.2, 1.2],
+      "color": "#d7dbdd",
+      "roughness": 0.55
+    },
+    {
+      "name": "20 heart primitive",
+      "shape": "heart",
+      "position": [7.8, 0.65, -2.65],
+      "rotation": [0, 0, 0],
+      "scale": [1.1, 1.1, 1.1],
+      "color": "#e74c3c",
+      "roughness": 0.45
+    },
+    {
+      "name": "21 stair primitive",
+      "shape": "stair",
+      "position": [-7.5, 0.6, -1.05],
+      "scale": [1.1, 1.1, 1.1],
+      "color": "#95a5a6",
+      "roughness": 0.7
+    },
+    {
+      "name": "edit demo rotated wedge 45 degrees",
+      "shape": "wedge",
+      "position": [-6.7, 0.6, 2.25],
+      "rotation": [0, 45, 0],
+      "scale": [1.15, 1.0, 1.15],
+      "color": "#48c9b0",
+      "roughness": 0.45
+    },
+    {
+      "name": "edit demo scaled tall cube",
+      "shape": "box",
+      "position": [-4.9, 1.0, 2.25],
+      "scale": [0.6, 1.9, 0.6],
+      "color": "#839192",
+      "roughness": 0.7
+    },
+    {
+      "name": "edit demo scaled flat panel",
+      "shape": "panel",
+      "position": [-3.1, 0.62, 2.25],
+      "rotation": [0, 30, 0],
+      "scale": [1.6, 1.0, 1.0],
+      "color": "#d5dbdb",
+      "roughness": 0.6
+    },
+    {
+      "name": "edit demo cone top-remove 50 percent",
+      "shape": "cone",
+      "position": [-1.3, 0.6, 2.25],
+      "scale": [1.1, 1.2, 1.1],
+      "color": "#f5b041",
+      "roughness": 0.45,
+      "top-remove": "50%"
+    },
+    {
+      "name": "edit demo pyramid top-remove 45 percent",
+      "shape": "pyramid",
+      "position": [0.5, 0.6, 2.25],
+      "scale": [1.2, 1.2, 1.2],
+      "color": "#e67e22",
+      "roughness": 0.5,
+      "top-remove": "45%"
+    },
+    {
+      "name": "edit demo capsule bottom-cut 35 percent",
+      "shape": "capsule",
+      "position": [2.3, 0.85, 2.25],
+      "scale": [0.8, 1.3, 0.8],
+      "color": "#ec7063",
+      "roughness": 0.45,
+      "bottom-cut": "35%"
+    },
+    {
+      "name": "edit demo sphere sliced top and bottom",
+      "shape": "sphere",
+      "position": [4.1, 0.65, 2.25],
+      "scale": [1.2, 1.2, 1.2],
+      "color": "#5dade2",
+      "roughness": 0.45,
+      "cuts": {
+        "top": "25%",
+        "bottom": "25%"
+      }
+    },
+    {
+      "name": "edit demo extend base block",
+      "shape": "box",
+      "position": [6.05, 0.55, 2.25],
+      "scale": [1.0, 0.8, 0.9],
+      "color": "#566573",
+      "roughness": 0.65
+    },
+    {
+      "name": "edit demo extension pulled from side",
+      "shape": "box",
+      "position": [7.0, 0.55, 2.25],
+      "scale": [0.9, 0.42, 0.42],
+      "color": "#48c9b0",
+      "roughness": 0.5
+    },
+    {
+      "name": "edit demo mirrored extension on other side",
+      "shape": "box",
+      "position": [5.1, 0.55, 2.25],
+      "scale": [0.9, 0.42, 0.42],
+      "color": "#48c9b0",
+      "roughness": 0.5
+    },
+    {
+      "name": "edit demo bevel-like inset dark panel",
+      "shape": "panel",
+      "position": [6.05, 0.57, 2.72],
+      "scale": [0.65, 0.45, 1.0],
+      "color": "#17202a",
+      "roughness": 0.8
+    },
+    {
+      "name": "edit demo small cyan detail strip",
+      "shape": "box",
+      "position": [6.05, 0.98, 1.8],
+      "scale": [0.7, 0.08, 0.08],
+      "color": "#00f5ff",
+      "roughness": 0.25
+    }
+  ]
+}

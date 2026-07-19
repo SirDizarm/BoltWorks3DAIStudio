@@ -1,0 +1,383 @@
+{
+  "version": 1,
+  "objects": [
+    {
+      "name": "arch doorway main frame",
+      "shape": "arch",
+      "position": [-6, 2.1, 0],
+      "rotation": [0, 0, 0],
+      "scale": [3.4, 3.6, 0.7],
+      "color": "#45535a",
+      "roughness": 0.78
+    },
+    {
+      "name": "arch doorway dark inset",
+      "shape": "arch",
+      "position": [-6, 2.1, 0.08],
+      "rotation": [0, 0, 0],
+      "scale": [2.55, 2.78, 0.46],
+      "color": "#151b1f",
+      "roughness": 0.88
+    },
+    {
+      "name": "left doorway foot",
+      "shape": "box",
+      "position": [-7.55, 0.35, 0.04],
+      "rotation": [0, 0, 0],
+      "scale": [0.72, 0.7, 0.92],
+      "color": "#39474d",
+      "roughness": 0.78
+    },
+    {
+      "name": "right doorway foot",
+      "shape": "box",
+      "position": [-4.45, 0.35, 0.04],
+      "rotation": [0, 0, 0],
+      "scale": [0.72, 0.7, 0.92],
+      "color": "#39474d",
+      "roughness": 0.78
+    },
+    {
+      "name": "doorway lower track",
+      "shape": "hollowBox",
+      "position": [-6, 0.28, 0.13],
+      "rotation": [0, 0, 0],
+      "scale": [3.6, 0.28, 0.42],
+      "color": "#1b2327",
+      "roughness": 0.86
+    },
+    {
+      "name": "doorway upper service rail",
+      "shape": "box",
+      "position": [-6, 3.85, 0.06],
+      "rotation": [0, 0, 0],
+      "scale": [3.35, 0.2, 0.58],
+      "color": "#222b30",
+      "roughness": 0.82
+    },
+    {
+      "name": "doorway cyan arch light left",
+      "shape": "curvedPanel",
+      "position": [-6.9, 2.8, 0.43],
+      "rotation": [0, 0, 18],
+      "scale": [0.42, 1.25, 0.16],
+      "color": "#22e6dc",
+      "roughness": 0.18
+    },
+    {
+      "name": "doorway cyan arch light right",
+      "shape": "curvedPanel",
+      "position": [-5.1, 2.8, 0.43],
+      "rotation": [0, 0, -18],
+      "scale": [0.42, 1.25, 0.16],
+      "color": "#22e6dc",
+      "roughness": 0.18
+    },
+    {
+      "name": "doorway top warning wedge",
+      "shape": "wedge",
+      "position": [-6, 3.62, 0.48],
+      "rotation": [0, 0, 180],
+      "scale": [0.42, 0.28, 0.15],
+      "color": "#d79b28",
+      "roughness": 0.42
+    },
+    {
+      "name": "doorway left cable tube",
+      "shape": "tube",
+      "position": [-7.25, 1.75, 0.48],
+      "rotation": [0, 0, 0],
+      "scale": [0.2, 1.55, 0.2],
+      "color": "#20292d",
+      "roughness": 0.82
+    },
+    {
+      "name": "doorway right cable tube",
+      "shape": "tube",
+      "position": [-4.75, 1.75, 0.48],
+      "rotation": [0, 0, 0],
+      "scale": [0.2, 1.55, 0.2],
+      "color": "#20292d",
+      "roughness": 0.82
+    },
+    {
+      "name": "doorway left access panel",
+      "shape": "panel",
+      "position": [-7.57, 1.52, 0.51],
+      "rotation": [0, 0, 0],
+      "scale": [0.35, 0.82, 1],
+      "color": "#29343a",
+      "roughness": 0.78
+    },
+    {
+      "name": "doorway right access panel",
+      "shape": "panel",
+      "position": [-4.43, 1.52, 0.51],
+      "rotation": [0, 0, 0],
+      "scale": [0.35, 0.82, 1],
+      "color": "#29343a",
+      "roughness": 0.78
+    },
+    {
+      "name": "doorway left lamp",
+      "shape": "box",
+      "position": [-7.57, 1.72, 0.58],
+      "rotation": [0, 0, 0],
+      "scale": [0.16, 0.42, 0.08],
+      "color": "#f2c54b",
+      "roughness": 0.22
+    },
+    {
+      "name": "doorway right lamp",
+      "shape": "box",
+      "position": [-4.43, 1.72, 0.58],
+      "rotation": [0, 0, 0],
+      "scale": [0.16, 0.42, 0.08],
+      "color": "#f2c54b",
+      "roughness": 0.22
+    },
+    {
+      "name": "crate shell",
+      "shape": "box",
+      "position": [0, 1.0, 0],
+      "rotation": [0, 0, 0],
+      "scale": [2.7, 1.8, 1.6],
+      "color": "#4a5352",
+      "roughness": 0.84
+    },
+    {
+      "name": "crate lid hollow rim",
+      "shape": "hollowBox",
+      "position": [0, 1.95, 0],
+      "rotation": [90, 0, 0],
+      "scale": [2.95, 1.82, 0.24],
+      "color": "#222827",
+      "roughness": 0.9
+    },
+    {
+      "name": "crate front recessed panel",
+      "shape": "panel",
+      "position": [0, 1.08, 0.84],
+      "rotation": [0, 0, 0],
+      "scale": [2.1, 1.18, 1],
+      "color": "#293130",
+      "roughness": 0.86
+    },
+    {
+      "name": "crate front inner plate",
+      "shape": "panel",
+      "position": [0, 1.08, 0.91],
+      "rotation": [0, 0, 0],
+      "scale": [1.62, 0.78, 1],
+      "color": "#68706a",
+      "roughness": 0.76
+    },
+    {
+      "name": "crate left diagonal brace",
+      "shape": "wedge",
+      "position": [-0.58, 1.1, 0.99],
+      "rotation": [0, 0, 42],
+      "scale": [0.88, 0.2, 0.12],
+      "color": "#d7a83d",
+      "roughness": 0.45
+    },
+    {
+      "name": "crate right diagonal brace",
+      "shape": "wedge",
+      "position": [0.58, 1.1, 0.99],
+      "rotation": [0, 0, -42],
+      "scale": [0.88, 0.2, 0.12],
+      "color": "#d7a83d",
+      "roughness": 0.45
+    },
+    {
+      "name": "crate left latch ring",
+      "shape": "ring",
+      "position": [-1.05, 1.72, 0.98],
+      "rotation": [0, 0, 0],
+      "scale": [0.34, 0.34, 0.14],
+      "color": "#171c1c",
+      "roughness": 0.72
+    },
+    {
+      "name": "crate right latch ring",
+      "shape": "ring",
+      "position": [1.05, 1.72, 0.98],
+      "rotation": [0, 0, 0],
+      "scale": [0.34, 0.34, 0.14],
+      "color": "#171c1c",
+      "roughness": 0.72
+    },
+    {
+      "name": "crate handle tube left",
+      "shape": "tube",
+      "position": [-1.46, 1.08, 0],
+      "rotation": [90, 0, 0],
+      "scale": [0.18, 1.38, 0.18],
+      "color": "#303839",
+      "roughness": 0.78
+    },
+    {
+      "name": "crate handle tube right",
+      "shape": "tube",
+      "position": [1.46, 1.08, 0],
+      "rotation": [90, 0, 0],
+      "scale": [0.18, 1.38, 0.18],
+      "color": "#303839",
+      "roughness": 0.78
+    },
+    {
+      "name": "crate vent stair",
+      "shape": "stair",
+      "position": [0, 0.27, 0.9],
+      "rotation": [0, 0, 0],
+      "scale": [1.7, 0.42, 0.25],
+      "color": "#161b1c",
+      "roughness": 0.9
+    },
+    {
+      "name": "crate cyan status strip",
+      "shape": "box",
+      "position": [0, 1.93, 0.9],
+      "rotation": [0, 0, 0],
+      "scale": [0.78, 0.08, 0.06],
+      "color": "#22e6dc",
+      "roughness": 0.15
+    },
+    {
+      "name": "crate skid left",
+      "shape": "box",
+      "position": [-0.72, 0.03, -0.38],
+      "rotation": [0, 0, 0],
+      "scale": [0.82, 0.18, 0.25],
+      "color": "#222827",
+      "roughness": 0.9
+    },
+    {
+      "name": "crate skid right",
+      "shape": "box",
+      "position": [0.72, 0.03, -0.38],
+      "rotation": [0, 0, 0],
+      "scale": [0.82, 0.18, 0.25],
+      "color": "#222827",
+      "roughness": 0.9
+    },
+    {
+      "name": "hover pod body",
+      "shape": "hollowBox",
+      "position": [5.7, 1.15, 0],
+      "rotation": [0, 0, 0],
+      "scale": [2.25, 1.42, 1.18],
+      "color": "#38484c",
+      "roughness": 0.76
+    },
+    {
+      "name": "hover pod cockpit ring",
+      "shape": "ring",
+      "position": [5.7, 1.38, 0.66],
+      "rotation": [0, 0, 0],
+      "scale": [0.86, 0.86, 0.16],
+      "color": "#1b2327",
+      "roughness": 0.7
+    },
+    {
+      "name": "hover pod cockpit glass",
+      "shape": "sphere",
+      "position": [5.7, 1.38, 0.72],
+      "rotation": [0, 0, 0],
+      "scale": [0.58, 0.36, 0.18],
+      "color": "#78d6e7",
+      "roughness": 0.18
+    },
+    {
+      "name": "hover pod left wing",
+      "shape": "wedge",
+      "position": [4.23, 1.08, -0.05],
+      "rotation": [0, 0, -12],
+      "scale": [1.05, 0.28, 0.78],
+      "color": "#4f6564",
+      "roughness": 0.74
+    },
+    {
+      "name": "hover pod right wing",
+      "shape": "wedge",
+      "position": [7.17, 1.08, -0.05],
+      "rotation": [0, 180, 12],
+      "scale": [1.05, 0.28, 0.78],
+      "color": "#4f6564",
+      "roughness": 0.74
+    },
+    {
+      "name": "hover pod curved top armor",
+      "shape": "curvedPanel",
+      "position": [5.7, 2.02, 0],
+      "rotation": [90, 0, 0],
+      "scale": [1.6, 0.6, 0.18],
+      "color": "#5d706d",
+      "roughness": 0.72
+    },
+    {
+      "name": "hover pod engine tube left",
+      "shape": "tube",
+      "position": [4.58, 0.62, -0.48],
+      "rotation": [90, 0, 0],
+      "scale": [0.28, 0.62, 0.28],
+      "color": "#1a2021",
+      "roughness": 0.85
+    },
+    {
+      "name": "hover pod engine tube right",
+      "shape": "tube",
+      "position": [6.82, 0.62, -0.48],
+      "rotation": [90, 0, 0],
+      "scale": [0.28, 0.62, 0.28],
+      "color": "#1a2021",
+      "roughness": 0.85
+    },
+    {
+      "name": "hover pod engine glow left",
+      "shape": "cylinder",
+      "position": [4.58, 0.62, -0.82],
+      "rotation": [90, 0, 0],
+      "scale": [0.18, 0.12, 0.18],
+      "color": "#22e6dc",
+      "roughness": 0.12
+    },
+    {
+      "name": "hover pod engine glow right",
+      "shape": "cylinder",
+      "position": [6.82, 0.62, -0.82],
+      "rotation": [90, 0, 0],
+      "scale": [0.18, 0.12, 0.18],
+      "color": "#22e6dc",
+      "roughness": 0.12
+    },
+    {
+      "name": "hover pod nose stair intake",
+      "shape": "stair",
+      "position": [5.7, 0.73, 0.72],
+      "rotation": [0, 0, 0],
+      "scale": [0.92, 0.32, 0.22],
+      "color": "#111718",
+      "roughness": 0.9
+    },
+    {
+      "name": "hover pod left antenna",
+      "shape": "tube",
+      "position": [4.95, 2.1, 0.08],
+      "rotation": [0, 0, 28],
+      "scale": [0.08, 0.72, 0.08],
+      "color": "#d7a83d",
+      "roughness": 0.45
+    },
+    {
+      "name": "hover pod right antenna",
+      "shape": "tube",
+      "position": [6.45, 2.1, 0.08],
+      "rotation": [0, 0, -28],
+      "scale": [0.08, 0.72, 0.08],
+      "color": "#d7a83d",
+      "roughness": 0.45
+    }
+  ]
+}

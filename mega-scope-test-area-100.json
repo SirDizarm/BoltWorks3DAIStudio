@@ -1,0 +1,860 @@
+{
+  "version": 1,
+  "title": "3D Model Studio Mega Scope Test Area",
+  "notes": [
+    "This scene is a 100-object showcase for the current tool.",
+    "It includes all primitive shape types, larger scene layout, rotated and scaled examples, top-remove and bottom-cut modifier examples, and compound assemblies made from multiple editable parts.",
+    "Use Save Views after framing to show another AI what the tool can build and how parts are organized."
+  ],
+  "objects": [
+    {
+      "name": "001 terrain plate",
+      "shape": "box",
+      "position": [0, -0.12, 0],
+      "scale": [44, 0.2, 30],
+      "color": "#202629",
+      "roughness": 0.88
+    },
+    {
+      "name": "002 north lane",
+      "shape": "box",
+      "position": [0, 0.01, -13.2],
+      "scale": [42, 0.04, 1.2],
+      "color": "#2d3539",
+      "roughness": 0.75
+    },
+    {
+      "name": "003 south lane",
+      "shape": "box",
+      "position": [0, 0.01, 13.2],
+      "scale": [42, 0.04, 1.2],
+      "color": "#2d3539",
+      "roughness": 0.75
+    },
+    {
+      "name": "004 west lane",
+      "shape": "box",
+      "position": [-20.2, 0.01, 0],
+      "scale": [1.2, 0.04, 27],
+      "color": "#2d3539",
+      "roughness": 0.75
+    },
+    {
+      "name": "005 east lane",
+      "shape": "box",
+      "position": [20.2, 0.01, 0],
+      "scale": [1.2, 0.04, 27],
+      "color": "#2d3539",
+      "roughness": 0.75
+    },
+    {
+      "name": "006 center plaza",
+      "shape": "box",
+      "position": [0, 0.03, 0],
+      "scale": [10, 0.06, 7],
+      "color": "#313b40",
+      "roughness": 0.72
+    },
+    {
+      "name": "007 cyan axis strip",
+      "shape": "box",
+      "position": [0, 0.04, 0],
+      "scale": [30, 0.03, 0.12],
+      "color": "#38d8d0",
+      "roughness": 0.28
+    },
+    {
+      "name": "008 amber axis strip",
+      "shape": "box",
+      "position": [0, 0.04, 0],
+      "scale": [0.12, 0.03, 22],
+      "color": "#d7a541",
+      "roughness": 0.34
+    },
+
+    {
+      "name": "009 primitive box",
+      "shape": "box",
+      "position": [-20, 0.62, -10],
+      "scale": [0.9, 0.9, 0.9],
+      "color": "#8f9da1",
+      "roughness": 0.63
+    },
+    {
+      "name": "010 primitive sphere",
+      "shape": "sphere",
+      "position": [-18, 0.62, -10],
+      "scale": [0.92, 0.92, 0.92],
+      "color": "#5dade2",
+      "roughness": 0.44
+    },
+    {
+      "name": "011 primitive cylinder",
+      "shape": "cylinder",
+      "position": [-16, 0.62, -10],
+      "scale": [0.88, 1.02, 0.88],
+      "color": "#48c9b0",
+      "roughness": 0.53
+    },
+    {
+      "name": "012 primitive cone",
+      "shape": "cone",
+      "position": [-14, 0.64, -10],
+      "scale": [0.92, 1.08, 0.92],
+      "color": "#ec7063",
+      "roughness": 0.5
+    },
+    {
+      "name": "013 primitive torus",
+      "shape": "torus",
+      "position": [-12, 0.68, -10],
+      "rotation": [90, 0, 0],
+      "scale": [0.96, 0.96, 0.96],
+      "color": "#f5b041",
+      "roughness": 0.43
+    },
+    {
+      "name": "014 primitive panel",
+      "shape": "panel",
+      "position": [-10, 0.62, -10],
+      "scale": [1.1, 1.0, 1],
+      "color": "#d6dbdf",
+      "roughness": 0.58
+    },
+    {
+      "name": "015 primitive wedge",
+      "shape": "wedge",
+      "position": [-8, 0.62, -10],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#52be80",
+      "roughness": 0.49
+    },
+    {
+      "name": "016 primitive hollow box",
+      "shape": "hollowBox",
+      "position": [-6, 0.62, -10],
+      "scale": [1.08, 1.08, 1.08],
+      "color": "#af7ac5",
+      "roughness": 0.5
+    },
+    {
+      "name": "017 primitive tube",
+      "shape": "tube",
+      "position": [-4, 0.62, -10],
+      "rotation": [0, 0, 90],
+      "scale": [0.92, 0.92, 0.92],
+      "color": "#45b39d",
+      "roughness": 0.43
+    },
+    {
+      "name": "018 primitive curved panel",
+      "shape": "curvedPanel",
+      "position": [-2, 0.62, -10],
+      "scale": [1.02, 1.02, 1.02],
+      "color": "#76d7c4",
+      "roughness": 0.46
+    },
+    {
+      "name": "019 primitive ring",
+      "shape": "ring",
+      "position": [0, 0.66, -10],
+      "rotation": [90, 0, 0],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#f7dc6f",
+      "roughness": 0.48
+    },
+    {
+      "name": "020 primitive arch",
+      "shape": "arch",
+      "position": [2, 0.74, -10],
+      "scale": [1.08, 1.08, 1.08],
+      "color": "#58d68d",
+      "roughness": 0.52
+    },
+    {
+      "name": "021 primitive hemisphere",
+      "shape": "hemisphere",
+      "position": [4, 0.22, -10],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#85c1e9",
+      "roughness": 0.44
+    },
+    {
+      "name": "022 primitive dome",
+      "shape": "dome",
+      "position": [6, 0.22, -10],
+      "scale": [1.08, 1.0, 1.08],
+      "color": "#aed6f1",
+      "roughness": 0.44
+    },
+    {
+      "name": "023 primitive capsule",
+      "shape": "capsule",
+      "position": [8, 0.86, -10],
+      "scale": [0.74, 1.22, 0.74],
+      "color": "#f1948a",
+      "roughness": 0.45
+    },
+    {
+      "name": "024 primitive pyramid",
+      "shape": "pyramid",
+      "position": [10, 0.62, -10],
+      "scale": [1.08, 1.08, 1.08],
+      "color": "#e59866",
+      "roughness": 0.51
+    },
+    {
+      "name": "025 primitive prism",
+      "shape": "prism",
+      "position": [12, 0.66, -10],
+      "rotation": [0, 18, 0],
+      "scale": [1.0, 1.0, 1.0],
+      "color": "#bb8fce",
+      "roughness": 0.5
+    },
+    {
+      "name": "026 primitive tetrahedron",
+      "shape": "tetrahedron",
+      "position": [14, 0.64, -10],
+      "scale": [1.08, 1.08, 1.08],
+      "color": "#f8c471",
+      "roughness": 0.49
+    },
+    {
+      "name": "027 primitive pyramid frustum",
+      "shape": "pyramidFrustum",
+      "position": [16, 0.62, -10],
+      "scale": [1.16, 1.16, 1.16],
+      "color": "#d7dbdd",
+      "roughness": 0.56
+    },
+    {
+      "name": "028 primitive heart",
+      "shape": "heart",
+      "position": [18, 0.68, -10],
+      "scale": [1.08, 1.08, 1.08],
+      "color": "#e74c3c",
+      "roughness": 0.43
+    },
+    {
+      "name": "029 primitive stair",
+      "shape": "stair",
+      "position": [20, 0.62, -10],
+      "scale": [1.08, 1.08, 1.08],
+      "color": "#98a4a6",
+      "roughness": 0.7
+    },
+
+    {
+      "name": "030 rotate wedge 45",
+      "shape": "wedge",
+      "position": [-18, 0.62, -4],
+      "rotation": [0, 45, 0],
+      "scale": [1.15, 1.0, 1.15],
+      "color": "#48c9b0",
+      "roughness": 0.46
+    },
+    {
+      "name": "031 tall scale cube",
+      "shape": "box",
+      "position": [-15, 1.02, -4],
+      "scale": [0.64, 1.9, 0.64],
+      "color": "#7d8a8d",
+      "roughness": 0.68
+    },
+    {
+      "name": "032 wide rotated panel",
+      "shape": "panel",
+      "position": [-12, 0.64, -4],
+      "rotation": [0, 32, 0],
+      "scale": [1.7, 1.0, 1.0],
+      "color": "#e5e8e8",
+      "roughness": 0.58
+    },
+    {
+      "name": "033 cone top remove 50 percent",
+      "shape": "cone",
+      "position": [-9, 0.64, -4],
+      "scale": [1.15, 1.22, 1.15],
+      "color": "#f5b041",
+      "roughness": 0.45,
+      "top-remove": "50%"
+    },
+    {
+      "name": "034 pyramid top remove 45 percent",
+      "shape": "pyramid",
+      "position": [-6, 0.64, -4],
+      "scale": [1.2, 1.2, 1.2],
+      "color": "#e67e22",
+      "roughness": 0.49,
+      "top-remove": "45%"
+    },
+    {
+      "name": "035 capsule bottom cut 35 percent",
+      "shape": "capsule",
+      "position": [-3, 0.86, -4],
+      "scale": [0.82, 1.3, 0.82],
+      "color": "#ec7063",
+      "roughness": 0.45,
+      "bottom-cut": "35%"
+    },
+    {
+      "name": "036 sphere sliced top and bottom",
+      "shape": "sphere",
+      "position": [0, 0.66, -4],
+      "scale": [1.2, 1.2, 1.2],
+      "color": "#5dade2",
+      "roughness": 0.44,
+      "cuts": {
+        "top": "25%",
+        "bottom": "25%"
+      }
+    },
+    {
+      "name": "037 cylinder top remove 30 percent",
+      "shape": "cylinder",
+      "position": [3, 0.66, -4],
+      "scale": [1.02, 1.18, 1.02],
+      "color": "#16a085",
+      "roughness": 0.5,
+      "top-remove": "30%"
+    },
+    {
+      "name": "038 prism rotate and scale",
+      "shape": "prism",
+      "position": [6, 0.68, -4],
+      "rotation": [0, 48, 0],
+      "scale": [1.3, 0.88, 0.9],
+      "color": "#a569bd",
+      "roughness": 0.5
+    },
+    {
+      "name": "039 dome bottom cut 20 percent",
+      "shape": "dome",
+      "position": [9, 0.24, -4],
+      "scale": [1.2, 1.0, 1.2],
+      "color": "#aed6f1",
+      "roughness": 0.44,
+      "bottom-cut": "20%"
+    },
+    {
+      "name": "040 heart rotated showcase",
+      "shape": "heart",
+      "position": [12, 0.68, -4],
+      "rotation": [0, 35, 0],
+      "scale": [1.18, 1.18, 1.18],
+      "color": "#d63031",
+      "roughness": 0.42
+    },
+    {
+      "name": "041 enlarged ring rotated",
+      "shape": "ring",
+      "position": [15, 0.72, -4],
+      "rotation": [90, 30, 0],
+      "scale": [1.34, 1.34, 1.34],
+      "color": "#f1c40f",
+      "roughness": 0.45
+    },
+
+    {
+      "name": "042 house a floor",
+      "shape": "box",
+      "position": [-15, 0.22, 7],
+      "scale": [2.3, 0.2, 2.1],
+      "color": "#6e5a49",
+      "roughness": 0.72
+    },
+    {
+      "name": "043 house a wall body",
+      "shape": "box",
+      "position": [-15, 1.15, 7],
+      "scale": [2.0, 1.5, 1.8],
+      "color": "#d8d0c4",
+      "roughness": 0.83
+    },
+    {
+      "name": "044 house a roof left",
+      "shape": "wedge",
+      "position": [-15.5, 2.15, 7],
+      "rotation": [0, 180, 0],
+      "scale": [1.2, 0.7, 2.0],
+      "color": "#944d3a",
+      "roughness": 0.68
+    },
+    {
+      "name": "045 house a roof right",
+      "shape": "wedge",
+      "position": [-14.5, 2.15, 7],
+      "rotation": [0, 0, 0],
+      "scale": [1.2, 0.7, 2.0],
+      "color": "#944d3a",
+      "roughness": 0.68
+    },
+    {
+      "name": "046 house a door",
+      "shape": "panel",
+      "position": [-15, 0.92, 7.93],
+      "scale": [0.48, 0.92, 1.0],
+      "color": "#7d5a3c",
+      "roughness": 0.73
+    },
+    {
+      "name": "047 house a window left",
+      "shape": "box",
+      "position": [-15.6, 1.32, 7.94],
+      "scale": [0.36, 0.36, 0.08],
+      "color": "#8fd9ff",
+      "roughness": 0.22
+    },
+    {
+      "name": "048 house a window right",
+      "shape": "box",
+      "position": [-14.4, 1.32, 7.94],
+      "scale": [0.36, 0.36, 0.08],
+      "color": "#8fd9ff",
+      "roughness": 0.22
+    },
+    {
+      "name": "049 house a chimney",
+      "shape": "cylinder",
+      "position": [-14.1, 2.85, 7.25],
+      "scale": [0.2, 0.7, 0.2],
+      "color": "#8a8a8a",
+      "roughness": 0.8
+    },
+
+    {
+      "name": "050 house b floor",
+      "shape": "box",
+      "position": [-9, 0.22, 7],
+      "scale": [2.5, 0.2, 2.0],
+      "color": "#6b665f",
+      "roughness": 0.72
+    },
+    {
+      "name": "051 house b wall body",
+      "shape": "box",
+      "position": [-9, 1.1, 7],
+      "scale": [2.1, 1.42, 1.72],
+      "color": "#cec6b7",
+      "roughness": 0.82
+    },
+    {
+      "name": "052 house b roof left",
+      "shape": "wedge",
+      "position": [-9.55, 2.05, 7],
+      "rotation": [0, 180, 0],
+      "scale": [1.25, 0.72, 1.94],
+      "color": "#5f6163",
+      "roughness": 0.76
+    },
+    {
+      "name": "053 house b roof right",
+      "shape": "wedge",
+      "position": [-8.45, 2.05, 7],
+      "rotation": [0, 0, 0],
+      "scale": [1.25, 0.72, 1.94],
+      "color": "#5f6163",
+      "roughness": 0.76
+    },
+    {
+      "name": "054 house b door",
+      "shape": "box",
+      "position": [-9.55, 0.88, 7.9],
+      "scale": [0.42, 0.9, 0.12],
+      "color": "#72553a",
+      "roughness": 0.72
+    },
+    {
+      "name": "055 house b window left",
+      "shape": "box",
+      "position": [-8.6, 1.34, 7.92],
+      "scale": [0.42, 0.34, 0.08],
+      "color": "#b6f2ff",
+      "roughness": 0.18
+    },
+    {
+      "name": "056 house b window right",
+      "shape": "box",
+      "position": [-9.35, 1.34, 7.92],
+      "scale": [0.42, 0.34, 0.08],
+      "color": "#b6f2ff",
+      "roughness": 0.18
+    },
+    {
+      "name": "057 house b porch stair",
+      "shape": "stair",
+      "position": [-9.55, 0.16, 8.72],
+      "rotation": [0, 180, 0],
+      "scale": [0.7, 0.3, 0.45],
+      "color": "#90949a",
+      "roughness": 0.8
+    },
+
+    {
+      "name": "058 market base",
+      "shape": "box",
+      "position": [-3, 0.18, 7],
+      "scale": [2.9, 0.14, 2.3],
+      "color": "#655847",
+      "roughness": 0.74
+    },
+    {
+      "name": "059 market post front left",
+      "shape": "cylinder",
+      "position": [-4.1, 1.1, 8.0],
+      "scale": [0.14, 1.5, 0.14],
+      "color": "#7a6140",
+      "roughness": 0.71
+    },
+    {
+      "name": "060 market post front right",
+      "shape": "cylinder",
+      "position": [-1.9, 1.1, 8.0],
+      "scale": [0.14, 1.5, 0.14],
+      "color": "#7a6140",
+      "roughness": 0.71
+    },
+    {
+      "name": "061 market post rear left",
+      "shape": "cylinder",
+      "position": [-4.1, 1.1, 6.0],
+      "scale": [0.14, 1.5, 0.14],
+      "color": "#7a6140",
+      "roughness": 0.71
+    },
+    {
+      "name": "062 market post rear right",
+      "shape": "cylinder",
+      "position": [-1.9, 1.1, 6.0],
+      "scale": [0.14, 1.5, 0.14],
+      "color": "#7a6140",
+      "roughness": 0.71
+    },
+    {
+      "name": "063 market canopy panel",
+      "shape": "panel",
+      "position": [-3, 2.12, 7],
+      "scale": [2.6, 1.7, 1.0],
+      "rotation": [0, 0, 0],
+      "color": "#d9844a",
+      "roughness": 0.63
+    },
+    {
+      "name": "064 market canopy wedge left",
+      "shape": "wedge",
+      "position": [-3.92, 2.12, 7],
+      "rotation": [0, 180, 0],
+      "scale": [0.52, 0.44, 1.7],
+      "color": "#b96135",
+      "roughness": 0.62
+    },
+    {
+      "name": "065 market canopy wedge right",
+      "shape": "wedge",
+      "position": [-2.08, 2.12, 7],
+      "rotation": [0, 0, 0],
+      "scale": [0.52, 0.44, 1.7],
+      "color": "#b96135",
+      "roughness": 0.62
+    },
+
+    {
+      "name": "066 airlock arch",
+      "shape": "arch",
+      "position": [9, 0.78, 7],
+      "scale": [1.5, 1.55, 1.25],
+      "color": "#52636a",
+      "roughness": 0.62
+    },
+    {
+      "name": "067 airlock top cap",
+      "shape": "box",
+      "position": [9, 2.7, 7],
+      "scale": [2.4, 0.32, 0.8],
+      "color": "#364248",
+      "roughness": 0.68
+    },
+    {
+      "name": "068 airlock threshold",
+      "shape": "box",
+      "position": [9, 0.08, 7],
+      "scale": [2.15, 0.12, 0.7],
+      "color": "#2d3a3f",
+      "roughness": 0.72
+    },
+    {
+      "name": "069 airlock left light",
+      "shape": "box",
+      "position": [8.05, 1.48, 7.56],
+      "scale": [0.14, 0.85, 0.06],
+      "color": "#20d2e0",
+      "roughness": 0.2
+    },
+    {
+      "name": "070 airlock right light",
+      "shape": "box",
+      "position": [9.95, 1.48, 7.56],
+      "scale": [0.14, 0.85, 0.06],
+      "color": "#20d2e0",
+      "roughness": 0.2
+    },
+    {
+      "name": "071 airlock left side rail",
+      "shape": "box",
+      "position": [8.05, 0.98, 6.42],
+      "scale": [0.18, 1.25, 0.12],
+      "color": "#2e3b40",
+      "roughness": 0.72
+    },
+    {
+      "name": "072 airlock right side rail",
+      "shape": "box",
+      "position": [9.95, 0.98, 6.42],
+      "scale": [0.18, 1.25, 0.12],
+      "color": "#2e3b40",
+      "roughness": 0.72
+    },
+    {
+      "name": "073 airlock halo ring",
+      "shape": "ring",
+      "position": [9, 1.54, 6.12],
+      "rotation": [90, 0, 0],
+      "scale": [0.78, 0.78, 0.78],
+      "color": "#f1c40f",
+      "roughness": 0.42
+    },
+
+    {
+      "name": "074 crate base",
+      "shape": "box",
+      "position": [15, 0.58, 7],
+      "scale": [1.8, 1.0, 1.4],
+      "color": "#5d666f",
+      "roughness": 0.68
+    },
+    {
+      "name": "075 crate lid",
+      "shape": "panel",
+      "position": [15, 1.08, 7],
+      "scale": [1.62, 1.22, 1.0],
+      "color": "#69737c",
+      "roughness": 0.62
+    },
+    {
+      "name": "076 crate left brace",
+      "shape": "wedge",
+      "position": [14.45, 0.48, 7.64],
+      "rotation": [0, 0, 0],
+      "scale": [0.62, 0.52, 0.18],
+      "color": "#d1a640",
+      "roughness": 0.45
+    },
+    {
+      "name": "077 crate right brace",
+      "shape": "wedge",
+      "position": [15.55, 0.48, 7.64],
+      "rotation": [0, 180, 0],
+      "scale": [0.62, 0.52, 0.18],
+      "color": "#d1a640",
+      "roughness": 0.45
+    },
+    {
+      "name": "078 crate tube latch",
+      "shape": "tube",
+      "position": [15, 0.6, 7.8],
+      "rotation": [0, 0, 90],
+      "scale": [0.3, 0.8, 0.3],
+      "color": "#87939b",
+      "roughness": 0.48
+    },
+    {
+      "name": "079 crate ring handle",
+      "shape": "ring",
+      "position": [15, 0.84, 7.78],
+      "rotation": [90, 0, 0],
+      "scale": [0.34, 0.34, 0.34],
+      "color": "#d5d8dc",
+      "roughness": 0.35
+    },
+    {
+      "name": "080 crate top module",
+      "shape": "box",
+      "position": [15, 1.44, 7],
+      "scale": [0.72, 0.22, 0.72],
+      "color": "#3bd6cf",
+      "roughness": 0.2
+    },
+    {
+      "name": "081 crate top cap frustum",
+      "shape": "pyramidFrustum",
+      "position": [15, 1.76, 7],
+      "scale": [0.48, 0.42, 0.48],
+      "color": "#bac4c9",
+      "roughness": 0.52
+    },
+
+    {
+      "name": "082 drone core",
+      "shape": "box",
+      "position": [21, 0.56, 7],
+      "scale": [1.18, 0.5, 1.0],
+      "color": "#4e5d63",
+      "roughness": 0.62
+    },
+    {
+      "name": "083 drone left wing",
+      "shape": "wedge",
+      "position": [20.1, 0.48, 7],
+      "rotation": [0, 270, 0],
+      "scale": [1.1, 0.22, 0.68],
+      "color": "#74868f",
+      "roughness": 0.58
+    },
+    {
+      "name": "084 drone right wing",
+      "shape": "wedge",
+      "position": [21.9, 0.48, 7],
+      "rotation": [0, 90, 0],
+      "scale": [1.1, 0.22, 0.68],
+      "color": "#74868f",
+      "roughness": 0.58
+    },
+    {
+      "name": "085 drone nose prism",
+      "shape": "prism",
+      "position": [21, 0.56, 7.82],
+      "rotation": [0, 180, 90],
+      "scale": [0.42, 0.42, 0.7],
+      "color": "#aeb6bf",
+      "roughness": 0.48
+    },
+    {
+      "name": "086 drone rear capsule",
+      "shape": "capsule",
+      "position": [21, 0.58, 6.14],
+      "rotation": [90, 0, 0],
+      "scale": [0.22, 0.52, 0.22],
+      "color": "#66747a",
+      "roughness": 0.6
+    },
+    {
+      "name": "087 drone top dome",
+      "shape": "dome",
+      "position": [21, 0.84, 7],
+      "scale": [0.5, 0.5, 0.5],
+      "color": "#9be7ff",
+      "roughness": 0.18
+    },
+    {
+      "name": "088 drone left thruster",
+      "shape": "cylinder",
+      "position": [20.32, 0.42, 6.32],
+      "rotation": [90, 0, 0],
+      "scale": [0.18, 0.5, 0.18],
+      "color": "#18c1ff",
+      "roughness": 0.22
+    },
+    {
+      "name": "089 drone right thruster",
+      "shape": "cylinder",
+      "position": [21.68, 0.42, 6.32],
+      "rotation": [90, 0, 0],
+      "scale": [0.18, 0.5, 0.18],
+      "color": "#18c1ff",
+      "roughness": 0.22
+    },
+
+    {
+      "name": "090 mushroom one stem",
+      "shape": "capsule",
+      "position": [-10, 0.78, 14],
+      "scale": [0.26, 1.2, 0.26],
+      "color": "#d4b483",
+      "roughness": 0.7
+    },
+    {
+      "name": "091 mushroom one cap",
+      "shape": "dome",
+      "position": [-10, 1.46, 14],
+      "scale": [1.3, 1.0, 1.3],
+      "color": "#d35454",
+      "roughness": 0.52
+    },
+    {
+      "name": "092 mushroom two stem",
+      "shape": "cylinder",
+      "position": [-7, 0.72, 14],
+      "scale": [0.26, 1.0, 0.26],
+      "color": "#d8c18e",
+      "roughness": 0.68
+    },
+    {
+      "name": "093 mushroom two cap",
+      "shape": "hemisphere",
+      "position": [-7, 1.1, 14],
+      "scale": [1.12, 1.12, 1.12],
+      "color": "#bf4b4b",
+      "roughness": 0.54
+    },
+    {
+      "name": "094 bridge deck",
+      "shape": "box",
+      "position": [-1, 0.34, 14],
+      "scale": [3.5, 0.18, 1.3],
+      "color": "#6f7b84",
+      "roughness": 0.7
+    },
+    {
+      "name": "095 bridge stair west",
+      "shape": "stair",
+      "position": [-2.55, 0.16, 14],
+      "rotation": [0, 90, 0],
+      "scale": [0.74, 0.34, 0.52],
+      "color": "#8b939b",
+      "roughness": 0.76
+    },
+    {
+      "name": "096 bridge stair east",
+      "shape": "stair",
+      "position": [0.55, 0.16, 14],
+      "rotation": [0, 270, 0],
+      "scale": [0.74, 0.34, 0.52],
+      "color": "#8b939b",
+      "roughness": 0.76
+    },
+    {
+      "name": "097 hollow tower",
+      "shape": "hollowBox",
+      "position": [6, 1.18, 14],
+      "scale": [1.45, 2.25, 1.45],
+      "color": "#5c6d73",
+      "roughness": 0.62
+    },
+    {
+      "name": "098 tower crown ring",
+      "shape": "ring",
+      "position": [6, 2.38, 14],
+      "rotation": [90, 0, 0],
+      "scale": [0.9, 0.9, 0.9],
+      "color": "#38d8d0",
+      "roughness": 0.26
+    },
+    {
+      "name": "099 beacon body",
+      "shape": "box",
+      "position": [11, 0.7, 14],
+      "scale": [0.9, 1.12, 0.9],
+      "color": "#56636a",
+      "roughness": 0.66
+    },
+    {
+      "name": "100 beacon tip",
+      "shape": "tetrahedron",
+      "position": [11, 1.6, 14],
+      "scale": [0.48, 0.48, 0.48],
+      "color": "#6cf2ff",
+      "roughness": 0.2
+    }
+  ]
+}

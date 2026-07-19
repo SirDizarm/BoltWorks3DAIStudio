@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Machine-readable rig exchange contract for BoltWorks 3D AI Studio.">
+  <title>BoltWorks AI Rig Exchange</title>
+  <style>
+    :root { color-scheme: dark; --ink:#e8edf5; --muted:#99a5b6; --red:#ff3154; --blue:#38a8ff; --line:#263140; --panel:#0d131c; }
+    * { box-sizing:border-box; }
+    body { margin:0; min-height:100vh; color:var(--ink); background:radial-gradient(circle at 20% 0%,#172439 0,transparent 34rem),linear-gradient(145deg,#05080d,#0a0f17 70%); font:15px/1.6 "Segoe UI",sans-serif; }
+    main { width:min(1120px,calc(100% - 32px)); margin:auto; padding:54px 0 80px; }
+    header { border:1px solid var(--line); border-top-color:var(--red); padding:32px; background:linear-gradient(135deg,rgba(255,49,84,.08),rgba(56,168,255,.04)); box-shadow:0 28px 80px rgba(0,0,0,.35); }
+    .eyebrow { color:var(--red); letter-spacing:.18em; text-transform:uppercase; font-weight:700; }
+    h1 { margin:.3rem 0 .5rem; font-size:clamp(2rem,5vw,4.4rem); line-height:1; letter-spacing:-.04em; }
+    h2 { margin:0 0 .5rem; font-size:1.15rem; }
+    p { color:var(--muted); max-width:74ch; }
+    .contract { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin:22px 0 0; }
+    .contract div,.card { border:1px solid var(--line); background:rgba(13,19,28,.86); padding:18px; }
+    .contract strong { display:block; color:var(--blue); font-size:1.25rem; }
+    .grid { display:grid; grid-template-columns:repeat(2,1fr); gap:16px; margin-top:20px; }
+    a { color:#73c3ff; text-decoration:none; }
+    a:hover { color:white; }
+    code { color:#ff9caf; }
+    ol { color:var(--muted); padding-left:1.25rem; }
+    .status { display:inline-block; margin-top:16px; padding:5px 10px; border:1px solid #64477a; color:#c48aff; background:#1d1229; text-transform:uppercase; letter-spacing:.12em; font-size:.75rem; }
+    footer { margin-top:24px; color:#6f7b8d; }
+    @media (max-width:760px) { .contract,.grid { grid-template-columns:1fr; } main { width:min(100% - 20px,1120px); padding-top:20px; } header { padding:22px; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">BoltWorks 3D AI Studio</div>
+    <h1>AI Rig Exchange</h1>
+    <p>A public contract for multimodal models that inspect a BoltWorks scene, review all saved camera views, and return an editable bone hierarchy without putting the character underground.</p>
+    <span class="status">Foundation: bone-editor migration in progress</span>
+    <section class="contract" aria-label="Coordinate contract">
+      <div><strong>Y = 0</strong>Ground plane</div>
+      <div><strong>Y up</strong>Vertical axis</div>
+      <div><strong>World</strong>Preferred bone space</div>
+      <div><strong>Radians</strong>XYZ rotations</div>
+    </section>
+  </header>
+
+  <section class="grid">
+    <article class="card">
+      <h2>Machine entry points</h2>
+      <p><a href="manifest.json">manifest.json</a><br><a href="request.schema.json">request.schema.json</a><br><a href="response.schema.json">response.schema.json</a><br><a href="rig.schema.json">rig.schema.json</a></p>
+    </article>
+    <article class="card">
+      <h2>Guides and example</h2>
+      <p><a href="rigging-guide.md">Rigging guide</a><br><a href="coordinate-system.md">Coordinate system</a><br><a href="examples/humanoid-grounded.rig.json">Grounded humanoid rig JSON</a></p>
+    </article>
+    <article class="card">
+      <h2>Required AI package</h2>
+      <ol><li>Editable scene JSON</li><li>Front and back views</li><li>Left and right views</li><li>Top and isometric views</li><li>Correction notes from the user</li></ol>
+    </article>
+    <article class="card">
+      <h2>Grounding rule</h2>
+      <p>The grid is mathematical ground at <code>Y = 0</code>. A standing rig must return explicit left and right contact bones at exactly zero and verify them against the six images.</p>
+    </article>
+    <article class="card">
+      <h2>What this enables</h2>
+      <p>A user can send this URL, their scene JSON, and Save Views images to a vision-capable language model. The response has stable IDs and can be corrected over repeated passes.</p>
+    </article>
+    <article class="card">
+      <h2>Scene Capture next</h2>
+      <p>The next module will keep physical ground at zero while allowing a textured ground plane or model, a color/image/scene background, and lighting presets that affect the complete capture.</p>
+    </article>
+  </section>
+  <footer>Built for humans and AI to inspect the same coordinate contract.</footer>
+</main>
+</body>
+</html>
