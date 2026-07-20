@@ -1147,10 +1147,10 @@
       event.__boltworksSectionHandled = true;
     }, true);
   </script>
-  <div class="experimental-notice" role="status"><strong>v47.3 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+  <div class="experimental-notice" role="status"><strong>v47.4 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47.3 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47.4 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -1657,8 +1657,8 @@
   <script type="importmap">
     {
       "imports": {
-        "three": "./node_modules/three/build/three.module.js",
-        "three/addons/": "./node_modules/three/examples/jsm/"
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"
       }
     }
   </script>
@@ -1670,7 +1670,7 @@
     import { MTLLoader } from "three/addons/loaders/MTLLoader.js";
     import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
     import { OBJExporter } from "three/addons/exporters/OBJExporter.js";
-    import { createMeshFactory } from "./MeshFactory.js";
+  import { createMeshFactory } from "./MeshFactory.js?v=47.4";
 
     const pluginRegistry = Object.freeze({
       imageReliefMeshLab: Object.freeze({ id: "image-relief-mesh-lab", enabled: false }),
