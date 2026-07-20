@@ -1147,10 +1147,10 @@
       event.__boltworksSectionHandled = true;
     }, true);
   </script>
-  <div class="experimental-notice" role="status"><strong>v47.4 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+  <div class="experimental-notice" role="status"><strong>v47.5 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47.4 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47.5 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -1741,11 +1741,11 @@
 
     const grid = new THREE.GridHelper(18, 18, 0x7f929c, 0x34424a);
     grid.visible = true;
-    grid.position.y = 0.015;
-    grid.renderOrder = 1000;
+    grid.position.y = 0;
+    grid.renderOrder = -1000;
     grid.material.transparent = true;
     grid.material.opacity = 0.9;
-    grid.material.depthTest = false;
+    grid.material.depthTest = true;
     grid.material.depthWrite = false;
     scene.add(grid);
     const gridLabelGroup = new THREE.Group();
@@ -2840,20 +2840,6 @@
       if (!section || !toggle) return;
       setSectionCollapsed(section, toggle, !section.classList.contains("collapsed"));
     }
-
-    // Handle every collapsible panel from one reliable capture listener. This
-    // keeps Utilities, Meshes and future sections working even when their
-    // individual setup order changes.
-    document.addEventListener("click", event => {
-      const toggle = event.target.closest?.(".section-header");
-      if (event.__boltworksSectionHandled) return;
-      if (!toggle) return;
-      const section = toggle.closest(".section");
-      if (!section) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      toggleSection(section, toggle);
-    }, true);
 
     function syncSpotLightRig() {
       const showGuides = els.showLightGuidesInput?.checked ?? false;
@@ -13767,9 +13753,6 @@ end
       setHiddenTargets(objects, false);
       log(`Showed all ${objects.length} mesh part${objects.length === 1 ? "" : "s"}.`);
     });
-    els.addMeshToggle.addEventListener("click", () => toggleSection(els.addMeshSection, els.addMeshToggle));
-    els.inspectorToggle.addEventListener("click", () => toggleSection(els.inspectorSection, els.inspectorToggle));
-    els.utilitiesToggle.addEventListener("click", () => toggleSection(els.utilitiesSection, els.utilitiesToggle));
     if (els.imageReliefMeshPlugin) {
       els.imageReliefMeshPlugin.hidden = !pluginRegistry.imageReliefMeshLab.enabled;
     }
@@ -13811,7 +13794,6 @@ end
     frontBoneCanvas.addEventListener("pointercancel", endBoneDrag);
     sideBoneCanvas.addEventListener("pointercancel", endBoneDrag);
     restoreBoneRig({ bones: [], showGuides: true });
-    els.statusToggle.addEventListener("click", () => toggleSection(els.statusSection, els.statusToggle));
     document.querySelector("#groupBtn").addEventListener("click", groupCheckedParts);
     document.querySelector("#ungroupBtn").addEventListener("click", ungroupParts);
     document.querySelector("#mergeMeshBtn").addEventListener("click", mergeCheckedMeshes);
