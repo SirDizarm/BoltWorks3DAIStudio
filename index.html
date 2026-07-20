@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoltWorks 3D AI Studio v47 Experimental</title>
-  <meta name="application-version" content="v47 bone-rig experimental" />
+  <title>BoltWorks 3D AI Studio v47.1 Experimental</title>
+  <meta name="application-version" content="v47.1 bone-rig experimental" />
   <link rel="icon" type="image/png" href="boltworks-logo.png" />
   <style>
     :root {
@@ -127,6 +127,22 @@
 
     .toolbar-group.toolbar-hidden {
       display: none;
+    }
+
+    /* Keep toolbar visibility usable even if another experimental script fails. */
+    body:has(#toggleToolbarTransform:not(:checked)) #toolbarTransformGroup,
+    body:has(#toggleToolbarMirror:not(:checked)) #toolbarMirrorGroup,
+    body:has(#toggleToolbarSelectionTools:not(:checked)) #toolbarSelectionToolsGroup,
+    body:has(#toggleToolbarLineTools:not(:checked)) #toolbarLineToolsGroup,
+    body:has(#toggleToolbarMarkerTools:not(:checked)) #toolbarMarkerToolsGroup,
+    body:has(#toggleToolbarTriEditor:not(:checked)) #toolbarTriEditorGroup,
+    body:has(#toggleToolbarMiscTools:not(:checked)) #toolbarMiscToolsGroup,
+    body:has(#toggleToolbarFaceEdit:not(:checked)) #toolbarFaceEditGroup,
+    body:has(#toggleToolbarScene:not(:checked)) #toolbarSceneGroup,
+    body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup,
+    body:has(#toggleToolbarViews:not(:checked)) #toolbarViewsGroup,
+    body:has(#toggleToolbarImportExport:not(:checked)) #toolbarImportExportGroup {
+      display: none !important;
     }
 
     .toolbar-picker-group {
@@ -1118,10 +1134,10 @@
   </style>
 </head>
 <body>
-  <div class="experimental-notice" role="status"><strong>v47 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+  <div class="experimental-notice" role="status"><strong>v47.1 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47.1 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>

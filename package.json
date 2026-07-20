@@ -1,6 +1,6 @@
 {
   "name": "boltworks-3d-ai-studio",
-  "version": "0.47.0",
+  "version": "0.47.1",
   "private": true,
   "type": "module",
   "scripts": {

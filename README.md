@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v47**, introducing the experimental bone-placement and early rig workflow.
+Current preview version: **v47.1**, introducing the experimental bone-placement and early rig workflow. Toolbar visibility remains available independently of the experimental runtime.
 
 ## Local development source
 
