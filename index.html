@@ -3,8 +3,9 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoltWorks 3D AI Studio - Experimental Preview</title>
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2340c7a5'/%3E%3Cstop offset='100%25' stop-color='%23e1b14b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='6' y='6' width='52' height='52' rx='12' fill='url(%23g)'/%3E%3Cpath d='M18 23h12c6.5 0 11 3.7 11 9.3 0 5.8-4.8 9.7-11.8 9.7H18zm9.8 21.5c8.7 0 15.7-4.8 15.7-12.2 0-7.2-6.2-11.8-15.1-11.8H15v24z' fill='%2307110e'/%3E%3Cpath d='M33.5 22.5h16v4h-16zm0 8.5h12.5v4H33.5zm0 8.5h16v4h-16z' fill='%2307110e' opacity='.9'/%3E%3C/svg%3E" />
+  <title>BoltWorks 3D AI Studio v47 Experimental</title>
+  <meta name="application-version" content="v47 bone-rig experimental" />
+  <link rel="icon" type="image/png" href="boltworks-logo.png" />
   <style>
     :root {
       color-scheme: dark;
@@ -108,15 +109,11 @@
     }
 
     .mark {
-      width: 26px;
-      height: 26px;
-      border-radius: 6px;
-      background:
-        linear-gradient(135deg, rgba(64,199,165,1), rgba(225,177,75,1));
-      display: grid;
-      place-items: center;
-      color: #07110e;
-      font-size: 15px;
+      width: 34px;
+      height: 34px;
+      object-fit: contain;
+      display: block;
+      filter: drop-shadow(0 0 7px rgba(239, 42, 61, .28));
     }
 
     .toolbar-group {
@@ -1120,10 +1117,11 @@
     }
   </style>
 </head>
-<body>`r`n  <div class="experimental-notice" role="status"><strong>Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+<body>
+  <div class="experimental-notice" role="status"><strong>v47 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
   <main class="app">
     <header class="top">
-      <div class="brand"><div class="mark">3D</div><span>3D Model Studio</span></div>
+      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -2808,9 +2806,9 @@
     }
 
     function syncSpotLightRig() {
-      const showGuides = els.showLightGuidesInput?.checked ?? true;
-      const enablePrimary = els.enablePrimaryLightInput?.checked ?? true;
-      const enableMirror = els.enableMirrorLightInput?.checked ?? true;
+      const showGuides = els.showLightGuidesInput?.checked ?? false;
+      const enablePrimary = els.enablePrimaryLightInput?.checked ?? false;
+      const enableMirror = els.enableMirrorLightInput?.checked ?? false;
       const posX = Number(els.lightPosXInput?.value) || -6;
       const posY = Number(els.lightPosYInput?.value) || 5;
       const posZ = Number(els.lightPosZInput?.value) || 6;

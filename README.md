@@ -2,6 +2,8 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
+Current preview version: **v47**, introducing the experimental bone-placement and early rig workflow.
+
 ## Local development source
 
 `D:\Game\BoltWorks3DAIStudio` is the canonical local development repository. Make 3D Studio and bone/rig changes here, then commit and push this repository to publish the GitHub Pages version.
