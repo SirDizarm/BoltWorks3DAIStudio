@@ -1726,7 +1726,9 @@
     });
     scene.add(transform);
 
-    const grid = new THREE.GridHelper(18, 18, 0x637077, 0x273039);
+    const grid = new THREE.GridHelper(18, 18, 0x7f929c, 0x34424a);
+    grid.visible = true;
+    grid.renderOrder = -1000;
     scene.add(grid);
     const gridLabelGroup = new THREE.Group();
     gridLabelGroup.name = "grid direction labels";
@@ -2820,6 +2822,19 @@
       if (!section || !toggle) return;
       setSectionCollapsed(section, toggle, !section.classList.contains("collapsed"));
     }
+
+    // Handle every collapsible panel from one reliable capture listener. This
+    // keeps Utilities, Meshes and future sections working even when their
+    // individual setup order changes.
+    document.addEventListener("click", event => {
+      const toggle = event.target.closest?.(".section-header");
+      if (!toggle) return;
+      const section = toggle.closest(".section");
+      if (!section) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      toggleSection(section, toggle);
+    }, true);
 
     function syncSpotLightRig() {
       const showGuides = els.showLightGuidesInput?.checked ?? false;
@@ -13164,7 +13179,7 @@ end
 
     let rigBones = [];
     let selectedBoneId = null;
-    let boneToolMode = "move";
+    let boneToolMode = null;
     let boneDrag = null;
     const boneRaycaster = new THREE.Raycaster();
     const bonePointer = new THREE.Vector2();
@@ -13362,6 +13377,7 @@ end
         });
         return;
       }
+      if (boneToolMode !== "rotate") return;
       const segments = 64;
       const radius = size * .72;
       const frontPoints = [];
@@ -13397,7 +13413,8 @@ end
     }
 
     function setBoneToolMode(mode) {
-      boneToolMode = mode === "rotate" ? "rotate" : "move";
+      const requestedMode = mode === "rotate" ? "rotate" : "move";
+      boneToolMode = boneToolMode === requestedMode ? null : requestedMode;
       els.boneMoveToolBtn?.classList.toggle("active", boneToolMode === "move");
       els.boneRotateToolBtn?.classList.toggle("active", boneToolMode === "rotate");
       rebuildBoneVisuals();
