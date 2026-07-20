@@ -3,8 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoltWorks 3D AI Studio v46</title>
-  <meta name="application-version" content="v46 recovered_body_generator_v46" />
+  <title>BoltWorks 3D AI Studio - Experimental Preview</title>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0%25' stop-color='%2340c7a5'/%3E%3Cstop offset='100%25' stop-color='%23e1b14b'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect x='6' y='6' width='52' height='52' rx='12' fill='url(%23g)'/%3E%3Cpath d='M18 23h12c6.5 0 11 3.7 11 9.3 0 5.8-4.8 9.7-11.8 9.7H18zm9.8 21.5c8.7 0 15.7-4.8 15.7-12.2 0-7.2-6.2-11.8-15.1-11.8H15v24z' fill='%2307110e'/%3E%3Cpath d='M33.5 22.5h16v4h-16zm0 8.5h12.5v4H33.5zm0 8.5h16v4h-16z' fill='%2307110e' opacity='.9'/%3E%3C/svg%3E" />
   <style>
     :root {
@@ -106,18 +105,6 @@
       align-items: center;
       gap: 9px;
       font-weight: 800;
-    }
-
-    .version-badge {
-      padding: 2px 6px;
-      border: 1px solid var(--line);
-      border-radius: 4px;
-      color: var(--accent);
-      background: #101416;
-      font-size: 11px;
-      font-weight: 700;
-      line-height: 1.35;
-      white-space: nowrap;
     }
 
     .mark {
@@ -557,14 +544,91 @@
       min-width: 0;
       min-height: 0;
       background: #0b0e10;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 260px;
+      gap: 1px;
+      overflow: hidden;
     }
 
-    #canvas {
+    .viewport-pane {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+      background: #0b0e10;
+    }
+
+    .reference-viewports {
+      display: grid;
+      grid-template-rows: 1fr 1fr;
+      gap: 1px;
+      min-width: 0;
+      min-height: 0;
+      background: #273034;
+    }
+
+    .reference-viewport {
+      position: relative;
+      min-width: 0;
+      min-height: 0;
+      background: #101517;
+      border-left: 1px solid #334046;
+    }
+
+    .viewport canvas {
       position: absolute;
       inset: 0;
       width: 100%;
       height: 100%;
       display: block;
+    }
+
+    .reference-view-label {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 2;
+      padding: 4px 7px;
+      border: 1px solid #3b494f;
+      border-radius: 4px;
+      color: #dce7e9;
+      background: rgba(9, 13, 15, .82);
+      font-size: 11px;
+      pointer-events: none;
+    }
+
+    .reference-view-hint {
+      position: absolute;
+      right: 8px;
+      bottom: 7px;
+      z-index: 2;
+      color: #829195;
+      font-size: 10px;
+      pointer-events: none;
+    }
+
+    .bone-panel {
+      display: grid;
+      gap: 8px;
+    }
+
+    .bone-list {
+      width: 100%;
+      min-height: 112px;
+    }
+
+    .plugin-disabled-note {
+      display: none;
+    }
+
+    [hidden] {
+      display: none !important;
+    }
+
+    @media (max-width: 1180px) {
+      .viewport {
+        grid-template-columns: minmax(0, 1fr) 210px;
+      }
     }
 
     .hud {
@@ -1027,16 +1091,39 @@
       .left, .right { border: 0; }
       .bottom { grid-template-columns: 1fr; }
     }
+  
+    .experimental-notice {
+      position: fixed;
+      left: 50%;
+      bottom: 14px;
+      z-index: 10000;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      max-width: min(760px, calc(100vw - 28px));
+      padding: 9px 14px;
+      border: 1px solid rgba(225, 177, 75, .68);
+      border-radius: 8px;
+      background: rgba(12, 14, 16, .94);
+      color: var(--muted);
+      box-shadow: 0 8px 28px rgba(0, 0, 0, .42);
+      transform: translateX(-50%);
+      font-size: 12px;
+      pointer-events: none;
+    }
+
+    .experimental-notice strong {
+      color: var(--accent-2);
+      white-space: nowrap;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+    }
   </style>
 </head>
-<body>
+<body>`r`n  <div class="experimental-notice" role="status"><strong>Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
   <main class="app">
     <header class="top">
-      <div class="brand">
-        <div class="mark">3D</div>
-        <span>BoltWorks 3D AI Studio</span>
-        <span class="version-badge" title="Build: recovered_body_generator_v46">v46</span>
-      </div>
+      <div class="brand"><div class="mark">3D</div><span>3D Model Studio</span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -1127,7 +1214,6 @@
       </div>
       <div class="toolbar-group" id="toolbarViewsGroup" aria-label="Save PNG views">
         <button id="captureViewsBtn" title="Save front, back, side, top, and isometric screenshots">Save Views</button>
-        <button type="button" onclick="window.open('./ai/', '_blank', 'noopener')" title="Open the public AI rig exchange guide and JSON schemas">AI Rig Guide</button>
         <button id="saveFrontPngBtn" title="Save the Front camera view as a PNG image">Front PNG</button>
         <button id="saveBackPngBtn" title="Save the Back camera view as a PNG image">Back PNG</button>
         <button id="saveLeftPngBtn" title="Save the Left camera view as a PNG image">Left PNG</button>
@@ -1205,10 +1291,24 @@
       <section class="tree" id="sceneTree" aria-label="Scene objects"></section>
     </aside>
 
-    <section class="viewport" aria-label="3D viewport">
-      <canvas id="canvas"></canvas>
-      <div id="selectionBox" class="selection-box"></div>
-      <div class="hud"><span class="status-dot"></span><span id="hudText">Orbit: drag | Select: click | Transform: gizmo</span></div>
+    <section class="viewport" aria-label="3D and bone placement viewports">
+      <div class="viewport-pane">
+        <canvas id="canvas"></canvas>
+        <div id="selectionBox" class="selection-box"></div>
+        <div class="hud"><span class="status-dot"></span><span id="hudText">Orbit: drag | Select: click | Transform: gizmo</span></div>
+      </div>
+      <div class="reference-viewports" aria-label="Bone placement reference views">
+        <div class="reference-viewport">
+          <canvas id="frontBoneCanvas"></canvas>
+          <span class="reference-view-label">FRONT: X / Y</span>
+          <span class="reference-view-hint">Drag a bone joint</span>
+        </div>
+        <div class="reference-viewport">
+          <canvas id="sideBoneCanvas"></canvas>
+          <span class="reference-view-label">SIDE: Z / Y</span>
+          <span class="reference-view-hint">Drag a bone joint</span>
+        </div>
+      </div>
     </section>
 
     <aside class="panel right">
@@ -1292,10 +1392,14 @@
           <label class="toggle-chip"><input id="showSelectionOverlayInput" type="checkbox" checked /> <span>Select Part Overlay</span></label>
           <label class="toggle-chip"><input id="useCurrentZoomInShotsInput" type="checkbox" checked /> <span>Use Current Zoom In Shots</span></label>
           <label class="toggle-chip"><input id="hideGridInShotsInput" type="checkbox" checked /> <span>Hide Grid In Shots</span></label>
-          <label class="toggle-chip"><input id="showLightGuidesInput" type="checkbox" checked /> <span>Show Light Guides</span></label>
-          <label class="toggle-chip"><input id="enablePrimaryLightInput" type="checkbox" checked /> <span>Main Lamp</span></label>
-          <label class="toggle-chip"><input id="enableMirrorLightInput" type="checkbox" checked /> <span>Mirror Lamp</span></label>
         </div>
+        <div id="sceneRenderingTools" hidden data-toolset-id="scene-rendering">
+          <strong>Scene Rendering</strong>
+          <div class="toggle-grid">
+            <label class="toggle-chip"><input id="showLightGuidesInput" type="checkbox" /> <span>Show Light Guides</span></label>
+            <label class="toggle-chip"><input id="enablePrimaryLightInput" type="checkbox" /> <span>Main Lamp</span></label>
+            <label class="toggle-chip"><input id="enableMirrorLightInput" type="checkbox" /> <span>Mirror Lamp</span></label>
+          </div>
         <div class="compact-row">
           <label style="flex:1">Lamp X <input id="lightPosXInput" type="number" step="0.5" value="-6" /></label>
           <label style="flex:1">Y <input id="lightPosYInput" type="number" step="0.5" value="5" /></label>
@@ -1310,6 +1414,7 @@
           <label style="flex:1">Lamp Strength <input id="lightIntensityInput" type="number" min="0" max="40" step="0.5" value="10" /></label>
           <label style="flex:1">Cone Deg <input id="lightAngleInput" type="number" min="5" max="80" step="1" value="24" /></label>
         </div>
+        </div>
         <div class="compact-row">
           <button id="previewFrontBtn" title="Preview the Front save-view framing">Front</button>
           <button id="previewBackBtn" title="Preview the Back save-view framing">Back</button>
@@ -1320,8 +1425,47 @@
           <button id="resetZoomBtn" title="Reset the viewer zoom by framing the current model">Reset Zoom</button>
         </div>
         <hr />
+        <div class="bone-panel">
+          <strong>Bone Placement</strong>
+          <p class="api-note">Place joints in world space. Front dragging changes X/Y while Side dragging changes Z/Y, keeping the hidden axis fixed.</p>
+          <div class="compact-row">
+            <button id="boneMoveToolBtn" class="active" type="button">Move</button>
+            <button id="boneRotateToolBtn" type="button">Rotate</button>
+            <span id="selectedBoneLabel" class="api-note">Selected: None</span>
+          </div>
+          <div class="compact-row">
+            <button id="addRootBoneBtn" type="button">Add Root</button>
+            <button id="addChildBoneBtn" type="button">Add Child</button>
+            <button id="deleteBoneBtn" class="warn" type="button">Delete</button>
+          </div>
+          <div class="compact-row">
+            <button id="importBoneStructureBtn" type="button">Import Bone Structure</button>
+            <input id="boneStructureFile" type="file" accept="application/json,.json,.bones.json" hidden />
+          </div>
+          <p class="api-note">Imports a JSON bone hierarchy using world or parent-local positions. Existing placed bones are replaced after a valid import.</p>
+          <select id="boneList" class="bone-list" size="6" aria-label="Bones"></select>
+          <label>Name <input id="boneNameInput" type="text" value="" placeholder="Select a bone" /></label>
+          <label>Parent
+            <select id="boneParentSelect">
+              <option value="">None (root)</option>
+            </select>
+          </label>
+          <div class="field-grid">
+            <label>X <input id="bonePosX" type="number" step="0.05" /></label>
+            <label>Y <input id="bonePosY" type="number" step="0.05" /></label>
+            <label>Z <input id="bonePosZ" type="number" step="0.05" /></label>
+          </div>
+          <div class="field-grid">
+            <label>RX <input id="boneRotX" type="number" step="1" /></label>
+            <label>RY <input id="boneRotY" type="number" step="1" /></label>
+            <label>RZ <input id="boneRotZ" type="number" step="1" /></label>
+          </div>
+          <label class="toggle-chip"><input id="showBonesInput" type="checkbox" checked /> <span>Show bone guides</span></label>
+        </div>
+        <div id="imageReliefMeshPlugin" hidden data-plugin-id="image-relief-mesh-lab">
+        <hr />
         <strong>Image to Relief Mesh Lab</strong>
-        <p class="api-note">Import a bright object or three-view reference on a dark background, then rebuild it as one closed, editable solid mesh.</p>
+        <p class="api-note">Prototype: import a bright mannequin/reference on a darker background, then create a thin height-map shell. Later this can be replaced by an AI depth map.</p>
         <div class="compact-row">
           <button id="reliefImageBtn" type="button" title="Load a mannequin or object reference image for height-map mesh generation">Load image</button>
           <span id="reliefImageName" class="api-note">No image loaded</span>
@@ -1342,28 +1486,14 @@
           <label style="flex:1">Source mode
             <select id="reliefSourceModeInput">
               <option value="single">Single height image</option>
-              <option value="sheet" selected>View sheet to one model</option>
-            </select>
-          </label>
-          <label style="flex:1">Build mode
-            <select id="reliefBuildModeInput">
-              <option value="meshRebuild" selected>Recovered v41 body reconstruction</option>
-              <option value="heightmap">Detailed silhouette hull</option>
-              <option value="smooth">Smoothed mannequin build</option>
-              <option value="solidVisualHull">Experimental closed visual hull</option>
-            </select>
-          </label>
-          <label style="flex:1">Body preset
-            <select id="reliefBodyPresetInput">
-              <option value="auto">Auto body</option>
-              <option value="female">Female</option>
-              <option value="male">Male</option>
+              <option value="sheet">View sheet to one model</option>
             </select>
           </label>
           <label class="toggle-chip" title="Use this when your object is dark on a light background"><input id="reliefDarkForegroundInput" type="checkbox" /> <span>Dark foreground</span></label>
         </div>
-        <p class="api-note">Recovered mode restores the pre-regression view-sheet reconstruction. The newer closed visual hull is available separately for experiments.</p>
+        <p class="api-note">Sheet mode detects the main left / middle / right silhouettes and uses them as front, side, and back measurements for one joined mesh instead of separate flat models.</p>
         <button id="createReliefMeshBtn" type="button" title="Generate an editable mesh from the loaded image height map">Create relief mesh</button>
+        </div>
         </div>
       </section>
       <section class="section log-section" id="statusSection">
@@ -1381,7 +1511,7 @@
         <div id="stateOutput" class="api-note" aria-label="Current scene summary"></div>
       </div>
       <div class="api-note">
-        Project JSON saves the editable scene. Save Views exports PNG reference screenshots for AI review. OBJ exports in Roblox stud units. DAE exports in meters using 1 stud = 0.28 meters. Relief generator: recovered pre-regression view-sheet reconstruction. Version: v46 recovered_body_generator_v46.
+        Project JSON saves the editable scene. Save Views exports PNG reference screenshots for AI review. OBJ exports in Roblox stud units. DAE exports in meters using 1 stud = 0.28 meters.
       </div>
     </footer>
   </main>
@@ -1507,7 +1637,6 @@
   </script>
   <script type="module">
     import * as THREE from "three";
-    import { createGeometry as createImageToMeshGeometry } from "./image-to-mesh-generator.js?v=45";
     import { OrbitControls } from "three/addons/controls/OrbitControls.js";
     import { TransformControls } from "three/addons/controls/TransformControls.js";
     import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
@@ -1516,16 +1645,37 @@
     import { OBJExporter } from "three/addons/exporters/OBJExporter.js";
     import { createMeshFactory } from "./MeshFactory.js";
 
+    const pluginRegistry = Object.freeze({
+      imageReliefMeshLab: Object.freeze({ id: "image-relief-mesh-lab", enabled: false }),
+      sceneRenderingTools: Object.freeze({ id: "scene-rendering", enabled: false })
+    });
+
     const canvas = document.querySelector("#canvas");
+    const frontBoneCanvas = document.querySelector("#frontBoneCanvas");
+    const sideBoneCanvas = document.querySelector("#sideBoneCanvas");
     const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
+
+    const frontBoneRenderer = new THREE.WebGLRenderer({ canvas: frontBoneCanvas, antialias: true, alpha: true });
+    const sideBoneRenderer = new THREE.WebGLRenderer({ canvas: sideBoneCanvas, antialias: true, alpha: true });
+    frontBoneRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    sideBoneRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x0b0e10);
 
     const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 1000000);
     camera.position.set(6, 5, 7);
+
+    const frontBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
+    frontBoneCamera.position.set(0, 0, 100);
+    frontBoneCamera.lookAt(0, 0, 0);
+    frontBoneCamera.layers.enable(1);
+    const sideBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
+    sideBoneCamera.position.set(100, 0, 0);
+    sideBoneCamera.lookAt(0, 0, 0);
+    sideBoneCamera.layers.enable(2);
 
     const orbit = new OrbitControls(camera, renderer.domElement);
     orbit.enableDamping = true;
@@ -1729,6 +1879,26 @@
       inspectorToggle: document.querySelector("#inspectorToggle"),
       utilitiesSection: document.querySelector("#utilitiesSection"),
       utilitiesToggle: document.querySelector("#utilitiesToggle"),
+      imageReliefMeshPlugin: document.querySelector("#imageReliefMeshPlugin"),
+      sceneRenderingTools: document.querySelector("#sceneRenderingTools"),
+      boneMoveToolBtn: document.querySelector("#boneMoveToolBtn"),
+      boneRotateToolBtn: document.querySelector("#boneRotateToolBtn"),
+      selectedBoneLabel: document.querySelector("#selectedBoneLabel"),
+      addRootBoneBtn: document.querySelector("#addRootBoneBtn"),
+      addChildBoneBtn: document.querySelector("#addChildBoneBtn"),
+      deleteBoneBtn: document.querySelector("#deleteBoneBtn"),
+      importBoneStructureBtn: document.querySelector("#importBoneStructureBtn"),
+      boneStructureFile: document.querySelector("#boneStructureFile"),
+      boneList: document.querySelector("#boneList"),
+      boneNameInput: document.querySelector("#boneNameInput"),
+      boneParentSelect: document.querySelector("#boneParentSelect"),
+      bonePosX: document.querySelector("#bonePosX"),
+      bonePosY: document.querySelector("#bonePosY"),
+      bonePosZ: document.querySelector("#bonePosZ"),
+      boneRotX: document.querySelector("#boneRotX"),
+      boneRotY: document.querySelector("#boneRotY"),
+      boneRotZ: document.querySelector("#boneRotZ"),
+      showBonesInput: document.querySelector("#showBonesInput"),
       statusSection: document.querySelector("#statusSection"),
       statusToggle: document.querySelector("#statusToggle"),
       selectAllBtn: document.querySelector("#selectAllBtn"),
@@ -1886,8 +2056,6 @@
       reliefThresholdInput: document.querySelector("#reliefThresholdInput"),
       reliefSmoothInput: document.querySelector("#reliefSmoothInput"),
       reliefSourceModeInput: document.querySelector("#reliefSourceModeInput"),
-      reliefBuildModeInput: document.querySelector("#reliefBuildModeInput"),
-      reliefBodyPresetInput: document.querySelector("#reliefBodyPresetInput"),
       reliefDarkForegroundInput: document.querySelector("#reliefDarkForegroundInput"),
       createReliefMeshBtn: document.querySelector("#createReliefMeshBtn"),
       saveFrontPngBtn: document.querySelector("#saveFrontPngBtn"),
@@ -3883,22 +4051,577 @@
       return Math.max(min, Math.min(max, Number.isFinite(value) ? value : fallback));
     }
 
+    function sampleReliefPixel(imageData, width, height, x, y) {
+      const px = Math.max(0, Math.min(width - 1, Math.round(x)));
+      const py = Math.max(0, Math.min(height - 1, Math.round(y)));
+      const i = (py * width + px) * 4;
+      const r = imageData.data[i] || 0;
+      const g = imageData.data[i + 1] || 0;
+      const b = imageData.data[i + 2] || 0;
+      const a = imageData.data[i + 3] ?? 255;
+      const luma = r * .2126 + g * .7152 + b * .0722;
+      return { r, g, b, a, luma };
+    }
+
+    function smoothReliefHeights(heights, mask, cols, rows, passes) {
+      let current = heights.slice();
+      for (let pass = 0; pass < passes; pass++) {
+        const next = current.slice();
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            const index = y * cols + x;
+            if (!mask[index]) continue;
+            let sum = current[index];
+            let count = 1;
+            for (let oy = -1; oy <= 1; oy++) {
+              for (let ox = -1; ox <= 1; ox++) {
+                if (!ox && !oy) continue;
+                const nx = x + ox;
+                const ny = y + oy;
+                if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
+                const ni = ny * cols + nx;
+                if (!mask[ni]) continue;
+                sum += current[ni];
+                count++;
+              }
+            }
+            next[index] = sum / count;
+          }
+        }
+        current = next;
+      }
+      return current;
+    }
+
+
+    function reliefForegroundCheck(pixel, threshold, darkForeground) {
+      return pixel.a > 24 && (darkForeground ? pixel.luma <= threshold : pixel.luma >= threshold);
+    }
+
+    function detectReliefViewRects(imageData, threshold, darkForeground) {
+      const { width, height, data } = imageData;
+      const columnHits = new Array(width).fill(0);
+      const rowHits = new Array(height).fill(0);
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const i = (y * width + x) * 4;
+          const a = data[i + 3] ?? 255;
+          if (a <= 24) continue;
+          const luma = data[i] * .2126 + data[i + 1] * .7152 + data[i + 2] * .0722;
+          const hit = darkForeground ? luma <= threshold : luma >= threshold;
+          if (!hit) continue;
+          columnHits[x]++;
+          rowHits[y]++;
+        }
+      }
+      const minColumnHits = Math.max(2, Math.floor(height * .015));
+      const rawRuns = [];
+      let runStart = -1;
+      for (let x = 0; x <= width; x++) {
+        const active = x < width && columnHits[x] >= minColumnHits;
+        if (active && runStart < 0) runStart = x;
+        if ((!active || x === width) && runStart >= 0) {
+          if (x - runStart >= Math.max(8, width * .025)) rawRuns.push({ x: runStart, right: x - 1 });
+          runStart = -1;
+        }
+      }
+      const mergedRuns = [];
+      for (const run of rawRuns) {
+        const prev = mergedRuns[mergedRuns.length - 1];
+        if (prev && run.x - prev.right < width * .035) {
+          prev.right = run.right;
+        } else {
+          mergedRuns.push({ ...run });
+        }
+      }
+      const minRowHits = Math.max(2, Math.floor(width * .004));
+      let top = 0;
+      let bottom = height - 1;
+      while (top < height - 1 && rowHits[top] < minRowHits) top++;
+      while (bottom > top && rowHits[bottom] < minRowHits) bottom--;
+      const padX = Math.max(2, Math.round(width * .01));
+      const padY = Math.max(2, Math.round(height * .015));
+      const runs = mergedRuns
+        .map(run => ({
+          x: Math.max(0, run.x - padX),
+          y: Math.max(0, top - padY),
+          w: Math.min(width - Math.max(0, run.x - padX), run.right - run.x + 1 + padX * 2),
+          h: Math.min(height - Math.max(0, top - padY), bottom - top + 1 + padY * 2)
+        }))
+        .filter(rect => rect.w > 8 && rect.h > 8)
+        .sort((a, b) => a.x - b.x);
+      if (runs.length >= 3) return [runs[0], runs[Math.floor(runs.length / 2)], runs[runs.length - 1]];
+      if (runs.length === 2) return [runs[0], runs[1], runs[0]];
+      return [
+        { x: 0, y: 0, w: Math.floor(width / 3), h: height },
+        { x: Math.floor(width / 3), y: 0, w: Math.floor(width / 3), h: height },
+        { x: Math.floor(width * 2 / 3), y: 0, w: width - Math.floor(width * 2 / 3), h: height }
+      ];
+    }
+
+    function buildReliefViewProfile(imageData, rect, rows, threshold, darkForeground) {
+      const profile = [];
+      for (let y = 0; y < rows; y++) {
+        const sy = rect.y + (y / Math.max(1, rows - 1)) * Math.max(1, rect.h - 1);
+        let minX = Infinity;
+        let maxX = -Infinity;
+        let lumaSum = 0;
+        let count = 0;
+        const samples = Math.max(24, Math.min(180, Math.round(rect.w)));
+        for (let x = 0; x < samples; x++) {
+          const sx = rect.x + (x / Math.max(1, samples - 1)) * Math.max(1, rect.w - 1);
+          const pixel = sampleReliefPixel(imageData, imageData.width, imageData.height, sx, sy);
+          if (!reliefForegroundCheck(pixel, threshold, darkForeground)) continue;
+          minX = Math.min(minX, x / Math.max(1, samples - 1));
+          maxX = Math.max(maxX, x / Math.max(1, samples - 1));
+          lumaSum += pixel.luma;
+          count++;
+        }
+        if (!count) {
+          profile.push({ active: false, center: .5, width: 0, luma: darkForeground ? 255 : 0 });
+        } else {
+          profile.push({
+            active: true,
+            center: (minX + maxX) * .5,
+            width: Math.max(0, maxX - minX),
+            luma: lumaSum / count
+          });
+        }
+      }
+      return profile;
+    }
+
+    function smoothReliefProfile(profile, passes) {
+      let current = profile.map(row => ({ ...row }));
+      for (let pass = 0; pass < passes; pass++) {
+        current = current.map((row, index) => {
+          let width = row.active ? row.width : 0;
+          let center = row.active ? row.center : .5;
+          let luma = row.luma;
+          let count = row.active ? 1 : 0;
+          for (const offset of [-1, 1]) {
+            const other = current[index + offset];
+            if (!other?.active) continue;
+            width += other.width;
+            center += other.center;
+            luma += other.luma;
+            count++;
+          }
+          if (!count) return { ...row, active: false };
+          return { active: true, width: width / count, center: center / count, luma: luma / count };
+        });
+      }
+      return current;
+    }
+
+    function createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, darkForeground }) {
+      const viewRects = detectReliefViewRects(imageData, threshold, darkForeground);
+      const [frontRect, sideRect, backRect] = viewRects;
+      const gridX = Math.max(12, Math.min(72, Math.round(cols)));
+      const gridY = Math.max(16, Math.min(128, Math.round(rows)));
+      const gridZ = Math.max(10, Math.min(44, Math.round(gridX * .55)));
+      const meshH = scale;
+      const meshW = scale * .52;
+      const meshD = Math.max(back, depth, .25) * 2.4;
+      const frontMask = new Array(gridX * gridY).fill(false);
+      const backMask = new Array(gridX * gridY).fill(false);
+      const sideMask = new Array(gridZ * gridY).fill(false);
+      const sampleRect = (rect, nx, ny) => {
+        const sx = rect.x + Math.max(0, Math.min(1, nx)) * Math.max(1, rect.w - 1);
+        const sy = rect.y + Math.max(0, Math.min(1, ny)) * Math.max(1, rect.h - 1);
+        return sampleReliefPixel(imageData, imageData.width, imageData.height, sx, sy);
+      };
+      for (let y = 0; y < gridY; y++) {
+        const ny = y / Math.max(1, gridY - 1);
+        for (let x = 0; x < gridX; x++) {
+          const nx = x / Math.max(1, gridX - 1);
+          frontMask[y * gridX + x] = reliefForegroundCheck(sampleRect(frontRect, nx, ny), threshold, darkForeground);
+          backMask[y * gridX + x] = reliefForegroundCheck(sampleRect(backRect, 1 - nx, ny), threshold, darkForeground);
+        }
+        for (let z = 0; z < gridZ; z++) {
+          const nz = z / Math.max(1, gridZ - 1);
+          sideMask[y * gridZ + z] = reliefForegroundCheck(sampleRect(sideRect, nz, ny), threshold, darkForeground);
+        }
+      }
+      if (smoothPasses > 0) {
+        const softenMask = (mask, w, h, passes) => {
+          let current = mask.slice();
+          for (let pass = 0; pass < passes; pass++) {
+            const next = current.slice();
+            for (let y = 1; y < h - 1; y++) {
+              for (let x = 1; x < w - 1; x++) {
+                let hits = 0;
+                for (let oy = -1; oy <= 1; oy++) {
+                  for (let ox = -1; ox <= 1; ox++) {
+                    if (current[(y + oy) * w + x + ox]) hits++;
+                  }
+                }
+                next[y * w + x] = hits >= 4;
+              }
+            }
+            current = next;
+          }
+          return current;
+        };
+        const passes = Math.min(2, smoothPasses);
+        for (const [target, softened] of [
+          [frontMask, softenMask(frontMask, gridX, gridY, passes)],
+          [backMask, softenMask(backMask, gridX, gridY, passes)],
+          [sideMask, softenMask(sideMask, gridZ, gridY, passes)]
+        ]) {
+          for (let i = 0; i < target.length; i++) target[i] = softened[i];
+        }
+      }
+      const occupied = new Uint8Array(gridX * gridY * gridZ);
+      const voxelIndex = (x, y, z) => (y * gridZ + z) * gridX + x;
+      const isVoxel = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < gridX && y < gridY && z < gridZ && occupied[voxelIndex(x, y, z)] === 1;
+      const rowRuns = (mask, width, y) => {
+        const runs = [];
+        let start = -1;
+        for (let x = 0; x <= width; x++) {
+          const active = x < width && mask[y * width + x];
+          if (active && start < 0) start = x;
+          if ((!active || x === width) && start >= 0) {
+            runs.push({ start, end: x - 1, center: (start + x) * .5, radius: Math.max(.5, (x - start) * .5) });
+            start = -1;
+          }
+        }
+        return runs;
+      };
+      const findRun = (runs, x) => runs.find(run => x >= run.start && x <= run.end) || null;
+      const sideProfiles = [];
+      const bodyRuns = [];
+      for (let y = 0; y < gridY; y++) {
+        const unionRow = new Array(gridX).fill(false);
+        for (let x = 0; x < gridX; x++) unionRow[x] = frontMask[y * gridX + x] || backMask[y * gridX + x];
+        const unionMask = new Array(gridX).fill(false);
+        for (let x = 0; x < gridX; x++) unionMask[x] = unionRow[x];
+        bodyRuns[y] = rowRuns(unionMask, gridX, 0);
+        const sideRuns = rowRuns(sideMask, gridZ, y);
+        const largestSide = sideRuns.sort((a, b) => (b.end - b.start) - (a.end - a.start))[0] || null;
+        sideProfiles[y] = largestSide;
+      }
+      let voxelCount = 0;
+      for (let y = 0; y < gridY; y++) {
+        const side = sideProfiles[y];
+        if (!side) continue;
+        for (let x = 0; x < gridX; x++) {
+          const run = findRun(bodyRuns[y], x);
+          if (!run) continue;
+          const xCenter = x + .5;
+          const xRound = Math.abs(xCenter - run.center) / Math.max(.5, run.radius);
+          if (xRound > 1.08) continue;
+          const zAllowance = Math.sqrt(Math.max(0, 1 - xRound * xRound)) * 1.08;
+          for (let z = 0; z < gridZ; z++) {
+            if (!sideMask[y * gridZ + z]) continue;
+            const zCenter = z + .5;
+            const zRound = Math.abs(zCenter - side.center) / Math.max(.5, side.radius);
+            if (zRound > zAllowance) continue;
+            occupied[voxelIndex(x, y, z)] = 1;
+            voxelCount++;
+          }
+        }
+      }
+      const positions = [];
+      const uvs = [];
+      const point = (x, y, z) => [
+        (x / gridX - .5) * meshW,
+        (.5 - y / gridY) * meshH,
+        (z / gridZ - .5) * meshD
+      ];
+      const pushTri = (a, b, c) => {
+        positions.push(...a.p, ...b.p, ...c.p);
+        uvs.push(...a.uv, ...b.uv, ...c.uv);
+      };
+      const pushQuad = (a, b, c, d) => {
+        pushTri(a, b, c);
+        pushTri(a, c, d);
+      };
+      const detailStrength = Math.min(.22, Math.max(.04, depth * .12));
+      const detailContrastStrength = detailStrength * 2.8;
+      const clampDetail = amount => Math.max(-detailStrength * 2.4, Math.min(detailStrength * 1.35, amount));
+      const detailFromPixel = pixel => {
+        const raw = darkForeground
+          ? (threshold - pixel.luma) / Math.max(1, threshold)
+          : (pixel.luma - threshold) / Math.max(1, 255 - threshold);
+        return Math.max(-1, Math.min(1, raw * 2 - .65));
+      };
+      const viewSampleInfo = (view, x, y, z) => {
+        if (view === "front") return { rect: frontRect, nx: x / gridX, ny: y / gridY };
+        if (view === "back") return { rect: backRect, nx: 1 - x / gridX, ny: y / gridY };
+        return { rect: sideRect, nx: z / gridZ, ny: y / gridY };
+      };
+      const detailAmountFor = (view, x, y, z) => {
+        const info = viewSampleInfo(view, x, y, z);
+        const pixel = sampleRect(info.rect, info.nx, info.ny);
+        const radiusX = view === "side" ? 1 / Math.max(12, gridZ) : 1 / Math.max(16, gridX);
+        const radiusY = 1 / Math.max(20, gridY);
+        let total = 0;
+        let count = 0;
+        for (const offset of [[-radiusX, 0], [radiusX, 0], [0, -radiusY], [0, radiusY], [-radiusX, -radiusY], [radiusX, -radiusY], [-radiusX, radiusY], [radiusX, radiusY]]) {
+          const neighbor = sampleRect(info.rect, info.nx + offset[0], info.ny + offset[1]);
+          if (neighbor.a > 24) {
+            total += neighbor.luma;
+            count++;
+          }
+        }
+        const localAverage = count ? total / count : pixel.luma;
+        const localContrast = (pixel.luma - localAverage) / 255;
+        const signedContrast = darkForeground ? -localContrast : localContrast;
+        const absoluteVolume = detailFromPixel(pixel) * detailStrength * .25;
+        const darkGrooveBoost = signedContrast < 0 ? signedContrast * detailContrastStrength * 2.15 : signedContrast * detailContrastStrength * .65;
+        return clampDetail(absoluteVolume + darkGrooveBoost);
+      };
+      const displacePoint = (p, direction, amount) => [
+        p[0] + direction[0] * amount,
+        p[1] + direction[1] * amount,
+        p[2] + direction[2] * amount
+      ];
+      const detailVertex = (x, y, z, u, vv, view, direction) => {
+        const base = point(x, y, z);
+        const amount = detailAmountFor(view, x, y, z);
+        return { p: displacePoint(base, direction, amount), uv: [u, vv] };
+      };
+      const v = (x, y, z, u, vv, view = "none", direction = [0, 0, 0]) => {
+        if (view !== "none") return detailVertex(x, y, z, u, vv, view, direction);
+        return { p: point(x, y, z), uv: [u, vv] };
+      };
+      const polishLevel = Math.max(0, smoothPasses - 2);
+      const maxPatchSpan = polishLevel > 0 ? Math.max(2, 8 - polishLevel) : Infinity;
+      const mix = (a, b, t) => a + (b - a) * t;
+      const mixArray = (a, b, t) => a.map((value, index) => mix(value, b[index], t));
+      const mixVertex = (a, b, t) => ({ p: mixArray(a.p, b.p, t), uv: mixArray(a.uv, b.uv, t) });
+      const patchVertex = (a, b, c, d, u, vv) => {
+        const top = mixVertex(a, b, u);
+        const bottom = mixVertex(d, c, u);
+        return mixVertex(top, bottom, vv);
+      };
+      const pushQuadPatch = (a, b, c, d, stepsU = 1, stepsV = 1) => {
+        const uSteps = Math.max(1, Math.round(stepsU));
+        const vSteps = Math.max(1, Math.round(stepsV));
+        if (uSteps === 1 && vSteps === 1) {
+          pushQuad(a, b, c, d);
+          return;
+        }
+        for (let py = 0; py < vSteps; py++) {
+          const v0 = py / vSteps;
+          const v1 = (py + 1) / vSteps;
+          for (let px = 0; px < uSteps; px++) {
+            const u0 = px / uSteps;
+            const u1 = (px + 1) / uSteps;
+            pushQuad(
+              patchVertex(a, b, c, d, u0, v0),
+              patchVertex(a, b, c, d, u1, v0),
+              patchVertex(a, b, c, d, u1, v1),
+              patchVertex(a, b, c, d, u0, v1)
+            );
+          }
+        }
+      };
+      const relaxWeldedPositions = (iterations, strength) => {
+        if (positions.length < 9 || iterations <= 0 || strength <= 0) return;
+        const vertices = [];
+        const faces = [];
+        const keyToIndex = new Map();
+        const getVertexIndex = offset => {
+          const key = `${positions[offset].toFixed(5)},${positions[offset + 1].toFixed(5)},${positions[offset + 2].toFixed(5)}`;
+          if (keyToIndex.has(key)) return keyToIndex.get(key);
+          const index = vertices.length;
+          keyToIndex.set(key, index);
+          vertices.push([positions[offset], positions[offset + 1], positions[offset + 2]]);
+          return index;
+        };
+        for (let i = 0; i < positions.length; i += 9) {
+          faces.push([getVertexIndex(i), getVertexIndex(i + 3), getVertexIndex(i + 6)]);
+        }
+        const neighbors = vertices.map(() => new Set());
+        for (const [a, b, c] of faces) {
+          neighbors[a].add(b); neighbors[a].add(c);
+          neighbors[b].add(a); neighbors[b].add(c);
+          neighbors[c].add(a); neighbors[c].add(b);
+        }
+        let current = vertices.map(vertex => vertex.slice());
+        for (let pass = 0; pass < iterations; pass++) {
+          const next = current.map(vertex => vertex.slice());
+          for (let i = 0; i < current.length; i++) {
+            const list = [...neighbors[i]];
+            if (!list.length) continue;
+            const average = [0, 0, 0];
+            for (const ni of list) {
+              average[0] += current[ni][0];
+              average[1] += current[ni][1];
+              average[2] += current[ni][2];
+            }
+            average[0] /= list.length;
+            average[1] /= list.length;
+            average[2] /= list.length;
+            next[i] = [
+              mix(current[i][0], average[0], strength),
+              mix(current[i][1], average[1], strength),
+              mix(current[i][2], average[2], strength)
+            ];
+          }
+          current = next;
+        }
+        for (let i = 0; i < positions.length; i += 3) {
+          const key = `${positions[i].toFixed(5)},${positions[i + 1].toFixed(5)},${positions[i + 2].toFixed(5)}`;
+          const vertex = current[keyToIndex.get(key)];
+          if (!vertex) continue;
+          positions[i] = vertex[0];
+          positions[i + 1] = vertex[1];
+          positions[i + 2] = vertex[2];
+        }
+      };
+      const greedyPlane = (w, h, isFilled, pushRect) => {
+        const used = new Uint8Array(w * h);
+        for (let yy = 0; yy < h; yy++) {
+          for (let xx = 0; xx < w; xx++) {
+            const start = yy * w + xx;
+            if (used[start] || !isFilled(xx, yy)) continue;
+            let rectW = 1;
+            while (xx + rectW < w && !used[yy * w + xx + rectW] && isFilled(xx + rectW, yy)) rectW++;
+            let rectH = 1;
+            outer: while (yy + rectH < h) {
+              for (let rx = 0; rx < rectW; rx++) {
+                const index = (yy + rectH) * w + xx + rx;
+                if (used[index] || !isFilled(xx + rx, yy + rectH)) break outer;
+              }
+              rectH++;
+            }
+            for (let ry = 0; ry < rectH; ry++) {
+              for (let rx = 0; rx < rectW; rx++) used[(yy + ry) * w + xx + rx] = 1;
+            }
+            pushRect(xx, yy, rectW, rectH);
+          }
+        }
+      };
+      let mergedFaceCount = 0;
+      for (let z = 0; z < gridZ; z++) {
+        greedyPlane(gridX, gridY, (x, y) => isVoxel(x, y, z) && !isVoxel(x, y, z - 1), (x, y, w, h) => {
+          mergedFaceCount++;
+          pushQuadPatch(v(x, y, z, x / gridX, 1 - y / gridY, "front", [0, 0, -1]), v(x + w, y, z, (x + w) / gridX, 1 - y / gridY, "front", [0, 0, -1]), v(x + w, y + h, z, (x + w) / gridX, 1 - (y + h) / gridY, "front", [0, 0, -1]), v(x, y + h, z, x / gridX, 1 - (y + h) / gridY, "front", [0, 0, -1]), Math.ceil(w / maxPatchSpan), Math.ceil(h / maxPatchSpan));
+        });
+        greedyPlane(gridX, gridY, (x, y) => isVoxel(x, y, z) && !isVoxel(x, y, z + 1), (x, y, w, h) => {
+          mergedFaceCount++;
+          pushQuadPatch(v(x, y, z + 1, x / gridX, 1 - y / gridY, "back", [0, 0, 1]), v(x, y + h, z + 1, x / gridX, 1 - (y + h) / gridY, "back", [0, 0, 1]), v(x + w, y + h, z + 1, (x + w) / gridX, 1 - (y + h) / gridY, "back", [0, 0, 1]), v(x + w, y, z + 1, (x + w) / gridX, 1 - y / gridY, "back", [0, 0, 1]), Math.ceil(h / maxPatchSpan), Math.ceil(w / maxPatchSpan));
+        });
+      }
+      for (let x = 0; x < gridX; x++) {
+        greedyPlane(gridZ, gridY, (z, y) => isVoxel(x, y, z) && !isVoxel(x - 1, y, z), (z, y, w, h) => {
+          mergedFaceCount++;
+          pushQuadPatch(v(x, y, z, z / gridZ, 1 - y / gridY, "side", [-1, 0, 0]), v(x, y + h, z, z / gridZ, 1 - (y + h) / gridY, "side", [-1, 0, 0]), v(x, y + h, z + w, (z + w) / gridZ, 1 - (y + h) / gridY, "side", [-1, 0, 0]), v(x, y, z + w, (z + w) / gridZ, 1 - y / gridY, "side", [-1, 0, 0]), Math.ceil(h / maxPatchSpan), Math.ceil(w / maxPatchSpan));
+        });
+        greedyPlane(gridZ, gridY, (z, y) => isVoxel(x, y, z) && !isVoxel(x + 1, y, z), (z, y, w, h) => {
+          mergedFaceCount++;
+          pushQuadPatch(v(x + 1, y, z, z / gridZ, 1 - y / gridY, "side", [1, 0, 0]), v(x + 1, y, z + w, (z + w) / gridZ, 1 - y / gridY, "side", [1, 0, 0]), v(x + 1, y + h, z + w, (z + w) / gridZ, 1 - (y + h) / gridY, "side", [1, 0, 0]), v(x + 1, y + h, z, z / gridZ, 1 - (y + h) / gridY, "side", [1, 0, 0]), Math.ceil(w / maxPatchSpan), Math.ceil(h / maxPatchSpan));
+        });
+      }
+      for (let y = 0; y < gridY; y++) {
+        greedyPlane(gridX, gridZ, (x, z) => isVoxel(x, y, z) && !isVoxel(x, y - 1, z), (x, z, w, h) => {
+          mergedFaceCount++;
+          pushQuadPatch(v(x, y, z, x / gridX, z / gridZ), v(x, y, z + h, x / gridX, (z + h) / gridZ), v(x + w, y, z + h, (x + w) / gridX, (z + h) / gridZ), v(x + w, y, z, (x + w) / gridX, z / gridZ), Math.ceil(h / maxPatchSpan), Math.ceil(w / maxPatchSpan));
+        });
+        greedyPlane(gridX, gridZ, (x, z) => isVoxel(x, y, z) && !isVoxel(x, y + 1, z), (x, z, w, h) => {
+          mergedFaceCount++;
+          pushQuadPatch(v(x, y + 1, z, x / gridX, z / gridZ), v(x + w, y + 1, z, (x + w) / gridX, z / gridZ), v(x + w, y + 1, z + h, (x + w) / gridX, (z + h) / gridZ), v(x, y + 1, z + h, x / gridX, (z + h) / gridZ), Math.ceil(w / maxPatchSpan), Math.ceil(h / maxPatchSpan));
+        });
+      }
+      if (polishLevel > 0) relaxWeldedPositions(Math.min(4, polishLevel), .12);
+      if (positions.length < 9) throw new Error("No sheet foreground was found. Try Threshold or Dark foreground.");
+      return {
+        positions,
+        uvs,
+        meta: { mode: "viewSheetOvalHullDetailPolished", cols: gridX, rows: gridY, depthSlices: gridZ, sourceW: imageData.width, sourceH: imageData.height, threshold, darkForeground, smoothPasses, polishLevel, depth, back, voxelCount, mergedFaceCount, detailStrength, detailContrastStrength, viewRects }
+      };
+    }
+
     function createReliefGeometryFromImage() {
-      return createImageToMeshGeometry({
-        imageData: reliefImageState.imageData,
-        cols: reliefNumber(els.reliefGridXInput, 56, 8, 160),
-        rows: reliefNumber(els.reliefGridYInput, 96, 8, 220),
-        scale: reliefNumber(els.reliefScaleInput, 6, .5, 20),
-        depth: reliefNumber(els.reliefDepthInput, .9, 0, 5),
-        back: reliefNumber(els.reliefBackInput, .22, 0, 3),
-        threshold: reliefNumber(els.reliefThresholdInput, 70, 0, 255),
-        smoothPasses: reliefNumber(els.reliefSmoothInput, 2, 0, 8),
-        darkForeground: !!els.reliefDarkForegroundInput?.checked,
-        sourceMode: els.reliefSourceModeInput?.value || "single",
-        buildMode: els.reliefBuildModeInput?.value || "heightmap",
-        bodyPreset: els.reliefBodyPresetInput?.value || "auto",
-        sourceName: reliefImageState.name
-      });
+      const imageData = reliefImageState.imageData;
+      const image = reliefImageState.image;
+      if (!imageData || !image) throw new Error("Load an image first.");
+      const sourceW = imageData.width;
+      const sourceH = imageData.height;
+      const cols = Math.max(8, Math.round(reliefNumber(els.reliefGridXInput, 56, 8, 160)));
+      const rows = Math.max(8, Math.round(reliefNumber(els.reliefGridYInput, 96, 8, 220)));
+      const scale = reliefNumber(els.reliefScaleInput, 6, .5, 20);
+      const depth = reliefNumber(els.reliefDepthInput, .9, 0, 5);
+      const back = reliefNumber(els.reliefBackInput, .22, 0, 3);
+      const threshold = reliefNumber(els.reliefThresholdInput, 70, 0, 255);
+      const smoothPasses = Math.round(reliefNumber(els.reliefSmoothInput, 2, 0, 8));
+      const darkForeground = !!els.reliefDarkForegroundInput?.checked;
+      const sourceMode = els.reliefSourceModeInput?.value || "single";
+      if (sourceMode === "sheet") {
+        return createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, darkForeground });
+      }
+      const aspect = sourceW / Math.max(1, sourceH);
+      const meshH = scale;
+      const meshW = scale * aspect;
+      const mask = new Array(cols * rows).fill(false);
+      const heights = new Array(cols * rows).fill(0);
+
+      for (let y = 0; y < rows; y++) {
+        for (let x = 0; x < cols; x++) {
+          const sx = (x / Math.max(1, cols - 1)) * (sourceW - 1);
+          const sy = (y / Math.max(1, rows - 1)) * (sourceH - 1);
+          const pixel = sampleReliefPixel(imageData, sourceW, sourceH, sx, sy);
+          const inForeground = pixel.a > 24 && (darkForeground ? pixel.luma <= threshold : pixel.luma >= threshold);
+          const index = y * cols + x;
+          mask[index] = inForeground;
+          const normalized = darkForeground
+            ? Math.max(0, Math.min(1, (threshold - pixel.luma) / Math.max(1, threshold)))
+            : Math.max(0, Math.min(1, (pixel.luma - threshold) / Math.max(1, 255 - threshold)));
+          heights[index] = Math.pow(normalized, .75) * depth;
+        }
+      }
+      const smoothHeights = smoothReliefHeights(heights, mask, cols, rows, smoothPasses);
+      const positions = [];
+      const uvs = [];
+      const point = (x, y, z) => [
+        (x / Math.max(1, cols - 1) - .5) * meshW,
+        (.5 - y / Math.max(1, rows - 1)) * meshH,
+        z
+      ];
+      const uv = (x, y) => [x / Math.max(1, cols - 1), 1 - y / Math.max(1, rows - 1)];
+      const pushTri = (a, b, c) => {
+        positions.push(...a.p, ...b.p, ...c.p);
+        uvs.push(...a.uv, ...b.uv, ...c.uv);
+      };
+      const pushQuad = (a, b, c, d) => {
+        pushTri(a, b, c);
+        pushTri(a, c, d);
+      };
+      const frontVertex = (x, y) => ({ p: point(x, y, smoothHeights[y * cols + x]), uv: uv(x, y) });
+      const backVertex = (x, y) => ({ p: point(x, y, -back), uv: uv(x, y) });
+      const isValid = (x, y) => x >= 0 && y >= 0 && x < cols && y < rows && mask[y * cols + x];
+
+      for (let y = 0; y < rows - 1; y++) {
+        for (let x = 0; x < cols - 1; x++) {
+          if (!(isValid(x, y) && isValid(x + 1, y) && isValid(x + 1, y + 1) && isValid(x, y + 1))) continue;
+          const a = frontVertex(x, y), b = frontVertex(x + 1, y), c = frontVertex(x + 1, y + 1), d = frontVertex(x, y + 1);
+          pushQuad(a, d, c, b);
+          if (back > 0) {
+            const ba = backVertex(x, y), bb = backVertex(x + 1, y), bc = backVertex(x + 1, y + 1), bd = backVertex(x, y + 1);
+            pushQuad(ba, bb, bc, bd);
+          }
+        }
+      }
+      if (back > 0) {
+        for (let y = 0; y < rows; y++) {
+          for (let x = 0; x < cols; x++) {
+            if (!isValid(x, y)) continue;
+            if (!isValid(x, y - 1) && isValid(x + 1, y)) pushQuad(frontVertex(x, y), frontVertex(x + 1, y), backVertex(x + 1, y), backVertex(x, y));
+            if (!isValid(x + 1, y) && isValid(x, y + 1)) pushQuad(frontVertex(x, y), backVertex(x, y), backVertex(x, y + 1), frontVertex(x, y + 1));
+            if (!isValid(x, y + 1) && isValid(x + 1, y)) pushQuad(frontVertex(x, y), backVertex(x, y), backVertex(x + 1, y), frontVertex(x + 1, y));
+            if (!isValid(x - 1, y) && isValid(x, y + 1)) pushQuad(frontVertex(x, y), frontVertex(x, y + 1), backVertex(x, y + 1), backVertex(x, y));
+          }
+        }
+      }
+      if (positions.length < 9) throw new Error("No foreground mesh was found. Try lowering/raising Threshold or toggling Dark foreground.");
+      return {
+        positions,
+        uvs,
+        meta: { mode: "single", cols, rows, sourceW, sourceH, threshold, darkForeground, smoothPasses, depth, back }
+      };
     }
 
     async function loadReliefImageFile(file) {
@@ -3924,15 +4647,10 @@
           shape: "imageRelief",
           name: `${baseName} relief mesh`,
           geometry: { positions, uvs },
-          color: meta.buildMode === "meshRebuild" ? "#f2f4f1" : "#d8d8d8",
-          roughness: meta.buildMode === "meshRebuild" ? .72 : .48,
+          color: "#d8d8d8",
+          roughness: .48,
           position: [0, 0, 0]
         }, { record: false });
-        if (meta.buildMode === "meshRebuild" && mesh?.material) {
-          mesh.material.side = THREE.DoubleSide;
-          mesh.material.metalness = 0;
-          mesh.material.needsUpdate = true;
-        }
         mesh.userData.reliefSource = { ...meta, sourceName: reliefImageState.name };
         frameSelected();
         log(`Created relief mesh from ${reliefImageState.name}: ${positions.length / 9} triangles, grid ${meta.cols} x ${meta.rows}.`);
@@ -8800,7 +9518,8 @@
             ],
             intensity: Number(els.lightIntensityInput.value) || 10,
             angle: Number(els.lightAngleInput.value) || 24
-          }
+          },
+          rigging: serializeBoneRig()
         }
       };
     }
@@ -8898,9 +9617,9 @@
       syncGridVisibility();
 
       const lighting = editor.lighting || {};
-      els.showLightGuidesInput.checked = lighting.showGuides ?? true;
-      els.enablePrimaryLightInput.checked = lighting.enablePrimary ?? true;
-      els.enableMirrorLightInput.checked = lighting.enableMirror ?? true;
+      els.showLightGuidesInput.checked = lighting.showGuides ?? false;
+      els.enablePrimaryLightInput.checked = lighting.enablePrimary ?? false;
+      els.enableMirrorLightInput.checked = lighting.enableMirror ?? false;
       els.lightPosXInput.value = String(lighting.lampPosition?.[0] ?? -6);
       els.lightPosYInput.value = String(lighting.lampPosition?.[1] ?? 5);
       els.lightPosZInput.value = String(lighting.lampPosition?.[2] ?? 6);
@@ -8910,6 +9629,7 @@
       els.lightIntensityInput.value = String(lighting.intensity ?? 10);
       els.lightAngleInput.value = String(lighting.angle ?? 24);
       syncSpotLightRig();
+      restoreBoneRig(editor.rigging || {});
 
       const selectedMesh = editor.selectedId ? findObject(editor.selectedId) : null;
       selectObject(selectedMesh, { keepGroup: true });
@@ -8985,7 +9705,7 @@
         <div style="height:100vh;display:grid;place-items:center;background:#101214;color:#eef2f3;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;padding:24px;">
           <div style="max-width:520px;text-align:center;">
             <div style="width:56px;height:56px;border-radius:14px;margin:0 auto 18px;background:linear-gradient(135deg,#40c7a5,#e1b14b);display:grid;place-items:center;color:#07110e;font-weight:800;font-size:26px;">3D</div>
-            <h1 style="margin:0 0 10px;font-size:28px;">BoltWorks 3D AI Studio is stopped</h1>
+            <h1 style="margin:0 0 10px;font-size:28px;">3D Model Studio is stopped</h1>
             <p style="margin:0;color:#aeb8bc;font-size:16px;line-height:1.5;">The local server has been shut down. You can close this browser window now, or launch the studio again from the shortcut when you want it back.</p>
           </div>
         </div>
@@ -8996,16 +9716,9 @@
       if (els.stopServerBtn) els.stopServerBtn.disabled = true;
       log("Stopping local app server...");
       try {
-        const response = await fetch("/__shutdown", { method: "POST", cache: "no-store", keepalive: true });
-        if (!response.ok) {
-          if (els.stopServerBtn) els.stopServerBtn.disabled = false;
-          log("The Stop Server command is only available in the locally installed edition.");
-          return;
-        }
+        await fetch("/__shutdown", { method: "POST", cache: "no-store", keepalive: true });
       } catch (error) {
-        if (els.stopServerBtn) els.stopServerBtn.disabled = false;
-        log("The Stop Server command is only available in the locally installed edition.");
-        return;
+        log(`Stop request sent. The app window may need to be closed manually: ${error.message}`);
       }
       showShutdownScreen();
       setTimeout(() => {
@@ -9904,11 +10617,11 @@ local useImportedRotation = false -- OBJ geometry is already exported in final o
 local manifest = ${manifestLua}
 
 local function info(...)
-  print("[BoltWorks 3D AI Studio]", ...)
+  print("[3D Model Studio]", ...)
 end
 
 local function warnf(...)
-  warn("[BoltWorks 3D AI Studio]", ...)
+  warn("[3D Model Studio]", ...)
 end
 
 local function trimText(value)
@@ -10214,7 +10927,7 @@ end
       const textureCatalogLua = toLuaLiteral(textureCatalog, 0);
       const textureByGroupLua = toLuaLiteral(textureAssignments.byGroup, 0);
       const textureByPathLua = toLuaLiteral(textureAssignments.byPath, 0);
-      return `-- BoltWorks 3D AI Studio Roblox placement helper
+      return `-- 3D Model Studio Roblox placement helper
 -- Edit the config blocks below first, then run the script.
 -- textureCatalog: replace each texture name with the correct Roblox asset id once
 -- textureByGroup: same texture name for every part with the same base name
@@ -10240,14 +10953,14 @@ local okSelection, Selection = pcall(function()
   return game:GetService("Selection")
 end)
 
-assert(okSelection and Selection, "BoltWorks 3D AI Studio: this helper must be run from the Roblox Studio Command Bar or a Studio plugin.")
+assert(okSelection and Selection, "3D Model Studio: this helper must be run from the Roblox Studio Command Bar or a Studio plugin.")
 
 local function info(...)
-  print("[BoltWorks 3D AI Studio]", ...)
+  print("[3D Model Studio]", ...)
 end
 
 local function warnf(...)
-  warn("[BoltWorks 3D AI Studio]", ...)
+  warn("[3D Model Studio]", ...)
 end
 
 local function isBuiltPackSelection(instance)
@@ -10850,7 +11563,7 @@ info("Command helpers installed: _G.ModelerRebuildPack(), _G.ModelerDiagnoseImpo
       const textureCatalogLua = toLuaLiteral(textureCatalog, 0);
       const textureByGroupLua = toLuaLiteral(textureAssignments.byGroup, 0);
       const textureByPathLua = toLuaLiteral(textureAssignments.byPath, 0);
-      return `-- BoltWorks 3D AI Studio Roblox rebuild plugin
+      return `-- 3D Model Studio Roblox rebuild plugin
 local pluginObj = plugin
 local Selection = game:GetService("Selection")
 
@@ -10869,7 +11582,7 @@ local markerLabelStagger = 0.18
 local manifest = ${manifestLua}
 
 local function info(...)
-  print("[BoltWorks 3D AI Studio]", ...)
+  print("[3D Model Studio]", ...)
 end
 
 local function isBuiltPackSelection(instance)
@@ -10968,7 +11681,7 @@ local function findImportedRoot()
   local selected = Selection:Get()[1]
   if selected then
     if isBuiltPackSelection(selected) then
-      warn("[BoltWorks 3D AI Studio]", "Selected object is the rebuilt model, not the imported source. Searching Workspace for imported OBJ IDs.")
+      warn("[3D Model Studio]", "Selected object is the rebuilt model, not the imported source. Searching Workspace for imported OBJ IDs.")
     else
       local selectedCount = countExportIdMatches(selected)
       if expectedCount <= 1 or selectedCount >= expectedCount then
@@ -10977,14 +11690,14 @@ local function findImportedRoot()
       end
       local bestRoot, bestCount = bestImportRootFromWorkspace()
       if bestRoot and bestCount > selectedCount then
-        warn("[BoltWorks 3D AI Studio]", "Selected object only contains", selectedCount, "of", expectedCount, "OBJ IDs. Using", bestRoot:GetFullName(), "with", bestCount, "matches instead.")
+        warn("[3D Model Studio]", "Selected object only contains", selectedCount, "of", expectedCount, "OBJ IDs. Using", bestRoot:GetFullName(), "with", bestCount, "matches instead.")
         return bestRoot
       end
       if selectedCount > 0 then
-        warn("[BoltWorks 3D AI Studio]", "Selected object only contains", selectedCount, "of", expectedCount, "OBJ IDs, but no better root was found. Trying selected object anyway.")
+        warn("[3D Model Studio]", "Selected object only contains", selectedCount, "of", expectedCount, "OBJ IDs, but no better root was found. Trying selected object anyway.")
         return selected
       end
-      warn("[BoltWorks 3D AI Studio]", "Selected object has no matching exported OBJ IDs. Searching Workspace.")
+      warn("[3D Model Studio]", "Selected object has no matching exported OBJ IDs. Searching Workspace.")
     end
   end
   local fallback = workspace:FindFirstChild("ImportedParts")
@@ -10994,7 +11707,7 @@ local function findImportedRoot()
       info("Using fallback imported root:", fallback:GetFullName(), "matched", fallbackCount, "of", expectedCount, "OBJ IDs")
       return fallback
     end
-    warn("[BoltWorks 3D AI Studio]", "workspace.ImportedParts exists but contains no matching exported OBJ IDs. Searching Workspace.")
+    warn("[3D Model Studio]", "workspace.ImportedParts exists but contains no matching exported OBJ IDs. Searching Workspace.")
   end
   local bestRoot, bestCount = bestImportRootFromWorkspace()
   if bestRoot and bestCount > 0 then
@@ -11386,7 +12099,7 @@ local function rebuild()
 end
 
 if pluginObj then
-  local toolbar = pluginObj:CreateToolbar("BoltWorks 3D AI Studio")
+  local toolbar = pluginObj:CreateToolbar("3D Model Studio")
   local rebuildButton = toolbar:CreateButton("RebuildPack", "Rebuild imported MeshParts into " .. manifest.name, "")
   local menuButton = toolbar:CreateButton("ModelerTools", "Open rebuild tools for " .. manifest.name, "")
 
@@ -11400,7 +12113,7 @@ if pluginObj then
     360
   )
   local widget = pluginObj:CreateDockWidgetPluginGui("ModelerTools_" .. manifest.name, widgetInfo)
-  widget.Title = "BoltWorks 3D AI Studio Tools"
+  widget.Title = "3D Model Studio Tools"
 
   local rootFrame = Instance.new("Frame")
   rootFrame.Size = UDim2.fromScale(1, 1)
@@ -11533,7 +12246,7 @@ if pluginObj then
   local function diagnoseImports()
     local importedRoot = findImportedRoot()
     if not importedRoot then
-      warn("[BoltWorks 3D AI Studio]", "Select the imported OBJ folder/model in Explorer, or create workspace.ImportedParts.")
+      warn("[3D Model Studio]", "Select the imported OBJ folder/model in Explorer, or create workspace.ImportedParts.")
       return
     end
 
@@ -11549,7 +12262,7 @@ if pluginObj then
         info("Import", checked, texturePathKey(entry), "source", part:GetFullName(), "sourcePos", tostring(part.Position), "sourceRot", tostring(part.Orientation), "targetPos", tostring(resolveEntryCFrame(entry).Position), "localOffset", tostring(robloxVectorFromStudio(entry.position)))
       else
         missing += 1
-        warn("[BoltWorks 3D AI Studio]", "Missing import for", texturePathKey(entry), entry.file, partOrMessage)
+        warn("[3D Model Studio]", "Missing import for", texturePathKey(entry), entry.file, partOrMessage)
       end
     end
 
@@ -11838,7 +12551,7 @@ end
       const xml = `<?xml version="1.0" encoding="utf-8"?>
 <COLLADA xmlns="http://www.collada.org/2005/11/COLLADASchema" version="1.4.1">
   <asset>
-    <contributor><authoring_tool>BoltWorks 3D AI Studio</authoring_tool></contributor>
+    <contributor><authoring_tool>3D Model Studio</authoring_tool></contributor>
     <created>${now}</created>
     <modified>${now}</modified>
     <unit name="meter" meter="1"/>
@@ -12375,16 +13088,473 @@ end
       log(`Exported Bolt 2D sprite package with ${pack.layers.length} right-facing layer${pack.layers.length === 1 ? "" : "s"}.`, `${prefix}.bolt2d.json`);
     }
 
+    const boneRigGroup = new THREE.Group();
+    boneRigGroup.name = "Bone Placement Guides";
+    boneRigGroup.userData.editorHelper = true;
+    scene.add(boneRigGroup);
+
+    const boneGridAxisGroup = new THREE.Group();
+    boneGridAxisGroup.name = "Grid Axis Directions";
+    boneGridAxisGroup.userData.editorHelper = true;
+    scene.add(boneGridAxisGroup);
+
+    function makeGridAxisLabel(text, color) {
+      const labelCanvas = document.createElement("canvas");
+      labelCanvas.width = 96;
+      labelCanvas.height = 96;
+      const context = labelCanvas.getContext("2d");
+      context.clearRect(0, 0, 96, 96);
+      context.fillStyle = "rgba(8, 12, 14, .82)";
+      context.beginPath();
+      context.arc(48, 48, 34, 0, Math.PI * 2);
+      context.fill();
+      context.strokeStyle = color;
+      context.lineWidth = 5;
+      context.stroke();
+      context.fillStyle = color;
+      context.font = "700 46px sans-serif";
+      context.textAlign = "center";
+      context.textBaseline = "middle";
+      context.fillText(text, 48, 51);
+      const texture = new THREE.CanvasTexture(labelCanvas);
+      texture.colorSpace = THREE.SRGBColorSpace;
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
+      sprite.scale.set(.55, .55, .55);
+      sprite.renderOrder = 9000;
+      return sprite;
+    }
+
+    function buildGridAxisDirections() {
+      const extent = 8;
+      const lift = .006;
+      const xGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-extent, lift, 0),
+        new THREE.Vector3(extent, lift, 0)
+      ]);
+      const zGeometry = new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(0, lift, -extent),
+        new THREE.Vector3(0, lift, extent)
+      ]);
+      const xLine = new THREE.Line(xGeometry, new THREE.LineBasicMaterial({ color: 0xe55555, depthTest: false }));
+      const zLine = new THREE.Line(zGeometry, new THREE.LineBasicMaterial({ color: 0x5f8fe8, depthTest: false }));
+      xLine.renderOrder = 8998;
+      zLine.renderOrder = 8998;
+      const xPositive = makeGridAxisLabel("X", "#e55555");
+      const zPositive = makeGridAxisLabel("Z", "#5f8fe8");
+      xPositive.position.set(extent, lift + .02, 0);
+      zPositive.position.set(0, lift + .02, extent);
+      boneGridAxisGroup.add(xLine, zLine, xPositive, zPositive);
+    }
+
+    buildGridAxisDirections();
+
+    let rigBones = [];
+    let selectedBoneId = null;
+    let boneToolMode = "move";
+    let boneDrag = null;
+    const boneRaycaster = new THREE.Raycaster();
+    const bonePointer = new THREE.Vector2();
+    const boneDragPlane = new THREE.Plane();
+    const boneDragHit = new THREE.Vector3();
+
+    function boneById(id) {
+      return rigBones.find(bone => bone.id === id) || null;
+    }
+
+    function selectedBone() {
+      return boneById(selectedBoneId);
+    }
+
+    function freshBoneId() {
+      return `bone-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    }
+
+    function serializeBoneRig() {
+      return {
+        selectedBoneId,
+        showGuides: els.showBonesInput?.checked ?? true,
+        bones: rigBones.map(bone => ({
+          id: bone.id,
+          name: bone.name,
+          parentId: bone.parentId || null,
+          position: bone.position.toArray().map(round),
+          rotation: bone.rotation.toArray().map(round)
+        }))
+      };
+    }
+
+    function restoreBoneRig(data = {}) {
+      rigBones = (data.bones || []).map((bone, index) => ({
+        id: bone.id || freshBoneId(),
+        name: bone.name || `Bone ${index + 1}`,
+        parentId: bone.parentId || null,
+        position: new THREE.Vector3().fromArray(Array.isArray(bone.position) ? bone.position : [0, index, 0]),
+        rotation: new THREE.Vector3().fromArray(Array.isArray(bone.rotation) ? bone.rotation : [0, 0, 0])
+      }));
+      selectedBoneId = boneById(data.selectedBoneId)?.id || rigBones[0]?.id || null;
+      if (els.showBonesInput) els.showBonesInput.checked = data.showGuides ?? true;
+      rebuildBoneVisuals();
+      syncBonePanel();
+    }
+
+    function importedBoneArray(data) {
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.bones)) return data.bones;
+      if (Array.isArray(data?.rigging?.bones)) return data.rigging.bones;
+      if (Array.isArray(data?.editor?.rigging?.bones)) return data.editor.rigging.bones;
+      return null;
+    }
+
+    function importBoneStructure(data, fileName = "bone structure") {
+      const sourceBones = importedBoneArray(data);
+      if (!sourceBones?.length) throw new Error("Bone structure JSON does not contain a non-empty bones array.");
+      const coordinateSpace = String(data?.coordinateSpace || data?.rigging?.coordinateSpace || "world").toLowerCase();
+      const rotationUnit = String(data?.rotationUnit || data?.rigging?.rotationUnit || "radians").toLowerCase();
+      const usedIds = new Set();
+      const imported = sourceBones.map((source, index) => {
+        let id = String(source.id || `bone-${index + 1}`).trim() || `bone-${index + 1}`;
+        while (usedIds.has(id)) id = `${id}-${index + 1}`;
+        usedIds.add(id);
+        const rawPosition = Array.isArray(source.position) ? source.position : [source.x, source.y, source.z];
+        const rawRotation = Array.isArray(source.rotationDegrees)
+          ? source.rotationDegrees.map(value => THREE.MathUtils.degToRad(Number(value) || 0))
+          : (Array.isArray(source.rotation) ? source.rotation : [0, 0, 0]).map(value => {
+              const numeric = Number(value) || 0;
+              return rotationUnit === "degrees" ? THREE.MathUtils.degToRad(numeric) : numeric;
+            });
+        return {
+          id,
+          name: String(source.name || id),
+          parentId: source.parentId == null || source.parentId === "" ? null : String(source.parentId),
+          position: new THREE.Vector3(
+            Number(rawPosition?.[0]) || 0,
+            Number(rawPosition?.[1]) || 0,
+            Number(rawPosition?.[2]) || 0
+          ),
+          rotation: new THREE.Vector3().fromArray(rawRotation)
+        };
+      });
+      const importedById = new Map(imported.map(bone => [bone.id, bone]));
+      imported.forEach(bone => {
+        if (bone.parentId && !importedById.has(bone.parentId)) bone.parentId = null;
+      });
+      if (coordinateSpace === "local") {
+        const resolved = new Set();
+        const resolving = new Set();
+        const resolveWorldPosition = bone => {
+          if (resolved.has(bone.id)) return bone.position;
+          if (resolving.has(bone.id)) {
+            bone.parentId = null;
+            return bone.position;
+          }
+          resolving.add(bone.id);
+          const parent = importedById.get(bone.parentId);
+          if (parent) bone.position.add(resolveWorldPosition(parent));
+          resolving.delete(bone.id);
+          resolved.add(bone.id);
+          return bone.position;
+        };
+        imported.forEach(resolveWorldPosition);
+      }
+      rigBones = imported;
+      selectedBoneId = rigBones[0].id;
+      rebuildBoneVisuals();
+      syncBonePanel();
+      log(`Imported ${rigBones.length} bones from ${fileName}.`, {
+        coordinateSpace,
+        roots: rigBones.filter(bone => !bone.parentId).length
+      });
+    }
+
+    function addRigBone(asChild) {
+      const parent = asChild ? selectedBone() : null;
+      const position = parent
+        ? parent.position.clone().add(new THREE.Vector3(0, 1, 0))
+        : new THREE.Vector3(0, rigBones.length ? rigBones.length * .25 : 1, 0);
+      const bone = {
+        id: freshBoneId(),
+        name: parent ? `${parent.name} Child` : `Bone ${rigBones.length + 1}`,
+        parentId: parent?.id || null,
+        position,
+        rotation: new THREE.Vector3()
+      };
+      rigBones.push(bone);
+      selectedBoneId = bone.id;
+      rebuildBoneVisuals();
+      syncBonePanel();
+      log(`Added ${bone.name}.`);
+    }
+
+    function deleteSelectedBone() {
+      const bone = selectedBone();
+      if (!bone) return;
+      rigBones.forEach(child => {
+        if (child.parentId === bone.id) child.parentId = bone.parentId || null;
+      });
+      rigBones = rigBones.filter(item => item.id !== bone.id);
+      selectedBoneId = rigBones[0]?.id || null;
+      rebuildBoneVisuals();
+      syncBonePanel();
+    }
+
+    function rebuildBoneVisuals() {
+      while (boneRigGroup.children.length) {
+        const child = boneRigGroup.children.pop();
+        child.geometry?.dispose?.();
+        child.material?.dispose?.();
+      }
+      const visible = els.showBonesInput?.checked ?? true;
+      boneRigGroup.visible = visible;
+      for (const bone of rigBones) {
+        const selectedGuide = bone.id === selectedBoneId;
+        const joint = new THREE.Mesh(
+          new THREE.SphereGeometry(selectedGuide ? .12 : .085, 14, 10),
+          new THREE.MeshBasicMaterial({ color: selectedGuide ? 0xffc547 : 0x40c7a5, depthTest: false })
+        );
+        joint.position.copy(bone.position);
+        joint.renderOrder = 10000;
+        joint.userData.boneId = bone.id;
+        joint.userData.boneJoint = true;
+        boneRigGroup.add(joint);
+        const parent = boneById(bone.parentId);
+        if (parent) {
+          const geometry = new THREE.BufferGeometry().setFromPoints([parent.position, bone.position]);
+          const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xe1b14b, depthTest: false }));
+          line.renderOrder = 9999;
+          line.userData.boneId = bone.id;
+          boneRigGroup.add(line);
+        }
+      }
+      const bone = selectedBone();
+      if (bone && visible) addSelectedBoneGizmos(bone);
+    }
+
+    function setObjectLayer(object, layer) {
+      object.traverse?.(child => child.layers.set(layer));
+      object.layers.set(layer);
+      return object;
+    }
+
+    function addSelectedBoneGizmos(bone) {
+      const size = Math.max(.55, boneRigBounds().getSize(new THREE.Vector3()).length() * .045);
+      if (boneToolMode === "move") {
+        const frontX = setObjectLayer(new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), bone.position, size, 0xe55555, size * .24, size * .14), 1);
+        const frontY = setObjectLayer(new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), bone.position, size, 0x69d17d, size * .24, size * .14), 1);
+        const sideZ = setObjectLayer(new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), bone.position, size, 0x5f8fe8, size * .24, size * .14), 2);
+        const sideY = setObjectLayer(new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), bone.position, size, 0x69d17d, size * .24, size * .14), 2);
+        [frontX, frontY, sideZ, sideY].forEach(gizmo => {
+          gizmo.userData.boneGizmo = true;
+          boneRigGroup.add(gizmo);
+        });
+        return;
+      }
+      const segments = 64;
+      const radius = size * .72;
+      const frontPoints = [];
+      const sidePoints = [];
+      for (let index = 0; index <= segments; index += 1) {
+        const angle = index / segments * Math.PI * 2;
+        frontPoints.push(new THREE.Vector3(
+          bone.position.x + Math.cos(angle) * radius,
+          bone.position.y + Math.sin(angle) * radius,
+          bone.position.z
+        ));
+        sidePoints.push(new THREE.Vector3(
+          bone.position.x,
+          bone.position.y + Math.sin(angle) * radius,
+          bone.position.z + Math.cos(angle) * radius
+        ));
+      }
+      const frontRing = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(frontPoints),
+        new THREE.LineBasicMaterial({ color: 0x5f8fe8, depthTest: false })
+      );
+      const sideRing = new THREE.Line(
+        new THREE.BufferGeometry().setFromPoints(sidePoints),
+        new THREE.LineBasicMaterial({ color: 0xe55555, depthTest: false })
+      );
+      frontRing.layers.set(1);
+      sideRing.layers.set(2);
+      frontRing.renderOrder = 10001;
+      sideRing.renderOrder = 10001;
+      frontRing.userData.boneGizmo = true;
+      sideRing.userData.boneGizmo = true;
+      boneRigGroup.add(frontRing, sideRing);
+    }
+
+    function setBoneToolMode(mode) {
+      boneToolMode = mode === "rotate" ? "rotate" : "move";
+      els.boneMoveToolBtn?.classList.toggle("active", boneToolMode === "move");
+      els.boneRotateToolBtn?.classList.toggle("active", boneToolMode === "rotate");
+      rebuildBoneVisuals();
+    }
+
+    function syncBonePanel() {
+      if (!els.boneList) return;
+      els.boneList.innerHTML = "";
+      for (const bone of rigBones) {
+        const option = document.createElement("option");
+        option.value = bone.id;
+        option.textContent = bone.parentId ? `  ${bone.name}` : bone.name;
+        option.selected = bone.id === selectedBoneId;
+        els.boneList.append(option);
+      }
+      const bone = selectedBone();
+      els.boneParentSelect.innerHTML = '<option value="">None (root)</option>';
+      for (const candidate of rigBones) {
+        if (candidate.id === bone?.id) continue;
+        const option = document.createElement("option");
+        option.value = candidate.id;
+        option.textContent = candidate.name;
+        els.boneParentSelect.append(option);
+      }
+      const disabled = !bone;
+      [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ, els.deleteBoneBtn].forEach(control => control.disabled = disabled);
+      els.selectedBoneLabel.textContent = `Selected: ${bone?.name || "None"}`;
+      els.boneNameInput.value = bone?.name || "";
+      els.boneParentSelect.value = bone?.parentId || "";
+      els.bonePosX.value = bone ? String(round(bone.position.x)) : "";
+      els.bonePosY.value = bone ? String(round(bone.position.y)) : "";
+      els.bonePosZ.value = bone ? String(round(bone.position.z)) : "";
+      els.boneRotX.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.x))) : "";
+      els.boneRotY.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.y))) : "";
+      els.boneRotZ.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.z))) : "";
+    }
+
+    function applyBonePanelValues() {
+      const bone = selectedBone();
+      if (!bone) return;
+      bone.name = els.boneNameInput.value.trim() || bone.name;
+      bone.parentId = els.boneParentSelect.value || null;
+      bone.position.set(
+        Number(els.bonePosX.value) || 0,
+        Number(els.bonePosY.value) || 0,
+        Number(els.bonePosZ.value) || 0
+      );
+      bone.rotation.set(
+        THREE.MathUtils.degToRad(Number(els.boneRotX.value) || 0),
+        THREE.MathUtils.degToRad(Number(els.boneRotY.value) || 0),
+        THREE.MathUtils.degToRad(Number(els.boneRotZ.value) || 0)
+      );
+      rebuildBoneVisuals();
+      syncBonePanel();
+    }
+
+    function boneRigBounds() {
+      const box = new THREE.Box3();
+      const modelBox = sceneBounds();
+      if (modelBox && !modelBox.isEmpty()) box.union(modelBox);
+      rigBones.forEach(bone => box.expandByPoint(bone.position));
+      if (box.isEmpty()) box.setFromCenterAndSize(new THREE.Vector3(0, 1, 0), new THREE.Vector3(6, 6, 6));
+      return box;
+    }
+
+    function fitBoneCamera(referenceCamera, canvasElement, view) {
+      const rect = canvasElement.parentElement.getBoundingClientRect();
+      const box = boneRigBounds();
+      const center = box.getCenter(new THREE.Vector3());
+      const size = box.getSize(new THREE.Vector3());
+      const aspect = rect.width / Math.max(1, rect.height);
+      const vertical = Math.max(4, size.y * 1.35);
+      const horizontal = Math.max(4, (view === "front" ? size.x : size.z) * 1.35);
+      const halfHeight = Math.max(vertical * .5, horizontal / Math.max(.1, aspect) * .5);
+      const halfWidth = halfHeight * aspect;
+      referenceCamera.left = -halfWidth;
+      referenceCamera.right = halfWidth;
+      referenceCamera.top = halfHeight;
+      referenceCamera.bottom = -halfHeight;
+      if (view === "front") {
+        referenceCamera.position.set(center.x, center.y, center.z + 100);
+        referenceCamera.up.set(0, 1, 0);
+      } else {
+        referenceCamera.position.set(center.x + 100, center.y, center.z);
+        referenceCamera.up.set(0, 1, 0);
+      }
+      referenceCamera.lookAt(center);
+      referenceCamera.updateProjectionMatrix();
+    }
+
+    function resizeReferenceRenderer(referenceRenderer, referenceCamera, referenceCanvas, view) {
+      const rect = referenceCanvas.parentElement.getBoundingClientRect();
+      referenceRenderer.setSize(rect.width, rect.height, false);
+      fitBoneCamera(referenceCamera, referenceCanvas, view);
+    }
+
+    function bonePointerRay(event, referenceCanvas, referenceCamera) {
+      const rect = referenceCanvas.getBoundingClientRect();
+      bonePointer.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+      bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+      boneRaycaster.setFromCamera(bonePointer, referenceCamera);
+    }
+
+    function beginBoneDrag(event, view, referenceCanvas, referenceCamera) {
+      bonePointerRay(event, referenceCanvas, referenceCamera);
+      const hit = boneRaycaster.intersectObjects(boneRigGroup.children.filter(child => child.userData.boneJoint), false)[0];
+      if (!hit) return;
+      selectedBoneId = hit.object.userData.boneId;
+      const bone = selectedBone();
+      if (!bone) return;
+      if (view === "front") boneDragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(0, 0, 1), bone.position);
+      else boneDragPlane.setFromNormalAndCoplanarPoint(new THREE.Vector3(1, 0, 0), bone.position);
+      boneRaycaster.ray.intersectPlane(boneDragPlane, boneDragHit);
+      const startAngle = view === "front"
+        ? Math.atan2(boneDragHit.y - bone.position.y, boneDragHit.x - bone.position.x)
+        : Math.atan2(boneDragHit.y - bone.position.y, boneDragHit.z - bone.position.z);
+      boneDrag = {
+        view,
+        canvas: referenceCanvas,
+        camera: referenceCamera,
+        pointerId: event.pointerId,
+        startAngle,
+        startRotation: bone.rotation.clone()
+      };
+      referenceCanvas.setPointerCapture?.(event.pointerId);
+      rebuildBoneVisuals();
+      syncBonePanel();
+      event.preventDefault();
+    }
+
+    function moveBoneDrag(event) {
+      if (!boneDrag || event.pointerId !== boneDrag.pointerId) return;
+      const bone = selectedBone();
+      if (!bone) return;
+      bonePointerRay(event, boneDrag.canvas, boneDrag.camera);
+      if (!boneRaycaster.ray.intersectPlane(boneDragPlane, boneDragHit)) return;
+      if (boneToolMode === "move") {
+        if (boneDrag.view === "front") bone.position.set(boneDragHit.x, boneDragHit.y, bone.position.z);
+        else bone.position.set(bone.position.x, boneDragHit.y, boneDragHit.z);
+      } else {
+        const angle = boneDrag.view === "front"
+          ? Math.atan2(boneDragHit.y - bone.position.y, boneDragHit.x - bone.position.x)
+          : Math.atan2(boneDragHit.y - bone.position.y, boneDragHit.z - bone.position.z);
+        const delta = angle - boneDrag.startAngle;
+        if (boneDrag.view === "front") bone.rotation.z = boneDrag.startRotation.z + delta;
+        else bone.rotation.x = boneDrag.startRotation.x + delta;
+      }
+      rebuildBoneVisuals();
+      syncBonePanel();
+      event.preventDefault();
+    }
+
+    function endBoneDrag(event) {
+      if (!boneDrag || event.pointerId !== boneDrag.pointerId) return;
+      boneDrag.canvas.releasePointerCapture?.(event.pointerId);
+      boneDrag = null;
+    }
+
     function resize() {
       const rect = canvas.parentElement.getBoundingClientRect();
       renderer.setSize(rect.width, rect.height, false);
       camera.aspect = rect.width / Math.max(1, rect.height);
       camera.updateProjectionMatrix();
+      resizeReferenceRenderer(frontBoneRenderer, frontBoneCamera, frontBoneCanvas, "front");
+      resizeReferenceRenderer(sideBoneRenderer, sideBoneCamera, sideBoneCanvas, "side");
     }
 
     function animate() {
       requestAnimationFrame(animate);
       resize();
+      boneGridAxisGroup.visible = !!els.showGridInput?.checked;
       orbit.update();
       if (lineSketchMode && lineSketchPoints.length) updateLineSketchGuide();
       if (lineSketchMode && lineSketchHover?.point) {
@@ -12392,6 +13562,8 @@ end
         lineSketchCursor.scale.setScalar(radius);
       }
       renderer.render(scene, camera);
+      frontBoneRenderer.render(scene, frontBoneCamera);
+      sideBoneRenderer.render(scene, sideBoneCamera);
     }
 
     function hitFromPointerEvent(event) {
@@ -12548,6 +13720,47 @@ end
     els.addMeshToggle.addEventListener("click", () => toggleSection(els.addMeshSection, els.addMeshToggle));
     els.inspectorToggle.addEventListener("click", () => toggleSection(els.inspectorSection, els.inspectorToggle));
     els.utilitiesToggle.addEventListener("click", () => toggleSection(els.utilitiesSection, els.utilitiesToggle));
+    if (els.imageReliefMeshPlugin) {
+      els.imageReliefMeshPlugin.hidden = !pluginRegistry.imageReliefMeshLab.enabled;
+    }
+    if (els.sceneRenderingTools) {
+      els.sceneRenderingTools.hidden = !pluginRegistry.sceneRenderingTools.enabled;
+    }
+    els.addRootBoneBtn?.addEventListener("click", () => addRigBone(false));
+    els.addChildBoneBtn?.addEventListener("click", () => addRigBone(true));
+    els.deleteBoneBtn?.addEventListener("click", deleteSelectedBone);
+    els.importBoneStructureBtn?.addEventListener("click", () => els.boneStructureFile?.click());
+    els.boneStructureFile?.addEventListener("change", async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      try {
+        importBoneStructure(JSON.parse(await file.text()), file.name);
+      } catch (error) {
+        log(`Bone import failed: ${error.message}`);
+      } finally {
+        event.target.value = "";
+      }
+    });
+    els.boneMoveToolBtn?.addEventListener("click", () => setBoneToolMode("move"));
+    els.boneRotateToolBtn?.addEventListener("click", () => setBoneToolMode("rotate"));
+    els.boneList?.addEventListener("change", () => {
+      selectedBoneId = els.boneList.value || null;
+      rebuildBoneVisuals();
+      syncBonePanel();
+    });
+    [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ].forEach(control => {
+      control?.addEventListener("change", applyBonePanelValues);
+    });
+    els.showBonesInput?.addEventListener("change", rebuildBoneVisuals);
+    frontBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "front", frontBoneCanvas, frontBoneCamera));
+    sideBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "side", sideBoneCanvas, sideBoneCamera));
+    frontBoneCanvas.addEventListener("pointermove", moveBoneDrag);
+    sideBoneCanvas.addEventListener("pointermove", moveBoneDrag);
+    frontBoneCanvas.addEventListener("pointerup", endBoneDrag);
+    sideBoneCanvas.addEventListener("pointerup", endBoneDrag);
+    frontBoneCanvas.addEventListener("pointercancel", endBoneDrag);
+    sideBoneCanvas.addEventListener("pointercancel", endBoneDrag);
+    restoreBoneRig({ bones: [], showGuides: true });
     els.statusToggle.addEventListener("click", () => toggleSection(els.statusSection, els.statusToggle));
     document.querySelector("#groupBtn").addEventListener("click", groupCheckedParts);
     document.querySelector("#ungroupBtn").addEventListener("click", ungroupParts);
@@ -13156,4 +14369,3 @@ end
   </script>
 </body>
 </html>
-

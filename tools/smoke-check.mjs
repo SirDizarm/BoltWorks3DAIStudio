@@ -372,7 +372,7 @@ for (const materialGuard of [
   }
 }
 
-if (!html.includes("BoltWorks 3D AI Studio v46") || !html.includes("recovered_body_generator_v46")) {
+if (!html.includes("BoltWorks 3D AI Studio - Experimental Preview") || !html.includes("Experimental preview")) {
   throw new Error("The visible application build must identify the restored joined-surface revision.");
 }
 
