@@ -19,3 +19,8 @@ npm start
 ```
 
 The primary application entry point is `index.html`.
+## License and rights
+
+Copyright (c) 2026 Daniel Rydin.
+
+Source code is licensed under the [Apache License 2.0](LICENSE). BoltWorks branding and visual assets are not part of that license grant; see [TRADEMARKS.md](TRADEMARKS.md) and [ASSET-LICENSE.md](ASSET-LICENSE.md).
