@@ -1,0 +1,8 @@
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
+import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
+import { MTLLoader } from "three/addons/loaders/MTLLoader.js";
+import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
+import { OBJExporter } from "three/addons/exporters/OBJExporter.js";
+import { createMeshFactory } from "./meshes/factory.js";

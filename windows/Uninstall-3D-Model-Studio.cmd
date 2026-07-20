@@ -6,7 +6,7 @@ echo.
 choice /M "Do you want to continue"
 if errorlevel 2 exit /b 0
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0windows\Uninstall-3D-Model-Studio.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Uninstall-3D-Model-Studio.ps1"
 if errorlevel 1 (
   echo.
   echo Uninstall failed.

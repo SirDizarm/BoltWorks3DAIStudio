@@ -1,6 +1,6 @@
 # Visual assets and generated output
 
-The Apache License 2.0 in `LICENSE` applies to this repository's source code unless a file states otherwise.
+The Apache License 2.0 in [`LICENSE`](../../LICENSE) applies to this repository's source code unless a file states otherwise.
 
 Original BoltWorks logos, wordmarks, app icons, branding, artwork, example media, and other visual assets are not included in the Apache License grant. Copyright 2026 Daniel Rydin. All rights reserved.
 

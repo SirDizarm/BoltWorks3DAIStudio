@@ -2,7 +2,7 @@
 
 The app now exposes a dedicated procedural mesh layer through:
 
-- `./MeshFactory.js`
+- `./app/meshes/factory.js`
 - `window.ModelerStudio.proceduralTemplates()`
 - `window.ModelerStudio.proceduralTemplateCatalog()`
 - `window.ModelerStudio.buildProceduralAssembly(kind, options)`

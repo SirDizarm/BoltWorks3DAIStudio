@@ -3,7 +3,7 @@ setlocal
 title Update BoltWorks 3D AI Studio
 echo Updating BoltWorks 3D AI Studio...
 echo.
-powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0windows\Install-3D-Model-Studio.ps1"
+powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0Install-3D-Model-Studio.ps1"
 if errorlevel 1 (
   echo.
   echo Update failed.

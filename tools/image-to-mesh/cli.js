@@ -133,7 +133,7 @@ async function main() {
   const [, , inputImage, outputBase] = process.argv;
 
   if (!inputImage || !outputBase) {
-    console.error('Usage: node image-to-mesh.js <input.png> <outputBase>');
+    console.error('Usage: node tools/image-to-mesh/cli.js <input.png> <outputBase>');
     process.exit(1);
   }
 

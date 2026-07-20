@@ -1,9 +1,10 @@
 node_modules/
-deps/
+dist/
+.runtime/
+.cache/
 server.log
 server.err.log
 *.obj
 *_mesh.json
 .DS_Store
 Thumbs.db
-

@@ -1,11 +1,53 @@
 import { readFileSync } from "node:fs";
+import { studioModuleOrder } from "../app/source-composer.mjs";
+import { createMeshFactory } from "../app/meshes/factory.js";
 
-const html = readFileSync(new URL("../index.html", import.meta.url), "utf8");
-const imageToMeshGenerator = readFileSync(new URL("../image-to-mesh-generator.js", import.meta.url), "utf8");
+const documentSource = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const moduleSources = new Map(studioModuleOrder.map(name => [
+  name,
+  readFileSync(new URL(`../app/modules/${name}.js`, import.meta.url), "utf8")
+]));
+const applicationSource = [...moduleSources.values()].join("\n");
+const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
+const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v48.0.10.js", import.meta.url), "utf8");
+// Preserve the existing checks while testing the new canonical modular source as
+// one logical application, exactly as the Pages builder and local server do.
+const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${applicationSource}`;
+
+const facetedBallBuilders = {
+  box: () => "box",
+  facetedBallLow: () => "faceted-20",
+  facetedBallMedium: () => "faceted-80",
+  facetedBallHigh: () => "faceted-320"
+};
+const facetedBallFactory = createMeshFactory({ builders: facetedBallBuilders });
+for (const [shape, expected] of [
+  ["facetedBallLow", "faceted-20"],
+  ["facetedBallMedium", "faceted-80"],
+  ["facetedBallHigh", "faceted-320"]
+]) {
+  if (facetedBallFactory.shapeFactories[shape]?.() !== expected) {
+    throw new Error(`${shape} must keep its registered geometry instead of falling back to box.`);
+  }
+}
+
+if (!documentSource.includes('<script defer src="./app/studio-v48.0.10.js"></script>')) {
+  throw new Error("index.html must load the direct-open classic studio bundle.");
+}
+if (documentSource.includes('type="module" src="./app/studio-v48.0.10.js') || documentSource.includes('type="importmap"')) {
+  throw new Error("Direct index opening cannot depend on module loading or an import map.");
+}
+if (!directBundle.startsWith("/* Generated from app/modules.")) {
+  throw new Error("Missing generated direct-open studio bundle.");
+}
+const imageToMeshGenerator = readFileSync(new URL("./image-to-mesh/generator.js", import.meta.url), "utf8");
 
 for (const required of [
   "BoltWorks 3D AI Studio",
   "window.ModelerStudio",
+  "data-local-host-only hidden",
+  "detectLocalHost",
   "METERS_PER_ROBLOX_STUD",
   "ROBLOX_STUDS_PER_METER",
   "preserveDrawingBuffer: true",
@@ -26,6 +68,9 @@ for (const required of [
   "prism: makePrismGeometry",
   "tetrahedron: () => new THREE.TetrahedronGeometry",
   "pyramidFrustum: () => {",
+  "facetedBallLow: () => new THREE.IcosahedronGeometry(.58, 0)",
+  "facetedBallMedium: () => new THREE.IcosahedronGeometry(.58, 1)",
+  "facetedBallHigh: () => new THREE.IcosahedronGeometry(.58, 2)",
   "heart: makeHeartGeometry",
   "makeHemisphereGeometry",
   "makePrismGeometry",
@@ -39,11 +84,15 @@ for (const required of [
   "cutAmountInput",
   "cutMeshBtn",
   "cutSelectedMesh",
+  "coplanarRegionBoundary",
+  "insetConvexPolygon",
+  "makeInsetBeveledPolygonGeometry",
+  "THREE.ShapeUtils.triangulateShape(inner, [])",
+  "region.boundary.length >= 3",
   "Cut the selected part",
   "View Space",
   "Shot Zoom",
   "Show Grid",
-  "Select Part Overlay",
   "Use Current Zoom In Shots",
   "Hide Grid In Shots",
   "previewFrontBtn",
@@ -56,7 +105,6 @@ for (const required of [
   "viewSpaceInput",
   "shotSpaceInput",
   "showGridInput",
-  "showSelectionOverlayInput",
   "useCurrentZoomInShotsInput",
   "hideGridInShotsInput",
   "viewSpaceMultiplier",
@@ -75,6 +123,12 @@ for (const required of [
   "Prism",
   "Tetrahedron",
   "Pyramid Frustum",
+  "bonePlacementSection",
+  "data-collapse-persist=\"bone-placement\"",
+  ".compact-row.bone-axis-row",
+  "grid-template-columns: auto repeat(4, minmax(42px, 1fr))",
+  "#utilitiesBody {\n  overflow: visible;",
+  "panelCollapseStoragePrefix",
   "Heart",
   "TransformControls",
   "Flip X",
@@ -100,8 +154,6 @@ for (const required of [
   "materialRule",
   "Paper",
   "Upholstery",
-  "selection highlight guides",
-  "updateSelectionGuides",
   "Hide All",
   "Un Hide All",
   "textureRobloxAssetId",
@@ -359,21 +411,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!html.includes('<option value="meshRebuild" selected>Recovered v41 body reconstruction</option>')) {
-  throw new Error("Solid view-sheet reconstruction is not the default image-to-mesh mode.");
-}
-
-for (const materialGuard of [
-  'meta.buildMode === "meshRebuild"',
-  "mesh.material.side = THREE.DoubleSide"
-]) {
-  if (!html.includes(materialGuard)) {
-    throw new Error(`Missing relief surface material guard: ${materialGuard}`);
-  }
-}
-
-if (!html.includes("BoltWorks 3D AI Studio v47.1 Experimental") || !html.includes("v47.1 Experimental preview")) {
-  throw new Error("The visible application build must identify the restored joined-surface revision.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v48.0.10 Experimental") || !documentSource.includes("v48.0.10 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v48.0.10 version.");
 }
 
 for (const expectedDefault of [
@@ -381,9 +420,35 @@ for (const expectedDefault of [
   'id="reliefGridYInput" type="number" min="8" max="220" step="1" value="96"',
   'id="reliefThresholdInput" type="number" min="0" max="255" step="1" value="70"',
   'id="reliefSmoothInput" type="number" min="0" max="8" step="1" value="2"',
-  '<option value="sheet" selected>View sheet to one model</option>'
+  '<option value="single">Single height image</option>',
+  '<option value="sheet">View sheet to one model</option>'
 ]) {
   if (!html.includes(expectedDefault)) throw new Error(`Missing detailed view-sheet default: ${expectedDefault}`);
+}
+
+for (const moduleName of studioModuleOrder) {
+  if (!moduleSources.get(moduleName)?.trim()) throw new Error(`Empty canonical module: ${moduleName}`);
+}
+
+for (const removedSelectionOverlayFeature of ["Select Part Overlay", "showSelectionOverlayInput", "updateSelectionGuides", "selectionGuides", "fillHolePreviewGroup", "updateFillHolePreview"]) {
+  if (html.includes(removedSelectionOverlayFeature)) {
+    throw new Error(`Removed selection overlay must not return: ${removedSelectionOverlayFeature}`);
+  }
+}
+if (!moduleSources.get("meshes").includes("side: THREE.BackSide") || !moduleSources.get("meshes").includes("outline.matrix.copy(mesh.matrixWorld).scale(selectionOutlinePadding);")) {
+  throw new Error("Selected objects must use a silhouette outline synchronized from the mesh world matrix.");
+}
+if (!moduleSources.get("panels").includes("syncSelectionOutlineTransforms();")) {
+  throw new Error("The selected-object silhouette must follow transforms on every rendered frame.");
+}
+if (!moduleSources.get("meshes").includes("shape.absarc(0, 0, .34, 0, Math.PI, false);")) {
+  throw new Error("Arch must remain one continuous extruded geometry, not disconnected mesh islands.");
+}
+if (!moduleSources.get("meshes").includes("setCoplanarFacePickMode(false, { activatePicker: false });")) {
+  throw new Error("Object transforms must deactivate surface editing modes.");
+}
+if (!moduleSources.get("panels").includes("transform.visible && transform.axis")) {
+  throw new Error("Gizmo pointer events must not leak through to mesh face selection.");
 }
 
 console.log("BoltWorks 3D AI Studio smoke check passed.");

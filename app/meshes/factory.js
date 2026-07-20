@@ -192,6 +192,9 @@ export function createMeshFactory({ builders = {} } = {}) {
     prism: builders.prism,
     tetrahedron: builders.tetrahedron,
     pyramidFrustum: builders.pyramidFrustum,
+    facetedBallLow: builders.facetedBallLow,
+    facetedBallMedium: builders.facetedBallMedium,
+    facetedBallHigh: builders.facetedBallHigh,
     heart: builders.heart,
     stair: builders.stair
   };

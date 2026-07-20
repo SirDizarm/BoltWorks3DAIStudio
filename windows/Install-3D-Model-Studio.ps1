@@ -10,7 +10,8 @@ $sourceRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $installRoot = [IO.Path]::GetFullPath($InstallDir)
 $desktopPath = [Environment]::GetFolderPath("Desktop")
 $startMenuDir = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs"
-$shortcutTarget = Join-Path $installRoot "Launch-3D-Model-Studio.cmd"
+$shortcutTarget = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$shortcutArguments = "-NoProfile -ExecutionPolicy Bypass -File `"$installRoot\windows\Launch-3D-Model-Studio.ps1`""
 $shortcutIcon = "$env:SystemRoot\System32\SHELL32.dll,137"
 $progId = "ModelStudio.Project"
 
@@ -40,11 +41,11 @@ function New-Shortcut {
 }
 
 if ($DesktopShortcut) {
-  New-Shortcut -Path (Join-Path $desktopPath "BoltWorks 3D AI Studio.lnk") -TargetPath $shortcutTarget -WorkingDirectory $installRoot -IconLocation $shortcutIcon
+  New-Shortcut -Path (Join-Path $desktopPath "BoltWorks 3D AI Studio.lnk") -TargetPath $shortcutTarget -WorkingDirectory $installRoot -Arguments $shortcutArguments -IconLocation $shortcutIcon
 }
 
 if ($StartMenuShortcut) {
-  New-Shortcut -Path (Join-Path $startMenuDir "BoltWorks 3D AI Studio.lnk") -TargetPath $shortcutTarget -WorkingDirectory $installRoot -IconLocation $shortcutIcon
+  New-Shortcut -Path (Join-Path $startMenuDir "BoltWorks 3D AI Studio.lnk") -TargetPath $shortcutTarget -WorkingDirectory $installRoot -Arguments $shortcutArguments -IconLocation $shortcutIcon
 }
 
 $openCommand = "powershell.exe -NoProfile -ExecutionPolicy Bypass -File `"$installRoot\windows\Launch-3D-Model-Studio.ps1`" `"%1`""
@@ -59,5 +60,5 @@ Set-Item -Path "HKCU:\Software\Classes\$progId\shell\open\command" -Value $openC
 
 Write-Host ""
 Write-Host "Installed BoltWorks 3D AI Studio."
-Write-Host "Launcher: $shortcutTarget"
+Write-Host "Launcher: $installRoot\windows\Launch-3D-Model-Studio.ps1"
 Write-Host "Project files (.modelerproj) now open with the launcher for this user."

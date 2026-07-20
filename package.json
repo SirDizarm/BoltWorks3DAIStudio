@@ -1,15 +1,22 @@
 {
   "name": "boltworks-3d-ai-studio",
-  "version": "0.47.1",
+  "version": "0.48.10",
   "private": true,
   "type": "module",
   "scripts": {
+    "build:studio": "node tools/studio-bundler.mjs",
     "start": "node tools/server.mjs",
+    "precheck": "npm run build:studio",
     "check": "node tools/smoke-check.mjs",
-    "build:web": "node tools/build-web.mjs"
+    "build:web": "node tools/build-web.mjs",
+    "check:mobile": "node tools/mobile-smoke-check.mjs",
+    "check:server": "node tools/localserver/smoke-check.mjs"
   },
   "dependencies": {
     "jimp": "^1.6.1",
     "three": "0.165.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
   }
 }

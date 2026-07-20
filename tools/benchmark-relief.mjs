@@ -1,5 +1,5 @@
 import { Jimp } from "jimp";
-import { createGeometry } from "../image-to-mesh-generator.js";
+import { createGeometry } from "./image-to-mesh/generator.js";
 
 const source = process.argv[2];
 if (!source) throw new Error("Usage: node tools/benchmark-relief.mjs <view-sheet.png>");
