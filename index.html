@@ -337,8 +337,8 @@
       overflow-y: auto;
     }
 
-    .section.collapsed .section-body {
-      display: none;
+    .section.collapsed > .section-body {
+      display: none !important;
     }
 
     #inspectorSection,
@@ -1134,10 +1134,23 @@
   </style>
 </head>
 <body>
-  <div class="experimental-notice" role="status"><strong>v47.2 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+  <script>
+    // Register panel collapsing before the 3D application starts. This keeps the
+    // editor chrome usable even if a later renderer or import feature fails.
+    document.addEventListener("click", function (event) {
+      const toggle = event.target.closest && event.target.closest(".section-header");
+      if (!toggle) return;
+      const section = toggle.closest(".section");
+      if (!section) return;
+      const collapsed = section.classList.toggle("collapsed");
+      toggle.setAttribute("aria-expanded", String(!collapsed));
+      event.__boltworksSectionHandled = true;
+    }, true);
+  </script>
+  <div class="experimental-notice" role="status"><strong>v47.3 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47.2 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v47.3 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -1728,7 +1741,12 @@
 
     const grid = new THREE.GridHelper(18, 18, 0x7f929c, 0x34424a);
     grid.visible = true;
-    grid.renderOrder = -1000;
+    grid.position.y = 0.015;
+    grid.renderOrder = 1000;
+    grid.material.transparent = true;
+    grid.material.opacity = 0.9;
+    grid.material.depthTest = false;
+    grid.material.depthWrite = false;
     scene.add(grid);
     const gridLabelGroup = new THREE.Group();
     gridLabelGroup.name = "grid direction labels";
@@ -2828,6 +2846,7 @@
     // individual setup order changes.
     document.addEventListener("click", event => {
       const toggle = event.target.closest?.(".section-header");
+      if (event.__boltworksSectionHandled) return;
       if (!toggle) return;
       const section = toggle.closest(".section");
       if (!section) return;
