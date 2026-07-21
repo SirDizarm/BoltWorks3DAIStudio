@@ -241,7 +241,13 @@ body:has(#toggleToolbarImportExport:not(:checked)) #toolbarImportExportGroup {
   display: flex;
   flex-direction: column;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  direction: rtl;
+}
+
+.left > * {
+  direction: ltr;
 }
 
 .left > .section {
@@ -249,19 +255,14 @@ body:has(#toggleToolbarImportExport:not(:checked)) #toolbarImportExportGroup {
 }
 
 #addMeshSection {
-  flex: 0 1 56%;
-  min-height: 54px;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+  flex: 0 0 auto;
+  min-height: 0;
+  overflow: visible;
 }
 
 #addMeshBody {
-  min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  padding-right: 4px;
-  scrollbar-gutter: stable;
+  overflow: visible;
+  padding-right: 0;
 }
 
 #addMeshSection.collapsed {
@@ -412,20 +413,29 @@ label {
 }
 
 .tree {
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: hidden;
   padding: 8px;
+  scrollbar-gutter: stable;
+  --scene-tree-content-width: 520px;
 }
 
 .tree-controls {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 .tree-group {
+  min-width: var(--scene-tree-content-width);
   margin-bottom: 10px;
+}
+
+.tree > .object-row {
+  min-width: var(--scene-tree-content-width);
 }
 
 .tree-group-header {

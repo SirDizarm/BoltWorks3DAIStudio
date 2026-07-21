@@ -10,7 +10,7 @@ const moduleSources = new Map(studioModuleOrder.map(name => [
 const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v48.0.11.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v48.0.12.js", import.meta.url), "utf8");
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${applicationSource}`;
@@ -32,10 +32,10 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v48.0.11.js"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v48.0.12.js"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v48.0.11.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v48.0.12.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -150,8 +150,13 @@ for (const required of [
   ".compact-row.bone-axis-row",
   "grid-template-columns: auto repeat(4, minmax(42px, 1fr))",
   "#utilitiesBody {\n  overflow: visible;",
-  "#addMeshBody",
-  "scrollbar-gutter: stable;",
+  "overflow-y: auto;",
+  "direction: rtl;",
+  ".left > * {\n  direction: ltr;",
+  ".tree-controls {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;",
+  "--scene-tree-content-width: 520px;",
+  "overflow-x: auto;\n  overflow-y: hidden;",
+  "#addMeshBody {\n  overflow: visible;",
   "panelCollapseStoragePrefix",
   "Heart",
   "TransformControls",
@@ -437,8 +442,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v48.0.11 Experimental") || !documentSource.includes("v48.0.11 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v48.0.11 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v48.0.12 Experimental") || !documentSource.includes("v48.0.12 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v48.0.12 version.");
 }
 
 for (const expectedDefault of [
