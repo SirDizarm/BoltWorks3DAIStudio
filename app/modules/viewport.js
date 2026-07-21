@@ -557,6 +557,7 @@ const els = {
   saveRightPngBtn: document.querySelector("#saveRightPngBtn"),
   saveTopPngBtn: document.querySelector("#saveTopPngBtn"),
   saveIsoPngBtn: document.querySelector("#saveIsoPngBtn"),
+  saveQaSheetBtn: document.querySelector("#saveQaSheetBtn"),
   resetZoomBtn: document.querySelector("#resetZoomBtn"),
   hudText: document.querySelector("#hudText")
 };

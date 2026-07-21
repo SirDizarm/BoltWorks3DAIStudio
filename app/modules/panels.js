@@ -296,12 +296,13 @@ els.previewLeftBtn.addEventListener("click", () => previewShotView("left"));
 els.previewRightBtn.addEventListener("click", () => previewShotView("right"));
 els.previewTopBtn.addEventListener("click", () => previewShotView("top"));
 els.previewIsoBtn.addEventListener("click", () => previewShotView("iso"));
-els.saveFrontPngBtn.addEventListener("click", () => saveSingleViewPng("front"));
-els.saveBackPngBtn.addEventListener("click", () => saveSingleViewPng("back"));
-els.saveLeftPngBtn.addEventListener("click", () => saveSingleViewPng("left"));
-els.saveRightPngBtn.addEventListener("click", () => saveSingleViewPng("right"));
-els.saveTopPngBtn.addEventListener("click", () => saveSingleViewPng("top"));
-els.saveIsoPngBtn.addEventListener("click", () => saveSingleViewPng("iso"));
+els.saveFrontPngBtn.addEventListener("click", async () => saveSingleViewPng("front"));
+els.saveBackPngBtn.addEventListener("click", async () => saveSingleViewPng("back"));
+els.saveLeftPngBtn.addEventListener("click", async () => saveSingleViewPng("left"));
+els.saveRightPngBtn.addEventListener("click", async () => saveSingleViewPng("right"));
+els.saveTopPngBtn.addEventListener("click", async () => saveSingleViewPng("top"));
+els.saveIsoPngBtn.addEventListener("click", async () => saveSingleViewPng("iso"));
+els.saveQaSheetBtn?.addEventListener("click", async () => saveQaSheet());
 els.viewSpaceInput.addEventListener("change", frameSelected);
 els.shotSpaceInput.addEventListener("change", () => log(`Save Views zoom set to ${els.shotSpaceInput.value}. Lower values zoom in closer when current zoom syncing is off.`));
 els.environmentSelect?.addEventListener("change", () => {
@@ -342,9 +343,9 @@ els.showGridInput.addEventListener("change", () => {
 els.useCurrentZoomInShotsInput.addEventListener("change", () => log(`${els.useCurrentZoomInShotsInput.checked ? "Using current viewport zoom" : "Using Shot Zoom input"} for Save Views.`));
 els.hideGridInShotsInput.addEventListener("change", () => log(`${els.hideGridInShotsInput.checked ? "Hiding" : "Showing"} grid in Save Views screenshots.`));
 document.querySelector("#resetBtn").addEventListener("click", () => { clearObjects(); log("Scene reset."); });
-document.querySelector("#captureViewsBtn").addEventListener("click", () => {
+document.querySelector("#captureViewsBtn").addEventListener("click", async () => {
   const prefix = currentProjectBaseName();
-  const shots = captureViews({ download: true, prefix });
+  const shots = await captureViews({ download: true, prefix });
   log(`Saved ${shots.length} reference screenshots for AI review.`, shots.map(shot => shot.fileName));
 });
 
@@ -802,6 +803,7 @@ window.ModelerStudio = {
   }),
   captureView,
   captureViews,
+  saveQaSheet,
   exportObjParts,
   frameSelected,
   addMarkerFromSelectedTriangle,

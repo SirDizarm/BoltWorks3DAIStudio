@@ -30005,6 +30005,7 @@ void main() {
     saveRightPngBtn: document.querySelector("#saveRightPngBtn"),
     saveTopPngBtn: document.querySelector("#saveTopPngBtn"),
     saveIsoPngBtn: document.querySelector("#saveIsoPngBtn"),
+    saveQaSheetBtn: document.querySelector("#saveQaSheetBtn"),
     resetZoomBtn: document.querySelector("#resetZoomBtn"),
     hudText: document.querySelector("#hudText")
   };
@@ -36614,14 +36615,25 @@ void main() {
   }
   function projectState() {
     const projectName = currentProjectBaseName();
+    const textureLibraryEntries = serializeTextureLibrary();
+    const scene2 = state();
+    const textureNameByUrl = new Map(
+      textureLibraryEntries.filter((entry) => entry?.name && entry?.dataUrl).map((entry) => [entry.dataUrl, entry.name])
+    );
+    for (const object of scene2.objects || []) {
+      const libraryName = textureNameByUrl.get(object.textureUrl);
+      if (!libraryName) continue;
+      object.textureName = libraryName;
+      object.textureUrl = null;
+    }
     return {
       kind: "modeler-project",
       version: 1,
       name: projectName,
       savedAt: (/* @__PURE__ */ new Date()).toISOString(),
       capabilities: projectCapabilities(),
-      textureLibrary: serializeTextureLibrary(),
-      scene: state(),
+      textureLibrary: textureLibraryEntries,
+      scene: scene2,
       editor: {
         projectName,
         selectedId: selected?.userData?.id || null,
@@ -36683,6 +36695,15 @@ void main() {
         rigging: serializeBoneRig()
       }
     };
+  }
+  function hydrateProjectTextureReferences(scene2, entries = []) {
+    const textureByName = new Map(
+      (entries || []).filter((entry) => entry?.name && entry?.dataUrl).map((entry) => [entry.name, entry.dataUrl])
+    );
+    for (const object of scene2?.objects || []) {
+      if (object.textureUrl || !object.textureName) continue;
+      object.textureUrl = textureByName.get(object.textureName) || null;
+    }
   }
   function cloneSceneState() {
     return JSON.parse(JSON.stringify(state()));
@@ -36809,6 +36830,7 @@ void main() {
       if (els.projectNameInput) {
         els.projectNameInput.value = safeFileName(data.name || data.editor?.projectName || baseNameFromFileName(fileName, "modeler-project"), "modeler-project");
       }
+      hydrateProjectTextureReferences(data.scene, data.textureLibrary || []);
       restoreTextureLibrary(data.textureLibrary || [], { replace: true });
       loadState(data.scene, { record: false });
       reconcileTextureRobloxIds();
@@ -39956,6 +39978,28 @@ end
     renderer.render(scene, camera);
     return shot;
   }
+  function waitForSceneTextures(timeoutMs = 1e4) {
+    const images = /* @__PURE__ */ new Set();
+    for (const object of objects) {
+      const materials = Array.isArray(object.material) ? object.material : [object.material];
+      for (const material of materials) {
+        if (material?.map?.image) images.add(material.map.image);
+      }
+    }
+    const pending = [...images].filter((image) => !(image.complete && (image.naturalWidth || image.width)));
+    if (!pending.length) return Promise.resolve({ total: images.size, waited: 0 });
+    return Promise.all(pending.map((image) => new Promise((resolve) => {
+      let finished = false;
+      const done = () => {
+        if (finished) return;
+        finished = true;
+        resolve();
+      };
+      image.addEventListener?.("load", done, { once: true });
+      image.addEventListener?.("error", done, { once: true });
+      setTimeout(done, timeoutMs);
+    }))).then(() => ({ total: images.size, waited: pending.length }));
+  }
   function previewShotView(viewName = "iso") {
     const currentDistance = camera.position.distanceTo(orbit.target);
     setCameraToView(viewName, {
@@ -39964,14 +40008,61 @@ end
     });
     log(`Previewing ${viewName} shot framing.`);
   }
-  function captureViews({ views = ["front", "back", "left", "right", "top", "iso"], download: download2 = false, prefix = currentProjectBaseName() } = {}) {
+  async function captureViews({ views = ["front", "back", "left", "right", "top", "iso"], download: download2 = false, prefix = currentProjectBaseName() } = {}) {
+    await waitForSceneTextures();
     return views.map((view) => captureView(view, { download: download2, prefix }));
   }
-  function saveSingleViewPng(viewName = "iso") {
+  async function saveSingleViewPng(viewName = "iso") {
     const prefix = currentProjectBaseName();
+    await waitForSceneTextures();
     const shot = captureView(viewName, { download: true, prefix });
     log(`Saved ${viewName} PNG view.`, shot.fileName);
     return shot;
+  }
+  function loadShotImage(dataUrl) {
+    return new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("Could not compose QA view image."));
+      image.src = dataUrl;
+    });
+  }
+  async function saveQaSheet() {
+    const prefix = currentProjectBaseName();
+    const shots = await captureViews({ download: false, prefix });
+    const images = await Promise.all(shots.map((shot) => loadShotImage(shot.dataUrl)));
+    const cellWidth = 640;
+    const cellHeight = 420;
+    const sheet = document.createElement("canvas");
+    sheet.width = cellWidth * 3;
+    sheet.height = cellHeight * 2;
+    const context = sheet.getContext("2d");
+    context.fillStyle = "#0d1113";
+    context.fillRect(0, 0, sheet.width, sheet.height);
+    images.forEach((image, index) => {
+      const x = index % 3 * cellWidth;
+      const y = Math.floor(index / 3) * cellHeight;
+      const scale = Math.min(cellWidth / image.width, cellHeight / image.height);
+      const width2 = image.width * scale;
+      const height2 = image.height * scale;
+      context.drawImage(image, x + (cellWidth - width2) / 2, y + (cellHeight - height2) / 2, width2, height2);
+      context.fillStyle = "rgba(5, 8, 9, .82)";
+      context.fillRect(x + 12, y + 12, 132, 34);
+      context.fillStyle = "#f1c65b";
+      context.font = "700 18px system-ui, sans-serif";
+      context.fillText(shots[index].view.toUpperCase(), x + 24, y + 35);
+      context.strokeStyle = "#344047";
+      context.strokeRect(x + 0.5, y + 0.5, cellWidth - 1, cellHeight - 1);
+    });
+    const fileName = `${prefix}-qa-sheet.png`;
+    const dataUrl = sheet.toDataURL("image/png");
+    downloadDataUrl(fileName, dataUrl);
+    log("Saved one six-view AI QA sheet after all textures finished loading.", {
+      fileName,
+      views: shots.map((shot) => shot.view),
+      objects: objects.length
+    });
+    return { fileName, width: sheet.width, height: sheet.height, dataUrl, shots };
   }
   function visibleSpriteObjects() {
     return objects.filter((object) => object.visible && !object.userData?.hidden);
@@ -40814,12 +40905,13 @@ end
   els.previewRightBtn.addEventListener("click", () => previewShotView("right"));
   els.previewTopBtn.addEventListener("click", () => previewShotView("top"));
   els.previewIsoBtn.addEventListener("click", () => previewShotView("iso"));
-  els.saveFrontPngBtn.addEventListener("click", () => saveSingleViewPng("front"));
-  els.saveBackPngBtn.addEventListener("click", () => saveSingleViewPng("back"));
-  els.saveLeftPngBtn.addEventListener("click", () => saveSingleViewPng("left"));
-  els.saveRightPngBtn.addEventListener("click", () => saveSingleViewPng("right"));
-  els.saveTopPngBtn.addEventListener("click", () => saveSingleViewPng("top"));
-  els.saveIsoPngBtn.addEventListener("click", () => saveSingleViewPng("iso"));
+  els.saveFrontPngBtn.addEventListener("click", async () => saveSingleViewPng("front"));
+  els.saveBackPngBtn.addEventListener("click", async () => saveSingleViewPng("back"));
+  els.saveLeftPngBtn.addEventListener("click", async () => saveSingleViewPng("left"));
+  els.saveRightPngBtn.addEventListener("click", async () => saveSingleViewPng("right"));
+  els.saveTopPngBtn.addEventListener("click", async () => saveSingleViewPng("top"));
+  els.saveIsoPngBtn.addEventListener("click", async () => saveSingleViewPng("iso"));
+  els.saveQaSheetBtn?.addEventListener("click", async () => saveQaSheet());
   els.viewSpaceInput.addEventListener("change", frameSelected);
   els.shotSpaceInput.addEventListener("change", () => log(`Save Views zoom set to ${els.shotSpaceInput.value}. Lower values zoom in closer when current zoom syncing is off.`));
   els.environmentSelect?.addEventListener("change", () => {
@@ -40863,9 +40955,9 @@ end
     clearObjects();
     log("Scene reset.");
   });
-  document.querySelector("#captureViewsBtn").addEventListener("click", () => {
+  document.querySelector("#captureViewsBtn").addEventListener("click", async () => {
     const prefix = currentProjectBaseName();
-    const shots = captureViews({ download: true, prefix });
+    const shots = await captureViews({ download: true, prefix });
     log(`Saved ${shots.length} reference screenshots for AI review.`, shots.map((shot) => shot.fileName));
   });
   els.saveProjectBtn.addEventListener("click", () => {
@@ -41314,6 +41406,7 @@ end
     }),
     captureView,
     captureViews,
+    saveQaSheet,
     exportObjParts,
     frameSelected,
     addMarkerFromSelectedTriangle,

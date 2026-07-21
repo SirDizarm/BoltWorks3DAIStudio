@@ -484,5 +484,17 @@ if (!moduleSources.get("meshes").includes("setCoplanarFacePickMode(false, { acti
 if (!moduleSources.get("panels").includes("transform.visible && transform.axis")) {
   throw new Error("Gizmo pointer events must not leak through to mesh face selection.");
 }
+if (!moduleSources.get("import-export").includes("hydrateProjectTextureReferences(data.scene, data.textureLibrary || [])")) {
+  throw new Error("Self-contained project textures must be restored from the project texture library.");
+}
+if (!moduleSources.get("import-export").includes("object.textureUrl = null;")) {
+  throw new Error("Saved projects must deduplicate texture data through the project texture library.");
+}
+if (!moduleSources.get("import-export").includes("await waitForSceneTextures();")) {
+  throw new Error("PNG captures must wait for project textures before rendering.");
+}
+if (!documentSource.includes('id="saveQaSheetBtn"') || !moduleSources.get("import-export").includes("async function saveQaSheet()")) {
+  throw new Error("The six-view AI QA sheet export must remain available.");
+}
 
 console.log("BoltWorks 3D AI Studio smoke check passed.");
