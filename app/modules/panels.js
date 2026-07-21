@@ -792,8 +792,8 @@ window.addEventListener("resize", () => {
 window.ModelerStudio = {
   state,
   viewportState: () => ({
-    environment: els.environmentSelect?.value || "road",
-    background: els.backgroundSelect?.value || "sky",
+    environment: els.environmentSelect?.value || "plain",
+    background: els.backgroundSelect?.value || "plain",
     photoEnvironmentVisible: photoEnvironment.visible,
     gridVisible: grid.visible,
     gridLabelsVisible: gridLabelGroup.visible,

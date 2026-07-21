@@ -57,7 +57,7 @@
       { "id": "roof-scoop", "name": "Roof air scoop", "shape": "wedge", "position": [-0.45, 2.3, 0], "rotation": [0, 0, 0], "scale": [0.55, 0.2, 0.5], "color": "#171d22", "roughness": 0.38, "groupId": "body", "groupName": "Bodywork" },
 
       { "id": "windshield", "name": "Front windshield", "shape": "panel", "position": [0.57, 1.76, 0], "rotation": [-90, 60, 90], "scale": [1.58, 0.82, 0.38], "color": "#163948", "roughness": 0.12, "groupId": "cockpit", "groupName": "Cockpit Glass" },
-      { "id": "rear-window", "name": "Rear windshield wedge", "shape": "wedge", "position": [-1.03, 1.76, 0], "rotation": [90, 60, -90], "scale": [1.56, 0.7, 0.06], "color": "#163948", "roughness": 0.12, "groupId": "cockpit", "groupName": "Cockpit Glass" },
+      { "id": "rear-window", "name": "Rear windshield", "shape": "panel", "position": [-1.03, 1.76, 0], "rotation": [90, 60, -90], "scale": [1.56, 0.7, 0.1], "color": "#163948", "roughness": 0.12, "groupId": "cockpit", "groupName": "Cockpit Glass" },
       { "id": "left-window", "name": "Left side window", "shape": "panel", "position": [-0.2, 1.79, -0.85], "rotation": [0, 0, 0], "scale": [1.32, 0.47, 0.34], "color": "#112f3c", "roughness": 0.1, "groupId": "cockpit", "groupName": "Cockpit Glass" },
       { "id": "right-window", "name": "Right side window", "shape": "panel", "position": [-0.2, 1.79, 0.85], "rotation": [0, 180, 0], "scale": [1.32, 0.47, 0.34], "color": "#112f3c", "roughness": 0.1, "groupId": "cockpit", "groupName": "Cockpit Glass" },
       { "id": "left-quarter-window", "name": "Left quarter window", "shape": "panel", "position": [-1.02, 1.75, -0.84], "rotation": [0, 0, 12], "scale": [0.45, 0.36, 0.34], "color": "#112f3c", "roughness": 0.1, "groupId": "cockpit", "groupName": "Cockpit Glass" },

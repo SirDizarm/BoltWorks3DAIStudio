@@ -115,8 +115,8 @@ function projectState() {
         cameraUp: camera.up.toArray().map(round),
         viewSpace: Number(els.viewSpaceInput.value) || 1.5,
         shotZoom: Number(els.shotSpaceInput.value) || 0.85,
-        environment: els.environmentSelect?.value || "road",
-        background: els.backgroundSelect?.value || "sky",
+        environment: els.environmentSelect?.value || "plain",
+        background: els.backgroundSelect?.value || "plain",
         showGrid: !!els.showGridInput.checked,
         useCurrentZoomInShots: !!els.useCurrentZoomInShotsInput.checked,
         hideGridInShots: !!els.hideGridInShotsInput.checked
@@ -250,10 +250,9 @@ function applyProjectEditorState(editor = {}) {
   const view = editor.view || {};
   els.viewSpaceInput.value = String(view.viewSpace ?? 1.5);
   els.shotSpaceInput.value = String(view.shotZoom ?? 0.85);
-  if (els.environmentSelect) els.environmentSelect.value = ["road", "studio", "plain"].includes(view.environment) ? view.environment : "road";
+  if (els.environmentSelect) els.environmentSelect.value = ["road", "studio", "plain"].includes(view.environment) ? view.environment : "plain";
   if (els.backgroundSelect) {
-    const legacyBackground = view.environment === "studio" ? "studio" : view.environment === "plain" ? "plain" : "sky";
-    els.backgroundSelect.value = ["sky", "sunset", "studio", "plain"].includes(view.background) ? view.background : legacyBackground;
+    els.backgroundSelect.value = ["sky", "sunset", "studio", "plain"].includes(view.background) ? view.background : "plain";
   }
   els.showGridInput.checked = view.showGrid ?? false;
   els.useCurrentZoomInShotsInput.checked = view.useCurrentZoomInShots ?? true;
@@ -3437,8 +3436,8 @@ function syncGridVisibility() {
     studioFloor.visible = false;
     return;
   }
-  const environment = els.environmentSelect?.value || "road";
-  const background = els.backgroundSelect?.value || "sky";
+  const environment = els.environmentSelect?.value || "plain";
+  const background = els.backgroundSelect?.value || "plain";
   photoEnvironment.visible = environment === "road";
   floor.visible = false;
   studioFloor.visible = environment === "studio";
