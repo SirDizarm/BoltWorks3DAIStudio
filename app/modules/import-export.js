@@ -77,7 +77,7 @@ function projectCapabilities() {
     shapes: Object.keys(shapeFactories),
     transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
     faceTools: ["triangleSelect", "coplanarFaceSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "cutTopBottom"],
-    textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "textureLibrary"],
+    textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
     sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
     lighting: ["mainLamp", "mirrorLamp", "lightGuides", "lampAim", "lampStrength", "coneAngle"],

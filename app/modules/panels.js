@@ -223,7 +223,7 @@ sideBoneCanvas.addEventListener("pointercancel", endBoneDrag);
 restoreBoneRig({ bones: [], showGuides: true });
 document.querySelector("#groupBtn").addEventListener("click", groupCheckedParts);
 document.querySelector("#ungroupBtn").addEventListener("click", ungroupParts);
-document.querySelector("#mergeMeshBtn").addEventListener("click", mergeCheckedMeshes);
+document.querySelector("#mergeMeshBtn").addEventListener("click", async () => mergeCheckedMeshes());
 els.pivotBtn.addEventListener("click", () => setPivotEditMode(!pivotEditMode));
 els.centerPivotBtn.addEventListener("click", centerSharedPivot);
 document.querySelector("#facePickBtn").addEventListener("click", () => setFacePickMode(!facePickMode));
@@ -422,6 +422,7 @@ els.clearTextureBtn.addEventListener("click", () => {
   updateAll();
   log(`Cleared texture from ${targets.length} part${targets.length === 1 ? "" : "s"}.`);
 });
+els.saveTextureImageBtn.addEventListener("click", saveSelectedTextureImages);
 els.flipTextureBtn.addEventListener("click", () => {
   const targets = textureTargetObjects().filter(mesh => mesh.userData.textureUrl);
   if (!targets.length) {

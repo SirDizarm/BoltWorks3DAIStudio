@@ -469,6 +469,7 @@ const els = {
   rotateTextureBtn: document.querySelector("#rotateTextureBtn"),
   flipTextureBtn: document.querySelector("#flipTextureBtn"),
   clearTextureBtn: document.querySelector("#clearTextureBtn"),
+  saveTextureImageBtn: document.querySelector("#saveTextureImageBtn"),
   textureFile: document.querySelector("#textureFile"),
   textureName: document.querySelector("#textureName"),
   textureLibraryPanel: document.querySelector("#textureLibraryPanel"),

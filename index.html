@@ -3,8 +3,8 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoltWorks 3D AI Studio v48.0.12 Experimental</title>
-  <meta name="application-version" content="v48.0.12 modular studio" />
+  <title>BoltWorks 3D AI Studio v48.0.13 Experimental</title>
+  <meta name="application-version" content="v48.0.13 modular studio" />
   <link rel="icon" type="image/png" href="./app/assets/branding/boltworks-logo.png" />
   <link rel="stylesheet" href="./app/styles/studio.css?v=48" />
 
@@ -13,12 +13,12 @@
   <script defer src="./app/panels/panel-collapse.js?v=48"></script>
 
   <div class="persistent-notices" aria-label="Version and copyright notices">
-    <div class="persistent-notice experimental-notice" role="status"><strong>v48.0.12 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+    <div class="persistent-notice experimental-notice" role="status"><strong>v48.0.13 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
     <div class="persistent-notice copyright-notice" role="note"><strong>© 2026 Daniel Rydin</strong><span>BoltWorks branding and visual assets. All rights reserved.</span></div>
   </div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v48.0.12 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v48.0.13 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -244,6 +244,7 @@
             <button id="rotateTextureBtn" title="Rotate the selected part texture 90 degrees">Rotate Texture</button>
             <button id="flipTextureBtn" title="Flip the selected part texture vertically">Flip Texture</button>
             <button id="clearTextureBtn" title="Remove the selected part texture">Clear Texture</button>
+            <button id="saveTextureImageBtn" title="Save the selected part texture as an image">Save Image</button>
             <input id="textureFile" type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.bmp,.gif" hidden />
           </div>
           <span id="textureName" class="api-note">No texture</span>
@@ -559,7 +560,7 @@
     </div>
   </div>
 
-  <script defer src="./app/studio-v48.0.12.js"></script>
+  <script defer src="./app/studio-v48.0.13.js"></script>
 <script src="./app/selection/runtime-bridge.js"></script>
 </body>
 </html>

@@ -3124,12 +3124,65 @@ function pivotManagedObjects() {
 function syncTextureButtonLabel() {
   const targets = textureTargetObjects();
   const hasTexture = targets.length > 0 && targets.every(mesh => !!mesh.userData.textureUrl);
+  const hasAnyTexture = targets.some(mesh => !!mesh.userData.textureUrl);
   els.textureBtn.textContent = hasTexture ? "Change Texture" : "Add Texture";
   els.textureBtn.title = hasTexture
     ? "Open the texture library or import a replacement texture for the selected part or checked parts"
     : "Open the texture library or add a texture image to the selected part or checked parts";
+  els.saveTextureImageBtn.disabled = !hasAnyTexture;
+  els.saveTextureImageBtn.title = hasAnyTexture
+    ? "Save each unique texture used by the selected part or checked parts"
+    : "Select one or more textured parts before saving an image";
   refreshTextureLibraryUi();
   syncTextureEditorButton();
+}
+
+function textureImageFileExtension(dataUrl = "", textureName = "") {
+  const mime = String(dataUrl).match(/^data:image\/([^;,]+)/i)?.[1]?.toLowerCase() || "";
+  const mimeExtensions = {
+    jpeg: "jpg",
+    jpg: "jpg",
+    png: "png",
+    webp: "webp",
+    gif: "gif",
+    bmp: "bmp",
+    "svg+xml": "svg"
+  };
+  if (mimeExtensions[mime]) return mimeExtensions[mime];
+  const namedExtension = String(textureName).match(/\.(png|jpe?g|webp|gif|bmp|svg)$/i)?.[1]?.toLowerCase();
+  return namedExtension === "jpeg" ? "jpg" : (namedExtension || "png");
+}
+
+function saveSelectedTextureImages() {
+  const texturedTargets = textureTargetObjects().filter(mesh => !!mesh.userData.textureUrl);
+  if (!texturedTargets.length) {
+    log("Select or check one or more textured parts before saving an image.");
+    return [];
+  }
+  const uniqueTextures = new Map();
+  for (const mesh of texturedTargets) {
+    if (uniqueTextures.has(mesh.userData.textureUrl)) continue;
+    uniqueTextures.set(mesh.userData.textureUrl, {
+      dataUrl: mesh.userData.textureUrl,
+      textureName: mesh.userData.textureName || `${mesh.name} Texture`,
+      meshName: mesh.name
+    });
+  }
+  const savedNames = [];
+  for (const entry of uniqueTextures.values()) {
+    const extension = textureImageFileExtension(entry.dataUrl, entry.textureName);
+    const baseName = safeFileName(
+      String(entry.textureName || entry.meshName || "texture").replace(/\.(png|jpe?g|webp|gif|bmp|svg)$/i, ""),
+      "texture"
+    );
+    const fileName = `${baseName}.${extension}`;
+    downloadDataUrl(fileName, entry.dataUrl);
+    savedNames.push(fileName);
+  }
+  log(`Saved ${savedNames.length} texture image${savedNames.length === 1 ? "" : "s"}.`, {
+    files: savedNames
+  });
+  return savedNames;
 }
 
 function applySelectedLibraryTexture() {
@@ -6795,63 +6848,164 @@ function sharedMergeTextureState(meshes) {
   const firstFlipY = first.userData.textureFlipY ?? true;
   const firstRotation = normalizeTextureRotation(first.userData.textureRotation || 0);
   const firstRobloxId = normalizeRobloxAssetId(first.userData.textureRobloxAssetId || "");
+  const firstColor = `#${first.material.color.getHexString()}`.toLowerCase();
   const allTexturedMatch = textured.every(mesh =>
     (mesh.userData.textureUrl || null) === firstUrl
     && (mesh.userData.textureName || null) === firstName
     && (mesh.userData.textureFlipY ?? true) === firstFlipY
     && normalizeTextureRotation(mesh.userData.textureRotation || 0) === firstRotation
     && normalizeRobloxAssetId(mesh.userData.textureRobloxAssetId || "") === firstRobloxId
+    && `#${mesh.material.color.getHexString()}`.toLowerCase() === firstColor
   );
   return allTexturedMatch ? {
     textureUrl: firstUrl,
     textureName: firstName,
     textureFlipY: firstFlipY,
     textureRotation: firstRotation,
-    textureRobloxAssetId: firstRobloxId
+    textureRobloxAssetId: firstRobloxId,
+    color: firstColor
   } : null;
 }
 
-function mergeSourceDisplayColor(mesh) {
-  const stored = String(mesh?.userData?.textureDisplayColor || "").trim();
-  if (/^#[0-9a-f]{6}$/i.test(stored)) return stored.toLowerCase();
+function mergeSourceMaterialColor(mesh) {
   return `#${mesh.material.color.getHexString()}`.toLowerCase();
 }
 
-function createMergedColorAtlas(meshes, name = "Merged Mesh") {
-  const colors = [];
-  const colorIndex = new Map();
-  const meshUvs = new Map();
-  for (const mesh of meshes) {
-    const color = mergeSourceDisplayColor(mesh);
-    if (!colorIndex.has(color)) {
-      colorIndex.set(color, colors.length);
-      colors.push(color);
-    }
-  }
-  if (!colors.length) return null;
+function mergeSurfaceDescriptor(mesh) {
+  const textureUrl = mesh.userData.textureUrl || null;
+  const color = mergeSourceMaterialColor(mesh);
+  const textureFlipY = mesh.userData.textureFlipY ?? true;
+  const textureRotation = normalizeTextureRotation(mesh.userData.textureRotation || 0);
+  return {
+    key: textureUrl
+      ? JSON.stringify(["texture", textureUrl, color, textureFlipY, textureRotation])
+      : `color:${color}`,
+    textureUrl,
+    color,
+    textureFlipY,
+    textureRotation,
+    image: null,
+    index: -1
+  };
+}
 
-  const cellSize = colors.length <= 256 ? 16 : 4;
+function loadMergeTextureImage(textureUrl, timeoutMs = 10000) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    let finished = false;
+    const done = (error = null) => {
+      if (finished) return;
+      finished = true;
+      if (error) reject(error);
+      else resolve(image);
+    };
+    image.onload = () => done();
+    image.onerror = () => done(new Error("A source texture could not be loaded for the merged material atlas."));
+    image.src = textureUrl;
+    setTimeout(() => done(new Error("Timed out while loading a source texture for the merged material atlas.")), timeoutMs);
+  });
+}
+
+function transformedMergeUv([sourceU, sourceV], surface) {
+  let u = Number(sourceU) || 0;
+  let v = Number(sourceV) || 0;
+  const angle = THREE.MathUtils.degToRad(surface.textureRotation || 0);
+  if (angle) {
+    const x = u - .5;
+    const y = v - .5;
+    const cosine = Math.cos(angle);
+    const sine = Math.sin(angle);
+    u = cosine * x + sine * y + .5;
+    v = -sine * x + cosine * y + .5;
+  }
+  if (!surface.textureFlipY) v = 1 - v;
+  return [Math.min(1, Math.max(0, u)), Math.min(1, Math.max(0, v))];
+}
+
+async function createMergedMaterialAtlas(meshes, name = "Merged Mesh") {
+  const surfaces = [];
+  const surfaceByKey = new Map();
+  const surfaceByMeshId = new Map();
+  for (const mesh of meshes) {
+    const descriptor = mergeSurfaceDescriptor(mesh);
+    let surface = surfaceByKey.get(descriptor.key);
+    if (!surface) {
+      descriptor.index = surfaces.length;
+      surface = descriptor;
+      surfaceByKey.set(descriptor.key, surface);
+      surfaces.push(surface);
+    }
+    surfaceByMeshId.set(mesh.userData.id, surface);
+  }
+  if (!surfaces.length) return null;
+
+  await Promise.all(surfaces.map(async surface => {
+    if (!surface.textureUrl) return;
+    surface.image = await loadMergeTextureImage(surface.textureUrl);
+  }));
+
+  const columns = Math.ceil(Math.sqrt(surfaces.length));
+  const rows = Math.ceil(surfaces.length / columns);
+  const largestSource = Math.max(32, ...surfaces.map(surface => Math.max(
+    Number(surface.image?.naturalWidth || surface.image?.width || 0),
+    Number(surface.image?.naturalHeight || surface.image?.height || 0)
+  )));
+  const maxCellSize = Math.floor(4096 / Math.max(columns, rows));
+  const cellSize = Math.max(32, Math.min(512, largestSource, maxCellSize));
+  const padding = Math.max(2, Math.min(8, Math.floor(cellSize * .02)));
   const canvas = document.createElement("canvas");
-  canvas.width = colors.length * cellSize;
-  canvas.height = cellSize;
+  canvas.width = columns * cellSize;
+  canvas.height = rows * cellSize;
   const context = canvas.getContext("2d");
   if (!context) return null;
-  colors.forEach((color, index) => {
-    context.fillStyle = color;
-    context.fillRect(index * cellSize, 0, cellSize, cellSize);
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  surfaces.forEach(surface => {
+    const column = surface.index % columns;
+    const row = Math.floor(surface.index / columns);
+    const x = column * cellSize;
+    const y = row * cellSize;
+    context.globalCompositeOperation = "source-over";
+    context.fillStyle = surface.textureUrl ? "#ffffff" : surface.color;
+    context.fillRect(x, y, cellSize, cellSize);
+    if (!surface.image) return;
+    context.drawImage(surface.image, x, y, cellSize, cellSize);
+    if (surface.color !== "#ffffff") {
+      context.globalCompositeOperation = "multiply";
+      context.fillStyle = surface.color;
+      context.fillRect(x, y, cellSize, cellSize);
+      context.globalCompositeOperation = "source-over";
+    }
   });
-  for (const mesh of meshes) {
-    const index = colorIndex.get(mergeSourceDisplayColor(mesh)) || 0;
-    meshUvs.set(mesh.userData.id, [round((index + .5) / colors.length, 6), .5]);
-  }
+
+  const mapUv = (mesh, sourceUv = [.5, .5]) => {
+    const surface = surfaceByMeshId.get(mesh?.userData?.id) || surfaces[0];
+    const column = surface.index % columns;
+    const row = Math.floor(surface.index / columns);
+    if (!surface.textureUrl) {
+      return [
+        round((column * cellSize + cellSize / 2) / canvas.width, 6),
+        round(1 - (row * cellSize + cellSize / 2) / canvas.height, 6)
+      ];
+    }
+    const [u, v] = transformedMergeUv(sourceUv, surface);
+    const innerSize = cellSize - padding * 2;
+    const pixelX = column * cellSize + padding + u * innerSize;
+    const pixelY = row * cellSize + padding + (1 - v) * innerSize;
+    return [round(pixelX / canvas.width, 6), round(1 - pixelY / canvas.height, 6)];
+  };
+
   return {
     textureUrl: canvas.toDataURL("image/png"),
-    textureName: `${name} Color Atlas`,
+    textureName: `${name} Material Atlas`,
     textureFlipY: true,
     textureRotation: 0,
     textureRobloxAssetId: "",
-    meshUvs,
-    colorCount: colors.length
+    mapUv,
+    surfaceCount: surfaces.length,
+    textureCount: surfaces.filter(surface => !!surface.textureUrl).length,
+    width: canvas.width,
+    height: canvas.height
   };
 }
 
@@ -6876,18 +7030,21 @@ function fallbackMergedUv(point, box, axes) {
   const spanV = Math.max(vectorComponentByAxis(max, axes[1]) - vectorComponentByAxis(min, axes[1]), .001);
   const u = (vectorComponentByAxis(point, axes[0]) - vectorComponentByAxis(min, axes[0])) / spanU;
   const v = (vectorComponentByAxis(point, axes[1]) - vectorComponentByAxis(min, axes[1])) / spanV;
-  return [round(clamp(u, 0, 1), 4), round(clamp(v, 0, 1), 4)];
+  return [
+    round(Math.min(1, Math.max(0, u)), 4),
+    round(Math.min(1, Math.max(0, v)), 4)
+  ];
 }
 
-function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, groupName = null } = {}) {
+async function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, groupName = null } = {}) {
   if (!meshes.length) return null;
   const positions = [];
   const normals = [];
   const textureState = sharedMergeTextureState(meshes);
-  const colorAtlas = textureState ? null : createMergedColorAtlas(meshes, name);
+  const materialAtlas = textureState ? null : await createMergedMaterialAtlas(meshes, name);
   const vertexUvs = [];
   let hasAnyNormals = false;
-  let hasAnyUvs = !!(textureState || colorAtlas);
+  let hasAnyUvs = !!(textureState || materialAtlas);
 
   for (const mesh of meshes) {
     mesh.updateMatrixWorld(true);
@@ -6918,8 +7075,11 @@ function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, groupNam
       }
 
       if (hasAnyUvs) {
-        if (colorAtlas) {
-          vertexUvs.push(colorAtlas.meshUvs.get(mesh.userData.id) || [.5, .5]);
+        if (materialAtlas) {
+          vertexUvs.push({
+            mesh,
+            uv: uv ? [round(uv.getX(index), 6), round(uv.getY(index), 6)] : null
+          });
         } else if (textureState) {
           if (uv) {
             vertexUvs.push([round(uv.getX(index), 4), round(uv.getY(index), 4)]);
@@ -6952,7 +7112,11 @@ function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, groupNam
   if (hasAnyUvs) {
     for (let index = 0; index < worldPoints.length; index++) {
       const explicitUv = vertexUvs[index];
-      if (explicitUv) {
+      if (materialAtlas) {
+        const sourceUv = explicitUv?.uv || fallbackMergedUv(worldPoints[index], box, projectionAxes);
+        const mapped = materialAtlas.mapUv(explicitUv?.mesh, sourceUv);
+        uvs.push(mapped[0], mapped[1]);
+      } else if (explicitUv) {
         uvs.push(explicitUv[0], explicitUv[1]);
       } else {
         const generated = fallbackMergedUv(worldPoints[index], box, projectionAxes);
@@ -6986,15 +7150,17 @@ function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, groupNam
     position: center.toArray().map(round),
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
-    color: colorAtlas ? "#ffffff" : `#${meshes[0].material.color.getHexString()}`,
+    color: materialAtlas ? "#ffffff" : (textureState?.color || `#${meshes[0].material.color.getHexString()}`),
     roughness: round(meshes.reduce((sum, mesh) => sum + Number(mesh.material.roughness || 0), 0) / meshes.length),
-    textureUrl: textureState?.textureUrl || colorAtlas?.textureUrl || null,
-    textureName: textureState?.textureName || colorAtlas?.textureName || null,
-    textureFlipY: textureState?.textureFlipY ?? colorAtlas?.textureFlipY ?? true,
-    textureRotation: textureState?.textureRotation ?? colorAtlas?.textureRotation ?? 0,
-    textureRobloxAssetId: textureState?.textureRobloxAssetId || colorAtlas?.textureRobloxAssetId || "",
-    generatedColorAtlas: !!colorAtlas,
-    mergedColorCount: colorAtlas?.colorCount || 0,
+    textureUrl: textureState?.textureUrl || materialAtlas?.textureUrl || null,
+    textureName: textureState?.textureName || materialAtlas?.textureName || null,
+    textureFlipY: textureState?.textureFlipY ?? materialAtlas?.textureFlipY ?? true,
+    textureRotation: textureState?.textureRotation ?? materialAtlas?.textureRotation ?? 0,
+    textureRobloxAssetId: textureState?.textureRobloxAssetId || materialAtlas?.textureRobloxAssetId || "",
+    generatedMaterialAtlas: !!materialAtlas,
+    mergedMaterialCount: materialAtlas?.surfaceCount || 0,
+    mergedTextureCount: materialAtlas?.textureCount || 0,
+    materialAtlasSize: materialAtlas ? [materialAtlas.width, materialAtlas.height] : null,
     materialRule: sameRule,
     groupId,
     groupName,
@@ -7004,7 +7170,7 @@ function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, groupNam
   };
 }
 
-function mergeCheckedMeshes() {
+async function mergeCheckedMeshes() {
   const targetMeshes = [...new Set(mergeSelectionTargets().filter(Boolean))];
   if (targetMeshes.length < 2) {
     log("Check or select two or more meshes or group contents before merging.");
@@ -7026,11 +7192,20 @@ function mergeCheckedMeshes() {
     : (targetMeshes.every(mesh => normalizeGroupName(mesh.name) === normalizeGroupName(targetMeshes[0].name))
       ? `${normalizeGroupName(targetMeshes[0].name)} merged`
       : "Merged Mesh");
-  const spec = mergedMeshSpec(targetMeshes, {
-    name: mergedName,
-    groupId: parentId,
-    groupName: parentRecord?.name || null
-  });
+  let spec = null;
+  if (els.mergeMeshBtn) els.mergeMeshBtn.disabled = true;
+  try {
+    spec = await mergedMeshSpec(targetMeshes, {
+      name: mergedName,
+      groupId: parentId,
+      groupName: parentRecord?.name || null
+    });
+  } catch (error) {
+    log("Could not bake the source textures into the merged material atlas.", error?.message || error);
+    return null;
+  } finally {
+    if (els.mergeMeshBtn) els.mergeMeshBtn.disabled = false;
+  }
 
   if (!spec) {
     log("Could not merge those meshes into a valid mesh.");
@@ -7038,12 +7213,16 @@ function mergeCheckedMeshes() {
   }
 
   const keptTexture = !!spec.textureUrl;
-  const generatedColorAtlas = !!spec.generatedColorAtlas;
-  const mergedColorCount = Number(spec.mergedColorCount) || 0;
-  delete spec.generatedColorAtlas;
-  delete spec.mergedColorCount;
+  const generatedMaterialAtlas = !!spec.generatedMaterialAtlas;
+  const mergedMaterialCount = Number(spec.mergedMaterialCount) || 0;
+  const mergedTextureCount = Number(spec.mergedTextureCount) || 0;
+  const materialAtlasSize = Array.isArray(spec.materialAtlasSize) ? [...spec.materialAtlasSize] : null;
+  delete spec.generatedMaterialAtlas;
+  delete spec.mergedMaterialCount;
+  delete spec.mergedTextureCount;
+  delete spec.materialAtlasSize;
   recordHistory("merge mesh");
-  if (generatedColorAtlas && spec.textureUrl && spec.textureName) {
+  if (generatedMaterialAtlas && spec.textureUrl && spec.textureName) {
     spec.textureName = registerTextureAsset(spec.textureName, spec.textureUrl, { replace: false }) || spec.textureName;
   }
   selectedGroupRecordId = null;
@@ -7069,8 +7248,10 @@ function mergeCheckedMeshes() {
   updateAll();
   log(`Merged ${targetMeshes.length} meshes into ${merged.name}.`, {
     keptTexture,
-    generatedColorAtlas,
-    mergedColorCount,
+    generatedMaterialAtlas,
+    mergedMaterialCount,
+    mergedTextureCount,
+    materialAtlasSize,
     sourceMeshes: targetMeshes.map(mesh => mesh.name),
     parent: parentRecord?.name || "Root"
   });

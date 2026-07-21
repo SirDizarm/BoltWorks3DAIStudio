@@ -10,7 +10,7 @@ const moduleSources = new Map(studioModuleOrder.map(name => [
 const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v48.0.12.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v48.0.13.js", import.meta.url), "utf8");
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${applicationSource}`;
@@ -32,10 +32,10 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v48.0.12.js"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v48.0.13.js"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v48.0.12.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v48.0.13.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -181,9 +181,11 @@ for (const required of [
   "meshMaterialRuleSelect",
   "Open mesh details for",
   "materialRule",
-  "createMergedColorAtlas",
-  "generatedColorAtlas",
-  "Color Atlas",
+  "createMergedMaterialAtlas",
+  "loadMergeTextureImage",
+  "generatedMaterialAtlas",
+  "Material Atlas",
+  "materialAtlas.mapUv",
   "Paper",
   "Upholstery",
   "Hide All",
@@ -357,11 +359,14 @@ for (const required of [
   "textureBtn",
   "rotateTextureBtn",
   "flipTextureBtn",
+  "saveTextureImageBtn",
   "textureFile",
   "Add Texture",
   "Rotate Texture",
   "Flip Texture",
   "Clear Texture",
+  "Save Image",
+  "saveSelectedTextureImages",
   "textureFlipY",
   "textureRotation",
   "transformTextureUv",
@@ -445,8 +450,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v48.0.12 Experimental") || !documentSource.includes("v48.0.12 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v48.0.12 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v48.0.13 Experimental") || !documentSource.includes("v48.0.13 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v48.0.13 version.");
 }
 
 for (const expectedDefault of [
