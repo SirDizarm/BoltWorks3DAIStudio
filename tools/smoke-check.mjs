@@ -10,7 +10,7 @@ const moduleSources = new Map(studioModuleOrder.map(name => [
 const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v48.0.10.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v48.0.11.js", import.meta.url), "utf8");
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${applicationSource}`;
@@ -32,10 +32,10 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v48.0.10.js"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v48.0.11.js"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v48.0.10.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v48.0.11.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -437,8 +437,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v48.0.10 Experimental") || !documentSource.includes("v48.0.10 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v48.0.10 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v48.0.11 Experimental") || !documentSource.includes("v48.0.11 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v48.0.11 version.");
 }
 
 for (const expectedDefault of [

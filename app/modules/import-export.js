@@ -254,7 +254,7 @@ function applyProjectEditorState(editor = {}) {
   if (els.backgroundSelect) {
     els.backgroundSelect.value = ["sky", "sunset", "studio", "plain"].includes(view.background) ? view.background : "plain";
   }
-  els.showGridInput.checked = view.showGrid ?? false;
+  els.showGridInput.checked = view.showGrid ?? true;
   els.useCurrentZoomInShotsInput.checked = view.useCurrentZoomInShots ?? true;
   els.hideGridInShotsInput.checked = view.hideGridInShots ?? true;
   syncGridVisibility();
