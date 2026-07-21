@@ -17966,6 +17966,27 @@ void main() {
       gl.unpackColorSpace = ColorManagement.workingColorSpace === LinearDisplayP3ColorSpace ? "display-p3" : "srgb";
     }
   };
+  var Fog = class _Fog {
+    constructor(color, near = 1, far = 1e3) {
+      this.isFog = true;
+      this.name = "";
+      this.color = new Color(color);
+      this.near = near;
+      this.far = far;
+    }
+    clone() {
+      return new _Fog(this.color, this.near, this.far);
+    }
+    toJSON() {
+      return {
+        type: "Fog",
+        name: this.name,
+        color: this.color.getHex(),
+        near: this.near,
+        far: this.far
+      };
+    }
+  };
   var Scene = class extends Object3D {
     constructor() {
       super();
@@ -29465,9 +29486,12 @@ void main() {
   frontBoneRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   sideBoneRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   var scene = new Scene();
-  scene.background = new Color(724496);
+  var studioBackground = new Color(724496);
+  var plainBackground = new Color(1516331);
+  scene.background = studioBackground;
   var camera = new PerspectiveCamera(55, 1, 0.05, 1e6);
   camera.position.set(6, 5, 7);
+  camera.layers.enable(3);
   var frontBoneCamera = new OrthographicCamera(-5, 5, 5, -5, 0.01, 1e4);
   frontBoneCamera.position.set(0, 0, 100);
   frontBoneCamera.lookAt(0, 0, 0);
@@ -29522,6 +29546,113 @@ void main() {
   var gridLabelGroup = new Group();
   gridLabelGroup.name = "grid direction labels";
   scene.add(gridLabelGroup);
+  function createPhotoTexture({ kind = "sky", size = 512 } = {}) {
+    const textureCanvas = document.createElement("canvas");
+    const isScenicBackground = kind === "sky" || kind === "sunset";
+    const isSunset = kind === "sunset";
+    textureCanvas.width = isScenicBackground ? size * 2 : size;
+    textureCanvas.height = size;
+    const context = textureCanvas.getContext("2d");
+    if (isScenicBackground) {
+      const sky = context.createLinearGradient(0, 0, 0, size);
+      sky.addColorStop(0, isSunset ? "#302b63" : "#4f94c8");
+      sky.addColorStop(0.48, isSunset ? "#bb5c67" : "#a9d3e8");
+      sky.addColorStop(0.76, isSunset ? "#f1ad6b" : "#e7eee3");
+      sky.addColorStop(1, isSunset ? "#6c624c" : "#8ca579");
+      context.fillStyle = sky;
+      context.fillRect(0, 0, textureCanvas.width, size);
+      const sunX = size * (isSunset ? 0.58 : 1.55);
+      const sunY = size * (isSunset ? 0.61 : 0.22);
+      const sun = context.createRadialGradient(sunX, sunY, 2, sunX, sunY, size * (isSunset ? 0.24 : 0.18));
+      sun.addColorStop(0, isSunset ? "rgba(255,239,177,1)" : "rgba(255,249,204,.96)");
+      sun.addColorStop(0.18, isSunset ? "rgba(255,155,92,.68)" : "rgba(255,237,174,.5)");
+      sun.addColorStop(1, "rgba(255,225,160,0)");
+      context.fillStyle = sun;
+      context.fillRect(0, 0, textureCanvas.width, size);
+      context.fillStyle = isSunset ? "rgba(255,213,206,.25)" : "rgba(255,255,255,.48)";
+      [[0.14, 0.2, 0.12], [0.35, 0.29, 0.09], [0.7, 0.18, 0.13], [0.86, 0.34, 0.08]].forEach(([x, y, w]) => {
+        context.beginPath();
+        context.ellipse(textureCanvas.width * x, size * y, textureCanvas.width * w, size * 0.028, 0, 0, Math.PI * 2);
+        context.ellipse(textureCanvas.width * (x + w * 0.22), size * (y - 0.025), textureCanvas.width * w * 0.55, size * 0.04, 0, 0, Math.PI * 2);
+        context.fill();
+      });
+      const horizonY = size * 0.76;
+      context.fillStyle = isSunset ? "#4f4a42" : "#6f8867";
+      context.beginPath();
+      context.moveTo(0, size);
+      context.lineTo(0, horizonY);
+      for (let x = 0; x <= textureCanvas.width; x += 32) {
+        const height2 = 24 + Math.sin(x * 0.018) * 18 + Math.sin(x * 0.047) * 9;
+        context.lineTo(x, horizonY - height2);
+      }
+      context.lineTo(textureCanvas.width, size);
+      context.closePath();
+      context.fill();
+    } else {
+      const isRoad = kind === "road";
+      context.fillStyle = isRoad ? "#303437" : "#496f36";
+      context.fillRect(0, 0, size, size);
+      for (let i = 0; i < 4800; i++) {
+        const x = (Math.sin(i * 12.9898) * 43758.5453 % 1 + 1) % 1 * size;
+        const y = (Math.sin(i * 78.233) * 19642.349 % 1 + 1) % 1 * size;
+        const tone = 35 + i % 7 * 4;
+        context.fillStyle = isRoad ? `rgba(${tone},${tone + 2},${tone + 3},.28)` : `rgba(${42 + i % 30},${88 + i % 45},${30 + i % 20},.34)`;
+        if (isRoad) context.fillRect(x, y, 1 + i % 2, 1 + (i % 3 === 0 ? 1 : 0));
+        else context.fillRect(x, y, 1, 3 + i % 5);
+      }
+    }
+    const texture = new CanvasTexture(textureCanvas);
+    if ("colorSpace" in texture && SRGBColorSpace) texture.colorSpace = SRGBColorSpace;
+    return texture;
+  }
+  var skyTexture = createPhotoTexture({ kind: "sky", size: 512 });
+  var sunsetTexture = createPhotoTexture({ kind: "sunset", size: 512 });
+  var roadTexture = createPhotoTexture({ kind: "road", size: 512 });
+  var grassTexture = createPhotoTexture({ kind: "grass", size: 512 });
+  roadTexture.wrapS = roadTexture.wrapT = RepeatWrapping;
+  grassTexture.wrapS = grassTexture.wrapT = RepeatWrapping;
+  roadTexture.repeat.set(28, 3);
+  grassTexture.repeat.set(28, 8);
+  var photoEnvironment = new Group();
+  photoEnvironment.name = "road and grass photo environment";
+  photoEnvironment.traverse((object) => object.layers.set(3));
+  scene.add(photoEnvironment);
+  var road = new Mesh(
+    new PlaneGeometry(160, 10),
+    new MeshStandardMaterial({ map: roadTexture, color: 10133666, roughness: 0.96, metalness: 0.02 })
+  );
+  road.rotation.x = -Math.PI / 2;
+  road.position.y = -0.025;
+  road.receiveShadow = true;
+  road.layers.set(3);
+  photoEnvironment.add(road);
+  var grassMaterial = new MeshStandardMaterial({ map: grassTexture, color: 8825192, roughness: 1 });
+  for (const side of [-1, 1]) {
+    const grass = new Mesh(new PlaneGeometry(160, 50), grassMaterial);
+    grass.rotation.x = -Math.PI / 2;
+    grass.position.set(0, -0.04, side * 30);
+    grass.receiveShadow = true;
+    grass.layers.set(3);
+    photoEnvironment.add(grass);
+  }
+  var shoulderMaterial = new MeshStandardMaterial({ color: 7830390, roughness: 0.95 });
+  var edgeMaterial = new MeshStandardMaterial({ color: 15855330, roughness: 0.72 });
+  for (const side of [-1, 1]) {
+    const shoulder = new Mesh(new PlaneGeometry(160, 0.85), shoulderMaterial);
+    shoulder.rotation.x = -Math.PI / 2;
+    shoulder.position.set(0, -0.012, side * 5.38);
+    shoulder.receiveShadow = true;
+    shoulder.layers.set(3);
+    photoEnvironment.add(shoulder);
+    const edgeLine = new Mesh(new BoxGeometry(160, 0.018, 0.12), edgeMaterial);
+    edgeLine.position.set(0, 2e-3, side * 4.72);
+    edgeLine.receiveShadow = true;
+    edgeLine.layers.set(3);
+    photoEnvironment.add(edgeLine);
+  }
+  var roadFog = new Fog(11783896, 55, 175);
+  var sunsetFog = new Fog(13075311, 55, 175);
+  var suppressViewportEnvironment = false;
   var hemi = new HemisphereLight(15333375, 2633776, 1.8);
   scene.add(hemi);
   var key = new DirectionalLight(16777215, 3.2);
@@ -29555,7 +29686,23 @@ void main() {
   );
   floor.rotation.x = -Math.PI / 2;
   floor.receiveShadow = true;
+  floor.visible = false;
   scene.add(floor);
+  var studioFloor = new Mesh(
+    new PlaneGeometry(80, 80),
+    new MeshStandardMaterial({
+      color: 2435888,
+      roughness: 0.9,
+      metalness: 0.04
+    })
+  );
+  studioFloor.name = "matte studio floor";
+  studioFloor.rotation.x = -Math.PI / 2;
+  studioFloor.position.y = -0.03;
+  studioFloor.receiveShadow = true;
+  studioFloor.visible = false;
+  studioFloor.layers.set(3);
+  scene.add(studioFloor);
   var raycaster = new Raycaster();
   var pointer = new Vector2();
   var lastCanvasPointer = new Vector2();
@@ -29817,6 +29964,8 @@ void main() {
     meshDetailsSaveBtn: document.querySelector("#meshDetailsSaveBtn"),
     viewSpaceInput: document.querySelector("#viewSpaceInput"),
     shotSpaceInput: document.querySelector("#shotSpaceInput"),
+    environmentSelect: document.querySelector("#environmentSelect"),
+    backgroundSelect: document.querySelector("#backgroundSelect"),
     showGridInput: document.querySelector("#showGridInput"),
     useCurrentZoomInShotsInput: document.querySelector("#useCurrentZoomInShotsInput"),
     hideGridInShotsInput: document.querySelector("#hideGridInShotsInput"),
@@ -36432,6 +36581,8 @@ void main() {
           cameraUp: camera.up.toArray().map(round2),
           viewSpace: Number(els.viewSpaceInput.value) || 1.5,
           shotZoom: Number(els.shotSpaceInput.value) || 0.85,
+          environment: els.environmentSelect?.value || "road",
+          background: els.backgroundSelect?.value || "sky",
           showGrid: !!els.showGridInput.checked,
           useCurrentZoomInShots: !!els.useCurrentZoomInShotsInput.checked,
           hideGridInShots: !!els.hideGridInShotsInput.checked
@@ -36556,7 +36707,12 @@ void main() {
     const view = editor.view || {};
     els.viewSpaceInput.value = String(view.viewSpace ?? 1.5);
     els.shotSpaceInput.value = String(view.shotZoom ?? 0.85);
-    els.showGridInput.checked = view.showGrid ?? true;
+    if (els.environmentSelect) els.environmentSelect.value = ["road", "studio", "plain"].includes(view.environment) ? view.environment : "road";
+    if (els.backgroundSelect) {
+      const legacyBackground = view.environment === "studio" ? "studio" : view.environment === "plain" ? "plain" : "sky";
+      els.backgroundSelect.value = ["sky", "sunset", "studio", "plain"].includes(view.background) ? view.background : legacyBackground;
+    }
+    els.showGridInput.checked = view.showGrid ?? false;
     els.useCurrentZoomInShotsInput.checked = view.useCurrentZoomInShots ?? true;
     els.hideGridInShotsInput.checked = view.hideGridInShots ?? true;
     syncGridVisibility();
@@ -36942,12 +37098,16 @@ void main() {
     updateAll();
   }
   function importJsonData(data, fileName = "JSON") {
+    if (data?.scene?.objects) {
+      loadProjectData(data, fileName);
+      return;
+    }
     if (data?.objects) {
       loadState(data);
       log(`Imported project ${fileName}.`);
       return;
     }
-    throw new Error("JSON must be a saved project with objects.");
+    throw new Error("JSON must contain objects or a saved project scene with objects.");
   }
   function findObject(id) {
     return objects.find((mesh) => mesh.userData.id === id || mesh.name === id);
@@ -39573,7 +39733,22 @@ end
     return Math.max(0.5, Math.min(4, Number(els.shotSpaceInput?.value) || 0.85));
   }
   function syncGridVisibility() {
-    grid.visible = els.showGridInput?.checked ?? true;
+    if (suppressViewportEnvironment) {
+      grid.visible = false;
+      gridLabelGroup.visible = false;
+      photoEnvironment.visible = false;
+      floor.visible = false;
+      studioFloor.visible = false;
+      return;
+    }
+    const environment = els.environmentSelect?.value || "road";
+    const background = els.backgroundSelect?.value || "sky";
+    photoEnvironment.visible = environment === "road";
+    floor.visible = false;
+    studioFloor.visible = environment === "studio";
+    grid.visible = !!els.showGridInput?.checked;
+    scene.background = background === "sky" ? skyTexture : background === "sunset" ? sunsetTexture : background === "plain" ? plainBackground : studioBackground;
+    scene.fog = environment === "road" && background === "sky" ? roadFog : environment === "road" && background === "sunset" ? sunsetFog : null;
     updateGridLabels();
   }
   function updateViewScale(size = 18) {
@@ -39583,6 +39758,7 @@ end
     syncGridVisibility();
     updateGridLabels();
     floor.scale.setScalar(Math.max(1, gridSize / 40));
+    studioFloor.scale.setScalar(Math.max(1, gridSize / 80));
     orbit.maxDistance = Math.max(5e5, gridSize * 100);
     camera.far = Math.max(1e6, gridSize * 250);
     camera.updateProjectionMatrix();
@@ -39694,6 +39870,10 @@ end
       useCurrentZoom: els.useCurrentZoomInShotsInput?.checked ?? true,
       currentDistance: oldDistance
     });
+    if (els.hideGridInShotsInput?.checked) {
+      grid.visible = false;
+      gridLabelGroup.visible = false;
+    }
     renderer.render(scene, camera);
     const dataUrl = canvas.toDataURL("image/png");
     const shot = {
@@ -39770,6 +39950,10 @@ end
     const oldNear = camera.near;
     const oldFar = camera.far;
     const oldSceneBackground = scene.background;
+    const oldSceneFog = scene.fog;
+    const oldPhotoEnvironmentVisible = photoEnvironment.visible;
+    const oldFloorVisible = floor.visible;
+    const oldStudioFloorVisible = studioFloor.visible;
     const oldTransformVisible = transform.visible;
     const oldFaceMarkerVisible = faceMarker.visible;
     const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
@@ -39779,6 +39963,7 @@ end
     const oldGridLabelsVisible = gridLabelGroup.visible;
     const oldObjectVisibility = objects.map((object) => ({ object, visible: object.visible }));
     const spriteObjects = visibleSpriteObjects();
+    suppressViewportEnvironment = true;
     transform.visible = false;
     faceMarker.visible = false;
     selectionOutlineGroup.visible = false;
@@ -39786,7 +39971,10 @@ end
     markerGroup.visible = false;
     grid.visible = false;
     gridLabelGroup.visible = false;
+    photoEnvironment.visible = false;
+    studioFloor.visible = false;
     scene.background = null;
+    scene.fog = null;
     resize();
     setCameraToView("right", { useCurrentZoom: false });
     for (const { object } of oldObjectVisibility) object.visible = spriteObjects.includes(object);
@@ -39815,7 +40003,12 @@ end
       };
     }
     for (const { object, visible } of oldObjectVisibility) object.visible = visible;
+    suppressViewportEnvironment = false;
     scene.background = oldSceneBackground;
+    scene.fog = oldSceneFog;
+    photoEnvironment.visible = oldPhotoEnvironmentVisible;
+    floor.visible = oldFloorVisible;
+    studioFloor.visible = oldStudioFloorVisible;
     transform.visible = oldTransformVisible;
     faceMarker.visible = oldFaceMarkerVisible;
     selectionOutlineGroup.visible = oldSelectionOutlineVisible;
@@ -40298,8 +40491,14 @@ end
       lineSketchCursor.scale.setScalar(radius);
     }
     renderer.render(scene, camera);
+    const mainBackground = scene.background;
+    const mainFog = scene.fog;
+    scene.background = studioBackground;
+    scene.fog = null;
     frontBoneRenderer.render(scene, frontBoneCamera);
     sideBoneRenderer.render(scene, sideBoneCamera);
+    scene.background = mainBackground;
+    scene.fog = mainFog;
   }
   function hitFromPointerEvent(event) {
     const rect = canvas.getBoundingClientRect();
@@ -40569,9 +40768,19 @@ end
   els.saveIsoPngBtn.addEventListener("click", () => saveSingleViewPng("iso"));
   els.viewSpaceInput.addEventListener("change", frameSelected);
   els.shotSpaceInput.addEventListener("change", () => log(`Save Views zoom set to ${els.shotSpaceInput.value}. Lower values zoom in closer when current zoom syncing is off.`));
+  els.environmentSelect?.addEventListener("change", () => {
+    syncGridVisibility();
+    const label = els.environmentSelect.selectedOptions?.[0]?.textContent || els.environmentSelect.value;
+    log(`Viewport ground set to ${label}. Saved PNG views use the same ground.`);
+  });
+  els.backgroundSelect?.addEventListener("change", () => {
+    syncGridVisibility();
+    const label = els.backgroundSelect.selectedOptions?.[0]?.textContent || els.backgroundSelect.value;
+    log(`Viewport background set to ${label}. Saved PNG views use the same background.`);
+  });
   els.showGridInput.addEventListener("change", () => {
     syncGridVisibility();
-    log(`${els.showGridInput.checked ? "Showing" : "Hiding"} viewport grid.`);
+    log(`${els.showGridInput.checked ? "Showing" : "Hiding"} the grid overlay.`);
   });
   [
     els.showLightGuidesInput,
@@ -41041,6 +41250,9 @@ end
   window.ModelerStudio = {
     state,
     viewportState: () => ({
+      environment: els.environmentSelect?.value || "road",
+      background: els.backgroundSelect?.value || "sky",
+      photoEnvironmentVisible: photoEnvironment.visible,
       gridVisible: grid.visible,
       gridLabelsVisible: gridLabelGroup.visible,
       showGridChecked: !!els.showGridInput?.checked,
@@ -41085,6 +41297,7 @@ end
     importDaeText
   };
   applyToolbarVisibility(setToolbarToggleState(defaultToolbarVisibility));
+  syncGridVisibility();
   buildGridLabels();
   updateGridLabels();
   syncSpotLightRig();

@@ -19,8 +19,14 @@ function animate() {
     lineSketchCursor.scale.setScalar(radius);
   }
   renderer.render(scene, camera);
+  const mainBackground = scene.background;
+  const mainFog = scene.fog;
+  scene.background = studioBackground;
+  scene.fog = null;
   frontBoneRenderer.render(scene, frontBoneCamera);
   sideBoneRenderer.render(scene, sideBoneCamera);
+  scene.background = mainBackground;
+  scene.fog = mainFog;
 }
 
 function hitFromPointerEvent(event) {
@@ -298,9 +304,19 @@ els.saveTopPngBtn.addEventListener("click", () => saveSingleViewPng("top"));
 els.saveIsoPngBtn.addEventListener("click", () => saveSingleViewPng("iso"));
 els.viewSpaceInput.addEventListener("change", frameSelected);
 els.shotSpaceInput.addEventListener("change", () => log(`Save Views zoom set to ${els.shotSpaceInput.value}. Lower values zoom in closer when current zoom syncing is off.`));
+els.environmentSelect?.addEventListener("change", () => {
+  syncGridVisibility();
+  const label = els.environmentSelect.selectedOptions?.[0]?.textContent || els.environmentSelect.value;
+  log(`Viewport ground set to ${label}. Saved PNG views use the same ground.`);
+});
+els.backgroundSelect?.addEventListener("change", () => {
+  syncGridVisibility();
+  const label = els.backgroundSelect.selectedOptions?.[0]?.textContent || els.backgroundSelect.value;
+  log(`Viewport background set to ${label}. Saved PNG views use the same background.`);
+});
 els.showGridInput.addEventListener("change", () => {
   syncGridVisibility();
-  log(`${els.showGridInput.checked ? "Showing" : "Hiding"} viewport grid.`);
+  log(`${els.showGridInput.checked ? "Showing" : "Hiding"} the grid overlay.`);
 });
 [
   els.showLightGuidesInput,
@@ -776,6 +792,9 @@ window.addEventListener("resize", () => {
 window.ModelerStudio = {
   state,
   viewportState: () => ({
+    environment: els.environmentSelect?.value || "road",
+    background: els.backgroundSelect?.value || "sky",
+    photoEnvironmentVisible: photoEnvironment.visible,
     gridVisible: grid.visible,
     gridLabelsVisible: gridLabelGroup.visible,
     showGridChecked: !!els.showGridInput?.checked,
@@ -821,6 +840,7 @@ window.ModelerStudio = {
 };
 
 applyToolbarVisibility(setToolbarToggleState(defaultToolbarVisibility));
+syncGridVisibility();
 buildGridLabels();
 updateGridLabels();
 syncSpotLightRig();

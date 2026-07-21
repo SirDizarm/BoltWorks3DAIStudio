@@ -11,10 +11,13 @@ frontBoneRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 sideBoneRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x0b0e10);
+const studioBackground = new THREE.Color(0x0b0e10);
+const plainBackground = new THREE.Color(0x17232b);
+scene.background = studioBackground;
 
 const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 1000000);
 camera.position.set(6, 5, 7);
+camera.layers.enable(3);
 
 const frontBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
 frontBoneCamera.position.set(0, 0, 100);
@@ -73,6 +76,125 @@ scene.add(grid);
 const gridLabelGroup = new THREE.Group();
 gridLabelGroup.name = "grid direction labels";
 scene.add(gridLabelGroup);
+
+function createPhotoTexture({ kind = "sky", size = 512 } = {}) {
+  const textureCanvas = document.createElement("canvas");
+  const isScenicBackground = kind === "sky" || kind === "sunset";
+  const isSunset = kind === "sunset";
+  textureCanvas.width = isScenicBackground ? size * 2 : size;
+  textureCanvas.height = size;
+  const context = textureCanvas.getContext("2d");
+  if (isScenicBackground) {
+    const sky = context.createLinearGradient(0, 0, 0, size);
+    sky.addColorStop(0, isSunset ? "#302b63" : "#4f94c8");
+    sky.addColorStop(.48, isSunset ? "#bb5c67" : "#a9d3e8");
+    sky.addColorStop(.76, isSunset ? "#f1ad6b" : "#e7eee3");
+    sky.addColorStop(1, isSunset ? "#6c624c" : "#8ca579");
+    context.fillStyle = sky;
+    context.fillRect(0, 0, textureCanvas.width, size);
+
+    const sunX = size * (isSunset ? .58 : 1.55);
+    const sunY = size * (isSunset ? .61 : .22);
+    const sun = context.createRadialGradient(sunX, sunY, 2, sunX, sunY, size * (isSunset ? .24 : .18));
+    sun.addColorStop(0, isSunset ? "rgba(255,239,177,1)" : "rgba(255,249,204,.96)");
+    sun.addColorStop(.18, isSunset ? "rgba(255,155,92,.68)" : "rgba(255,237,174,.5)");
+    sun.addColorStop(1, "rgba(255,225,160,0)");
+    context.fillStyle = sun;
+    context.fillRect(0, 0, textureCanvas.width, size);
+
+    context.fillStyle = isSunset ? "rgba(255,213,206,.25)" : "rgba(255,255,255,.48)";
+    [[.14,.2,.12],[.35,.29,.09],[.7,.18,.13],[.86,.34,.08]].forEach(([x,y,w]) => {
+      context.beginPath();
+      context.ellipse(textureCanvas.width * x, size * y, textureCanvas.width * w, size * .028, 0, 0, Math.PI * 2);
+      context.ellipse(textureCanvas.width * (x + w * .22), size * (y - .025), textureCanvas.width * w * .55, size * .04, 0, 0, Math.PI * 2);
+      context.fill();
+    });
+
+    const horizonY = size * .76;
+    context.fillStyle = isSunset ? "#4f4a42" : "#6f8867";
+    context.beginPath();
+    context.moveTo(0, size);
+    context.lineTo(0, horizonY);
+    for (let x = 0; x <= textureCanvas.width; x += 32) {
+      const height = 24 + Math.sin(x * .018) * 18 + Math.sin(x * .047) * 9;
+      context.lineTo(x, horizonY - height);
+    }
+    context.lineTo(textureCanvas.width, size);
+    context.closePath();
+    context.fill();
+  } else {
+    const isRoad = kind === "road";
+    context.fillStyle = isRoad ? "#303437" : "#496f36";
+    context.fillRect(0, 0, size, size);
+    for (let i = 0; i < 4800; i++) {
+      const x = (Math.sin(i * 12.9898) * 43758.5453 % 1 + 1) % 1 * size;
+      const y = (Math.sin(i * 78.233) * 19642.349 % 1 + 1) % 1 * size;
+      const tone = 35 + (i % 7) * 4;
+      context.fillStyle = isRoad
+        ? `rgba(${tone},${tone + 2},${tone + 3},.28)`
+        : `rgba(${42 + i % 30},${88 + i % 45},${30 + i % 20},.34)`;
+      if (isRoad) context.fillRect(x, y, 1 + i % 2, 1 + (i % 3 === 0 ? 1 : 0));
+      else context.fillRect(x, y, 1, 3 + i % 5);
+    }
+  }
+  const texture = new THREE.CanvasTexture(textureCanvas);
+  if ("colorSpace" in texture && THREE.SRGBColorSpace) texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+const skyTexture = createPhotoTexture({ kind: "sky", size: 512 });
+const sunsetTexture = createPhotoTexture({ kind: "sunset", size: 512 });
+const roadTexture = createPhotoTexture({ kind: "road", size: 512 });
+const grassTexture = createPhotoTexture({ kind: "grass", size: 512 });
+roadTexture.wrapS = roadTexture.wrapT = THREE.RepeatWrapping;
+grassTexture.wrapS = grassTexture.wrapT = THREE.RepeatWrapping;
+roadTexture.repeat.set(28, 3);
+grassTexture.repeat.set(28, 8);
+
+const photoEnvironment = new THREE.Group();
+photoEnvironment.name = "road and grass photo environment";
+photoEnvironment.traverse(object => object.layers.set(3));
+scene.add(photoEnvironment);
+
+const road = new THREE.Mesh(
+  new THREE.PlaneGeometry(160, 10),
+  new THREE.MeshStandardMaterial({ map: roadTexture, color: 0x9aa0a2, roughness: .96, metalness: .02 })
+);
+road.rotation.x = -Math.PI / 2;
+road.position.y = -.025;
+road.receiveShadow = true;
+road.layers.set(3);
+photoEnvironment.add(road);
+
+const grassMaterial = new THREE.MeshStandardMaterial({ map: grassTexture, color: 0x86a968, roughness: 1 });
+for (const side of [-1, 1]) {
+  const grass = new THREE.Mesh(new THREE.PlaneGeometry(160, 50), grassMaterial);
+  grass.rotation.x = -Math.PI / 2;
+  grass.position.set(0, -.04, side * 30);
+  grass.receiveShadow = true;
+  grass.layers.set(3);
+  photoEnvironment.add(grass);
+}
+
+const shoulderMaterial = new THREE.MeshStandardMaterial({ color: 0x777b76, roughness: .95 });
+const edgeMaterial = new THREE.MeshStandardMaterial({ color: 0xf1eee2, roughness: .72 });
+for (const side of [-1, 1]) {
+  const shoulder = new THREE.Mesh(new THREE.PlaneGeometry(160, .85), shoulderMaterial);
+  shoulder.rotation.x = -Math.PI / 2;
+  shoulder.position.set(0, -.012, side * 5.38);
+  shoulder.receiveShadow = true;
+  shoulder.layers.set(3);
+  photoEnvironment.add(shoulder);
+  const edgeLine = new THREE.Mesh(new THREE.BoxGeometry(160, .018, .12), edgeMaterial);
+  edgeLine.position.set(0, .002, side * 4.72);
+  edgeLine.receiveShadow = true;
+  edgeLine.layers.set(3);
+  photoEnvironment.add(edgeLine);
+}
+
+const roadFog = new THREE.Fog(0xb3ced8, 55, 175);
+const sunsetFog = new THREE.Fog(0xc7836f, 55, 175);
+let suppressViewportEnvironment = false;
 const hemi = new THREE.HemisphereLight(0xe9f7ff, 0x283030, 1.8);
 scene.add(hemi);
 
@@ -113,7 +235,24 @@ const floor = new THREE.Mesh(
 );
 floor.rotation.x = -Math.PI / 2;
 floor.receiveShadow = true;
+floor.visible = false;
 scene.add(floor);
+
+const studioFloor = new THREE.Mesh(
+  new THREE.PlaneGeometry(80, 80),
+  new THREE.MeshStandardMaterial({
+    color: 0x252b30,
+    roughness: .9,
+    metalness: .04
+  })
+);
+studioFloor.name = "matte studio floor";
+studioFloor.rotation.x = -Math.PI / 2;
+studioFloor.position.y = -.03;
+studioFloor.receiveShadow = true;
+studioFloor.visible = false;
+studioFloor.layers.set(3);
+scene.add(studioFloor);
 
 const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
@@ -377,6 +516,8 @@ const els = {
   meshDetailsSaveBtn: document.querySelector("#meshDetailsSaveBtn"),
   viewSpaceInput: document.querySelector("#viewSpaceInput"),
   shotSpaceInput: document.querySelector("#shotSpaceInput"),
+  environmentSelect: document.querySelector("#environmentSelect"),
+  backgroundSelect: document.querySelector("#backgroundSelect"),
   showGridInput: document.querySelector("#showGridInput"),
   useCurrentZoomInShotsInput: document.querySelector("#useCurrentZoomInShotsInput"),
   hideGridInShotsInput: document.querySelector("#hideGridInShotsInput"),

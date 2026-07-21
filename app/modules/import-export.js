@@ -115,6 +115,8 @@ function projectState() {
         cameraUp: camera.up.toArray().map(round),
         viewSpace: Number(els.viewSpaceInput.value) || 1.5,
         shotZoom: Number(els.shotSpaceInput.value) || 0.85,
+        environment: els.environmentSelect?.value || "road",
+        background: els.backgroundSelect?.value || "sky",
         showGrid: !!els.showGridInput.checked,
         useCurrentZoomInShots: !!els.useCurrentZoomInShotsInput.checked,
         hideGridInShots: !!els.hideGridInShotsInput.checked
@@ -248,7 +250,12 @@ function applyProjectEditorState(editor = {}) {
   const view = editor.view || {};
   els.viewSpaceInput.value = String(view.viewSpace ?? 1.5);
   els.shotSpaceInput.value = String(view.shotZoom ?? 0.85);
-  els.showGridInput.checked = view.showGrid ?? true;
+  if (els.environmentSelect) els.environmentSelect.value = ["road", "studio", "plain"].includes(view.environment) ? view.environment : "road";
+  if (els.backgroundSelect) {
+    const legacyBackground = view.environment === "studio" ? "studio" : view.environment === "plain" ? "plain" : "sky";
+    els.backgroundSelect.value = ["sky", "sunset", "studio", "plain"].includes(view.background) ? view.background : legacyBackground;
+  }
+  els.showGridInput.checked = view.showGrid ?? false;
   els.useCurrentZoomInShotsInput.checked = view.useCurrentZoomInShots ?? true;
   els.hideGridInShotsInput.checked = view.hideGridInShots ?? true;
   syncGridVisibility();
@@ -662,12 +669,16 @@ function applyInspector() {
 }
 
 function importJsonData(data, fileName = "JSON") {
+  if (data?.scene?.objects) {
+    loadProjectData(data, fileName);
+    return;
+  }
   if (data?.objects) {
     loadState(data);
     log(`Imported project ${fileName}.`);
     return;
   }
-  throw new Error("JSON must be a saved project with objects.");
+  throw new Error("JSON must contain objects or a saved project scene with objects.");
 }
 
 function findObject(id) {
@@ -3418,7 +3429,32 @@ function shotSpaceMultiplier() {
 }
 
 function syncGridVisibility() {
-  grid.visible = els.showGridInput?.checked ?? true;
+  if (suppressViewportEnvironment) {
+    grid.visible = false;
+    gridLabelGroup.visible = false;
+    photoEnvironment.visible = false;
+    floor.visible = false;
+    studioFloor.visible = false;
+    return;
+  }
+  const environment = els.environmentSelect?.value || "road";
+  const background = els.backgroundSelect?.value || "sky";
+  photoEnvironment.visible = environment === "road";
+  floor.visible = false;
+  studioFloor.visible = environment === "studio";
+  grid.visible = !!els.showGridInput?.checked;
+  scene.background = background === "sky"
+    ? skyTexture
+    : background === "sunset"
+      ? sunsetTexture
+      : background === "plain"
+        ? plainBackground
+        : studioBackground;
+  scene.fog = environment === "road" && background === "sky"
+    ? roadFog
+    : environment === "road" && background === "sunset"
+      ? sunsetFog
+      : null;
   updateGridLabels();
 }
 
@@ -3429,6 +3465,7 @@ function updateViewScale(size = 18) {
   syncGridVisibility();
   updateGridLabels();
   floor.scale.setScalar(Math.max(1, gridSize / 40));
+  studioFloor.scale.setScalar(Math.max(1, gridSize / 80));
   orbit.maxDistance = Math.max(500000, gridSize * 100);
   camera.far = Math.max(1000000, gridSize * 250);
   camera.updateProjectionMatrix();
@@ -3553,6 +3590,10 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
     useCurrentZoom: els.useCurrentZoomInShotsInput?.checked ?? true,
     currentDistance: oldDistance
   });
+  if (els.hideGridInShotsInput?.checked) {
+    grid.visible = false;
+    gridLabelGroup.visible = false;
+  }
   renderer.render(scene, camera);
 
   const dataUrl = canvas.toDataURL("image/png");
@@ -3638,6 +3679,10 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   const oldNear = camera.near;
   const oldFar = camera.far;
   const oldSceneBackground = scene.background;
+  const oldSceneFog = scene.fog;
+  const oldPhotoEnvironmentVisible = photoEnvironment.visible;
+  const oldFloorVisible = floor.visible;
+  const oldStudioFloorVisible = studioFloor.visible;
   const oldTransformVisible = transform.visible;
   const oldFaceMarkerVisible = faceMarker.visible;
   const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
@@ -3648,6 +3693,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   const oldObjectVisibility = objects.map(object => ({ object, visible: object.visible }));
 
   const spriteObjects = visibleSpriteObjects();
+  suppressViewportEnvironment = true;
   transform.visible = false;
   faceMarker.visible = false;
   selectionOutlineGroup.visible = false;
@@ -3655,7 +3701,10 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   markerGroup.visible = false;
   grid.visible = false;
   gridLabelGroup.visible = false;
+  photoEnvironment.visible = false;
+  studioFloor.visible = false;
   scene.background = null;
+  scene.fog = null;
   resize();
   setCameraToView("right", { useCurrentZoom: false });
 
@@ -3687,7 +3736,12 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   }
 
   for (const { object, visible } of oldObjectVisibility) object.visible = visible;
+  suppressViewportEnvironment = false;
   scene.background = oldSceneBackground;
+  scene.fog = oldSceneFog;
+  photoEnvironment.visible = oldPhotoEnvironmentVisible;
+  floor.visible = oldFloorVisible;
+  studioFloor.visible = oldStudioFloorVisible;
   transform.visible = oldTransformVisible;
   faceMarker.visible = oldFaceMarkerVisible;
   selectionOutlineGroup.visible = oldSelectionOutlineVisible;
