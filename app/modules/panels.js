@@ -592,9 +592,17 @@ els.importDaeFile.addEventListener("change", async event => {
   event.target.value = "";
 });
 
+const activeInspectorEdits = new WeakSet();
 document.querySelectorAll(".props input").forEach(input => {
   if (input === els.cutAmountInput || input === els.textureFile) return;
-  input.addEventListener("input", applyInspector);
+  input.addEventListener("input", () => {
+    if (!activeInspectorEdits.has(input)) {
+      recordHistory("inspector");
+      activeInspectorEdits.add(input);
+    }
+    applyInspector({ record: false });
+  });
+  input.addEventListener("blur", () => activeInspectorEdits.delete(input));
 });
 
 canvas.addEventListener("pointerdown", event => {

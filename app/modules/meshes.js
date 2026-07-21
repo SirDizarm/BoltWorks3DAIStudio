@@ -817,12 +817,47 @@ function makeMaterial(color = "#40c7a5", roughness = .6, textureUrl = null, text
     depthWrite: true
   });
   if (textureUrl) {
-    const texture = new THREE.TextureLoader().load(textureUrl);
+    const texture = loadTextureInstance(textureUrl);
     applyTextureTransform(texture, { textureFlipY, textureRotation });
     material.map = texture;
     material.needsUpdate = true;
   }
   return material;
+}
+
+let textureUiRefreshScheduled = false;
+
+function scheduleTextureUiRefresh() {
+  if (textureUiRefreshScheduled) return;
+  textureUiRefreshScheduled = true;
+  requestAnimationFrame(() => {
+    textureUiRefreshScheduled = false;
+    renderTree();
+    syncInspectorSoft();
+    updateState();
+  });
+}
+
+function loadTextureInstance(textureUrl, onLoad = null) {
+  let entry = textureSourceCache.get(textureUrl);
+  if (!entry) {
+    entry = { source: null, loaded: false, callbacks: [] };
+    textureSourceCache.set(textureUrl, entry);
+    entry.source = new THREE.TextureLoader().load(textureUrl, loadedTexture => {
+      entry.loaded = true;
+      const callbacks = entry.callbacks.splice(0);
+      for (const callback of callbacks) callback(loadedTexture);
+    });
+  }
+
+  const texture = entry.source.clone();
+  const notify = source => {
+    texture.needsUpdate = true;
+    onLoad?.(source);
+  };
+  if (entry.loaded) notify(entry.source);
+  else entry.callbacks.push(notify);
+  return texture;
 }
 
 function stringHash(value = "") {
@@ -876,11 +911,9 @@ function applyTextureToMesh(mesh, textureUrl, textureName = "Texture", textureFl
   if (mesh.material.map) mesh.material.map.dispose();
   mesh.material.map = null;
   if (textureUrl) {
-    const texture = new THREE.TextureLoader().load(textureUrl, loadedTexture => {
+    const texture = loadTextureInstance(textureUrl, loadedTexture => {
       maybeApplyTextureDisplayColor(mesh, loadedTexture.image);
-      renderTree();
-      syncInspectorSoft();
-      updateState();
+      scheduleTextureUiRefresh();
     });
     applyTextureTransform(texture, { textureFlipY, textureRotation });
     mesh.material.map = texture;
@@ -1776,15 +1809,20 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
   shape = normalizeShapeName(shape);
+  const defaultOrdinal = idCounter;
+  const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
+  const objectId = preferredId || `obj-${idCounter++}`;
+  const numericId = preferredId?.match(/^obj-(\d+)$/i);
+  if (numericId) idCounter = Math.max(idCounter, Number(numericId[1]) + 1);
   const baseGeometry = geometry ? geometryFromData(geometry) : (shapeFactories[shape]?.() ?? shapeFactories.box());
   const meshGeometry = applyGeometryCuts(baseGeometry, spec);
   const cuts = cutSpecFromObject(spec);
   const mesh = new THREE.Mesh(meshGeometry, makeMaterial(color, roughness));
-  mesh.name = name || `${shape} ${idCounter}`;
+  mesh.name = name || `${shape} ${defaultOrdinal}`;
   mesh.userData = {
-    id: `obj-${idCounter++}`,
+    id: objectId,
     shape,
     geometry: geometry || null,
     color,
@@ -1822,13 +1860,13 @@ function createMesh(spec = {}) {
   return mesh;
 }
 
-function addObject(spec = {}, { record = true, select = false } = {}) {
+function addObject(spec = {}, { record = true, select = false, update = true } = {}) {
   if (record) recordHistory("add");
   const mesh = createMesh(spec);
   scene.add(mesh);
   objects.push(mesh);
   if (select) selectObject(mesh);
-  updateAll();
+  if (update) updateAll();
   return mesh;
 }
 function reliefNumber(input, fallback, min, max) {
@@ -2824,7 +2862,15 @@ function selectObject(mesh, { keepGroup = false, append = false } = {}) {
       activeGroupIds = mesh ? linkSelectionIds(mesh) : [];
     }
   }
+  const previousSelected = selected;
   selected = mesh || null;
+  // Clicking a different scene object does not necessarily move focus away
+  // from a numeric inspector field (notably when selecting on the canvas).
+  // End the old edit session so its stale values cannot be applied to the new
+  // selection and allow updateAll() to populate the new object's values.
+  if (previousSelected !== selected && document.activeElement?.matches(".props input")) {
+    document.activeElement.blur();
+  }
   updateTransformAttachment();
   updateAll();
 }

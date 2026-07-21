@@ -190,7 +190,40 @@ function hydrateProjectTextureReferences(scene, entries = []) {
 }
 
 function cloneSceneState() {
-  return JSON.parse(JSON.stringify(state()));
+  const scene = state();
+  const textureEntries = [...textureLibrary.values()].map(entry => ({
+    name: entry.name,
+    dataUrl: entry.dataUrl,
+    robloxAssetId: normalizeRobloxAssetId(entry.robloxAssetId || "")
+  }));
+  const textureNameByUrl = new Map(
+    textureEntries
+      .filter(entry => entry?.name && entry?.dataUrl)
+      .map(entry => [entry.dataUrl, entry.name])
+  );
+
+  // History must keep embedded image data once per texture, not once per mesh.
+  // A textured imported project can otherwise turn a small inspector edit into
+  // a several-hundred-megabyte synchronous JSON clone and stop before applying it.
+  for (const object of scene.objects || []) {
+    const libraryName = textureNameByUrl.get(object.textureUrl);
+    if (!libraryName) continue;
+    object.textureName = libraryName;
+    object.textureUrl = null;
+  }
+
+  return {
+    scene: JSON.parse(JSON.stringify(scene)),
+    // Data URLs are immutable strings. Keep their shared references instead of
+    // recreating every multi-megabyte payload for every history entry.
+    textureLibrary: textureEntries.map(entry => ({ ...entry })),
+    editor: {
+      selectedId: selected?.userData?.id || null,
+      selectedGroupId: selectedGroupRecordId || null,
+      checkedIds: [...checkedIds],
+      activeGroupIds: [...activeGroupIds]
+    }
+  };
 }
 
 function recordHistory() {
@@ -204,11 +237,32 @@ function updateUndoButton() {
   els.undoBtn.disabled = history.length === 0;
 }
 
+function setCurrentSceneAsHistoryBaseline() {
+  history.length = 0;
+  updateUndoButton();
+}
+
 function undo() {
   const previous = history.pop();
   if (!previous) return;
   isRestoring = true;
-  loadState(previous, { record: false });
+  const previousScene = previous.scene?.objects ? previous.scene : previous;
+  if (previous.scene?.objects) {
+    restoreTextureLibrary(previous.textureLibrary || [], { replace: true });
+    hydrateProjectTextureReferences(previousScene, previous.textureLibrary || []);
+  }
+  loadState(previousScene, { record: false });
+  if (previous.editor) {
+    checkedIds.clear();
+    for (const id of previous.editor.checkedIds || []) {
+      if (findObject(id)) checkedIds.add(id);
+    }
+    activeGroupIds = (previous.editor.activeGroupIds || []).filter(id => findObject(id));
+    selectedGroupRecordId = previous.editor.selectedGroupId && sceneGroupRegistry.has(previous.editor.selectedGroupId)
+      ? previous.editor.selectedGroupId
+      : null;
+    selectObject(previous.editor.selectedId ? findObject(previous.editor.selectedId) : null, { keepGroup: true });
+  }
   isRestoring = false;
   updateUndoButton();
   log("Undo.");
@@ -216,6 +270,9 @@ function undo() {
 
 function loadState(data, { record = true } = {}) {
   if (record) recordHistory("import");
+  // Undo snapshots and compact project scenes store one texture payload in the
+  // library and lightweight textureName references on their mesh objects.
+  hydrateProjectTextureReferences(data, [...textureLibrary.values()]);
   clearObjects({ record: false });
   clearLineSketch({ silent: true, keepMode: false });
   checkedIds.clear();
@@ -233,7 +290,7 @@ function loadState(data, { record = true } = {}) {
       parentId: spec.parentId || null
     });
   }
-  for (const spec of data.objects || []) addObject(spec, { record: false });
+  for (const spec of data.objects || []) addObject(spec, { record: false, update: false });
   ensureLinkGroupColors();
   ensureSceneGroups();
   ensureModelGroups();
@@ -324,7 +381,6 @@ function applyProjectEditorState(editor = {}) {
 
 function loadProjectData(data, fileName = "Project") {
   if (data?.kind === "modeler-project" && data?.scene?.objects) {
-    recordHistory("load project");
     if (els.projectNameInput) {
       els.projectNameInput.value = safeFileName(data.name || data.editor?.projectName || baseNameFromFileName(fileName, "modeler-project"), "modeler-project");
     }
@@ -333,6 +389,7 @@ function loadProjectData(data, fileName = "Project") {
     loadState(data.scene, { record: false });
     reconcileTextureRobloxIds();
     applyProjectEditorState(data.editor || {});
+    setCurrentSceneAsHistoryBaseline();
     log(`Loaded project ${fileName}.`, {
       objects: data.scene.objects.length,
       checked: data.editor?.checkedIds?.length || 0,
@@ -342,8 +399,9 @@ function loadProjectData(data, fileName = "Project") {
   }
   if (data?.objects) {
     if (els.projectNameInput) els.projectNameInput.value = baseNameFromFileName(fileName, "modeler-scene");
-    loadState(data);
+    loadState(data, { record: false });
     reconcileTextureRobloxIds();
+    setCurrentSceneAsHistoryBaseline();
     log(`Loaded legacy scene ${fileName}.`);
     return;
   }
@@ -637,12 +695,23 @@ function syncInspector() {
   els.textureName.textContent = selected.material.map ? `${textureLabel} (${selected.userData.textureFlipY ?? true ? "flip V" : "normal V"}, rot ${normalizeTextureRotation(selected.userData.textureRotation || 0)} deg)` : textureLabel;
 }
 
-function applyInspector() {
+function inspectorNumber(input, fallback, { min = null } = {}) {
+  if (String(input?.value ?? "").trim() === "") return fallback;
+  const value = Number(input?.value);
+  if (!Number.isFinite(value)) return fallback;
+  return min === null ? value : Math.max(min, value);
+}
+
+function applyInspector({ record = true } = {}) {
   const groupObjects = transformTargetObjects();
   const pivotTargets = pivotManagedObjects();
   if (pivotTargets.length > 0 && transform.object === groupPivot) {
-    recordHistory(pivotTargets.length > 1 ? "group inspector" : "pivot inspector");
-    const nextPosition = new THREE.Vector3(+els.posX.value, +els.posY.value, +els.posZ.value);
+    if (record) recordHistory(pivotTargets.length > 1 ? "group inspector" : "pivot inspector");
+    const nextPosition = new THREE.Vector3(
+      inspectorNumber(els.posX, groupPivot.position.x),
+      inspectorNumber(els.posY, groupPivot.position.y),
+      inspectorNumber(els.posZ, groupPivot.position.z)
+    );
     if (pivotEditMode) {
       groupPivot.position.copy(nextPosition);
       groupPivot.updateMatrixWorld(true);
@@ -653,11 +722,15 @@ function applyInspector() {
     }
     groupPivot.position.copy(nextPosition);
     groupPivot.rotation.set(
-      THREE.MathUtils.degToRad(+els.rotX.value),
-      THREE.MathUtils.degToRad(+els.rotY.value),
-      THREE.MathUtils.degToRad(+els.rotZ.value)
+      THREE.MathUtils.degToRad(inspectorNumber(els.rotX, THREE.MathUtils.radToDeg(groupPivot.rotation.x))),
+      THREE.MathUtils.degToRad(inspectorNumber(els.rotY, THREE.MathUtils.radToDeg(groupPivot.rotation.y))),
+      THREE.MathUtils.degToRad(inspectorNumber(els.rotZ, THREE.MathUtils.radToDeg(groupPivot.rotation.z)))
     );
-    groupPivot.scale.set(Math.max(.05, +els.scaleX.value), Math.max(.05, +els.scaleY.value), Math.max(.05, +els.scaleZ.value));
+    groupPivot.scale.set(
+      inspectorNumber(els.scaleX, groupPivot.scale.x, { min: .05 }),
+      inspectorNumber(els.scaleY, groupPivot.scale.y, { min: .05 }),
+      inspectorNumber(els.scaleZ, groupPivot.scale.z, { min: .05 })
+    );
     groupPivot.updateMatrixWorld(true);
     const delta = groupPivot.matrixWorld.clone().multiply(lastGroupMatrix.clone().invert());
     for (const mesh of pivotTargets) mesh.applyMatrix4(delta);
@@ -667,19 +740,27 @@ function applyInspector() {
     return;
   }
   if (!selected) return;
-  recordHistory("inspector");
+  if (record) recordHistory("inspector");
   const normalizedColor = normalizeHexColor(els.colorHexInput?.value || els.colorInput.value, normalizeHexColor(els.colorInput.value, "#40C7A5"));
   if (!normalizedColor) return;
   els.colorInput.value = normalizedColor;
   els.colorHexInput.value = normalizedColor;
   selected.name = els.nameInput.value.trim() || selected.name;
-  selected.position.set(+els.posX.value, +els.posY.value, +els.posZ.value);
-  selected.rotation.set(
-    THREE.MathUtils.degToRad(+els.rotX.value),
-    THREE.MathUtils.degToRad(+els.rotY.value),
-    THREE.MathUtils.degToRad(+els.rotZ.value)
+  selected.position.set(
+    inspectorNumber(els.posX, selected.position.x),
+    inspectorNumber(els.posY, selected.position.y),
+    inspectorNumber(els.posZ, selected.position.z)
   );
-  selected.scale.set(Math.max(.05, +els.scaleX.value), Math.max(.05, +els.scaleY.value), Math.max(.05, +els.scaleZ.value));
+  selected.rotation.set(
+    THREE.MathUtils.degToRad(inspectorNumber(els.rotX, THREE.MathUtils.radToDeg(selected.rotation.x))),
+    THREE.MathUtils.degToRad(inspectorNumber(els.rotY, THREE.MathUtils.radToDeg(selected.rotation.y))),
+    THREE.MathUtils.degToRad(inspectorNumber(els.rotZ, THREE.MathUtils.radToDeg(selected.rotation.z)))
+  );
+  selected.scale.set(
+    inspectorNumber(els.scaleX, selected.scale.x, { min: .05 }),
+    inspectorNumber(els.scaleY, selected.scale.y, { min: .05 }),
+    inspectorNumber(els.scaleZ, selected.scale.z, { min: .05 })
+  );
   selected.material.color.set(normalizedColor);
   selected.material.roughness = +els.roughInput.value;
   selected.material.transparent = false;

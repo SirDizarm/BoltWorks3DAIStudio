@@ -30023,6 +30023,7 @@ void main() {
     hoverPoint: null
   };
   var textureLibrary = /* @__PURE__ */ new Map();
+  var textureSourceCache = /* @__PURE__ */ new Map();
   var reliefImageState = {
     dataUrl: "",
     name: "",
@@ -30891,12 +30892,43 @@ void main() {
       depthWrite: true
     });
     if (textureUrl) {
-      const texture = new TextureLoader().load(textureUrl);
+      const texture = loadTextureInstance(textureUrl);
       applyTextureTransform(texture, { textureFlipY, textureRotation });
       material.map = texture;
       material.needsUpdate = true;
     }
     return material;
+  }
+  var textureUiRefreshScheduled = false;
+  function scheduleTextureUiRefresh() {
+    if (textureUiRefreshScheduled) return;
+    textureUiRefreshScheduled = true;
+    requestAnimationFrame(() => {
+      textureUiRefreshScheduled = false;
+      renderTree();
+      syncInspectorSoft();
+      updateState();
+    });
+  }
+  function loadTextureInstance(textureUrl, onLoad = null) {
+    let entry = textureSourceCache.get(textureUrl);
+    if (!entry) {
+      entry = { source: null, loaded: false, callbacks: [] };
+      textureSourceCache.set(textureUrl, entry);
+      entry.source = new TextureLoader().load(textureUrl, (loadedTexture) => {
+        entry.loaded = true;
+        const callbacks = entry.callbacks.splice(0);
+        for (const callback of callbacks) callback(loadedTexture);
+      });
+    }
+    const texture = entry.source.clone();
+    const notify = (source) => {
+      texture.needsUpdate = true;
+      onLoad?.(source);
+    };
+    if (entry.loaded) notify(entry.source);
+    else entry.callbacks.push(notify);
+    return texture;
   }
   function stringHash(value = "") {
     let hash = 2166136261;
@@ -30946,11 +30978,9 @@ void main() {
     if (mesh.material.map) mesh.material.map.dispose();
     mesh.material.map = null;
     if (textureUrl) {
-      const texture = new TextureLoader().load(textureUrl, (loadedTexture) => {
+      const texture = loadTextureInstance(textureUrl, (loadedTexture) => {
         maybeApplyTextureDisplayColor(mesh, loadedTexture.image);
-        renderTree();
-        syncInspectorSoft();
-        updateState();
+        scheduleTextureUiRefresh();
       });
       applyTextureTransform(texture, { textureFlipY, textureRotation });
       mesh.material.map = texture;
@@ -31765,15 +31795,20 @@ void main() {
     };
   }
   function createMesh(spec = {}) {
-    let { shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
+    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
     shape = normalizeShapeName(shape);
+    const defaultOrdinal = idCounter;
+    const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
+    const objectId = preferredId || `obj-${idCounter++}`;
+    const numericId = preferredId?.match(/^obj-(\d+)$/i);
+    if (numericId) idCounter = Math.max(idCounter, Number(numericId[1]) + 1);
     const baseGeometry = geometry ? geometryFromData(geometry) : shapeFactories[shape]?.() ?? shapeFactories.box();
     const meshGeometry = applyGeometryCuts(baseGeometry, spec);
     const cuts = cutSpecFromObject(spec);
     const mesh = new Mesh(meshGeometry, makeMaterial(color, roughness));
-    mesh.name = name || `${shape} ${idCounter}`;
+    mesh.name = name || `${shape} ${defaultOrdinal}`;
     mesh.userData = {
-      id: `obj-${idCounter++}`,
+      id: objectId,
       shape,
       geometry: geometry || null,
       color,
@@ -31810,13 +31845,13 @@ void main() {
     }
     return mesh;
   }
-  function addObject(spec = {}, { record = true, select = false } = {}) {
+  function addObject(spec = {}, { record = true, select = false, update = true } = {}) {
     if (record) recordHistory("add");
     const mesh = createMesh(spec);
     scene.add(mesh);
     objects.push(mesh);
     if (select) selectObject(mesh);
-    updateAll();
+    if (update) updateAll();
     return mesh;
   }
   function reliefNumber(input, fallback, min, max) {
@@ -32688,7 +32723,11 @@ void main() {
         activeGroupIds = mesh ? linkSelectionIds(mesh) : [];
       }
     }
+    const previousSelected = selected;
     selected = mesh || null;
+    if (previousSelected !== selected && document.activeElement?.matches(".props input")) {
+      document.activeElement.blur();
+    }
     updateTransformAttachment();
     updateAll();
   }
@@ -36875,7 +36914,33 @@ void main() {
     }
   }
   function cloneSceneState() {
-    return JSON.parse(JSON.stringify(state()));
+    const scene2 = state();
+    const textureEntries = [...textureLibrary.values()].map((entry) => ({
+      name: entry.name,
+      dataUrl: entry.dataUrl,
+      robloxAssetId: normalizeRobloxAssetId(entry.robloxAssetId || "")
+    }));
+    const textureNameByUrl = new Map(
+      textureEntries.filter((entry) => entry?.name && entry?.dataUrl).map((entry) => [entry.dataUrl, entry.name])
+    );
+    for (const object of scene2.objects || []) {
+      const libraryName = textureNameByUrl.get(object.textureUrl);
+      if (!libraryName) continue;
+      object.textureName = libraryName;
+      object.textureUrl = null;
+    }
+    return {
+      scene: JSON.parse(JSON.stringify(scene2)),
+      // Data URLs are immutable strings. Keep their shared references instead of
+      // recreating every multi-megabyte payload for every history entry.
+      textureLibrary: textureEntries.map((entry) => ({ ...entry })),
+      editor: {
+        selectedId: selected?.userData?.id || null,
+        selectedGroupId: selectedGroupRecordId || null,
+        checkedIds: [...checkedIds],
+        activeGroupIds: [...activeGroupIds]
+      }
+    };
   }
   function recordHistory() {
     if (isRestoring) return;
@@ -36886,17 +36951,36 @@ void main() {
   function updateUndoButton() {
     els.undoBtn.disabled = history.length === 0;
   }
+  function setCurrentSceneAsHistoryBaseline() {
+    history.length = 0;
+    updateUndoButton();
+  }
   function undo() {
     const previous = history.pop();
     if (!previous) return;
     isRestoring = true;
-    loadState(previous, { record: false });
+    const previousScene = previous.scene?.objects ? previous.scene : previous;
+    if (previous.scene?.objects) {
+      restoreTextureLibrary(previous.textureLibrary || [], { replace: true });
+      hydrateProjectTextureReferences(previousScene, previous.textureLibrary || []);
+    }
+    loadState(previousScene, { record: false });
+    if (previous.editor) {
+      checkedIds.clear();
+      for (const id of previous.editor.checkedIds || []) {
+        if (findObject(id)) checkedIds.add(id);
+      }
+      activeGroupIds = (previous.editor.activeGroupIds || []).filter((id) => findObject(id));
+      selectedGroupRecordId = previous.editor.selectedGroupId && sceneGroupRegistry.has(previous.editor.selectedGroupId) ? previous.editor.selectedGroupId : null;
+      selectObject(previous.editor.selectedId ? findObject(previous.editor.selectedId) : null, { keepGroup: true });
+    }
     isRestoring = false;
     updateUndoButton();
     log("Undo.");
   }
   function loadState(data, { record = true } = {}) {
     if (record) recordHistory("import");
+    hydrateProjectTextureReferences(data, [...textureLibrary.values()]);
     clearObjects({ record: false });
     clearLineSketch({ silent: true, keepMode: false });
     checkedIds.clear();
@@ -36914,7 +36998,7 @@ void main() {
         parentId: spec.parentId || null
       });
     }
-    for (const spec of data.objects || []) addObject(spec, { record: false });
+    for (const spec of data.objects || []) addObject(spec, { record: false, update: false });
     ensureLinkGroupColors();
     ensureSceneGroups();
     ensureModelGroups();
@@ -36995,7 +37079,6 @@ void main() {
   }
   function loadProjectData(data, fileName = "Project") {
     if (data?.kind === "modeler-project" && data?.scene?.objects) {
-      recordHistory("load project");
       if (els.projectNameInput) {
         els.projectNameInput.value = safeFileName(data.name || data.editor?.projectName || baseNameFromFileName(fileName, "modeler-project"), "modeler-project");
       }
@@ -37004,6 +37087,7 @@ void main() {
       loadState(data.scene, { record: false });
       reconcileTextureRobloxIds();
       applyProjectEditorState(data.editor || {});
+      setCurrentSceneAsHistoryBaseline();
       log(`Loaded project ${fileName}.`, {
         objects: data.scene.objects.length,
         checked: data.editor?.checkedIds?.length || 0,
@@ -37013,8 +37097,9 @@ void main() {
     }
     if (data?.objects) {
       if (els.projectNameInput) els.projectNameInput.value = baseNameFromFileName(fileName, "modeler-scene");
-      loadState(data);
+      loadState(data, { record: false });
       reconcileTextureRobloxIds();
+      setCurrentSceneAsHistoryBaseline();
       log(`Loaded legacy scene ${fileName}.`);
       return;
     }
@@ -37287,12 +37372,22 @@ void main() {
     const textureLabel = selected.userData.textureName || (selected.material.map ? "Texture" : "No texture");
     els.textureName.textContent = selected.material.map ? `${textureLabel} (${selected.userData.textureFlipY ?? true ? "flip V" : "normal V"}, rot ${normalizeTextureRotation(selected.userData.textureRotation || 0)} deg)` : textureLabel;
   }
-  function applyInspector() {
+  function inspectorNumber(input, fallback, { min = null } = {}) {
+    if (String(input?.value ?? "").trim() === "") return fallback;
+    const value = Number(input?.value);
+    if (!Number.isFinite(value)) return fallback;
+    return min === null ? value : Math.max(min, value);
+  }
+  function applyInspector({ record = true } = {}) {
     const groupObjects = transformTargetObjects();
     const pivotTargets = pivotManagedObjects();
     if (pivotTargets.length > 0 && transform.object === groupPivot) {
-      recordHistory(pivotTargets.length > 1 ? "group inspector" : "pivot inspector");
-      const nextPosition = new Vector3(+els.posX.value, +els.posY.value, +els.posZ.value);
+      if (record) recordHistory(pivotTargets.length > 1 ? "group inspector" : "pivot inspector");
+      const nextPosition = new Vector3(
+        inspectorNumber(els.posX, groupPivot.position.x),
+        inspectorNumber(els.posY, groupPivot.position.y),
+        inspectorNumber(els.posZ, groupPivot.position.z)
+      );
       if (pivotEditMode) {
         groupPivot.position.copy(nextPosition);
         groupPivot.updateMatrixWorld(true);
@@ -37303,11 +37398,15 @@ void main() {
       }
       groupPivot.position.copy(nextPosition);
       groupPivot.rotation.set(
-        MathUtils.degToRad(+els.rotX.value),
-        MathUtils.degToRad(+els.rotY.value),
-        MathUtils.degToRad(+els.rotZ.value)
+        MathUtils.degToRad(inspectorNumber(els.rotX, MathUtils.radToDeg(groupPivot.rotation.x))),
+        MathUtils.degToRad(inspectorNumber(els.rotY, MathUtils.radToDeg(groupPivot.rotation.y))),
+        MathUtils.degToRad(inspectorNumber(els.rotZ, MathUtils.radToDeg(groupPivot.rotation.z)))
       );
-      groupPivot.scale.set(Math.max(0.05, +els.scaleX.value), Math.max(0.05, +els.scaleY.value), Math.max(0.05, +els.scaleZ.value));
+      groupPivot.scale.set(
+        inspectorNumber(els.scaleX, groupPivot.scale.x, { min: 0.05 }),
+        inspectorNumber(els.scaleY, groupPivot.scale.y, { min: 0.05 }),
+        inspectorNumber(els.scaleZ, groupPivot.scale.z, { min: 0.05 })
+      );
       groupPivot.updateMatrixWorld(true);
       const delta = groupPivot.matrixWorld.clone().multiply(lastGroupMatrix.clone().invert());
       for (const mesh of pivotTargets) mesh.applyMatrix4(delta);
@@ -37317,19 +37416,27 @@ void main() {
       return;
     }
     if (!selected) return;
-    recordHistory("inspector");
+    if (record) recordHistory("inspector");
     const normalizedColor = normalizeHexColor(els.colorHexInput?.value || els.colorInput.value, normalizeHexColor(els.colorInput.value, "#40C7A5"));
     if (!normalizedColor) return;
     els.colorInput.value = normalizedColor;
     els.colorHexInput.value = normalizedColor;
     selected.name = els.nameInput.value.trim() || selected.name;
-    selected.position.set(+els.posX.value, +els.posY.value, +els.posZ.value);
-    selected.rotation.set(
-      MathUtils.degToRad(+els.rotX.value),
-      MathUtils.degToRad(+els.rotY.value),
-      MathUtils.degToRad(+els.rotZ.value)
+    selected.position.set(
+      inspectorNumber(els.posX, selected.position.x),
+      inspectorNumber(els.posY, selected.position.y),
+      inspectorNumber(els.posZ, selected.position.z)
     );
-    selected.scale.set(Math.max(0.05, +els.scaleX.value), Math.max(0.05, +els.scaleY.value), Math.max(0.05, +els.scaleZ.value));
+    selected.rotation.set(
+      MathUtils.degToRad(inspectorNumber(els.rotX, MathUtils.radToDeg(selected.rotation.x))),
+      MathUtils.degToRad(inspectorNumber(els.rotY, MathUtils.radToDeg(selected.rotation.y))),
+      MathUtils.degToRad(inspectorNumber(els.rotZ, MathUtils.radToDeg(selected.rotation.z)))
+    );
+    selected.scale.set(
+      inspectorNumber(els.scaleX, selected.scale.x, { min: 0.05 }),
+      inspectorNumber(els.scaleY, selected.scale.y, { min: 0.05 }),
+      inspectorNumber(els.scaleZ, selected.scale.z, { min: 0.05 })
+    );
     selected.material.color.set(normalizedColor);
     selected.material.roughness = +els.roughInput.value;
     selected.material.transparent = false;
@@ -41372,9 +41479,17 @@ end
     }
     event.target.value = "";
   });
+  var activeInspectorEdits = /* @__PURE__ */ new WeakSet();
   document.querySelectorAll(".props input").forEach((input) => {
     if (input === els.cutAmountInput || input === els.textureFile) return;
-    input.addEventListener("input", applyInspector);
+    input.addEventListener("input", () => {
+      if (!activeInspectorEdits.has(input)) {
+        recordHistory("inspector");
+        activeInspectorEdits.add(input);
+      }
+      applyInspector({ record: false });
+    });
+    input.addEventListener("blur", () => activeInspectorEdits.delete(input));
   });
   canvas.addEventListener("pointerdown", (event) => {
     const rect = renderer.domElement.getBoundingClientRect();

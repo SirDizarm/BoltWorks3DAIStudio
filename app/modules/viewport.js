@@ -577,6 +577,7 @@ const textureEditorState = {
 };
 
 const textureLibrary = new Map();
+const textureSourceCache = new Map();
 const reliefImageState = {
   dataUrl: "",
   name: "",
