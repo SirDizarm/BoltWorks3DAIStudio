@@ -36942,8 +36942,9 @@ void main() {
       }
     };
   }
+  var isProjectLoading = false;
   function recordHistory() {
-    if (isRestoring) return;
+    if (isRestoring || isProjectLoading) return;
     history.push(cloneSceneState());
     if (history.length > maxHistory) history.shift();
     updateUndoButton();
@@ -37079,14 +37080,19 @@ void main() {
   }
   function loadProjectData(data, fileName = "Project") {
     if (data?.kind === "modeler-project" && data?.scene?.objects) {
-      if (els.projectNameInput) {
-        els.projectNameInput.value = safeFileName(data.name || data.editor?.projectName || baseNameFromFileName(fileName, "modeler-project"), "modeler-project");
+      isProjectLoading = true;
+      try {
+        if (els.projectNameInput) {
+          els.projectNameInput.value = safeFileName(data.name || data.editor?.projectName || baseNameFromFileName(fileName, "modeler-project"), "modeler-project");
+        }
+        hydrateProjectTextureReferences(data.scene, data.textureLibrary || []);
+        restoreTextureLibrary(data.textureLibrary || [], { replace: true });
+        loadState(data.scene, { record: false });
+        reconcileTextureRobloxIds();
+        applyProjectEditorState(data.editor || {});
+      } finally {
+        isProjectLoading = false;
       }
-      hydrateProjectTextureReferences(data.scene, data.textureLibrary || []);
-      restoreTextureLibrary(data.textureLibrary || [], { replace: true });
-      loadState(data.scene, { record: false });
-      reconcileTextureRobloxIds();
-      applyProjectEditorState(data.editor || {});
       setCurrentSceneAsHistoryBaseline();
       log(`Loaded project ${fileName}.`, {
         objects: data.scene.objects.length,
@@ -37096,9 +37102,14 @@ void main() {
       return;
     }
     if (data?.objects) {
-      if (els.projectNameInput) els.projectNameInput.value = baseNameFromFileName(fileName, "modeler-scene");
-      loadState(data, { record: false });
-      reconcileTextureRobloxIds();
+      isProjectLoading = true;
+      try {
+        if (els.projectNameInput) els.projectNameInput.value = baseNameFromFileName(fileName, "modeler-scene");
+        loadState(data, { record: false });
+        reconcileTextureRobloxIds();
+      } finally {
+        isProjectLoading = false;
+      }
       setCurrentSceneAsHistoryBaseline();
       log(`Loaded legacy scene ${fileName}.`);
       return;
@@ -37455,8 +37466,7 @@ void main() {
       return;
     }
     if (data?.objects) {
-      loadState(data);
-      log(`Imported project ${fileName}.`);
+      loadProjectData(data, fileName);
       return;
     }
     throw new Error("JSON must contain objects or a saved project scene with objects.");
