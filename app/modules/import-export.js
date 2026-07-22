@@ -3627,6 +3627,7 @@ function selectedTrianglesBounds() {
 }
 
 function frameSelected() {
+  activeCustomCameraId = null;
   let box = selectedTrianglesBounds();
   if (!box) box = new THREE.Box3();
   const transformTargets = transformTargetObjects();
@@ -3723,6 +3724,7 @@ function makeCameraDirectorMarker(view, selectedMarker = false) {
 function renderCustomCameraMarkers() {
   disposeCameraDirectorMarkers();
   for (const view of customCameraViews) {
+    if (view.id === activeCustomCameraId) continue;
     cameraDirectorGroup.add(makeCameraDirectorMarker(view, view.id === selectedCustomCameraId));
   }
   cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked;
@@ -3787,6 +3789,7 @@ function addCustomCameraView() {
   };
   customCameraViews.push(view);
   selectedCustomCameraId = view.id;
+  activeCustomCameraId = view.id;
   renderCustomCameraViews();
   log(`Added ${view.name} at the current viewport.`);
   return view;
@@ -3800,6 +3803,7 @@ function updateCustomCameraFromCurrentView() {
   view.target = orbit.target.toArray();
   view.up = camera.up.toArray();
   view.fov = camera.fov;
+  activeCustomCameraId = view.id;
   renderCustomCameraViews();
   log(`Moved ${view.name} to the current viewport.`);
 }
@@ -3826,6 +3830,7 @@ function deleteCustomCameraView() {
   if (!view) return;
   recordHistory("delete camera director");
   customCameraViews = customCameraViews.filter(candidate => candidate.id !== view.id);
+  if (activeCustomCameraId === view.id) activeCustomCameraId = null;
   selectedCustomCameraId = customCameraViews[0]?.id || null;
   renderCustomCameraViews();
   log(`Deleted ${view.name}.`);
@@ -3835,6 +3840,7 @@ function activateCustomCameraView(id = selectedCustomCameraId) {
   const view = customCameraViewById(id);
   if (!view) return;
   selectedCustomCameraId = view.id;
+  activeCustomCameraId = view.id;
   camera.position.fromArray(view.position);
   orbit.target.fromArray(view.target);
   camera.up.fromArray(view.up);
@@ -3851,6 +3857,7 @@ function activateCustomCameraView(id = selectedCustomCameraId) {
 
 function restoreCustomCameraViews(cameraState = {}) {
   customCameraIdCounter = 0;
+  activeCustomCameraId = null;
   customCameraViews = (cameraState.views || []).map((view, index) => {
     const id = typeof view?.id === "string" && view.id ? view.id : `camera-director-${index + 1}`;
     const match = id.match(/(\d+)$/);
@@ -4001,6 +4008,8 @@ function waitForSceneTextures(timeoutMs = 10000) {
 }
 
 function previewShotView(viewName = "iso") {
+  activeCustomCameraId = null;
+  renderCustomCameraMarkers();
   const currentDistance = camera.position.distanceTo(orbit.target);
   setCameraToView(viewName, {
     useCurrentZoom: els.useCurrentZoomInShotsInput?.checked ?? true,

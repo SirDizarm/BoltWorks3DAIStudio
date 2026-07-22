@@ -324,6 +324,11 @@ els.showCustomCamerasInput.addEventListener("change", () => {
   cameraDirectorGroup.visible = els.showCustomCamerasInput.checked;
   log(`${els.showCustomCamerasInput.checked ? "Showing" : "Hiding"} camera directors in the viewport.`);
 });
+orbit.addEventListener("start", () => {
+  if (!activeCustomCameraId) return;
+  activeCustomCameraId = null;
+  renderCustomCameraMarkers();
+});
 els.saveFrontPngBtn.addEventListener("click", async () => saveSingleViewPng("front"));
 els.saveBackPngBtn.addEventListener("click", async () => saveSingleViewPng("back"));
 els.saveLeftPngBtn.addEventListener("click", async () => saveSingleViewPng("left"));

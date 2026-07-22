@@ -335,6 +335,7 @@ cameraDirectorGroup.name = "camera director helpers";
 scene.add(cameraDirectorGroup);
 let customCameraViews = [];
 let selectedCustomCameraId = null;
+let activeCustomCameraId = null;
 let customCameraIdCounter = 0;
 const sceneGroupRegistry = new Map();
 let selectedGroupRecordId = null;
