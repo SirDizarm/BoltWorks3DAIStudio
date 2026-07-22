@@ -10,12 +10,13 @@ const moduleSources = new Map(studioModuleOrder.map(name => [
 const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
+const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
 const directBundle = readFileSync(new URL("../app/studio-v48.0.14.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
-const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${applicationSource}`;
+const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolDockingSource}\n${applicationSource}`;
 
 if (!authoringManifest.machineResources?.styleLibraries?.includes("libraries/medieval-house/README.md")) {
   throw new Error("BoltWorksStudioAi manifest must expose the medieval house style library.");
@@ -41,7 +42,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v48.0.14.js?v=game-assets-1"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v48.0.14.js?v=48.0.14-toolbar-dock-1"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if (documentSource.includes('type="module" src="./app/studio-v48.0.14.js') || documentSource.includes('type="importmap"')) {
@@ -59,6 +60,8 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
+  "tool-docking.js?v=48.0.14-toolbar-dock-1",
+  "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
   "METERS_PER_ROBLOX_STUD",
