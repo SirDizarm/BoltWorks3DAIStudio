@@ -97,6 +97,7 @@ function serializeBoneRig() {
       name: bone.name,
       parentId: bone.parentId || null,
       role: bone.role || null,
+      avatarObjectId: bone.avatarObjectId || null,
       position: bone.position.toArray().map(round),
       rotation: bone.rotation.toArray().map(round)
     }))
@@ -109,6 +110,7 @@ function restoreBoneRig(data = {}) {
     name: bone.name || `Bone ${index + 1}`,
     parentId: bone.parentId || null,
     role: bone.role === "camera" ? "camera" : null,
+    avatarObjectId: typeof bone.avatarObjectId === "string" ? bone.avatarObjectId : null,
     position: new THREE.Vector3().fromArray(Array.isArray(bone.position) ? bone.position : [0, index, 0]),
     rotation: new THREE.Vector3().fromArray(Array.isArray(bone.rotation) ? bone.rotation : [0, 0, 0])
   }));

@@ -25,7 +25,7 @@ The `.modelerproj` is the source of truth for dimensions, transforms, group hier
 3. Reuse the same construction logic and material family; do not clone the exact silhouette for every building.
 4. Build with named parts and stable groups so walls, timber, windows, roof, interior, and fixtures remain independently editable.
 5. Add useful custom camera directors for exterior, important rooms, and lower floors.
-6. Add a named player-head joint and joint-bound camera wherever first-person scale or game navigation must be checked.
+6. Add a low-poly player avatar with its bound head joint and camera wherever first-person scale or game navigation must be checked.
 7. Load the result in BoltWorks Studio, create a fresh QA Sheet, inspect both exterior and interior cameras, then generate a separate Game Optimize Copy and pixel render before declaring completion.
 
 ## Village consistency rules

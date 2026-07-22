@@ -1809,7 +1809,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -1848,7 +1848,9 @@ function createMesh(spec = {}) {
     bevel,
     depth,
     direction,
-    cuts
+    cuts,
+    playerAvatar: !!playerAvatar,
+    playerHeadOffset: Array.isArray(playerHeadOffset) ? playerHeadOffset.map(Number) : null
   };
   mesh.position.fromArray(position);
   mesh.rotation.set(

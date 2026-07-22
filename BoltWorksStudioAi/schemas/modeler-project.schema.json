@@ -139,6 +139,13 @@
         "textureRotation": { "type": "number" },
         "textureRobloxAssetId": { "type": "string" },
         "materialRule": { "type": "string" },
+        "playerAvatar": { "type": "boolean" },
+        "playerHeadOffset": {
+          "anyOf": [
+            { "$ref": "#/$defs/vec3" },
+            { "type": "null" }
+          ]
+        },
         "linkId": {
           "anyOf": [
             { "type": "string" },

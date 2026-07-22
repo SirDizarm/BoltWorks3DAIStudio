@@ -29179,6 +29179,154 @@ void main() {
   };
 
   // node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
+  function mergeGeometries(geometries, useGroups = false) {
+    const isIndexed = geometries[0].index !== null;
+    const attributesUsed = new Set(Object.keys(geometries[0].attributes));
+    const morphAttributesUsed = new Set(Object.keys(geometries[0].morphAttributes));
+    const attributes = {};
+    const morphAttributes = {};
+    const morphTargetsRelative = geometries[0].morphTargetsRelative;
+    const mergedGeometry = new BufferGeometry();
+    let offset = 0;
+    for (let i = 0; i < geometries.length; ++i) {
+      const geometry = geometries[i];
+      let attributesCount = 0;
+      if (isIndexed !== (geometry.index !== null)) {
+        console.error("THREE.BufferGeometryUtils: .mergeGeometries() failed with geometry at index " + i + ". All geometries must have compatible attributes; make sure index attribute exists among all geometries, or in none of them.");
+        return null;
+      }
+      for (const name in geometry.attributes) {
+        if (!attributesUsed.has(name)) {
+          console.error("THREE.BufferGeometryUtils: .mergeGeometries() failed with geometry at index " + i + '. All geometries must have compatible attributes; make sure "' + name + '" attribute exists among all geometries, or in none of them.');
+          return null;
+        }
+        if (attributes[name] === void 0) attributes[name] = [];
+        attributes[name].push(geometry.attributes[name]);
+        attributesCount++;
+      }
+      if (attributesCount !== attributesUsed.size) {
+        console.error("THREE.BufferGeometryUtils: .mergeGeometries() failed with geometry at index " + i + ". Make sure all geometries have the same number of attributes.");
+        return null;
+      }
+      if (morphTargetsRelative !== geometry.morphTargetsRelative) {
+        console.error("THREE.BufferGeometryUtils: .mergeGeometries() failed with geometry at index " + i + ". .morphTargetsRelative must be consistent throughout all geometries.");
+        return null;
+      }
+      for (const name in geometry.morphAttributes) {
+        if (!morphAttributesUsed.has(name)) {
+          console.error("THREE.BufferGeometryUtils: .mergeGeometries() failed with geometry at index " + i + ".  .morphAttributes must be consistent throughout all geometries.");
+          return null;
+        }
+        if (morphAttributes[name] === void 0) morphAttributes[name] = [];
+        morphAttributes[name].push(geometry.morphAttributes[name]);
+      }
+      if (useGroups) {
+        let count;
+        if (isIndexed) {
+          count = geometry.index.count;
+        } else if (geometry.attributes.position !== void 0) {
+          count = geometry.attributes.position.count;
+        } else {
+          console.error("THREE.BufferGeometryUtils: .mergeGeometries() failed with geometry at index " + i + ". The geometry must have either an index or a position attribute");
+          return null;
+        }
+        mergedGeometry.addGroup(offset, count, i);
+        offset += count;
+      }
+    }
+    if (isIndexed) {
+      let indexOffset = 0;
+      const mergedIndex = [];
+      for (let i = 0; i < geometries.length; ++i) {
+        const index = geometries[i].index;
+        for (let j = 0; j < index.count; ++j) {
+          mergedIndex.push(index.getX(j) + indexOffset);
+        }
+        indexOffset += geometries[i].attributes.position.count;
+      }
+      mergedGeometry.setIndex(mergedIndex);
+    }
+    for (const name in attributes) {
+      const mergedAttribute = mergeAttributes(attributes[name]);
+      if (!mergedAttribute) {
+        console.error("THREE.BufferGeometryUtils: .mergeGeometries() failed while trying to merge the " + name + " attribute.");
+        return null;
+      }
+      mergedGeometry.setAttribute(name, mergedAttribute);
+    }
+    for (const name in morphAttributes) {
+      const numMorphTargets = morphAttributes[name][0].length;
+      if (numMorphTargets === 0) break;
+      mergedGeometry.morphAttributes = mergedGeometry.morphAttributes || {};
+      mergedGeometry.morphAttributes[name] = [];
+      for (let i = 0; i < numMorphTargets; ++i) {
+        const morphAttributesToMerge = [];
+        for (let j = 0; j < morphAttributes[name].length; ++j) {
+          morphAttributesToMerge.push(morphAttributes[name][j][i]);
+        }
+        const mergedMorphAttribute = mergeAttributes(morphAttributesToMerge);
+        if (!mergedMorphAttribute) {
+          console.error("THREE.BufferGeometryUtils: .mergeGeometries() failed while trying to merge the " + name + " morphAttribute.");
+          return null;
+        }
+        mergedGeometry.morphAttributes[name].push(mergedMorphAttribute);
+      }
+    }
+    return mergedGeometry;
+  }
+  function mergeAttributes(attributes) {
+    let TypedArray;
+    let itemSize;
+    let normalized;
+    let gpuType = -1;
+    let arrayLength = 0;
+    for (let i = 0; i < attributes.length; ++i) {
+      const attribute = attributes[i];
+      if (TypedArray === void 0) TypedArray = attribute.array.constructor;
+      if (TypedArray !== attribute.array.constructor) {
+        console.error("THREE.BufferGeometryUtils: .mergeAttributes() failed. BufferAttribute.array must be of consistent array types across matching attributes.");
+        return null;
+      }
+      if (itemSize === void 0) itemSize = attribute.itemSize;
+      if (itemSize !== attribute.itemSize) {
+        console.error("THREE.BufferGeometryUtils: .mergeAttributes() failed. BufferAttribute.itemSize must be consistent across matching attributes.");
+        return null;
+      }
+      if (normalized === void 0) normalized = attribute.normalized;
+      if (normalized !== attribute.normalized) {
+        console.error("THREE.BufferGeometryUtils: .mergeAttributes() failed. BufferAttribute.normalized must be consistent across matching attributes.");
+        return null;
+      }
+      if (gpuType === -1) gpuType = attribute.gpuType;
+      if (gpuType !== attribute.gpuType) {
+        console.error("THREE.BufferGeometryUtils: .mergeAttributes() failed. BufferAttribute.gpuType must be consistent across matching attributes.");
+        return null;
+      }
+      arrayLength += attribute.count * itemSize;
+    }
+    const array = new TypedArray(arrayLength);
+    const result = new BufferAttribute(array, itemSize, normalized);
+    let offset = 0;
+    for (let i = 0; i < attributes.length; ++i) {
+      const attribute = attributes[i];
+      if (attribute.isInterleavedBufferAttribute) {
+        const tupleOffset = offset / itemSize;
+        for (let j = 0, l = attribute.count; j < l; j++) {
+          for (let c = 0; c < itemSize; c++) {
+            const value = attribute.getComponent(j, c);
+            result.setComponent(j + tupleOffset, c, value);
+          }
+        }
+      } else {
+        array.set(attribute.array, offset);
+      }
+      offset += attribute.count * itemSize;
+    }
+    if (gpuType !== void 0) {
+      result.gpuType = gpuType;
+    }
+    return result;
+  }
   function mergeVertices(geometry, tolerance = 1e-4) {
     tolerance = Math.max(tolerance, Number.EPSILON);
     const hashToIndex = {};
@@ -29933,6 +30081,7 @@ void main() {
     } else if (activeTransformMode === "scale") {
       applySingleSidedScaleOffset();
     }
+    syncPlayerAvatarBones({ object: transform.object, rebuild: true });
     updateTriangleHelpers();
     syncSelectionOutlineTransforms();
     syncInspector();
@@ -32233,7 +32382,7 @@ void main() {
     };
   }
   function createMesh(spec = {}) {
-    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
+    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null } = spec;
     shape = normalizeShapeName(shape);
     const defaultOrdinal = idCounter;
     const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -32272,7 +32421,9 @@ void main() {
       bevel,
       depth,
       direction,
-      cuts
+      cuts,
+      playerAvatar: !!playerAvatar,
+      playerHeadOffset: Array.isArray(playerHeadOffset) ? playerHeadOffset.map(Number) : null
     };
     mesh.position.fromArray(position);
     mesh.rotation.set(
@@ -37273,7 +37424,9 @@ void main() {
       textureRobloxAssetId: normalizeRobloxAssetId(mesh.userData.textureRobloxAssetId || ""),
       materialRule: normalizeMaterialRule(mesh.userData.materialRule || "auto"),
       textureFlipY: mesh.userData.textureFlipY ?? true,
-      textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0)
+      textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0),
+      playerAvatar: !!mesh.userData.playerAvatar,
+      playerHeadOffset: Array.isArray(mesh.userData.playerHeadOffset) ? [...mesh.userData.playerHeadOffset] : null
     };
   }
   function serializeHierarchyNode(record) {
@@ -40745,6 +40898,7 @@ end
     }
     const bone = boneById(view.anchorBoneId);
     if (!bone) return { position: fallbackPosition, target: fallbackTarget, up: fallbackUp };
+    syncPlayerAvatarBone(bone);
     const rotation = boneCameraQuaternion(bone);
     const offset = new Vector3().fromArray(validCameraVector(view.positionOffset, [0, 0, 0])).applyQuaternion(rotation);
     const position = bone.position.clone().add(offset);
@@ -40883,41 +41037,136 @@ end
     log(`Added ${view.name} at the current viewport.`);
     return view;
   }
+  function lowPolyPlayerAvatarGeometryData() {
+    const parts = [];
+    const addPart = (geometry2, position, rotation = [0, 0, 0]) => {
+      const matrix = new Matrix4().compose(
+        new Vector3(...position),
+        new Quaternion().setFromEuler(new Euler(...rotation)),
+        new Vector3(1, 1, 1)
+      );
+      geometry2.applyMatrix4(matrix);
+      parts.push(geometry2);
+    };
+    addPart(new BoxGeometry(0.24, 0.72, 0.26), [-0.17, 0.42, 0]);
+    addPart(new BoxGeometry(0.24, 0.72, 0.26), [0.17, 0.42, 0]);
+    addPart(new BoxGeometry(0.56, 0.22, 0.34), [0, 0.82, 0]);
+    addPart(new BoxGeometry(0.66, 0.66, 0.36), [0, 1.19, 0]);
+    addPart(new BoxGeometry(0.18, 0.72, 0.2), [-0.43, 1.17, 0], [0, 0, -0.08]);
+    addPart(new BoxGeometry(0.18, 0.72, 0.2), [0.43, 1.17, 0], [0, 0, 0.08]);
+    addPart(new CylinderGeometry(0.1, 0.12, 0.14, 8), [0, 1.57, 0]);
+    addPart(new SphereGeometry(0.23, 10, 7), [0, 1.76, 0]);
+    addPart(new ConeGeometry(0.07, 0.16, 6), [0, 1.76, -0.23], [-Math.PI / 2, 0, 0]);
+    const geometry = mergeGeometries(parts, false);
+    parts.forEach((part) => part.dispose());
+    if (!geometry) throw new Error("Could not build the player avatar geometry.");
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    const data = geometryToData(geometry);
+    geometry.dispose();
+    return data;
+  }
+  function playerViewDirection() {
+    const direction = orbit.target.clone().sub(camera.position);
+    if (direction.lengthSq() < 1e-8) direction.set(0, 0, -1);
+    return direction.normalize();
+  }
+  function placePlayerAvatarAtCamera(avatar, direction = playerViewDirection()) {
+    const flatDirection = new Vector3(direction.x, 0, direction.z);
+    if (flatDirection.lengthSq() < 1e-8) flatDirection.set(0, 0, -1);
+    flatDirection.normalize();
+    avatar.rotation.set(0, Math.atan2(-flatDirection.x, -flatDirection.z), 0);
+    const headOffset = new Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.76, 0]);
+    const worldOffset = headOffset.multiply(avatar.scale).applyQuaternion(avatar.quaternion);
+    avatar.position.copy(camera.position).sub(worldOffset);
+    avatar.updateMatrixWorld(true);
+  }
+  function syncPlayerAvatarBone(bone) {
+    if (!bone?.avatarObjectId) return false;
+    const avatar = findObject(bone.avatarObjectId);
+    if (!avatar?.userData?.playerAvatar) return false;
+    avatar.updateMatrixWorld(true);
+    const headOffset = new Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.76, 0]);
+    bone.position.copy(avatar.localToWorld(headOffset));
+    bone.rotation.set(
+      MathUtils.radToDeg(avatar.rotation.x),
+      MathUtils.radToDeg(avatar.rotation.y),
+      MathUtils.radToDeg(avatar.rotation.z)
+    );
+    return true;
+  }
+  function syncPlayerAvatarBones({ object = null, rebuild = false } = {}) {
+    let changed = false;
+    for (const bone of rigBones) {
+      if (!bone.avatarObjectId) continue;
+      if (object && object.userData?.id !== bone.avatarObjectId) continue;
+      changed = syncPlayerAvatarBone(bone) || changed;
+    }
+    if (changed && rebuild) {
+      rebuildBoneVisuals();
+      syncBonePanel();
+    }
+    return changed;
+  }
+  function syncPlayerAvatarVisibility(activeView = null) {
+    const activeBone = activeView?.type === "player" ? boneById(activeView.anchorBoneId) : null;
+    const hiddenAvatarId = activeBone?.avatarObjectId || null;
+    for (const avatar of objects.filter((object) => object.userData.playerAvatar)) {
+      avatar.visible = !avatar.userData.hidden && avatar.userData.id !== hiddenAvatarId;
+    }
+  }
   function addPlayerCameraOnSelectedJoint() {
     recordHistory("create player camera at current view");
     const playerIndex = rigBones.filter((bone2) => bone2.role === "camera").length + 1;
+    const direction = playerViewDirection();
+    const avatar = addObject({
+      shape: "custom",
+      geometry: lowPolyPlayerAvatarGeometryData(),
+      name: `Player Avatar ${playerIndex}`,
+      position: [0, 0, 0],
+      rotation: [0, 0, 0],
+      scale: [1, 1, 1],
+      color: "#6f8796",
+      roughness: 0.82,
+      playerAvatar: true,
+      playerHeadOffset: [0, 1.76, 0]
+    }, { record: false, select: false, update: false });
+    placePlayerAvatarAtCamera(avatar, direction);
     const bone = {
       id: freshBoneId(),
       name: `Player Head ${playerIndex}`,
       parentId: null,
       role: "camera",
+      avatarObjectId: avatar.userData.id,
       position: camera.position.clone(),
       rotation: new Vector3()
     };
     rigBones.push(bone);
     selectedBoneId = bone.id;
-    const worldDirection = orbit.target.clone().sub(camera.position);
-    if (worldDirection.lengthSq() < 1e-8) worldDirection.set(0, 0, -1);
+    syncPlayerAvatarBone(bone);
+    const inverseRotation = boneCameraQuaternion(bone).invert();
     const view = {
       id: nextCustomCameraId(),
       name: `Player View ${playerIndex}`,
       type: "player",
       anchorBoneId: bone.id,
       position: bone.position.toArray(),
-      target: bone.position.clone().add(worldDirection.clone().normalize()).toArray(),
+      target: bone.position.clone().add(direction).toArray(),
       up: camera.up.toArray(),
       fov: camera.fov,
       positionOffset: [0, 0, 0],
-      localDirection: worldDirection.normalize().toArray(),
-      localUp: camera.up.clone().normalize().toArray()
+      localDirection: direction.clone().applyQuaternion(inverseRotation).toArray(),
+      localUp: camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray()
     };
     customCameraViews.push(view);
     selectedCustomCameraId = view.id;
     activeCustomCameraId = view.id;
     rebuildBoneVisuals();
     syncBonePanel();
+    updateAll();
     activateCustomCameraView(view.id);
-    log(`Created ${view.name} exactly at the current camera. Move ${bone.name} in Front/Side to move the viewpoint.`);
+    log(`Created ${view.name} and ${avatar.name} at the current camera. Move or rotate the avatar to move the viewpoint.`);
     return view;
   }
   function updateCustomCameraFromCurrentView() {
@@ -40930,14 +41179,20 @@ end
     if (view.type === "player") {
       const bone = boneById(view.anchorBoneId);
       if (bone) {
-        bone.position.copy(camera.position);
-        bone.rotation.set(0, 0, 0);
+        const direction = playerViewDirection();
+        const avatar = bone.avatarObjectId ? findObject(bone.avatarObjectId) : null;
+        if (avatar?.userData?.playerAvatar) {
+          placePlayerAvatarAtCamera(avatar, direction);
+          syncPlayerAvatarBone(bone);
+        } else {
+          bone.position.copy(camera.position);
+          bone.rotation.set(0, 0, 0);
+        }
         bone.role = "camera";
         view.positionOffset = [0, 0, 0];
-        const direction = orbit.target.clone().sub(camera.position);
-        if (direction.lengthSq() < 1e-8) direction.set(0, 0, -1);
-        view.localDirection = direction.normalize().toArray();
-        view.localUp = camera.up.clone().normalize().toArray();
+        const inverseRotation = boneCameraQuaternion(bone).invert();
+        view.localDirection = direction.clone().applyQuaternion(inverseRotation).toArray();
+        view.localUp = camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray();
         rebuildBoneVisuals();
         syncBonePanel();
       }
@@ -41006,9 +41261,11 @@ end
   function syncActiveJointCamera() {
     const view = customCameraViewById(activeCustomCameraId);
     boneRigGroup.visible = !!els.showBonesInput?.checked;
+    syncPlayerAvatarVisibility(view);
     if (!view || view.type !== "player" || !boneById(view.anchorBoneId)) {
       return;
     }
+    syncPlayerAvatarBone(boneById(view.anchorBoneId));
     const pose = resolvedCustomCameraPose(view);
     camera.position.copy(pose.position);
     orbit.target.copy(pose.target);
@@ -41590,6 +41847,7 @@ end
         name: bone.name,
         parentId: bone.parentId || null,
         role: bone.role || null,
+        avatarObjectId: bone.avatarObjectId || null,
         position: bone.position.toArray().map(round2),
         rotation: bone.rotation.toArray().map(round2)
       }))
@@ -41601,6 +41859,7 @@ end
       name: bone.name || `Bone ${index + 1}`,
       parentId: bone.parentId || null,
       role: bone.role === "camera" ? "camera" : null,
+      avatarObjectId: typeof bone.avatarObjectId === "string" ? bone.avatarObjectId : null,
       position: new Vector3().fromArray(Array.isArray(bone.position) ? bone.position : [0, index, 0]),
       rotation: new Vector3().fromArray(Array.isArray(bone.rotation) ? bone.rotation : [0, 0, 0])
     }));

@@ -56,6 +56,7 @@ transform.addEventListener("objectChange", () => {
   } else if (activeTransformMode === "scale") {
     applySingleSidedScaleOffset();
   }
+  syncPlayerAvatarBones({ object: transform.object, rebuild: true });
   updateTriangleHelpers();
   syncSelectionOutlineTransforms();
   syncInspector();

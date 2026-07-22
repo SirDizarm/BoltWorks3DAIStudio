@@ -25,7 +25,9 @@ function serializeObject(mesh) {
     textureRobloxAssetId: normalizeRobloxAssetId(mesh.userData.textureRobloxAssetId || ""),
     materialRule: normalizeMaterialRule(mesh.userData.materialRule || "auto"),
     textureFlipY: mesh.userData.textureFlipY ?? true,
-    textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0)
+    textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0),
+    playerAvatar: !!mesh.userData.playerAvatar,
+    playerHeadOffset: Array.isArray(mesh.userData.playerHeadOffset) ? [...mesh.userData.playerHeadOffset] : null
   };
 }
 
@@ -3708,6 +3710,7 @@ function resolvedCustomCameraPose(view) {
   }
   const bone = boneById(view.anchorBoneId);
   if (!bone) return { position: fallbackPosition, target: fallbackTarget, up: fallbackUp };
+  syncPlayerAvatarBone(bone);
   const rotation = boneCameraQuaternion(bone);
   const offset = new THREE.Vector3().fromArray(validCameraVector(view.positionOffset, [0, 0, 0])).applyQuaternion(rotation);
   const position = bone.position.clone().add(offset);
@@ -3862,41 +3865,142 @@ function addCustomCameraView() {
   return view;
 }
 
+function lowPolyPlayerAvatarGeometryData() {
+  const parts = [];
+  const addPart = (geometry, position, rotation = [0, 0, 0]) => {
+    const matrix = new THREE.Matrix4().compose(
+      new THREE.Vector3(...position),
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation)),
+      new THREE.Vector3(1, 1, 1)
+    );
+    geometry.applyMatrix4(matrix);
+    parts.push(geometry);
+  };
+  addPart(new THREE.BoxGeometry(.24, .72, .26), [-.17, .42, 0]);
+  addPart(new THREE.BoxGeometry(.24, .72, .26), [.17, .42, 0]);
+  addPart(new THREE.BoxGeometry(.56, .22, .34), [0, .82, 0]);
+  addPart(new THREE.BoxGeometry(.66, .66, .36), [0, 1.19, 0]);
+  addPart(new THREE.BoxGeometry(.18, .72, .2), [-.43, 1.17, 0], [0, 0, -.08]);
+  addPart(new THREE.BoxGeometry(.18, .72, .2), [.43, 1.17, 0], [0, 0, .08]);
+  addPart(new THREE.CylinderGeometry(.1, .12, .14, 8), [0, 1.57, 0]);
+  addPart(new THREE.SphereGeometry(.23, 10, 7), [0, 1.76, 0]);
+  addPart(new THREE.ConeGeometry(.07, .16, 6), [0, 1.76, -.23], [-Math.PI / 2, 0, 0]);
+  const geometry = mergeGeometries(parts, false);
+  parts.forEach(part => part.dispose());
+  if (!geometry) throw new Error("Could not build the player avatar geometry.");
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  const data = geometryToData(geometry);
+  geometry.dispose();
+  return data;
+}
+
+function playerViewDirection() {
+  const direction = orbit.target.clone().sub(camera.position);
+  if (direction.lengthSq() < 1e-8) direction.set(0, 0, -1);
+  return direction.normalize();
+}
+
+function placePlayerAvatarAtCamera(avatar, direction = playerViewDirection()) {
+  const flatDirection = new THREE.Vector3(direction.x, 0, direction.z);
+  if (flatDirection.lengthSq() < 1e-8) flatDirection.set(0, 0, -1);
+  flatDirection.normalize();
+  avatar.rotation.set(0, Math.atan2(-flatDirection.x, -flatDirection.z), 0);
+  const headOffset = new THREE.Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.76, 0]);
+  const worldOffset = headOffset.multiply(avatar.scale).applyQuaternion(avatar.quaternion);
+  avatar.position.copy(camera.position).sub(worldOffset);
+  avatar.updateMatrixWorld(true);
+}
+
+function syncPlayerAvatarBone(bone) {
+  if (!bone?.avatarObjectId) return false;
+  const avatar = findObject(bone.avatarObjectId);
+  if (!avatar?.userData?.playerAvatar) return false;
+  avatar.updateMatrixWorld(true);
+  const headOffset = new THREE.Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.76, 0]);
+  bone.position.copy(avatar.localToWorld(headOffset));
+  bone.rotation.set(
+    THREE.MathUtils.radToDeg(avatar.rotation.x),
+    THREE.MathUtils.radToDeg(avatar.rotation.y),
+    THREE.MathUtils.radToDeg(avatar.rotation.z)
+  );
+  return true;
+}
+
+function syncPlayerAvatarBones({ object = null, rebuild = false } = {}) {
+  let changed = false;
+  for (const bone of rigBones) {
+    if (!bone.avatarObjectId) continue;
+    if (object && object.userData?.id !== bone.avatarObjectId) continue;
+    changed = syncPlayerAvatarBone(bone) || changed;
+  }
+  if (changed && rebuild) {
+    rebuildBoneVisuals();
+    syncBonePanel();
+  }
+  return changed;
+}
+
+function syncPlayerAvatarVisibility(activeView = null) {
+  const activeBone = activeView?.type === "player" ? boneById(activeView.anchorBoneId) : null;
+  const hiddenAvatarId = activeBone?.avatarObjectId || null;
+  for (const avatar of objects.filter(object => object.userData.playerAvatar)) {
+    avatar.visible = !avatar.userData.hidden && avatar.userData.id !== hiddenAvatarId;
+  }
+}
+
 function addPlayerCameraOnSelectedJoint() {
   recordHistory("create player camera at current view");
   const playerIndex = rigBones.filter(bone => bone.role === "camera").length + 1;
+  const direction = playerViewDirection();
+  const avatar = addObject({
+    shape: "custom",
+    geometry: lowPolyPlayerAvatarGeometryData(),
+    name: `Player Avatar ${playerIndex}`,
+    position: [0, 0, 0],
+    rotation: [0, 0, 0],
+    scale: [1, 1, 1],
+    color: "#6f8796",
+    roughness: .82,
+    playerAvatar: true,
+    playerHeadOffset: [0, 1.76, 0]
+  }, { record: false, select: false, update: false });
+  placePlayerAvatarAtCamera(avatar, direction);
   const bone = {
     id: freshBoneId(),
     name: `Player Head ${playerIndex}`,
     parentId: null,
     role: "camera",
+    avatarObjectId: avatar.userData.id,
     position: camera.position.clone(),
     rotation: new THREE.Vector3()
   };
   rigBones.push(bone);
   selectedBoneId = bone.id;
-  const worldDirection = orbit.target.clone().sub(camera.position);
-  if (worldDirection.lengthSq() < 1e-8) worldDirection.set(0, 0, -1);
+  syncPlayerAvatarBone(bone);
+  const inverseRotation = boneCameraQuaternion(bone).invert();
   const view = {
     id: nextCustomCameraId(),
     name: `Player View ${playerIndex}`,
     type: "player",
     anchorBoneId: bone.id,
     position: bone.position.toArray(),
-    target: bone.position.clone().add(worldDirection.clone().normalize()).toArray(),
+    target: bone.position.clone().add(direction).toArray(),
     up: camera.up.toArray(),
     fov: camera.fov,
     positionOffset: [0, 0, 0],
-    localDirection: worldDirection.normalize().toArray(),
-    localUp: camera.up.clone().normalize().toArray()
+    localDirection: direction.clone().applyQuaternion(inverseRotation).toArray(),
+    localUp: camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray()
   };
   customCameraViews.push(view);
   selectedCustomCameraId = view.id;
   activeCustomCameraId = view.id;
   rebuildBoneVisuals();
   syncBonePanel();
+  updateAll();
   activateCustomCameraView(view.id);
-  log(`Created ${view.name} exactly at the current camera. Move ${bone.name} in Front/Side to move the viewpoint.`);
+  log(`Created ${view.name} and ${avatar.name} at the current camera. Move or rotate the avatar to move the viewpoint.`);
   return view;
 }
 
@@ -3910,14 +4014,20 @@ function updateCustomCameraFromCurrentView() {
   if (view.type === "player") {
     const bone = boneById(view.anchorBoneId);
     if (bone) {
-      bone.position.copy(camera.position);
-      bone.rotation.set(0, 0, 0);
+      const direction = playerViewDirection();
+      const avatar = bone.avatarObjectId ? findObject(bone.avatarObjectId) : null;
+      if (avatar?.userData?.playerAvatar) {
+        placePlayerAvatarAtCamera(avatar, direction);
+        syncPlayerAvatarBone(bone);
+      } else {
+        bone.position.copy(camera.position);
+        bone.rotation.set(0, 0, 0);
+      }
       bone.role = "camera";
       view.positionOffset = [0, 0, 0];
-      const direction = orbit.target.clone().sub(camera.position);
-      if (direction.lengthSq() < 1e-8) direction.set(0, 0, -1);
-      view.localDirection = direction.normalize().toArray();
-      view.localUp = camera.up.clone().normalize().toArray();
+      const inverseRotation = boneCameraQuaternion(bone).invert();
+      view.localDirection = direction.clone().applyQuaternion(inverseRotation).toArray();
+      view.localUp = camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray();
       rebuildBoneVisuals();
       syncBonePanel();
     }
@@ -3994,9 +4104,11 @@ function activateCustomCameraView(id = selectedCustomCameraId) {
 function syncActiveJointCamera() {
   const view = customCameraViewById(activeCustomCameraId);
   boneRigGroup.visible = !!els.showBonesInput?.checked;
+  syncPlayerAvatarVisibility(view);
   if (!view || view.type !== "player" || !boneById(view.anchorBoneId)) {
     return;
   }
+  syncPlayerAvatarBone(boneById(view.anchorBoneId));
   const pose = resolvedCustomCameraPose(view);
   camera.position.copy(pose.position);
   orbit.target.copy(pose.target);
