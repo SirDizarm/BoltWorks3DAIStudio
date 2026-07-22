@@ -218,10 +218,20 @@
                 "properties": {
                   "id": { "type": "string", "minLength": 1 },
                   "name": { "type": "string", "minLength": 1 },
+                  "type": { "type": "string", "enum": ["director", "player"] },
+                  "anchorBoneId": {
+                    "anyOf": [
+                      { "type": "string" },
+                      { "type": "null" }
+                    ]
+                  },
                   "position": { "$ref": "#/$defs/vec3" },
                   "target": { "$ref": "#/$defs/vec3" },
                   "up": { "$ref": "#/$defs/vec3" },
-                  "fov": { "type": "number", "minimum": 10, "maximum": 120 }
+                  "fov": { "type": "number", "minimum": 10, "maximum": 120 },
+                  "positionOffset": { "$ref": "#/$defs/vec3" },
+                  "localDirection": { "$ref": "#/$defs/vec3" },
+                  "localUp": { "$ref": "#/$defs/vec3" }
                 },
                 "additionalProperties": true
               }

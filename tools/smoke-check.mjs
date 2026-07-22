@@ -41,7 +41,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v48.0.14.js"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v48.0.14.js?v=game-assets-1"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if (documentSource.includes('type="module" src="./app/studio-v48.0.14.js') || documentSource.includes('type="importmap"')) {
@@ -134,7 +134,7 @@ for (const required of [
   "function restoreCustomCameraViews",
   "activeCustomCameraId = view.id",
   "if (view.id === activeCustomCameraId) continue",
-  "orbit.addEventListener(\"start\"",
+  "canvas.addEventListener(\"pointerdown\"",
   "cameraDirectorGroup.visible = false",
   "cameraViewsCollapsed",
   "viewSpaceInput",

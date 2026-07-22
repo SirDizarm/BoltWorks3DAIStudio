@@ -13,6 +13,8 @@ This library is the canonical BoltWorks reference for medieval and Tudor-style h
 - Exterior studio reference: [`references/blackstone-exterior-studio.png`](references/blackstone-exterior-studio.png)
 - Upper-hall camera reference: [`references/blackstone-upper-hall-studio.png`](references/blackstone-upper-hall-studio.png)
 - Cellar camera reference: [`references/blackstone-cellar-studio.png`](references/blackstone-cellar-studio.png)
+- Structural timber texture: [`../../../assets/textures/aged-dark-oak-beams.png`](../../../assets/textures/aged-dark-oak-beams.png)
+- Forged iron texture: [`../../../assets/textures/hammered-black-iron.png`](../../../assets/textures/hammered-black-iron.png)
 
 The `.modelerproj` is the source of truth for dimensions, transforms, group hierarchy, embedded textures, transparent glass, and example camera directors.
 
@@ -23,7 +25,8 @@ The `.modelerproj` is the source of truth for dimensions, transforms, group hier
 3. Reuse the same construction logic and material family; do not clone the exact silhouette for every building.
 4. Build with named parts and stable groups so walls, timber, windows, roof, interior, and fixtures remain independently editable.
 5. Add useful custom camera directors for exterior, important rooms, and lower floors.
-6. Load the result in BoltWorks Studio, create a fresh QA Sheet, and inspect both exterior and interior cameras before declaring completion.
+6. Add a named player-head joint and joint-bound camera wherever first-person scale or game navigation must be checked.
+7. Load the result in BoltWorks Studio, create a fresh QA Sheet, inspect both exterior and interior cameras, then generate a separate Game Optimize Copy and pixel render before declaring completion.
 
 ## Village consistency rules
 

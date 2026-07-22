@@ -7,10 +7,14 @@ $ErrorActionPreference = 'Stop'
 $project = Get-Content -LiteralPath $Source -Raw | ConvertFrom-Json
 $allObjects = @($project.scene.objects)
 $floorTexturePath = Join-Path $PSScriptRoot '..\assets\textures\aged-wide-oak-floorboards.png'
-if (-not (Test-Path -LiteralPath $floorTexturePath)) {
-  throw "Missing embedded floor texture source: $floorTexturePath"
+$beamTexturePath = Join-Path $PSScriptRoot '..\assets\textures\aged-dark-oak-beams.png'
+$ironTexturePath = Join-Path $PSScriptRoot '..\assets\textures\hammered-black-iron.png'
+foreach ($requiredTexturePath in @($floorTexturePath, $beamTexturePath, $ironTexturePath)) {
+  if (-not (Test-Path -LiteralPath $requiredTexturePath)) { throw "Missing embedded texture source: $requiredTexturePath" }
 }
 $floorTextureDataUrl = 'data:image/png;base64,' + [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($floorTexturePath))
+$beamTextureDataUrl = 'data:image/png;base64,' + [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($beamTexturePath))
+$ironTextureDataUrl = 'data:image/png;base64,' + [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($ironTexturePath))
 $template = $allObjects | Where-Object { $_.name -eq 'Right gable fieldstone row 1 block 4 copy' } | Select-Object -First 1
 if (-not $template) {
   $template = $allObjects | Where-Object { $_.name -match '(?i)(fieldstone|masonry row)' } | Select-Object -First 1
@@ -635,13 +639,51 @@ foreach ($spec in $floorSpecs) {
   $kept.Add($finish)
 }
 
-$otherTextures = @($project.textureLibrary | Where-Object { $_.name -ne 'Aged Wide Oak Floorboards' })
+$woodTextureName = 'Hand-Hewn Dark Oak Timber'
+$ironTextureName = 'Hammered Black Iron'
+
+# Material pass: wood keeps a coherent timber language throughout the house,
+# while forged hardware receives its own metal surface. Glass, stone, plaster,
+# mortar and roof tiles remain untouched.
+foreach ($object in $kept) {
+  $name = [string]$object.name
+  $groupId = [string]$object.groupId
+  $isIron = ($name -match '(?i)(iron|ring handle|center lead|lattice)') -or
+    (($groupId -eq 'cast-iron-stove') -and ($name -notmatch '(?i)(ember window|door handle)'))
+  $isWood = ($groupId -in @('timber', 'interior-roof-frame', 'basement-furnishings')) -or
+    (($groupId -eq 'details') -and ($name -match '(?i)(joist|oak|timber|wood)')) -or
+    (($groupId -eq 'roof') -and ($name -match '(?i)(oak|beam|eave)')) -or
+    (($groupId -eq 'interior') -and ($name -match '(?i)(floor|deck|tread|landing|post|rail)')) -or
+    (($groupId -eq 'doors') -and ($name -notmatch '(?i)(recess|iron|ring handle)')) -or
+    (($groupId -eq 'windows') -and ($name -match '(?i)(jamb|lintel|sill)'))
+  if ($isIron) {
+    $object.color = '#FFFFFF'
+    $object.roughness = 0.76
+    $object.textureUrl = $null
+    $object.textureName = $ironTextureName
+    $object.textureRobloxAssetId = ''
+    $object.textureFlipY = $true
+    $object.textureRotation = 0
+  } elseif ($isWood -and ($object.textureName -ne 'Aged Wide Oak Floorboards')) {
+    $object.color = '#FFFFFF'
+    $object.roughness = 0.94
+    $object.textureUrl = $null
+    $object.textureName = $woodTextureName
+    $object.textureRobloxAssetId = ''
+    $object.textureFlipY = $true
+    $object.textureRotation = 0
+  }
+}
+
+$otherTextures = @($project.textureLibrary | Where-Object { $_.name -notin @('Aged Wide Oak Floorboards', $woodTextureName, $ironTextureName) })
 $floorTexture = [pscustomobject]@{
   name = 'Aged Wide Oak Floorboards'
   dataUrl = $floorTextureDataUrl
   robloxAssetId = ''
 }
-$project.textureLibrary = @($otherTextures + $floorTexture)
+$beamTexture = [pscustomobject]@{ name = $woodTextureName; dataUrl = $beamTextureDataUrl; robloxAssetId = '' }
+$ironTexture = [pscustomobject]@{ name = $ironTextureName; dataUrl = $ironTextureDataUrl; robloxAssetId = '' }
+$project.textureLibrary = @($otherTextures + $floorTexture + $beamTexture + $ironTexture)
 
 # Seed useful director cameras for visual QA and interior navigation. The studio
 # keeps these as editor helpers, so they never become exported building meshes.
@@ -654,10 +696,19 @@ $cameraViews = [pscustomobject]@{
   views = @(
     [pscustomobject]@{ id = 'camera-director-1'; name = 'Exterior Courtyard'; position = @(10.5, 5.4, 12.0); target = @(0.0, 4.2, 0.0); up = @(0.0, 1.0, 0.0); fov = 55.0 },
     [pscustomobject]@{ id = 'camera-director-2'; name = 'Upper Hall'; position = @(0.0, 4.75, -1.65); target = @(0.0, 5.65, 2.15); up = @(0.0, 1.0, 0.0); fov = 62.0 },
-    [pscustomobject]@{ id = 'camera-director-3'; name = 'Cellar'; position = @(0.0, 1.35, 1.65); target = @(0.0, 1.25, -1.65); up = @(0.0, 1.0, 0.0); fov = 60.0 }
+    [pscustomobject]@{ id = 'camera-director-3'; name = 'Cellar'; position = @(0.0, 1.35, 1.65); target = @(0.0, 1.25, -1.65); up = @(0.0, 1.0, 0.0); fov = 60.0 },
+    [pscustomobject]@{ id = 'camera-director-4'; name = 'Upper Hall Player View'; type = 'player'; anchorBoneId = 'player-head-upper-hall'; position = @(0.0, 4.75, -1.65); target = @(0.0, 4.75, -0.65); up = @(0.0, 1.0, 0.0); fov = 62.0; positionOffset = @(0.0, 0.0, 0.0); localDirection = @(0.0, 0.0, 1.0); localUp = @(0.0, 1.0, 0.0) }
   )
 }
 $project.editor | Add-Member -NotePropertyName cameraViews -NotePropertyValue $cameraViews -Force
+$playerRig = [pscustomobject]@{
+  selectedBoneId = 'player-head-upper-hall'
+  showGuides = $true
+  bones = @(
+    [pscustomobject]@{ id = 'player-head-upper-hall'; name = 'Player Head - Upper Hall'; parentId = $null; position = @(0.0, 4.75, -1.65); rotation = @(0.0, 0.0, 0.0) }
+  )
+}
+$project.editor | Add-Member -NotePropertyName rigging -NotePropertyValue $playerRig -Force
 if (-not $project.editor.panels) {
   $project.editor | Add-Member -NotePropertyName panels -NotePropertyValue ([pscustomobject]@{}) -Force
 }

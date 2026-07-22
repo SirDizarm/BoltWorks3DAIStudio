@@ -5,4 +5,6 @@ import { ColladaLoader } from "three/addons/loaders/ColladaLoader.js";
 import { MTLLoader } from "three/addons/loaders/MTLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 import { OBJExporter } from "three/addons/exporters/OBJExporter.js";
+import { SimplifyModifier } from "three/addons/modifiers/SimplifyModifier.js";
+import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { createMeshFactory } from "./meshes/factory.js";

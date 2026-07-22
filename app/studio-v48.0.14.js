@@ -29178,6 +29178,412 @@ void main() {
     }
   };
 
+  // node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
+  function mergeVertices(geometry, tolerance = 1e-4) {
+    tolerance = Math.max(tolerance, Number.EPSILON);
+    const hashToIndex = {};
+    const indices = geometry.getIndex();
+    const positions = geometry.getAttribute("position");
+    const vertexCount = indices ? indices.count : positions.count;
+    let nextIndex = 0;
+    const attributeNames = Object.keys(geometry.attributes);
+    const tmpAttributes = {};
+    const tmpMorphAttributes = {};
+    const newIndices = [];
+    const getters = ["getX", "getY", "getZ", "getW"];
+    const setters = ["setX", "setY", "setZ", "setW"];
+    for (let i = 0, l = attributeNames.length; i < l; i++) {
+      const name = attributeNames[i];
+      const attr = geometry.attributes[name];
+      tmpAttributes[name] = new attr.constructor(
+        new attr.array.constructor(attr.count * attr.itemSize),
+        attr.itemSize,
+        attr.normalized
+      );
+      const morphAttributes = geometry.morphAttributes[name];
+      if (morphAttributes) {
+        if (!tmpMorphAttributes[name]) tmpMorphAttributes[name] = [];
+        morphAttributes.forEach((morphAttr, i2) => {
+          const array = new morphAttr.array.constructor(morphAttr.count * morphAttr.itemSize);
+          tmpMorphAttributes[name][i2] = new morphAttr.constructor(array, morphAttr.itemSize, morphAttr.normalized);
+        });
+      }
+    }
+    const halfTolerance = tolerance * 0.5;
+    const exponent = Math.log10(1 / tolerance);
+    const hashMultiplier = Math.pow(10, exponent);
+    const hashAdditive = halfTolerance * hashMultiplier;
+    for (let i = 0; i < vertexCount; i++) {
+      const index = indices ? indices.getX(i) : i;
+      let hash = "";
+      for (let j = 0, l = attributeNames.length; j < l; j++) {
+        const name = attributeNames[j];
+        const attribute = geometry.getAttribute(name);
+        const itemSize = attribute.itemSize;
+        for (let k = 0; k < itemSize; k++) {
+          hash += `${~~(attribute[getters[k]](index) * hashMultiplier + hashAdditive)},`;
+        }
+      }
+      if (hash in hashToIndex) {
+        newIndices.push(hashToIndex[hash]);
+      } else {
+        for (let j = 0, l = attributeNames.length; j < l; j++) {
+          const name = attributeNames[j];
+          const attribute = geometry.getAttribute(name);
+          const morphAttributes = geometry.morphAttributes[name];
+          const itemSize = attribute.itemSize;
+          const newArray = tmpAttributes[name];
+          const newMorphArrays = tmpMorphAttributes[name];
+          for (let k = 0; k < itemSize; k++) {
+            const getterFunc = getters[k];
+            const setterFunc = setters[k];
+            newArray[setterFunc](nextIndex, attribute[getterFunc](index));
+            if (morphAttributes) {
+              for (let m = 0, ml = morphAttributes.length; m < ml; m++) {
+                newMorphArrays[m][setterFunc](nextIndex, morphAttributes[m][getterFunc](index));
+              }
+            }
+          }
+        }
+        hashToIndex[hash] = nextIndex;
+        newIndices.push(nextIndex);
+        nextIndex++;
+      }
+    }
+    const result = geometry.clone();
+    for (const name in geometry.attributes) {
+      const tmpAttribute = tmpAttributes[name];
+      result.setAttribute(name, new tmpAttribute.constructor(
+        tmpAttribute.array.slice(0, nextIndex * tmpAttribute.itemSize),
+        tmpAttribute.itemSize,
+        tmpAttribute.normalized
+      ));
+      if (!(name in tmpMorphAttributes)) continue;
+      for (let j = 0; j < tmpMorphAttributes[name].length; j++) {
+        const tmpMorphAttribute = tmpMorphAttributes[name][j];
+        result.morphAttributes[name][j] = new tmpMorphAttribute.constructor(
+          tmpMorphAttribute.array.slice(0, nextIndex * tmpMorphAttribute.itemSize),
+          tmpMorphAttribute.itemSize,
+          tmpMorphAttribute.normalized
+        );
+      }
+    }
+    result.setIndex(newIndices);
+    return result;
+  }
+
+  // node_modules/three/examples/jsm/modifiers/SimplifyModifier.js
+  var _cb2 = new Vector3();
+  var _ab2 = new Vector3();
+  var SimplifyModifier = class {
+    modify(geometry, count) {
+      geometry = geometry.clone();
+      delete geometry.morphAttributes.position;
+      delete geometry.morphAttributes.normal;
+      const attributes = geometry.attributes;
+      for (const name in attributes) {
+        if (name !== "position" && name !== "uv" && name !== "normal" && name !== "tangent" && name !== "color") geometry.deleteAttribute(name);
+      }
+      geometry = mergeVertices(geometry);
+      const vertices = [];
+      const faces = [];
+      const positionAttribute = geometry.getAttribute("position");
+      const uvAttribute = geometry.getAttribute("uv");
+      const normalAttribute = geometry.getAttribute("normal");
+      const tangentAttribute = geometry.getAttribute("tangent");
+      const colorAttribute = geometry.getAttribute("color");
+      let t = null;
+      let v2 = null;
+      let nor = null;
+      let col = null;
+      for (let i = 0; i < positionAttribute.count; i++) {
+        const v = new Vector3().fromBufferAttribute(positionAttribute, i);
+        if (uvAttribute) {
+          v2 = new Vector2().fromBufferAttribute(uvAttribute, i);
+        }
+        if (normalAttribute) {
+          nor = new Vector3().fromBufferAttribute(normalAttribute, i);
+        }
+        if (tangentAttribute) {
+          t = new Vector4().fromBufferAttribute(tangentAttribute, i);
+        }
+        if (colorAttribute) {
+          col = new THREE.Color().fromBufferAttribute(colorAttribute, i);
+        }
+        const vertex2 = new Vertex(v, v2, nor, t, col);
+        vertices.push(vertex2);
+      }
+      let index = geometry.getIndex();
+      if (index !== null) {
+        for (let i = 0; i < index.count; i += 3) {
+          const a = index.getX(i);
+          const b = index.getX(i + 1);
+          const c = index.getX(i + 2);
+          const triangle = new Triangle2(vertices[a], vertices[b], vertices[c], a, b, c);
+          faces.push(triangle);
+        }
+      } else {
+        for (let i = 0; i < positionAttribute.count; i += 3) {
+          const a = i;
+          const b = i + 1;
+          const c = i + 2;
+          const triangle = new Triangle2(vertices[a], vertices[b], vertices[c], a, b, c);
+          faces.push(triangle);
+        }
+      }
+      for (let i = 0, il = vertices.length; i < il; i++) {
+        computeEdgeCostAtVertex(vertices[i]);
+      }
+      let nextVertex;
+      let z = count;
+      while (z--) {
+        nextVertex = minimumCostEdge(vertices);
+        if (!nextVertex) {
+          console.log("THREE.SimplifyModifier: No next vertex");
+          break;
+        }
+        collapse(vertices, faces, nextVertex, nextVertex.collapseNeighbor);
+      }
+      const simplifiedGeometry = new BufferGeometry();
+      const position = [];
+      const uv = [];
+      const normal = [];
+      const tangent = [];
+      const color = [];
+      index = [];
+      for (let i = 0; i < vertices.length; i++) {
+        const vertex2 = vertices[i];
+        position.push(vertex2.position.x, vertex2.position.y, vertex2.position.z);
+        if (vertex2.uv) {
+          uv.push(vertex2.uv.x, vertex2.uv.y);
+        }
+        if (vertex2.normal) {
+          normal.push(vertex2.normal.x, vertex2.normal.y, vertex2.normal.z);
+        }
+        if (vertex2.tangent) {
+          tangent.push(vertex2.tangent.x, vertex2.tangent.y, vertex2.tangent.z, vertex2.tangent.w);
+        }
+        if (vertex2.color) {
+          color.push(vertex2.color.r, vertex2.color.g, vertex2.color.b);
+        }
+        vertex2.id = i;
+      }
+      for (let i = 0; i < faces.length; i++) {
+        const face = faces[i];
+        index.push(face.v1.id, face.v2.id, face.v3.id);
+      }
+      simplifiedGeometry.setAttribute("position", new Float32BufferAttribute(position, 3));
+      if (uv.length > 0) simplifiedGeometry.setAttribute("uv", new Float32BufferAttribute(uv, 2));
+      if (normal.length > 0) simplifiedGeometry.setAttribute("normal", new Float32BufferAttribute(normal, 3));
+      if (tangent.length > 0) simplifiedGeometry.setAttribute("tangent", new Float32BufferAttribute(tangent, 4));
+      if (color.length > 0) simplifiedGeometry.setAttribute("color", new Float32BufferAttribute(color, 3));
+      simplifiedGeometry.setIndex(index);
+      return simplifiedGeometry;
+    }
+  };
+  function pushIfUnique(array, object) {
+    if (array.indexOf(object) === -1) array.push(object);
+  }
+  function removeFromArray(array, object) {
+    const k = array.indexOf(object);
+    if (k > -1) array.splice(k, 1);
+  }
+  function computeEdgeCollapseCost(u, v) {
+    const edgelength = v.position.distanceTo(u.position);
+    let curvature = 0;
+    const sideFaces = [];
+    for (let i = 0, il = u.faces.length; i < il; i++) {
+      const face = u.faces[i];
+      if (face.hasVertex(v)) {
+        sideFaces.push(face);
+      }
+    }
+    for (let i = 0, il = u.faces.length; i < il; i++) {
+      let minCurvature = 1;
+      const face = u.faces[i];
+      for (let j = 0; j < sideFaces.length; j++) {
+        const sideFace = sideFaces[j];
+        const dotProd = face.normal.dot(sideFace.normal);
+        minCurvature = Math.min(minCurvature, (1.001 - dotProd) / 2);
+      }
+      curvature = Math.max(curvature, minCurvature);
+    }
+    const borders = 0;
+    if (sideFaces.length < 2) {
+      curvature = 1;
+    }
+    const amt = edgelength * curvature + borders;
+    return amt;
+  }
+  function computeEdgeCostAtVertex(v) {
+    if (v.neighbors.length === 0) {
+      v.collapseNeighbor = null;
+      v.collapseCost = -0.01;
+      return;
+    }
+    v.collapseCost = 1e5;
+    v.collapseNeighbor = null;
+    for (let i = 0; i < v.neighbors.length; i++) {
+      const collapseCost = computeEdgeCollapseCost(v, v.neighbors[i]);
+      if (!v.collapseNeighbor) {
+        v.collapseNeighbor = v.neighbors[i];
+        v.collapseCost = collapseCost;
+        v.minCost = collapseCost;
+        v.totalCost = 0;
+        v.costCount = 0;
+      }
+      v.costCount++;
+      v.totalCost += collapseCost;
+      if (collapseCost < v.minCost) {
+        v.collapseNeighbor = v.neighbors[i];
+        v.minCost = collapseCost;
+      }
+    }
+    v.collapseCost = v.totalCost / v.costCount;
+  }
+  function removeVertex(v, vertices) {
+    console.assert(v.faces.length === 0);
+    while (v.neighbors.length) {
+      const n = v.neighbors.pop();
+      removeFromArray(n.neighbors, v);
+    }
+    removeFromArray(vertices, v);
+  }
+  function removeFace(f, faces) {
+    removeFromArray(faces, f);
+    if (f.v1) removeFromArray(f.v1.faces, f);
+    if (f.v2) removeFromArray(f.v2.faces, f);
+    if (f.v3) removeFromArray(f.v3.faces, f);
+    const vs = [f.v1, f.v2, f.v3];
+    for (let i = 0; i < 3; i++) {
+      const v1 = vs[i];
+      const v2 = vs[(i + 1) % 3];
+      if (!v1 || !v2) continue;
+      v1.removeIfNonNeighbor(v2);
+      v2.removeIfNonNeighbor(v1);
+    }
+  }
+  function collapse(vertices, faces, u, v) {
+    if (!v) {
+      removeVertex(u, vertices);
+      return;
+    }
+    if (v.uv) {
+      u.uv.copy(v.uv);
+    }
+    if (v.normal) {
+      v.normal.add(u.normal).normalize();
+    }
+    if (v.tangent) {
+      v.tangent.add(u.tangent).normalize();
+    }
+    const tmpVertices = [];
+    for (let i = 0; i < u.neighbors.length; i++) {
+      tmpVertices.push(u.neighbors[i]);
+    }
+    for (let i = u.faces.length - 1; i >= 0; i--) {
+      if (u.faces[i] && u.faces[i].hasVertex(v)) {
+        removeFace(u.faces[i], faces);
+      }
+    }
+    for (let i = u.faces.length - 1; i >= 0; i--) {
+      u.faces[i].replaceVertex(u, v);
+    }
+    removeVertex(u, vertices);
+    for (let i = 0; i < tmpVertices.length; i++) {
+      computeEdgeCostAtVertex(tmpVertices[i]);
+    }
+  }
+  function minimumCostEdge(vertices) {
+    let least = vertices[0];
+    for (let i = 0; i < vertices.length; i++) {
+      if (vertices[i].collapseCost < least.collapseCost) {
+        least = vertices[i];
+      }
+    }
+    return least;
+  }
+  var Triangle2 = class {
+    constructor(v1, v2, v3, a, b, c) {
+      this.a = a;
+      this.b = b;
+      this.c = c;
+      this.v1 = v1;
+      this.v2 = v2;
+      this.v3 = v3;
+      this.normal = new Vector3();
+      this.computeNormal();
+      v1.faces.push(this);
+      v1.addUniqueNeighbor(v2);
+      v1.addUniqueNeighbor(v3);
+      v2.faces.push(this);
+      v2.addUniqueNeighbor(v1);
+      v2.addUniqueNeighbor(v3);
+      v3.faces.push(this);
+      v3.addUniqueNeighbor(v1);
+      v3.addUniqueNeighbor(v2);
+    }
+    computeNormal() {
+      const vA = this.v1.position;
+      const vB = this.v2.position;
+      const vC = this.v3.position;
+      _cb2.subVectors(vC, vB);
+      _ab2.subVectors(vA, vB);
+      _cb2.cross(_ab2).normalize();
+      this.normal.copy(_cb2);
+    }
+    hasVertex(v) {
+      return v === this.v1 || v === this.v2 || v === this.v3;
+    }
+    replaceVertex(oldv, newv) {
+      if (oldv === this.v1) this.v1 = newv;
+      else if (oldv === this.v2) this.v2 = newv;
+      else if (oldv === this.v3) this.v3 = newv;
+      removeFromArray(oldv.faces, this);
+      newv.faces.push(this);
+      oldv.removeIfNonNeighbor(this.v1);
+      this.v1.removeIfNonNeighbor(oldv);
+      oldv.removeIfNonNeighbor(this.v2);
+      this.v2.removeIfNonNeighbor(oldv);
+      oldv.removeIfNonNeighbor(this.v3);
+      this.v3.removeIfNonNeighbor(oldv);
+      this.v1.addUniqueNeighbor(this.v2);
+      this.v1.addUniqueNeighbor(this.v3);
+      this.v2.addUniqueNeighbor(this.v1);
+      this.v2.addUniqueNeighbor(this.v3);
+      this.v3.addUniqueNeighbor(this.v1);
+      this.v3.addUniqueNeighbor(this.v2);
+      this.computeNormal();
+    }
+  };
+  var Vertex = class {
+    constructor(v, uv, normal, tangent, color) {
+      this.position = v;
+      this.uv = uv;
+      this.normal = normal;
+      this.tangent = tangent;
+      this.color = color;
+      this.id = -1;
+      this.faces = [];
+      this.neighbors = [];
+      this.collapseCost = 0;
+      this.collapseNeighbor = null;
+    }
+    addUniqueNeighbor(vertex2) {
+      pushIfUnique(this.neighbors, vertex2);
+    }
+    removeIfNonNeighbor(n) {
+      const neighbors = this.neighbors;
+      const faces = this.faces;
+      const offset = neighbors.indexOf(n);
+      if (offset === -1) return;
+      for (let i = 0; i < faces.length; i++) {
+        if (faces[i].hasVertex(n)) return;
+      }
+      neighbors.splice(offset, 1);
+    }
+  };
+
   // app/meshes/factory.js
   function round(value, digits = 3) {
     const scale = 10 ** digits;
@@ -29827,10 +30233,12 @@ void main() {
     cameraViewsSection: document.querySelector("#cameraViewsSection"),
     cameraViewsToggle: document.querySelector("#cameraViewsToggle"),
     addCustomCameraBtn: document.querySelector("#addCustomCameraBtn"),
+    addPlayerCameraBtn: document.querySelector("#addPlayerCameraBtn"),
     viewCustomCameraBtn: document.querySelector("#viewCustomCameraBtn"),
     updateCustomCameraBtn: document.querySelector("#updateCustomCameraBtn"),
     deleteCustomCameraBtn: document.querySelector("#deleteCustomCameraBtn"),
     customCameraList: document.querySelector("#customCameraList"),
+    customCameraTypeLabel: document.querySelector("#customCameraTypeLabel"),
     customCameraNameInput: document.querySelector("#customCameraNameInput"),
     customCameraPosX: document.querySelector("#customCameraPosX"),
     customCameraPosY: document.querySelector("#customCameraPosY"),
@@ -29839,6 +30247,12 @@ void main() {
     customCameraTargetY: document.querySelector("#customCameraTargetY"),
     customCameraTargetZ: document.querySelector("#customCameraTargetZ"),
     showCustomCamerasInput: document.querySelector("#showCustomCamerasInput"),
+    gameOptimizeRatioInput: document.querySelector("#gameOptimizeRatioInput"),
+    exportGameCopyBtn: document.querySelector("#exportGameCopyBtn"),
+    pixelRenderWidthInput: document.querySelector("#pixelRenderWidthInput"),
+    pixelTransparentInput: document.querySelector("#pixelTransparentInput"),
+    savePixelRenderBtn: document.querySelector("#savePixelRenderBtn"),
+    gameOptimizeStats: document.querySelector("#gameOptimizeStats"),
     imageReliefMeshPlugin: document.querySelector("#imageReliefMeshPlugin"),
     sceneRenderingTools: document.querySelector("#sceneRenderingTools"),
     boneAxisFreeBtn: document.querySelector("#boneAxisFreeBtn"),
@@ -36957,10 +37371,15 @@ void main() {
           views: customCameraViews.map((view) => ({
             id: view.id,
             name: view.name,
+            type: view.type || "director",
+            anchorBoneId: view.anchorBoneId || null,
             position: view.position.map(round2),
             target: view.target.map(round2),
             up: view.up.map(round2),
-            fov: round2(view.fov)
+            fov: round2(view.fov),
+            positionOffset: validCameraVector(view.positionOffset, [0, 0, 0]).map(round2),
+            localDirection: validCameraVector(view.localDirection, [0, 0, -1]).map(round2),
+            localUp: validCameraVector(view.localUp, [0, 1, 0]).map(round2)
           }))
         },
         view: {
@@ -40308,6 +40727,35 @@ end
   function validCameraVector(value, fallback) {
     return Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value.map(Number) : [...fallback];
   }
+  function boneCameraQuaternion(bone) {
+    if (!bone) return new Quaternion();
+    return new Quaternion().setFromEuler(new Euler(
+      MathUtils.degToRad(Number(bone.rotation.x) || 0),
+      MathUtils.degToRad(Number(bone.rotation.y) || 0),
+      MathUtils.degToRad(Number(bone.rotation.z) || 0),
+      "XYZ"
+    ));
+  }
+  function resolvedCustomCameraPose(view) {
+    const fallbackPosition = new Vector3().fromArray(view?.position || [6, 5, 7]);
+    const fallbackTarget = new Vector3().fromArray(view?.target || [0, 1, 0]);
+    const fallbackUp = new Vector3().fromArray(view?.up || [0, 1, 0]);
+    if (!view || view.type !== "player" || !view.anchorBoneId) {
+      return { position: fallbackPosition, target: fallbackTarget, up: fallbackUp };
+    }
+    const bone = boneById(view.anchorBoneId);
+    if (!bone) return { position: fallbackPosition, target: fallbackTarget, up: fallbackUp };
+    const rotation = boneCameraQuaternion(bone);
+    const offset = new Vector3().fromArray(validCameraVector(view.positionOffset, [0, 0, 0])).applyQuaternion(rotation);
+    const position = bone.position.clone().add(offset);
+    const direction = new Vector3().fromArray(validCameraVector(view.localDirection, [0, 0, -1])).applyQuaternion(rotation).normalize();
+    const up = new Vector3().fromArray(validCameraVector(view.localUp, [0, 1, 0])).applyQuaternion(rotation).normalize();
+    const target = position.clone().add(direction);
+    view.position = position.toArray();
+    view.target = target.toArray();
+    view.up = up.toArray();
+    return { position, target, up };
+  }
   function disposeCameraDirectorMarkers() {
     cameraDirectorGroup.traverse((object) => {
       object.geometry?.dispose?.();
@@ -40322,7 +40770,8 @@ end
     const marker = new Group();
     marker.name = `Camera Director: ${view.name}`;
     marker.userData.cameraViewId = view.id;
-    marker.position.fromArray(view.position);
+    const pose = resolvedCustomCameraPose(view);
+    marker.position.copy(pose.position);
     const body = new Mesh(new BoxGeometry(0.46, 0.28, 0.32), material.clone());
     const lens = new Mesh(new CylinderGeometry(0.1, 0.14, 0.22, 12), material.clone());
     lens.rotation.x = Math.PI / 2;
@@ -40332,7 +40781,7 @@ end
     const tripod = new Mesh(new CylinderGeometry(0.035, 0.08, 0.48, 8), material.clone());
     tripod.position.y = -0.35;
     marker.add(body, lens, head, tripod);
-    const aim = new Vector3().fromArray(view.target);
+    const aim = pose.target.clone();
     if (aim.distanceToSquared(marker.position) < 1e-8) aim.z += 1;
     marker.lookAt(aim);
     marker.traverse((object) => {
@@ -40343,11 +40792,29 @@ end
   }
   function renderCustomCameraMarkers() {
     disposeCameraDirectorMarkers();
+    if (activeCustomCameraId) {
+      cameraDirectorGroup.visible = false;
+      const activeView2 = customCameraViewById(activeCustomCameraId);
+      boneRigGroup.visible = !!els.showBonesInput?.checked && activeView2?.type !== "player";
+      return;
+    }
     for (const view of customCameraViews) {
       if (view.id === activeCustomCameraId) continue;
       cameraDirectorGroup.add(makeCameraDirectorMarker(view, view.id === selectedCustomCameraId));
     }
-    cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked;
+    cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked && !activeCustomCameraId;
+    const activeView = customCameraViewById(activeCustomCameraId);
+    boneRigGroup.visible = !!els.showBonesInput?.checked && activeView?.type !== "player";
+  }
+  function syncCameraDirectorVisibility() {
+    const cameraNearDirector = customCameraViews.some((view) => {
+      const pose = resolvedCustomCameraPose(view);
+      return pose.position.distanceTo(camera.position) <= 2;
+    });
+    cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked && !activeCustomCameraId && !cameraNearDirector;
+    for (const marker of cameraDirectorGroup.children) {
+      marker.visible = marker.position.distanceTo(camera.position) > 2;
+    }
   }
   function customCameraInputs() {
     return [
@@ -40367,16 +40834,20 @@ end
     els.updateCustomCameraBtn.disabled = !view;
     els.deleteCustomCameraBtn.disabled = !view;
     if (!view) {
+      els.customCameraTypeLabel.textContent = "Type: no camera selected";
       els.customCameraNameInput.value = "";
       for (const input of customCameraInputs().slice(1)) input.value = "";
       return;
     }
+    const pose = resolvedCustomCameraPose(view);
+    const anchor = view.type === "player" ? boneById(view.anchorBoneId) : null;
+    els.customCameraTypeLabel.textContent = view.type === "player" ? `Type: player eye on joint ${anchor?.name || "(missing joint)"}` : "Type: free camera director";
     els.customCameraNameInput.value = view.name;
     [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ].forEach((input, index) => {
-      input.value = round2(view.position[index]);
+      input.value = round2(pose.position.toArray()[index]);
     });
     [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ].forEach((input, index) => {
-      input.value = round2(view.target[index]);
+      input.value = round2(pose.target.toArray()[index]);
     });
   }
   function renderCustomCameraViews() {
@@ -40401,6 +40872,7 @@ end
     const view = {
       id: nextCustomCameraId(),
       name: `Camera ${customCameraViews.length + 1}`,
+      type: "director",
       position: camera.position.toArray(),
       target: orbit.target.toArray(),
       up: camera.up.toArray(),
@@ -40413,6 +40885,37 @@ end
     log(`Added ${view.name} at the current viewport.`);
     return view;
   }
+  function addPlayerCameraOnSelectedJoint() {
+    const bone = selectedBone();
+    if (!bone) {
+      log("Select or place a joint first, then attach the player camera.");
+      return null;
+    }
+    recordHistory("add player camera on joint");
+    const rotation = boneCameraQuaternion(bone);
+    const inverseRotation = rotation.clone().invert();
+    const worldDirection = orbit.target.clone().sub(camera.position);
+    if (worldDirection.lengthSq() < 1e-8) worldDirection.set(0, 0, -1);
+    const view = {
+      id: nextCustomCameraId(),
+      name: `${bone.name} Player View`,
+      type: "player",
+      anchorBoneId: bone.id,
+      position: bone.position.toArray(),
+      target: bone.position.clone().add(worldDirection.clone().normalize()).toArray(),
+      up: camera.up.toArray(),
+      fov: camera.fov,
+      positionOffset: [0, 0, 0],
+      localDirection: worldDirection.normalize().applyQuaternion(inverseRotation).toArray(),
+      localUp: camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray()
+    };
+    customCameraViews.push(view);
+    selectedCustomCameraId = view.id;
+    activeCustomCameraId = view.id;
+    activateCustomCameraView(view.id);
+    log(`Attached ${view.name} to ${bone.name}. Moving or rotating that joint now moves the viewpoint.`);
+    return view;
+  }
   function updateCustomCameraFromCurrentView() {
     const view = customCameraViewById();
     if (!view) return;
@@ -40420,6 +40923,17 @@ end
     view.position = camera.position.toArray();
     view.target = orbit.target.toArray();
     view.up = camera.up.toArray();
+    if (view.type === "player") {
+      const bone = boneById(view.anchorBoneId);
+      if (bone) {
+        const rotation = boneCameraQuaternion(bone);
+        const inverseRotation = rotation.clone().invert();
+        view.positionOffset = camera.position.clone().sub(bone.position).applyQuaternion(inverseRotation).toArray();
+        const direction = orbit.target.clone().sub(camera.position).normalize();
+        view.localDirection = direction.applyQuaternion(inverseRotation).toArray();
+        view.localUp = camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray();
+      }
+    }
     view.fov = camera.fov;
     activeCustomCameraId = view.id;
     renderCustomCameraViews();
@@ -40434,6 +40948,15 @@ end
     const targetInputs = [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ];
     view.position = positionInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.position[index]);
     view.target = targetInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.target[index]);
+    if (view.type === "player") {
+      const bone = boneById(view.anchorBoneId);
+      if (bone) {
+        const inverseRotation = boneCameraQuaternion(bone).invert();
+        view.positionOffset = new Vector3().fromArray(view.position).sub(bone.position).applyQuaternion(inverseRotation).toArray();
+        const direction = new Vector3().fromArray(view.target).sub(new Vector3().fromArray(view.position));
+        if (direction.lengthSq() > 1e-8) view.localDirection = direction.normalize().applyQuaternion(inverseRotation).toArray();
+      }
+    }
     if (render) renderCustomCameraViews();
     else {
       const option = els.customCameraList.querySelector(`option[value="${view.id}"]`);
@@ -40456,9 +40979,12 @@ end
     if (!view) return;
     selectedCustomCameraId = view.id;
     activeCustomCameraId = view.id;
-    camera.position.fromArray(view.position);
-    orbit.target.fromArray(view.target);
-    camera.up.fromArray(view.up);
+    els.showCustomCamerasInput.checked = false;
+    cameraDirectorGroup.visible = false;
+    const pose = resolvedCustomCameraPose(view);
+    camera.position.copy(pose.position);
+    orbit.target.copy(pose.target);
+    camera.up.copy(pose.up);
     camera.fov = Math.max(10, Math.min(120, Number(view.fov) || 55));
     const distance = Math.max(0.05, camera.position.distanceTo(orbit.target));
     camera.near = Math.max(0.01, distance / 2e3);
@@ -40468,6 +40994,19 @@ end
     orbit.update();
     renderCustomCameraViews();
     log(`Viewing the scene through ${view.name}.`);
+  }
+  function syncActiveJointCamera() {
+    const view = customCameraViewById(activeCustomCameraId);
+    if (!view || view.type !== "player" || !boneById(view.anchorBoneId)) {
+      boneRigGroup.visible = !!els.showBonesInput?.checked;
+      return;
+    }
+    boneRigGroup.visible = false;
+    const pose = resolvedCustomCameraPose(view);
+    camera.position.copy(pose.position);
+    orbit.target.copy(pose.target);
+    camera.up.copy(pose.up);
+    camera.lookAt(pose.target);
   }
   function restoreCustomCameraViews(cameraState = {}) {
     customCameraIdCounter = 0;
@@ -40479,10 +41018,15 @@ end
       return {
         id,
         name: String(view?.name || `Camera ${index + 1}`),
+        type: view?.type === "player" ? "player" : "director",
+        anchorBoneId: typeof view?.anchorBoneId === "string" ? view.anchorBoneId : null,
         position: validCameraVector(view?.position, [6, 5, 7]),
         target: validCameraVector(view?.target, [0, 1, 0]),
         up: validCameraVector(view?.up, [0, 1, 0]),
-        fov: Math.max(10, Math.min(120, Number(view?.fov) || 55))
+        fov: Math.max(10, Math.min(120, Number(view?.fov) || 55)),
+        positionOffset: validCameraVector(view?.positionOffset, [0, 0, 0]),
+        localDirection: validCameraVector(view?.localDirection, [0, 0, -1]),
+        localUp: validCameraVector(view?.localUp, [0, 1, 0])
       };
     });
     selectedCustomCameraId = customCameraViews.some((view) => view.id === cameraState.selectedId) ? cameraState.selectedId : customCameraViews[0]?.id || null;
@@ -40630,6 +41174,162 @@ end
     const shot = captureView(viewName, { download: true, prefix });
     log(`Saved ${viewName} PNG view.`, shot.fileName);
     return shot;
+  }
+  function meshTriangleCount(mesh) {
+    const geometry = mesh?.geometry;
+    if (!geometry) return 0;
+    return Math.floor((geometry.index?.count || geometry.getAttribute("position")?.count || 0) / 3);
+  }
+  function sceneGameMetrics(meshes = objects) {
+    return {
+      meshes: meshes.length,
+      triangles: meshes.reduce((sum, mesh) => sum + meshTriangleCount(mesh), 0),
+      vertices: meshes.reduce((sum, mesh) => sum + (mesh.geometry?.getAttribute("position")?.count || 0), 0)
+    };
+  }
+  function simplifiedGameMesh(mesh, keepRatio) {
+    const clone = mesh.clone(false);
+    let geometry = mesh.geometry.clone();
+    const triangles = meshTriangleCount(mesh);
+    if (triangles >= 160 && keepRatio < 0.999) {
+      try {
+        geometry = mergeVertices(geometry, 1e-4);
+        const vertexCount = geometry.getAttribute("position")?.count || 0;
+        const removeCount = Math.max(0, Math.floor(vertexCount * (1 - keepRatio)));
+        if (removeCount > 0 && vertexCount - removeCount >= 12) {
+          const simplified = new SimplifyModifier().modify(geometry, removeCount);
+          geometry.dispose();
+          geometry = simplified;
+        }
+      } catch (error) {
+        geometry.dispose();
+        geometry = mesh.geometry.clone();
+        console.warn(`Game simplification skipped for ${mesh.name}:`, error);
+      }
+    }
+    clone.geometry = geometry;
+    clone.material = mesh.material;
+    clone.userData = { ...mesh.userData };
+    clone.position.copy(mesh.position);
+    clone.rotation.copy(mesh.rotation);
+    clone.scale.copy(mesh.scale);
+    clone.updateMatrixWorld(true);
+    return clone;
+  }
+  async function saveGameOptimizedCopy() {
+    const sourceMeshes = objects.filter((mesh) => !mesh.userData.hidden);
+    if (!sourceMeshes.length) {
+      log("There are no visible model meshes to optimize.");
+      return null;
+    }
+    const keepRatio = Math.max(0.2, Math.min(1, Number(els.gameOptimizeRatioInput.value || 65) / 100));
+    const before = sceneGameMetrics(sourceMeshes);
+    els.exportGameCopyBtn.disabled = true;
+    els.gameOptimizeStats.textContent = "Building a separate optimized copy\u2026";
+    const workingMeshes = sourceMeshes.map((mesh) => simplifiedGameMesh(mesh, keepRatio));
+    try {
+      const spec = await mergedMeshSpec(workingMeshes, {
+        name: `${currentProjectBaseName()} Game Mesh`,
+        groupId: "game-optimized",
+        groupName: "Game Optimized"
+      });
+      if (!spec) throw new Error("No valid merged geometry was produced.");
+      const afterTriangles = Math.floor((spec.geometry?.positions?.length || 0) / 9);
+      const optimized = projectState();
+      optimized.name = `${currentProjectBaseName()}-game-optimized`;
+      optimized.savedAt = (/* @__PURE__ */ new Date()).toISOString();
+      optimized.optimization = {
+        sourceMeshes: before.meshes,
+        sourceTriangles: before.triangles,
+        optimizedMeshes: 1,
+        optimizedTriangles: afterTriangles,
+        keepDetailPercent: round2(keepRatio * 100),
+        drawCallReductionPercent: round2((1 - 1 / Math.max(1, before.meshes)) * 100)
+      };
+      spec.id = `game-optimized-${Date.now().toString(36)}`;
+      spec.groupId = "game-optimized";
+      spec.groupName = "Game Optimized";
+      if (spec.textureUrl && spec.textureName) {
+        optimized.textureLibrary = (optimized.textureLibrary || []).filter((entry) => entry.name !== spec.textureName);
+        optimized.textureLibrary.push({ name: spec.textureName, dataUrl: spec.textureUrl, robloxAssetId: "" });
+        spec.textureUrl = null;
+      }
+      delete spec.generatedMaterialAtlas;
+      delete spec.mergedMaterialCount;
+      delete spec.mergedTextureCount;
+      delete spec.materialAtlasSize;
+      optimized.scene.objects = [spec];
+      optimized.scene.groups = [{ id: "game-optimized", name: "Game Optimized", parentId: null }];
+      optimized.editor.selectedId = spec.id;
+      optimized.editor.selectedGroupId = "game-optimized";
+      optimized.editor.checkedIds = [];
+      optimized.editor.activeGroupIds = [];
+      const fileName = `${optimized.name}.modelerproj`;
+      download(fileName, JSON.stringify(optimized, null, 2), "application/json");
+      const triangleReduction = before.triangles ? round2((1 - afterTriangles / before.triangles) * 100) : 0;
+      els.gameOptimizeStats.textContent = `${before.meshes} \u2192 1 mesh | ${before.triangles.toLocaleString()} \u2192 ${afterTriangles.toLocaleString()} triangles (${triangleReduction}% reduction)`;
+      log("Saved a separate game-optimized project; the editable scene was not changed.", {
+        fileName,
+        before,
+        after: { meshes: 1, triangles: afterTriangles },
+        triangleReductionPercent: triangleReduction
+      });
+      return optimized;
+    } catch (error) {
+      els.gameOptimizeStats.textContent = `Optimization failed: ${error.message}`;
+      log("Game optimization failed.", error.message);
+      return null;
+    } finally {
+      workingMeshes.forEach((mesh) => mesh.geometry?.dispose?.());
+      els.exportGameCopyBtn.disabled = false;
+    }
+  }
+  function quantizePixelCanvas(context, width2, height2) {
+    const image = context.getImageData(0, 0, width2, height2);
+    for (let index = 0; index < image.data.length; index += 4) {
+      if (image.data[index + 3] === 0) continue;
+      image.data[index] = Math.round(image.data[index] / 16) * 16;
+      image.data[index + 1] = Math.round(image.data[index + 1] / 16) * 16;
+      image.data[index + 2] = Math.round(image.data[index + 2] / 16) * 16;
+    }
+    context.putImageData(image, 0, 0);
+  }
+  async function savePixelRenderPng() {
+    await waitForSceneTextures();
+    resize();
+    const transparent = !!els.pixelTransparentInput.checked;
+    const oldSceneBackground = scene.background;
+    const oldClearAlpha = renderer.getClearAlpha();
+    const oldVisibility = [transform, faceMarker, selectionOutlineGroup, openingPickGuideGroup, markerGroup, cameraDirectorGroup, grid, gridLabelGroup, boneRigGroup].map((object) => [object, object.visible]);
+    oldVisibility.forEach(([object]) => {
+      object.visible = false;
+    });
+    if (transparent) {
+      scene.background = null;
+      renderer.setClearAlpha(0);
+    }
+    renderer.render(scene, camera);
+    const width2 = Math.max(32, Math.min(1024, Math.round(Number(els.pixelRenderWidthInput.value) || 192)));
+    const height2 = Math.max(1, Math.round(width2 * canvas.height / Math.max(1, canvas.width)));
+    const pixelCanvas = document.createElement("canvas");
+    pixelCanvas.width = width2;
+    pixelCanvas.height = height2;
+    const context = pixelCanvas.getContext("2d", { willReadFrequently: true });
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    context.drawImage(canvas, 0, 0, width2, height2);
+    quantizePixelCanvas(context, width2, height2);
+    const dataUrl = pixelCanvas.toDataURL("image/png");
+    const fileName = `${currentProjectBaseName()}-pixel-${width2}x${height2}.png`;
+    downloadDataUrl(fileName, dataUrl);
+    scene.background = oldSceneBackground;
+    renderer.setClearAlpha(oldClearAlpha);
+    oldVisibility.forEach(([object, visible]) => {
+      object.visible = visible;
+    });
+    renderer.render(scene, camera);
+    log(`Saved crisp pixel render from the current camera at ${width2} \xD7 ${height2}.`, fileName);
+    return { fileName, width: width2, height: height2, dataUrl };
   }
   function loadShotImage(dataUrl) {
     return new Promise((resolve, reject) => {
@@ -41243,7 +41943,9 @@ end
     requestAnimationFrame(animate);
     resize();
     boneGridAxisGroup.visible = !!els.showGridInput?.checked;
+    syncActiveJointCamera();
     orbit.update();
+    syncCameraDirectorVisibility();
     syncSelectionOutlineTransforms();
     if (lineSketchMode && lineSketchPoints.length) updateLineSketchGuide();
     if (lineSketchMode && lineSketchHover?.point) {
@@ -41521,6 +42223,7 @@ end
   els.previewTopBtn.addEventListener("click", () => previewShotView("top"));
   els.previewIsoBtn.addEventListener("click", () => previewShotView("iso"));
   els.addCustomCameraBtn.addEventListener("click", addCustomCameraView);
+  els.addPlayerCameraBtn.addEventListener("click", addPlayerCameraOnSelectedJoint);
   els.viewCustomCameraBtn.addEventListener("click", () => activateCustomCameraView());
   els.updateCustomCameraBtn.addEventListener("click", updateCustomCameraFromCurrentView);
   els.deleteCustomCameraBtn.addEventListener("click", deleteCustomCameraView);
@@ -41545,10 +42248,12 @@ end
     });
   });
   els.showCustomCamerasInput.addEventListener("change", () => {
-    cameraDirectorGroup.visible = els.showCustomCamerasInput.checked;
+    renderCustomCameraMarkers();
     log(`${els.showCustomCamerasInput.checked ? "Showing" : "Hiding"} camera directors in the viewport.`);
   });
-  orbit.addEventListener("start", () => {
+  els.exportGameCopyBtn.addEventListener("click", saveGameOptimizedCopy);
+  els.savePixelRenderBtn.addEventListener("click", savePixelRenderPng);
+  canvas.addEventListener("pointerdown", () => {
     if (!activeCustomCameraId) return;
     activeCustomCameraId = null;
     renderCustomCameraMarkers();

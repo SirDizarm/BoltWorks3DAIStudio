@@ -129,10 +129,15 @@ function projectState() {
         views: customCameraViews.map(view => ({
           id: view.id,
           name: view.name,
+          type: view.type || "director",
+          anchorBoneId: view.anchorBoneId || null,
           position: view.position.map(round),
           target: view.target.map(round),
           up: view.up.map(round),
-          fov: round(view.fov)
+          fov: round(view.fov),
+          positionOffset: validCameraVector(view.positionOffset, [0, 0, 0]).map(round),
+          localDirection: validCameraVector(view.localDirection, [0, 0, -1]).map(round),
+          localUp: validCameraVector(view.localUp, [0, 1, 0]).map(round)
         }))
       },
       view: {
@@ -3684,6 +3689,37 @@ function validCameraVector(value, fallback) {
     : [...fallback];
 }
 
+function boneCameraQuaternion(bone) {
+  if (!bone) return new THREE.Quaternion();
+  return new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    THREE.MathUtils.degToRad(Number(bone.rotation.x) || 0),
+    THREE.MathUtils.degToRad(Number(bone.rotation.y) || 0),
+    THREE.MathUtils.degToRad(Number(bone.rotation.z) || 0),
+    "XYZ"
+  ));
+}
+
+function resolvedCustomCameraPose(view) {
+  const fallbackPosition = new THREE.Vector3().fromArray(view?.position || [6, 5, 7]);
+  const fallbackTarget = new THREE.Vector3().fromArray(view?.target || [0, 1, 0]);
+  const fallbackUp = new THREE.Vector3().fromArray(view?.up || [0, 1, 0]);
+  if (!view || view.type !== "player" || !view.anchorBoneId) {
+    return { position: fallbackPosition, target: fallbackTarget, up: fallbackUp };
+  }
+  const bone = boneById(view.anchorBoneId);
+  if (!bone) return { position: fallbackPosition, target: fallbackTarget, up: fallbackUp };
+  const rotation = boneCameraQuaternion(bone);
+  const offset = new THREE.Vector3().fromArray(validCameraVector(view.positionOffset, [0, 0, 0])).applyQuaternion(rotation);
+  const position = bone.position.clone().add(offset);
+  const direction = new THREE.Vector3().fromArray(validCameraVector(view.localDirection, [0, 0, -1])).applyQuaternion(rotation).normalize();
+  const up = new THREE.Vector3().fromArray(validCameraVector(view.localUp, [0, 1, 0])).applyQuaternion(rotation).normalize();
+  const target = position.clone().add(direction);
+  view.position = position.toArray();
+  view.target = target.toArray();
+  view.up = up.toArray();
+  return { position, target, up };
+}
+
 function disposeCameraDirectorMarkers() {
   cameraDirectorGroup.traverse(object => {
     object.geometry?.dispose?.();
@@ -3699,7 +3735,8 @@ function makeCameraDirectorMarker(view, selectedMarker = false) {
   const marker = new THREE.Group();
   marker.name = `Camera Director: ${view.name}`;
   marker.userData.cameraViewId = view.id;
-  marker.position.fromArray(view.position);
+  const pose = resolvedCustomCameraPose(view);
+  marker.position.copy(pose.position);
 
   const body = new THREE.Mesh(new THREE.BoxGeometry(.46, .28, .32), material.clone());
   const lens = new THREE.Mesh(new THREE.CylinderGeometry(.1, .14, .22, 12), material.clone());
@@ -3711,7 +3748,7 @@ function makeCameraDirectorMarker(view, selectedMarker = false) {
   tripod.position.y = -.35;
   marker.add(body, lens, head, tripod);
 
-  const aim = new THREE.Vector3().fromArray(view.target);
+  const aim = pose.target.clone();
   if (aim.distanceToSquared(marker.position) < 1e-8) aim.z += 1;
   marker.lookAt(aim);
   marker.traverse(object => {
@@ -3723,11 +3760,36 @@ function makeCameraDirectorMarker(view, selectedMarker = false) {
 
 function renderCustomCameraMarkers() {
   disposeCameraDirectorMarkers();
+  if (activeCustomCameraId) {
+    cameraDirectorGroup.visible = false;
+    const activeView = customCameraViewById(activeCustomCameraId);
+    boneRigGroup.visible = !!els.showBonesInput?.checked && activeView?.type !== "player";
+    return;
+  }
   for (const view of customCameraViews) {
     if (view.id === activeCustomCameraId) continue;
     cameraDirectorGroup.add(makeCameraDirectorMarker(view, view.id === selectedCustomCameraId));
   }
-  cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked;
+  // Looking through any saved camera must be unobstructed. Other directors can
+  // occupy the same position (for example a free view and a player joint), so
+  // hiding only the active marker is not sufficient.
+  cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked && !activeCustomCameraId;
+  const activeView = customCameraViewById(activeCustomCameraId);
+  boneRigGroup.visible = !!els.showBonesInput?.checked && activeView?.type !== "player";
+}
+
+function syncCameraDirectorVisibility() {
+  const cameraNearDirector = customCameraViews.some(view => {
+    const pose = resolvedCustomCameraPose(view);
+    return pose.position.distanceTo(camera.position) <= 2;
+  });
+  cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked && !activeCustomCameraId && !cameraNearDirector;
+  // OrbitControls can leave the saved-camera state as soon as a user begins
+  // navigating. Keep every director near the eye hidden regardless, including
+  // two different saved cameras placed at the exact same coordinates.
+  for (const marker of cameraDirectorGroup.children) {
+    marker.visible = marker.position.distanceTo(camera.position) > 2;
+  }
 }
 
 function customCameraInputs() {
@@ -3749,13 +3811,19 @@ function syncCustomCameraInputs() {
   els.updateCustomCameraBtn.disabled = !view;
   els.deleteCustomCameraBtn.disabled = !view;
   if (!view) {
+    els.customCameraTypeLabel.textContent = "Type: no camera selected";
     els.customCameraNameInput.value = "";
     for (const input of customCameraInputs().slice(1)) input.value = "";
     return;
   }
+  const pose = resolvedCustomCameraPose(view);
+  const anchor = view.type === "player" ? boneById(view.anchorBoneId) : null;
+  els.customCameraTypeLabel.textContent = view.type === "player"
+    ? `Type: player eye on joint ${anchor?.name || "(missing joint)"}`
+    : "Type: free camera director";
   els.customCameraNameInput.value = view.name;
-  [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ].forEach((input, index) => { input.value = round(view.position[index]); });
-  [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ].forEach((input, index) => { input.value = round(view.target[index]); });
+  [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ].forEach((input, index) => { input.value = round(pose.position.toArray()[index]); });
+  [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ].forEach((input, index) => { input.value = round(pose.target.toArray()[index]); });
 }
 
 function renderCustomCameraViews() {
@@ -3782,6 +3850,7 @@ function addCustomCameraView() {
   const view = {
     id: nextCustomCameraId(),
     name: `Camera ${customCameraViews.length + 1}`,
+    type: "director",
     position: camera.position.toArray(),
     target: orbit.target.toArray(),
     up: camera.up.toArray(),
@@ -3795,6 +3864,38 @@ function addCustomCameraView() {
   return view;
 }
 
+function addPlayerCameraOnSelectedJoint() {
+  const bone = selectedBone();
+  if (!bone) {
+    log("Select or place a joint first, then attach the player camera.");
+    return null;
+  }
+  recordHistory("add player camera on joint");
+  const rotation = boneCameraQuaternion(bone);
+  const inverseRotation = rotation.clone().invert();
+  const worldDirection = orbit.target.clone().sub(camera.position);
+  if (worldDirection.lengthSq() < 1e-8) worldDirection.set(0, 0, -1);
+  const view = {
+    id: nextCustomCameraId(),
+    name: `${bone.name} Player View`,
+    type: "player",
+    anchorBoneId: bone.id,
+    position: bone.position.toArray(),
+    target: bone.position.clone().add(worldDirection.clone().normalize()).toArray(),
+    up: camera.up.toArray(),
+    fov: camera.fov,
+    positionOffset: [0, 0, 0],
+    localDirection: worldDirection.normalize().applyQuaternion(inverseRotation).toArray(),
+    localUp: camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray()
+  };
+  customCameraViews.push(view);
+  selectedCustomCameraId = view.id;
+  activeCustomCameraId = view.id;
+  activateCustomCameraView(view.id);
+  log(`Attached ${view.name} to ${bone.name}. Moving or rotating that joint now moves the viewpoint.`);
+  return view;
+}
+
 function updateCustomCameraFromCurrentView() {
   const view = customCameraViewById();
   if (!view) return;
@@ -3802,6 +3903,17 @@ function updateCustomCameraFromCurrentView() {
   view.position = camera.position.toArray();
   view.target = orbit.target.toArray();
   view.up = camera.up.toArray();
+  if (view.type === "player") {
+    const bone = boneById(view.anchorBoneId);
+    if (bone) {
+      const rotation = boneCameraQuaternion(bone);
+      const inverseRotation = rotation.clone().invert();
+      view.positionOffset = camera.position.clone().sub(bone.position).applyQuaternion(inverseRotation).toArray();
+      const direction = orbit.target.clone().sub(camera.position).normalize();
+      view.localDirection = direction.applyQuaternion(inverseRotation).toArray();
+      view.localUp = camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray();
+    }
+  }
   view.fov = camera.fov;
   activeCustomCameraId = view.id;
   renderCustomCameraViews();
@@ -3817,6 +3929,15 @@ function updateCustomCameraFromInputs({ record = true, render = true, refreshMar
   const targetInputs = [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ];
   view.position = positionInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.position[index]);
   view.target = targetInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.target[index]);
+  if (view.type === "player") {
+    const bone = boneById(view.anchorBoneId);
+    if (bone) {
+      const inverseRotation = boneCameraQuaternion(bone).invert();
+      view.positionOffset = new THREE.Vector3().fromArray(view.position).sub(bone.position).applyQuaternion(inverseRotation).toArray();
+      const direction = new THREE.Vector3().fromArray(view.target).sub(new THREE.Vector3().fromArray(view.position));
+      if (direction.lengthSq() > 1e-8) view.localDirection = direction.normalize().applyQuaternion(inverseRotation).toArray();
+    }
+  }
   if (render) renderCustomCameraViews();
   else {
     const option = els.customCameraList.querySelector(`option[value="${view.id}"]`);
@@ -3841,9 +3962,14 @@ function activateCustomCameraView(id = selectedCustomCameraId) {
   if (!view) return;
   selectedCustomCameraId = view.id;
   activeCustomCameraId = view.id;
-  camera.position.fromArray(view.position);
-  orbit.target.fromArray(view.target);
-  camera.up.fromArray(view.up);
+  // Directors are editor helpers, never part of the photographed view. Turning
+  // the overlay off here also covers overlapping cameras at the same joint.
+  els.showCustomCamerasInput.checked = false;
+  cameraDirectorGroup.visible = false;
+  const pose = resolvedCustomCameraPose(view);
+  camera.position.copy(pose.position);
+  orbit.target.copy(pose.target);
+  camera.up.copy(pose.up);
   camera.fov = Math.max(10, Math.min(120, Number(view.fov) || 55));
   const distance = Math.max(.05, camera.position.distanceTo(orbit.target));
   camera.near = Math.max(.01, distance / 2000);
@@ -3853,6 +3979,20 @@ function activateCustomCameraView(id = selectedCustomCameraId) {
   orbit.update();
   renderCustomCameraViews();
   log(`Viewing the scene through ${view.name}.`);
+}
+
+function syncActiveJointCamera() {
+  const view = customCameraViewById(activeCustomCameraId);
+  if (!view || view.type !== "player" || !boneById(view.anchorBoneId)) {
+    boneRigGroup.visible = !!els.showBonesInput?.checked;
+    return;
+  }
+  boneRigGroup.visible = false;
+  const pose = resolvedCustomCameraPose(view);
+  camera.position.copy(pose.position);
+  orbit.target.copy(pose.target);
+  camera.up.copy(pose.up);
+  camera.lookAt(pose.target);
 }
 
 function restoreCustomCameraViews(cameraState = {}) {
@@ -3865,10 +4005,15 @@ function restoreCustomCameraViews(cameraState = {}) {
     return {
       id,
       name: String(view?.name || `Camera ${index + 1}`),
+      type: view?.type === "player" ? "player" : "director",
+      anchorBoneId: typeof view?.anchorBoneId === "string" ? view.anchorBoneId : null,
       position: validCameraVector(view?.position, [6, 5, 7]),
       target: validCameraVector(view?.target, [0, 1, 0]),
       up: validCameraVector(view?.up, [0, 1, 0]),
-      fov: Math.max(10, Math.min(120, Number(view?.fov) || 55))
+      fov: Math.max(10, Math.min(120, Number(view?.fov) || 55)),
+      positionOffset: validCameraVector(view?.positionOffset, [0, 0, 0]),
+      localDirection: validCameraVector(view?.localDirection, [0, 0, -1]),
+      localUp: validCameraVector(view?.localUp, [0, 1, 0])
     };
   });
   selectedCustomCameraId = customCameraViews.some(view => view.id === cameraState.selectedId)
@@ -4029,6 +4174,167 @@ async function saveSingleViewPng(viewName = "iso") {
   const shot = captureView(viewName, { download: true, prefix });
   log(`Saved ${viewName} PNG view.`, shot.fileName);
   return shot;
+}
+
+function meshTriangleCount(mesh) {
+  const geometry = mesh?.geometry;
+  if (!geometry) return 0;
+  return Math.floor((geometry.index?.count || geometry.getAttribute("position")?.count || 0) / 3);
+}
+
+function sceneGameMetrics(meshes = objects) {
+  return {
+    meshes: meshes.length,
+    triangles: meshes.reduce((sum, mesh) => sum + meshTriangleCount(mesh), 0),
+    vertices: meshes.reduce((sum, mesh) => sum + (mesh.geometry?.getAttribute("position")?.count || 0), 0)
+  };
+}
+
+function simplifiedGameMesh(mesh, keepRatio) {
+  const clone = mesh.clone(false);
+  let geometry = mesh.geometry.clone();
+  const triangles = meshTriangleCount(mesh);
+  if (triangles >= 160 && keepRatio < .999) {
+    try {
+      geometry = mergeVertices(geometry, 1e-4);
+      const vertexCount = geometry.getAttribute("position")?.count || 0;
+      const removeCount = Math.max(0, Math.floor(vertexCount * (1 - keepRatio)));
+      if (removeCount > 0 && vertexCount - removeCount >= 12) {
+        const simplified = new SimplifyModifier().modify(geometry, removeCount);
+        geometry.dispose();
+        geometry = simplified;
+      }
+    } catch (error) {
+      geometry.dispose();
+      geometry = mesh.geometry.clone();
+      console.warn(`Game simplification skipped for ${mesh.name}:`, error);
+    }
+  }
+  clone.geometry = geometry;
+  clone.material = mesh.material;
+  clone.userData = { ...mesh.userData };
+  clone.position.copy(mesh.position);
+  clone.rotation.copy(mesh.rotation);
+  clone.scale.copy(mesh.scale);
+  clone.updateMatrixWorld(true);
+  return clone;
+}
+
+async function saveGameOptimizedCopy() {
+  const sourceMeshes = objects.filter(mesh => !mesh.userData.hidden);
+  if (!sourceMeshes.length) {
+    log("There are no visible model meshes to optimize.");
+    return null;
+  }
+  const keepRatio = Math.max(.2, Math.min(1, Number(els.gameOptimizeRatioInput.value || 65) / 100));
+  const before = sceneGameMetrics(sourceMeshes);
+  els.exportGameCopyBtn.disabled = true;
+  els.gameOptimizeStats.textContent = "Building a separate optimized copy…";
+  const workingMeshes = sourceMeshes.map(mesh => simplifiedGameMesh(mesh, keepRatio));
+  try {
+    const spec = await mergedMeshSpec(workingMeshes, {
+      name: `${currentProjectBaseName()} Game Mesh`,
+      groupId: "game-optimized",
+      groupName: "Game Optimized"
+    });
+    if (!spec) throw new Error("No valid merged geometry was produced.");
+    const afterTriangles = Math.floor((spec.geometry?.positions?.length || 0) / 9);
+    const optimized = projectState();
+    optimized.name = `${currentProjectBaseName()}-game-optimized`;
+    optimized.savedAt = new Date().toISOString();
+    optimized.optimization = {
+      sourceMeshes: before.meshes,
+      sourceTriangles: before.triangles,
+      optimizedMeshes: 1,
+      optimizedTriangles: afterTriangles,
+      keepDetailPercent: round(keepRatio * 100),
+      drawCallReductionPercent: round((1 - 1 / Math.max(1, before.meshes)) * 100)
+    };
+    spec.id = `game-optimized-${Date.now().toString(36)}`;
+    spec.groupId = "game-optimized";
+    spec.groupName = "Game Optimized";
+    if (spec.textureUrl && spec.textureName) {
+      optimized.textureLibrary = (optimized.textureLibrary || []).filter(entry => entry.name !== spec.textureName);
+      optimized.textureLibrary.push({ name: spec.textureName, dataUrl: spec.textureUrl, robloxAssetId: "" });
+      spec.textureUrl = null;
+    }
+    delete spec.generatedMaterialAtlas;
+    delete spec.mergedMaterialCount;
+    delete spec.mergedTextureCount;
+    delete spec.materialAtlasSize;
+    optimized.scene.objects = [spec];
+    optimized.scene.groups = [{ id: "game-optimized", name: "Game Optimized", parentId: null }];
+    optimized.editor.selectedId = spec.id;
+    optimized.editor.selectedGroupId = "game-optimized";
+    optimized.editor.checkedIds = [];
+    optimized.editor.activeGroupIds = [];
+    const fileName = `${optimized.name}.modelerproj`;
+    download(fileName, JSON.stringify(optimized, null, 2), "application/json");
+    const triangleReduction = before.triangles
+      ? round((1 - afterTriangles / before.triangles) * 100)
+      : 0;
+    els.gameOptimizeStats.textContent = `${before.meshes} → 1 mesh | ${before.triangles.toLocaleString()} → ${afterTriangles.toLocaleString()} triangles (${triangleReduction}% reduction)`;
+    log("Saved a separate game-optimized project; the editable scene was not changed.", {
+      fileName,
+      before,
+      after: { meshes: 1, triangles: afterTriangles },
+      triangleReductionPercent: triangleReduction
+    });
+    return optimized;
+  } catch (error) {
+    els.gameOptimizeStats.textContent = `Optimization failed: ${error.message}`;
+    log("Game optimization failed.", error.message);
+    return null;
+  } finally {
+    workingMeshes.forEach(mesh => mesh.geometry?.dispose?.());
+    els.exportGameCopyBtn.disabled = false;
+  }
+}
+
+function quantizePixelCanvas(context, width, height) {
+  const image = context.getImageData(0, 0, width, height);
+  for (let index = 0; index < image.data.length; index += 4) {
+    if (image.data[index + 3] === 0) continue;
+    image.data[index] = Math.round(image.data[index] / 16) * 16;
+    image.data[index + 1] = Math.round(image.data[index + 1] / 16) * 16;
+    image.data[index + 2] = Math.round(image.data[index + 2] / 16) * 16;
+  }
+  context.putImageData(image, 0, 0);
+}
+
+async function savePixelRenderPng() {
+  await waitForSceneTextures();
+  resize();
+  const transparent = !!els.pixelTransparentInput.checked;
+  const oldSceneBackground = scene.background;
+  const oldClearAlpha = renderer.getClearAlpha();
+  const oldVisibility = [transform, faceMarker, selectionOutlineGroup, openingPickGuideGroup, markerGroup, cameraDirectorGroup, grid, gridLabelGroup, boneRigGroup]
+    .map(object => [object, object.visible]);
+  oldVisibility.forEach(([object]) => { object.visible = false; });
+  if (transparent) {
+    scene.background = null;
+    renderer.setClearAlpha(0);
+  }
+  renderer.render(scene, camera);
+  const width = Math.max(32, Math.min(1024, Math.round(Number(els.pixelRenderWidthInput.value) || 192)));
+  const height = Math.max(1, Math.round(width * canvas.height / Math.max(1, canvas.width)));
+  const pixelCanvas = document.createElement("canvas");
+  pixelCanvas.width = width;
+  pixelCanvas.height = height;
+  const context = pixelCanvas.getContext("2d", { willReadFrequently: true });
+  context.imageSmoothingEnabled = true;
+  context.imageSmoothingQuality = "high";
+  context.drawImage(canvas, 0, 0, width, height);
+  quantizePixelCanvas(context, width, height);
+  const dataUrl = pixelCanvas.toDataURL("image/png");
+  const fileName = `${currentProjectBaseName()}-pixel-${width}x${height}.png`;
+  downloadDataUrl(fileName, dataUrl);
+  scene.background = oldSceneBackground;
+  renderer.setClearAlpha(oldClearAlpha);
+  oldVisibility.forEach(([object, visible]) => { object.visible = visible; });
+  renderer.render(scene, camera);
+  log(`Saved crisp pixel render from the current camera at ${width} × ${height}.`, fileName);
+  return { fileName, width, height, dataUrl };
 }
 
 function loadShotImage(dataUrl) {

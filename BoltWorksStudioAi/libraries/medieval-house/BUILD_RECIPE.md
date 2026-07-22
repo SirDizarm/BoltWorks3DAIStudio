@@ -18,7 +18,7 @@ Reference groups:
 
 ## 3. Add the heavy timber frame
 
-Create continuous sill, corner, storey, wall-post, gable, and diagonal brace members. Timbers should overlap convincingly at joints and remain proud of the plaster infill. Use a restrained dark-brown family (`#34251F` is the main Blackstone roof/frame tone) with high roughness.
+Create continuous sill, corner, storey, wall-post, gable, and diagonal brace members. Timbers should overlap convincingly at joints and remain proud of the plaster infill. Use the shared `Hand-Hewn Dark Oak Timber` texture with high roughness; use color only as a restrained tint, not as a substitute for wood grain.
 
 ## 4. Recess plaster infill
 
@@ -69,7 +69,15 @@ Every completed building should include at least:
 
 Name cameras by location or purpose, not `Camera 1` once the view is known.
 
-## 10. Visual QA checklist
+For a player view, place a joint at eye height and choose **Player Camera on Joint**. The camera stores its direction and offset relative to that joint, follows joint translation and rotation, and hides camera/bone helpers while active.
+
+## 10. Make a separate game copy
+
+Keep the editable grouped building as the source model. **Game Optimize Copy** simplifies only dense geometry, bakes the material set into an atlas, merges the visible result to one game mesh, reports mesh/triangle counts before and after, and downloads a separate `.modelerproj`.
+
+Use **Pixel PNG** from an isometric or saved camera to create a low-resolution, color-quantized sprite with optional transparency. This is a render export; it does not destructively voxelize the source geometry.
+
+## 11. Visual QA checklist
 
 - No missing wall or roof surfaces from any standard view.
 - Corners are closed and masonry has visible mortar behind gaps.

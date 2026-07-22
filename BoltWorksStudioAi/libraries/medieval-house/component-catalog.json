@@ -14,9 +14,9 @@
     ]
   },
   "materials": {
-    "structuralOak": { "color": "#34251F", "roughness": 0.96 },
+    "structuralOak": { "texture": "../../../assets/textures/aged-dark-oak-beams.png", "roughness": 0.94 },
     "leadedGlass": { "color": "#24444C", "roughness": 0.18, "opacity": 0.38 },
-    "castIron": { "color": "#171817", "roughness": 0.82 },
+    "castIron": { "texture": "../../../assets/textures/hammered-black-iron.png", "roughness": 0.76 },
     "fieldstoneTexture": "../../../samples/showcases/textures/mossy-fieldstone.png",
     "roofTexture": "../../../samples/showcases/textures/mossy-terracotta-roof.png",
     "floorTexture": "../../../assets/textures/aged-wide-oak-floorboards.png"

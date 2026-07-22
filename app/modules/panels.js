@@ -11,7 +11,9 @@ function animate() {
   requestAnimationFrame(animate);
   resize();
   boneGridAxisGroup.visible = !!els.showGridInput?.checked;
+  syncActiveJointCamera();
   orbit.update();
+  syncCameraDirectorVisibility();
   syncSelectionOutlineTransforms();
   if (lineSketchMode && lineSketchPoints.length) updateLineSketchGuide();
   if (lineSketchMode && lineSketchHover?.point) {
@@ -297,6 +299,7 @@ els.previewRightBtn.addEventListener("click", () => previewShotView("right"));
 els.previewTopBtn.addEventListener("click", () => previewShotView("top"));
 els.previewIsoBtn.addEventListener("click", () => previewShotView("iso"));
 els.addCustomCameraBtn.addEventListener("click", addCustomCameraView);
+els.addPlayerCameraBtn.addEventListener("click", addPlayerCameraOnSelectedJoint);
 els.viewCustomCameraBtn.addEventListener("click", () => activateCustomCameraView());
 els.updateCustomCameraBtn.addEventListener("click", updateCustomCameraFromCurrentView);
 els.deleteCustomCameraBtn.addEventListener("click", deleteCustomCameraView);
@@ -321,10 +324,12 @@ customCameraInputs().forEach(input => {
   });
 });
 els.showCustomCamerasInput.addEventListener("change", () => {
-  cameraDirectorGroup.visible = els.showCustomCamerasInput.checked;
+  renderCustomCameraMarkers();
   log(`${els.showCustomCamerasInput.checked ? "Showing" : "Hiding"} camera directors in the viewport.`);
 });
-orbit.addEventListener("start", () => {
+els.exportGameCopyBtn.addEventListener("click", saveGameOptimizedCopy);
+els.savePixelRenderBtn.addEventListener("click", savePixelRenderPng);
+canvas.addEventListener("pointerdown", () => {
   if (!activeCustomCameraId) return;
   activeCustomCameraId = null;
   renderCustomCameraMarkers();
