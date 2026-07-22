@@ -69,7 +69,7 @@ Every completed building should include at least:
 
 Name cameras by location or purpose, not `Camera 1` once the view is known.
 
-For a player view, navigate to the exact eye position and choose **Create Player + View Here**. BoltWorks places a low-poly avatar with a dedicated head joint, preserves the current aim, and keeps the joint editable in Front/Side while hiding it from the main viewport. Move or rotate the avatar as one normal mesh; the head joint and camera follow. While attached, viewport dragging changes only yaw and pitch, and the camera position and wheel zoom remain locked to the head joint. Choose **Detach / See Player** for a third-person view of the avatar, then **View Selected** to attach again. **Use Current View** moves the avatar, player camera, and head joint together with zero offset.
+For a player view, navigate to the exact eye position and choose **Create Player + View Here**. BoltWorks places its 1.8 m faceted robot avatar—with armored panels, dark articulated joints, black visor, and red details—and gives it a dedicated head joint. The current aim is preserved, while the joint remains editable in Front/Side and hidden from the main viewport. Move or rotate the avatar as one normal mesh; the head joint and camera follow. While attached, viewport dragging changes only yaw and pitch, and the camera position and wheel zoom remain locked to the head joint. Choose **Detach / See Player** for a third-person view of the avatar, then **View Selected** to attach again. **Use Current View** moves the avatar, player camera, and head joint together with zero offset.
 
 ## 10. Make a separate game copy
 

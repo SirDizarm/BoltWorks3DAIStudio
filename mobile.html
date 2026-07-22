@@ -446,6 +446,7 @@
       const geometry = new THREE.BufferGeometry();
       geometry.setAttribute("position", new THREE.Float32BufferAttribute(data.positions || [], 3));
       if (data.normals?.length === data.positions?.length) geometry.setAttribute("normal", new THREE.Float32BufferAttribute(data.normals, 3));
+      if (data.colors?.length === data.positions?.length) geometry.setAttribute("color", new THREE.Float32BufferAttribute(data.colors, 3));
       if (data.uvs?.length) geometry.setAttribute("uv", new THREE.Float32BufferAttribute(data.uvs, 2));
       if (data.indices?.length) geometry.setIndex(data.indices);
       if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
@@ -620,7 +621,7 @@
       const material = new THREE.MeshStandardMaterial({
         color: spec.color || "#40c7a5",
         roughness: spec.roughness ?? .6,
-        metalness: .05
+        metalness: spec.materialRule === "metal" ? .52 : .05
       });
       if (spec.textureUrl) {
         const texture = new THREE.TextureLoader().load(spec.textureUrl);
@@ -638,6 +639,7 @@
       const baseGeometry = spec.geometry ? geometryFromData(spec.geometry) : (shapeFactories[shape]?.() || shapeFactories.box());
       const geometry = applyGeometryCuts(baseGeometry, spec);
       const mesh = new THREE.Mesh(geometry, materialFor(spec));
+      mesh.material.vertexColors = !!geometry.getAttribute("color");
       mesh.name = spec.name || shape;
       mesh.position.fromArray(spec.position || [0, .5, 0]);
       mesh.rotation.set(

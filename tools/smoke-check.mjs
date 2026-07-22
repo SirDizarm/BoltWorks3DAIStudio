@@ -137,6 +137,8 @@ for (const required of [
   "joint.layers.disable(0)",
   "playerAvatar: !!playerAvatar",
   "function lowPolyPlayerAvatarGeometryData()",
+  "BoltWorks Player Avatar",
+  "geometry.setAttribute(\"color\"",
   "function syncPlayerAvatarBones",
   "function activateCustomCameraView",
   "function restoreCustomCameraViews",

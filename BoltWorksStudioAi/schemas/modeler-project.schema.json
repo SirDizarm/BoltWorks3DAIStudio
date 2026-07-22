@@ -74,6 +74,10 @@
           "type": "array",
           "items": { "type": "number" }
         },
+        "colors": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
         "uvs": {
           "type": "array",
           "items": { "type": "number" }

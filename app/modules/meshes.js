@@ -1321,6 +1321,7 @@ function geometryFromData(data) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(data.positions, 3));
   if (data.normals?.length === data.positions.length) geometry.setAttribute("normal", new THREE.Float32BufferAttribute(data.normals, 3));
+  if (data.colors?.length === data.positions.length) geometry.setAttribute("color", new THREE.Float32BufferAttribute(data.colors, 3));
   if (data.uvs?.length) geometry.setAttribute("uv", new THREE.Float32BufferAttribute(data.uvs, 2));
   if (data.indices?.length) geometry.setIndex(data.indices);
   geometry.computeBoundingSphere();
@@ -1333,17 +1334,20 @@ function geometryToData(geometry) {
   source.computeVertexNormals();
   const position = source.getAttribute("position");
   const normal = source.getAttribute("normal");
+  const color = source.getAttribute("color");
   const uv = source.getAttribute("uv");
   const positions = [];
   const normals = [];
+  const colors = [];
   const uvs = [];
   for (let i = 0; i < position.count; i++) {
     positions.push(round(position.getX(i)), round(position.getY(i)), round(position.getZ(i)));
     normals.push(round(normal.getX(i)), round(normal.getY(i)), round(normal.getZ(i)));
+    if (color) colors.push(round(color.getX(i)), round(color.getY(i)), round(color.getZ(i)));
     if (uv) uvs.push(round(uv.getX(i)), round(uv.getY(i)));
   }
   source.dispose();
-  return { positions, normals, uvs };
+  return { positions, normals, colors, uvs };
 }
 
 function axisIndex(axis) {
@@ -1819,7 +1823,10 @@ function createMesh(spec = {}) {
   const baseGeometry = geometry ? geometryFromData(geometry) : (shapeFactories[shape]?.() ?? shapeFactories.box());
   const meshGeometry = applyGeometryCuts(baseGeometry, spec);
   const cuts = cutSpecFromObject(spec);
+  const normalizedMaterialRule = normalizeMaterialRule(materialRule);
   const mesh = new THREE.Mesh(meshGeometry, makeMaterial(color, roughness));
+  mesh.material.vertexColors = !!meshGeometry.getAttribute("color");
+  mesh.material.metalness = normalizedMaterialRule === "metal" ? .52 : .05;
   const materialOpacity = Math.max(.05, Math.min(1, Number(opacity) || 1));
   mesh.material.opacity = materialOpacity;
   mesh.material.transparent = materialOpacity < .999;
@@ -1838,7 +1845,7 @@ function createMesh(spec = {}) {
     textureRobloxAssetId: normalizeRobloxAssetId(textureRobloxAssetId || ""),
     textureFlipY,
     textureRotation: normalizeTextureRotation(textureRotation),
-    materialRule: normalizeMaterialRule(materialRule),
+    materialRule: normalizedMaterialRule,
     pivot: Array.isArray(pivot) ? pivot.map(Number) : null,
     hidden: !!hidden,
     linkId: typeof linkId === "string" && linkId.trim() ? linkId.trim() : null,

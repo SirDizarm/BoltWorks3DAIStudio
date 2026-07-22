@@ -31935,6 +31935,7 @@ void main() {
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new Float32BufferAttribute(data.positions, 3));
     if (data.normals?.length === data.positions.length) geometry.setAttribute("normal", new Float32BufferAttribute(data.normals, 3));
+    if (data.colors?.length === data.positions.length) geometry.setAttribute("color", new Float32BufferAttribute(data.colors, 3));
     if (data.uvs?.length) geometry.setAttribute("uv", new Float32BufferAttribute(data.uvs, 2));
     if (data.indices?.length) geometry.setIndex(data.indices);
     geometry.computeBoundingSphere();
@@ -31946,17 +31947,20 @@ void main() {
     source.computeVertexNormals();
     const position = source.getAttribute("position");
     const normal = source.getAttribute("normal");
+    const color = source.getAttribute("color");
     const uv = source.getAttribute("uv");
     const positions = [];
     const normals = [];
+    const colors = [];
     const uvs = [];
     for (let i = 0; i < position.count; i++) {
       positions.push(round2(position.getX(i)), round2(position.getY(i)), round2(position.getZ(i)));
       normals.push(round2(normal.getX(i)), round2(normal.getY(i)), round2(normal.getZ(i)));
+      if (color) colors.push(round2(color.getX(i)), round2(color.getY(i)), round2(color.getZ(i)));
       if (uv) uvs.push(round2(uv.getX(i)), round2(uv.getY(i)));
     }
     source.dispose();
-    return { positions, normals, uvs };
+    return { positions, normals, colors, uvs };
   }
   function axisIndex(axis) {
     return { x: 0, y: 1, z: 2 }[axis] ?? 0;
@@ -32394,7 +32398,10 @@ void main() {
     const baseGeometry = geometry ? geometryFromData(geometry) : shapeFactories[shape]?.() ?? shapeFactories.box();
     const meshGeometry = applyGeometryCuts(baseGeometry, spec);
     const cuts = cutSpecFromObject(spec);
+    const normalizedMaterialRule = normalizeMaterialRule(materialRule);
     const mesh = new Mesh(meshGeometry, makeMaterial(color, roughness));
+    mesh.material.vertexColors = !!meshGeometry.getAttribute("color");
+    mesh.material.metalness = normalizedMaterialRule === "metal" ? 0.52 : 0.05;
     const materialOpacity = Math.max(0.05, Math.min(1, Number(opacity) || 1));
     mesh.material.opacity = materialOpacity;
     mesh.material.transparent = materialOpacity < 0.999;
@@ -32413,7 +32420,7 @@ void main() {
       textureRobloxAssetId: normalizeRobloxAssetId(textureRobloxAssetId || ""),
       textureFlipY,
       textureRotation: normalizeTextureRotation(textureRotation),
-      materialRule: normalizeMaterialRule(materialRule),
+      materialRule: normalizedMaterialRule,
       pivot: Array.isArray(pivot) ? pivot.map(Number) : null,
       hidden: !!hidden,
       linkId: typeof linkId === "string" && linkId.trim() ? linkId.trim() : null,
@@ -41049,24 +41056,74 @@ end
   }
   function lowPolyPlayerAvatarGeometryData() {
     const parts = [];
-    const addPart = (geometry2, position, rotation = [0, 0, 0]) => {
+    const palette = {
+      armor: "#727980",
+      armorLight: "#a8adb1",
+      armorDark: "#41474c",
+      joint: "#15191c",
+      visor: "#070a0c",
+      accent: "#ff3e38"
+    };
+    const addPart = (geometry2, position, rotation = [0, 0, 0], scale = [1, 1, 1], color = palette.armor) => {
+      const vertexColor = new Color(color);
+      const count = geometry2.getAttribute("position").count;
+      const colors = new Float32Array(count * 3);
+      for (let index = 0; index < count; index++) {
+        colors[index * 3] = vertexColor.r;
+        colors[index * 3 + 1] = vertexColor.g;
+        colors[index * 3 + 2] = vertexColor.b;
+      }
+      geometry2.setAttribute("color", new BufferAttribute(colors, 3));
       const matrix = new Matrix4().compose(
         new Vector3(...position),
         new Quaternion().setFromEuler(new Euler(...rotation)),
-        new Vector3(1, 1, 1)
+        new Vector3(...scale)
       );
       geometry2.applyMatrix4(matrix);
       parts.push(geometry2);
     };
-    addPart(new BoxGeometry(0.24, 0.72, 0.26), [-0.17, 0.42, 0]);
-    addPart(new BoxGeometry(0.24, 0.72, 0.26), [0.17, 0.42, 0]);
-    addPart(new BoxGeometry(0.56, 0.22, 0.34), [0, 0.82, 0]);
-    addPart(new BoxGeometry(0.66, 0.66, 0.36), [0, 1.19, 0]);
-    addPart(new BoxGeometry(0.18, 0.72, 0.2), [-0.43, 1.17, 0], [0, 0, -0.08]);
-    addPart(new BoxGeometry(0.18, 0.72, 0.2), [0.43, 1.17, 0], [0, 0, 0.08]);
-    addPart(new CylinderGeometry(0.1, 0.12, 0.14, 8), [0, 1.57, 0]);
-    addPart(new SphereGeometry(0.23, 10, 7), [0, 1.76, 0]);
-    addPart(new ConeGeometry(0.07, 0.16, 6), [0, 1.76, -0.23], [-Math.PI / 2, 0, 0]);
+    for (const side of [-1, 1]) {
+      const x = side * 0.17;
+      addPart(new BoxGeometry(0.25, 0.12, 0.38, 1, 1, 1), [x, 0.08, -0.055], [0, 0, 0], [1, 1, 1], palette.armorLight);
+      addPart(new BoxGeometry(0.21, 0.09, 0.17), [x, 0.15, 0.075], [0, 0, 0], [1, 1, 1], palette.armorDark);
+      addPart(new CylinderGeometry(0.125, 0.145, 0.36, 6), [x, 0.37, 0.02], [0, 0, 0], [1, 1, 0.82], palette.armor);
+      addPart(new SphereGeometry(0.125, 7, 5), [x, 0.59, 0], [0, 0, 0], [1, 0.82, 0.88], palette.joint);
+      addPart(new TorusGeometry(0.078, 0.018, 5, 10), [x, 0.59, -0.105], [0, 0, 0], [1, 1, 1], palette.accent);
+      addPart(new CylinderGeometry(0.145, 0.125, 0.34, 6), [x, 0.79, 0], [0, 0, side * 0.025], [1, 1, 0.88], palette.armor);
+      addPart(new BoxGeometry(0.2, 0.27, 0.04), [x, 0.8, -0.13], [0, 0, side * 0.025], [1, 1, 1], palette.armorLight);
+    }
+    addPart(new CylinderGeometry(0.29, 0.25, 0.2, 6), [0, 1, 0], [0, 0, 0], [1, 1, 0.78], palette.armorLight);
+    addPart(new CylinderGeometry(0.22, 0.2, 0.24, 8), [0, 1.15, 0], [0, 0, 0], [1, 1, 0.82], palette.joint);
+    for (const y of [1.08, 1.15, 1.22]) {
+      addPart(new TorusGeometry(0.205, 0.022, 4, 10), [0, y, 0], [Math.PI / 2, 0, 0], [1, 0.78, 1], palette.armorDark);
+    }
+    addPart(new CylinderGeometry(0.36, 0.25, 0.43, 6), [0, 1.36, 0], [0, 0, 0], [1, 1, 0.72], palette.armor);
+    addPart(new BoxGeometry(0.46, 0.29, 0.055), [0, 1.39, -0.245], [0, 0, 0], [1, 1, 1], palette.armorDark);
+    addPart(new BoxGeometry(0.24, 0.22, 0.025), [0, 1.4, -0.281], [0, 0, 0], [1, 1, 1], palette.visor);
+    addPart(new BoxGeometry(0.055, 0.15, 0.018), [-0.025, 1.43, -0.3], [0, 0, -0.42], [1, 1, 1], palette.accent);
+    addPart(new BoxGeometry(0.052, 0.13, 0.018), [0.027, 1.35, -0.3], [0, 0, -0.42], [1, 1, 1], palette.accent);
+    for (const side of [-1, 1]) {
+      const shoulderX = side * 0.43;
+      addPart(new SphereGeometry(0.17, 7, 5), [shoulderX, 1.43, 0], [0, 0, 0], [1.12, 0.82, 0.92], palette.armorLight);
+      addPart(new SphereGeometry(0.1, 7, 5), [shoulderX, 1.4, 0], [0, 0, 0], [1, 1, 1], palette.joint);
+      addPart(new CylinderGeometry(0.115, 0.095, 0.29, 6), [side * 0.47, 1.22, 0], [0, 0, side * 0.1], [1, 1, 0.86], palette.armor);
+      addPart(new SphereGeometry(0.095, 7, 5), [side * 0.49, 1.04, 0], [0, 0, 0], [1, 0.85, 0.9], palette.joint);
+      addPart(new TorusGeometry(0.059, 0.014, 5, 10), [side * 0.49, 1.04, -0.083], [0, 0, 0], [1, 1, 1], palette.accent);
+      addPart(new CylinderGeometry(0.09, 0.115, 0.29, 6), [side * 0.5, 0.86, 0], [0, 0, side * 0.035], [1, 1, 0.8], palette.armorLight);
+      addPart(new BoxGeometry(0.15, 0.13, 0.16), [side * 0.505, 0.66, -0.01], [0, 0, 0], [1, 1, 1], palette.joint);
+      for (const finger of [-1, 0, 1]) {
+        addPart(new BoxGeometry(0.035, 0.15, 0.045), [side * (0.515 + finger * 2e-3), 0.545, finger * 0.052], [0, 0, side * 0.04], [1, 1, 1], palette.armorDark);
+      }
+    }
+    addPart(new CylinderGeometry(0.095, 0.11, 0.12, 8), [0, 1.61, 0], [0, 0, 0], [1, 1, 1], palette.joint);
+    addPart(new SphereGeometry(0.21, 8, 6), [0, 1.7, 0], [0, 0, 0], [1.04, 0.84, 0.9], palette.armorLight);
+    addPart(new BoxGeometry(0.31, 0.25, 0.045), [0, 1.69, -0.183], [0, 0, 0], [1, 1, 1], palette.visor);
+    addPart(new BoxGeometry(0.033, 0.105, 0.018), [-0.07, 1.7, -0.216], [0, 0, 0], [1, 1, 1], palette.accent);
+    addPart(new BoxGeometry(0.033, 0.105, 0.018), [0.07, 1.7, -0.216], [0, 0, 0], [1, 1, 1], palette.accent);
+    for (const side of [-1, 1]) {
+      addPart(new CylinderGeometry(0.082, 0.082, 0.055, 8), [side * 0.205, 1.7, 0], [0, 0, Math.PI / 2], [1, 1, 1], palette.armorDark);
+      addPart(new CylinderGeometry(0.05, 0.05, 0.061, 8), [side * 0.208, 1.7, 0], [0, 0, Math.PI / 2], [1, 1, 1], palette.joint);
+    }
     const geometry = mergeGeometries(parts, false);
     parts.forEach((part) => part.dispose());
     if (!geometry) throw new Error("Could not build the player avatar geometry.");
@@ -41087,7 +41144,7 @@ end
     if (flatDirection.lengthSq() < 1e-8) flatDirection.set(0, 0, -1);
     flatDirection.normalize();
     avatar.rotation.set(0, Math.atan2(-flatDirection.x, -flatDirection.z), 0);
-    const headOffset = new Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.76, 0]);
+    const headOffset = new Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.7, 0]);
     const worldOffset = headOffset.multiply(avatar.scale).applyQuaternion(avatar.quaternion);
     avatar.position.copy(camera.position).sub(worldOffset);
     avatar.updateMatrixWorld(true);
@@ -41097,7 +41154,7 @@ end
     const avatar = findObject(bone.avatarObjectId);
     if (!avatar?.userData?.playerAvatar) return false;
     avatar.updateMatrixWorld(true);
-    const headOffset = new Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.76, 0]);
+    const headOffset = new Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.7, 0]);
     bone.position.copy(avatar.localToWorld(headOffset));
     bone.rotation.set(
       MathUtils.radToDeg(avatar.rotation.x),
@@ -41215,14 +41272,15 @@ end
     const avatar = addObject({
       shape: "custom",
       geometry: lowPolyPlayerAvatarGeometryData(),
-      name: `Player Avatar ${playerIndex}`,
+      name: `BoltWorks Player Avatar ${playerIndex}`,
       position: [0, 0, 0],
       rotation: [0, 0, 0],
       scale: [1, 1, 1],
-      color: "#6f8796",
-      roughness: 0.82,
+      color: "#ffffff",
+      roughness: 0.58,
+      materialRule: "metal",
       playerAvatar: true,
-      playerHeadOffset: [0, 1.76, 0]
+      playerHeadOffset: [0, 1.7, 0]
     }, { record: false, select: false, update: false });
     placePlayerAvatarAtCamera(avatar, direction);
     const bone = {

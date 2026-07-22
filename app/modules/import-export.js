@@ -3875,24 +3875,83 @@ function addCustomCameraView() {
 
 function lowPolyPlayerAvatarGeometryData() {
   const parts = [];
-  const addPart = (geometry, position, rotation = [0, 0, 0]) => {
+  const palette = {
+    armor: "#727980",
+    armorLight: "#a8adb1",
+    armorDark: "#41474c",
+    joint: "#15191c",
+    visor: "#070a0c",
+    accent: "#ff3e38"
+  };
+  const addPart = (geometry, position, rotation = [0, 0, 0], scale = [1, 1, 1], color = palette.armor) => {
+    const vertexColor = new THREE.Color(color);
+    const count = geometry.getAttribute("position").count;
+    const colors = new Float32Array(count * 3);
+    for (let index = 0; index < count; index++) {
+      colors[index * 3] = vertexColor.r;
+      colors[index * 3 + 1] = vertexColor.g;
+      colors[index * 3 + 2] = vertexColor.b;
+    }
+    geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
     const matrix = new THREE.Matrix4().compose(
       new THREE.Vector3(...position),
       new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation)),
-      new THREE.Vector3(1, 1, 1)
+      new THREE.Vector3(...scale)
     );
     geometry.applyMatrix4(matrix);
     parts.push(geometry);
   };
-  addPart(new THREE.BoxGeometry(.24, .72, .26), [-.17, .42, 0]);
-  addPart(new THREE.BoxGeometry(.24, .72, .26), [.17, .42, 0]);
-  addPart(new THREE.BoxGeometry(.56, .22, .34), [0, .82, 0]);
-  addPart(new THREE.BoxGeometry(.66, .66, .36), [0, 1.19, 0]);
-  addPart(new THREE.BoxGeometry(.18, .72, .2), [-.43, 1.17, 0], [0, 0, -.08]);
-  addPart(new THREE.BoxGeometry(.18, .72, .2), [.43, 1.17, 0], [0, 0, .08]);
-  addPart(new THREE.CylinderGeometry(.1, .12, .14, 8), [0, 1.57, 0]);
-  addPart(new THREE.SphereGeometry(.23, 10, 7), [0, 1.76, 0]);
-  addPart(new THREE.ConeGeometry(.07, .16, 6), [0, 1.76, -.23], [-Math.PI / 2, 0, 0]);
+
+  // Feet, legs, and articulated knee details.
+  for (const side of [-1, 1]) {
+    const x = side * .17;
+    addPart(new THREE.BoxGeometry(.25, .12, .38, 1, 1, 1), [x, .08, -.055], [0, 0, 0], [1, 1, 1], palette.armorLight);
+    addPart(new THREE.BoxGeometry(.21, .09, .17), [x, .15, .075], [0, 0, 0], [1, 1, 1], palette.armorDark);
+    addPart(new THREE.CylinderGeometry(.125, .145, .36, 6), [x, .37, .02], [0, 0, 0], [1, 1, .82], palette.armor);
+    addPart(new THREE.SphereGeometry(.125, 7, 5), [x, .59, 0], [0, 0, 0], [1, .82, .88], palette.joint);
+    addPart(new THREE.TorusGeometry(.078, .018, 5, 10), [x, .59, -.105], [0, 0, 0], [1, 1, 1], palette.accent);
+    addPart(new THREE.CylinderGeometry(.145, .125, .34, 6), [x, .79, 0], [0, 0, side * .025], [1, 1, .88], palette.armor);
+    addPart(new THREE.BoxGeometry(.20, .27, .04), [x, .80, -.13], [0, 0, side * .025], [1, 1, 1], palette.armorLight);
+  }
+
+  // Pelvis, flexible abdomen, and faceted torso armor.
+  addPart(new THREE.CylinderGeometry(.29, .25, .20, 6), [0, 1.00, 0], [0, 0, 0], [1, 1, .78], palette.armorLight);
+  addPart(new THREE.CylinderGeometry(.22, .20, .24, 8), [0, 1.15, 0], [0, 0, 0], [1, 1, .82], palette.joint);
+  for (const y of [1.08, 1.15, 1.22]) {
+    addPart(new THREE.TorusGeometry(.205, .022, 4, 10), [0, y, 0], [Math.PI / 2, 0, 0], [1, .78, 1], palette.armorDark);
+  }
+  addPart(new THREE.CylinderGeometry(.36, .25, .43, 6), [0, 1.36, 0], [0, 0, 0], [1, 1, .72], palette.armor);
+  addPart(new THREE.BoxGeometry(.46, .29, .055), [0, 1.39, -.245], [0, 0, 0], [1, 1, 1], palette.armorDark);
+  addPart(new THREE.BoxGeometry(.24, .22, .025), [0, 1.40, -.281], [0, 0, 0], [1, 1, 1], palette.visor);
+  addPart(new THREE.BoxGeometry(.055, .15, .018), [-.025, 1.43, -.300], [0, 0, -.42], [1, 1, 1], palette.accent);
+  addPart(new THREE.BoxGeometry(.052, .13, .018), [.027, 1.35, -.300], [0, 0, -.42], [1, 1, 1], palette.accent);
+
+  // Shoulder shells, segmented arms, elbow rings, hands, and fingers.
+  for (const side of [-1, 1]) {
+    const shoulderX = side * .43;
+    addPart(new THREE.SphereGeometry(.17, 7, 5), [shoulderX, 1.43, 0], [0, 0, 0], [1.12, .82, .92], palette.armorLight);
+    addPart(new THREE.SphereGeometry(.10, 7, 5), [shoulderX, 1.40, 0], [0, 0, 0], [1, 1, 1], palette.joint);
+    addPart(new THREE.CylinderGeometry(.115, .095, .29, 6), [side * .47, 1.22, 0], [0, 0, side * .10], [1, 1, .86], palette.armor);
+    addPart(new THREE.SphereGeometry(.095, 7, 5), [side * .49, 1.04, 0], [0, 0, 0], [1, .85, .9], palette.joint);
+    addPart(new THREE.TorusGeometry(.059, .014, 5, 10), [side * .49, 1.04, -.083], [0, 0, 0], [1, 1, 1], palette.accent);
+    addPart(new THREE.CylinderGeometry(.09, .115, .29, 6), [side * .50, .86, 0], [0, 0, side * .035], [1, 1, .80], palette.armorLight);
+    addPart(new THREE.BoxGeometry(.15, .13, .16), [side * .505, .66, -.01], [0, 0, 0], [1, 1, 1], palette.joint);
+    for (const finger of [-1, 0, 1]) {
+      addPart(new THREE.BoxGeometry(.035, .15, .045), [side * (.515 + finger * .002), .545, finger * .052], [0, 0, side * .04], [1, 1, 1], palette.armorDark);
+    }
+  }
+
+  // Neck and helmet: armored shell, black faceplate, red eyes, and side modules.
+  addPart(new THREE.CylinderGeometry(.095, .11, .12, 8), [0, 1.61, 0], [0, 0, 0], [1, 1, 1], palette.joint);
+  addPart(new THREE.SphereGeometry(.21, 8, 6), [0, 1.70, 0], [0, 0, 0], [1.04, .84, .90], palette.armorLight);
+  addPart(new THREE.BoxGeometry(.31, .25, .045), [0, 1.69, -.183], [0, 0, 0], [1, 1, 1], palette.visor);
+  addPart(new THREE.BoxGeometry(.033, .105, .018), [-.070, 1.70, -.216], [0, 0, 0], [1, 1, 1], palette.accent);
+  addPart(new THREE.BoxGeometry(.033, .105, .018), [.070, 1.70, -.216], [0, 0, 0], [1, 1, 1], palette.accent);
+  for (const side of [-1, 1]) {
+    addPart(new THREE.CylinderGeometry(.082, .082, .055, 8), [side * .205, 1.70, 0], [0, 0, Math.PI / 2], [1, 1, 1], palette.armorDark);
+    addPart(new THREE.CylinderGeometry(.050, .050, .061, 8), [side * .208, 1.70, 0], [0, 0, Math.PI / 2], [1, 1, 1], palette.joint);
+  }
+
   const geometry = mergeGeometries(parts, false);
   parts.forEach(part => part.dispose());
   if (!geometry) throw new Error("Could not build the player avatar geometry.");
@@ -3915,7 +3974,7 @@ function placePlayerAvatarAtCamera(avatar, direction = playerViewDirection()) {
   if (flatDirection.lengthSq() < 1e-8) flatDirection.set(0, 0, -1);
   flatDirection.normalize();
   avatar.rotation.set(0, Math.atan2(-flatDirection.x, -flatDirection.z), 0);
-  const headOffset = new THREE.Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.76, 0]);
+  const headOffset = new THREE.Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.70, 0]);
   const worldOffset = headOffset.multiply(avatar.scale).applyQuaternion(avatar.quaternion);
   avatar.position.copy(camera.position).sub(worldOffset);
   avatar.updateMatrixWorld(true);
@@ -3926,7 +3985,7 @@ function syncPlayerAvatarBone(bone) {
   const avatar = findObject(bone.avatarObjectId);
   if (!avatar?.userData?.playerAvatar) return false;
   avatar.updateMatrixWorld(true);
-  const headOffset = new THREE.Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.76, 0]);
+  const headOffset = new THREE.Vector3().fromArray(avatar.userData.playerHeadOffset || [0, 1.70, 0]);
   bone.position.copy(avatar.localToWorld(headOffset));
   bone.rotation.set(
     THREE.MathUtils.radToDeg(avatar.rotation.x),
@@ -4052,14 +4111,15 @@ function addPlayerCameraOnSelectedJoint() {
   const avatar = addObject({
     shape: "custom",
     geometry: lowPolyPlayerAvatarGeometryData(),
-    name: `Player Avatar ${playerIndex}`,
+    name: `BoltWorks Player Avatar ${playerIndex}`,
     position: [0, 0, 0],
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
-    color: "#6f8796",
-    roughness: .82,
+    color: "#ffffff",
+    roughness: .58,
+    materialRule: "metal",
     playerAvatar: true,
-    playerHeadOffset: [0, 1.76, 0]
+    playerHeadOffset: [0, 1.70, 0]
   }, { record: false, select: false, update: false });
   placePlayerAvatarAtCamera(avatar, direction);
   const bone = {
