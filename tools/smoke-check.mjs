@@ -11,9 +11,18 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const directBundle = readFileSync(new URL("../app/studio-v48.0.14.js", import.meta.url), "utf8");
+const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
+const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${applicationSource}`;
+
+if (!authoringManifest.machineResources?.styleLibraries?.includes("libraries/medieval-house/README.md")) {
+  throw new Error("BoltWorksStudioAi manifest must expose the medieval house style library.");
+}
+if (!projectSchema.$defs?.object?.properties?.opacity || !projectSchema.$defs?.editor?.properties?.cameraViews) {
+  throw new Error("Project schema must describe transparent materials and custom camera views.");
+}
 
 const facetedBallBuilders = {
   box: () => "box",
@@ -115,6 +124,16 @@ for (const required of [
   "previewTopBtn",
   "previewIsoBtn",
   "resetZoomBtn",
+  "Camera Views",
+  "data-collapse-persist=\"camera-views\"",
+  "Add Camera Here",
+  "customCameraList",
+  "showCustomCamerasInput",
+  "function addCustomCameraView()",
+  "function activateCustomCameraView",
+  "function restoreCustomCameraViews",
+  "cameraDirectorGroup.visible = false",
+  "cameraViewsCollapsed",
   "viewSpaceInput",
   "shotSpaceInput",
   "environmentSelect",
@@ -160,6 +179,15 @@ for (const required of [
   "panelCollapseStoragePrefix",
   "Heart",
   "TransformControls",
+  "function additiveSelectionRequested(event)",
+  "event?.shiftKey || event?.ctrlKey || event?.metaKey",
+  "Multi-select: Shift/Ctrl+click",
+  "function mirrorMeshAcrossWorldPlane(mesh, axis, center)",
+  "groupBoundsCenter(targets)",
+  "parts around their shared ${axis.toUpperCase()} center",
+  "Duplicated ${copies.length} object",
+  "delete data.id",
+  "removeObject(mesh, { record: false, update: false })",
   "Flip X",
   "Flip Y",
   "Flip Z",
@@ -327,10 +355,10 @@ for (const required of [
   "pulled triangle extrusion",
   "one editable extrusion",
   "transform.setSpace(activeTransformMode === \"rotate\" ? \"local\" : \"world\")",
-  "pickFace(hit, { append: event.shiftKey })",
+  "pickFace(hit, { append: additiveSelectionRequested(event) })",
   "pickFace(hit, { append: true, toggleExisting: false, silent: true })",
   "Finished paint selection",
-  "Hold Shift to add/remove more",
+  "Hold Shift or Ctrl to add/remove more",
   "Click Marker again on the same triangle to remove it",
   "Triangle cursor: click a mesh triangle",
   "library_images",
@@ -377,8 +405,11 @@ for (const required of [
   "bevelSelectedFace",
   "createBevelFacePatch",
   "coplanarConnectedFaces",
-  "selected.material.transparent = false",
-  "selected.material.opacity = 1",
+  "selected.material.transparent = opacity < .999",
+  "selected.material.opacity = opacity",
+  "opacityInput",
+  "Opacity",
+  "mesh.material.depthWrite = materialOpacity >= .999",
   "selected.material.wireframe = false",
   "position.getX(i) * METERS_PER_ROBLOX_STUD",
   "unitScale: ROBLOX_STUDS_PER_METER",

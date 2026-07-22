@@ -1,0 +1,50 @@
+{
+  "library": "medieval-house",
+  "version": 1,
+  "canonicalProject": "../../../samples/showcases/blackstone-timber-manor.modelerproj",
+  "style": {
+    "name": "Blackstone medieval timber-and-fieldstone",
+    "periodSignals": [
+      "heavy exposed oak frame",
+      "aged recessed plaster infill",
+      "irregular fieldstone lower storey",
+      "mossed terracotta gable roof",
+      "leaded blue-grey glazing",
+      "visible interior roof trusses"
+    ]
+  },
+  "materials": {
+    "structuralOak": { "color": "#34251F", "roughness": 0.96 },
+    "leadedGlass": { "color": "#24444C", "roughness": 0.18, "opacity": 0.38 },
+    "castIron": { "color": "#171817", "roughness": 0.82 },
+    "fieldstoneTexture": "../../../samples/showcases/textures/mossy-fieldstone.png",
+    "roofTexture": "../../../samples/showcases/textures/mossy-terracotta-roof.png",
+    "floorTexture": "../../../assets/textures/aged-wide-oak-floorboards.png"
+  },
+  "components": [
+    { "groupId": "foundation", "groupName": "Masonry Foundation", "referenceCount": 7, "role": "structural lower base" },
+    { "groupId": "mortar-backing", "groupName": "Recessed Cement Mortar Backing", "referenceCount": 6, "role": "closes gaps behind irregular stones" },
+    { "groupId": "stonework", "groupName": "Interlocked Fieldstone Masonry", "referenceCount": 102, "role": "irregular wall veneer and closed corners" },
+    { "groupId": "timber", "groupName": "Heavy Timber Frame", "referenceCount": 52, "role": "posts, rails, braces, gable structure" },
+    { "groupId": "plaster", "groupName": "Aged Plaster Infill", "referenceCount": 44, "role": "recessed panels between timbers" },
+    { "groupId": "windows", "groupName": "Leaded Windows", "referenceCount": 64, "role": "frames, transparent glass, lead lattice" },
+    { "groupId": "doors", "groupName": "Doors and Ironwork", "referenceCount": 42, "role": "doors, hinges, handles, reinforcement" },
+    { "groupId": "roof", "groupName": "Shingled Gable Roof", "referenceCount": 16, "role": "roof skin, ridge, and caps" },
+    { "groupId": "interior-roof-frame", "groupName": "Interior Roof Beams", "referenceCount": 15, "role": "paired rafters and collar ties" },
+    { "groupId": "chimney", "groupName": "Stone Chimney", "referenceCount": 4, "role": "masonry stack and cap" },
+    { "groupId": "cast-iron-stove", "groupName": "Cast Iron Stove and Flue", "referenceCount": 10, "role": "interior heat source connected to chimney" },
+    { "groupId": "interior", "groupName": "Interior Staircase and Railings", "referenceCount": 31, "role": "floor circulation and safety" },
+    { "groupId": "upper-floor-finish", "groupName": "Finished Upper Floor", "referenceCount": 2, "role": "aged oak walking surface around stair opening" },
+    { "groupId": "basement-furnishings", "groupName": "Basement Furniture", "referenceCount": 8, "role": "scale, occupation, and lived-in context" },
+    { "groupId": "details", "groupName": "Architectural Details", "referenceCount": 22, "role": "secondary trim and silhouette detail" }
+  ],
+  "requiredCameraNames": ["Exterior", "Primary Interior", "Cellar or Lower Floor"],
+  "avoid": [
+    "opaque glass pretending to be a window",
+    "flat stone wallpaper without recessed mortar",
+    "roof skins with no visible interior support",
+    "identical cloned houses across a village",
+    "chimneys or flues that stop short of one another",
+    "merged single-mesh buildings that cannot be edited by system"
+  ]
+}

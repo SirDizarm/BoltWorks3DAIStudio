@@ -1,0 +1,129 @@
+{
+  "kind": "modeler-project",
+  "version": 1,
+  "name": "ai-minimal-shelter",
+  "savedAt": "2026-07-21T12:00:00.000Z",
+  "textureLibrary": [],
+  "scene": {
+    "version": 2,
+    "coordinateSystem": {
+      "handedness": "right-handed",
+      "units": "meters",
+      "upAxis": "+Y",
+      "groundPlane": "XZ",
+      "rotationUnits": "degrees",
+      "eulerOrder": "XYZ",
+      "objectPositions": "world space",
+      "geometryAndPivots": "object-local space"
+    },
+    "shapeConventions": {
+      "defaultOrigin": "Built-in geometry is centered on its local origin before object transforms."
+    },
+    "groups": [
+      {
+        "id": "shelter",
+        "name": "Minimal Shelter",
+        "parentId": null
+      },
+      {
+        "id": "structure",
+        "name": "Structure",
+        "parentId": "shelter"
+      },
+      {
+        "id": "roof",
+        "name": "Roof",
+        "parentId": "shelter"
+      }
+    ],
+    "objects": [
+      {
+        "id": "floor",
+        "name": "Stone floor",
+        "shape": "box",
+        "position": [0, 0.1, 0],
+        "rotation": [0, 0, 0],
+        "scale": [4.4, 0.2, 3.4],
+        "color": "#77736b",
+        "roughness": 0.9,
+        "hidden": false,
+        "groupId": "structure",
+        "groupName": "Structure"
+      },
+      {
+        "id": "post-left",
+        "name": "Left post",
+        "shape": "box",
+        "position": [-1.7, 1.6, 0],
+        "rotation": [0, 0, 0],
+        "scale": [0.3, 3, 0.3],
+        "color": "#593621",
+        "roughness": 0.82,
+        "hidden": false,
+        "groupId": "structure",
+        "groupName": "Structure"
+      },
+      {
+        "id": "post-right",
+        "name": "Right post",
+        "shape": "box",
+        "position": [1.7, 1.6, 0],
+        "rotation": [0, 0, 0],
+        "scale": [0.3, 3, 0.3],
+        "color": "#593621",
+        "roughness": 0.82,
+        "hidden": false,
+        "groupId": "structure",
+        "groupName": "Structure"
+      },
+      {
+        "id": "roof-left",
+        "name": "Left roof slope",
+        "shape": "panel",
+        "position": [0, 3.18, -0.82],
+        "rotation": [-32, 0, 0],
+        "scale": [4.7, 2.15, 1],
+        "color": "#78442b",
+        "roughness": 0.88,
+        "hidden": false,
+        "groupId": "roof",
+        "groupName": "Roof"
+      },
+      {
+        "id": "roof-right",
+        "name": "Right roof slope",
+        "shape": "panel",
+        "position": [0, 3.18, 0.82],
+        "rotation": [32, 0, 0],
+        "scale": [4.7, 2.15, 1],
+        "color": "#78442b",
+        "roughness": 0.88,
+        "hidden": false,
+        "groupId": "roof",
+        "groupName": "Roof"
+      }
+    ],
+    "boneHierarchy": []
+  },
+  "editor": {
+    "projectName": "ai-minimal-shelter",
+    "selectedId": null,
+    "selectedGroupId": null,
+    "checkedIds": [],
+    "activeGroupIds": [],
+    "activeTransformMode": null,
+    "facePickMode": false,
+    "view": {
+      "cameraPosition": [7, 5, 7],
+      "orbitTarget": [0, 1.8, 0],
+      "cameraUp": [0, 1, 0],
+      "viewSpace": 1.5,
+      "shotZoom": 0.85,
+      "environment": "plain",
+      "background": "plain",
+      "showGrid": true,
+      "useCurrentZoomInShots": false,
+      "hideGridInShots": true
+    }
+  }
+}

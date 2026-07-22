@@ -29779,6 +29779,12 @@ void main() {
   markerGroup.name = "marker helpers";
   scene.add(markerGroup);
   var markerHelpers = [];
+  var cameraDirectorGroup = new Group();
+  cameraDirectorGroup.name = "camera director helpers";
+  scene.add(cameraDirectorGroup);
+  var customCameraViews = [];
+  var selectedCustomCameraId = null;
+  var customCameraIdCounter = 0;
   var sceneGroupRegistry = /* @__PURE__ */ new Map();
   var selectedGroupRecordId = null;
   var els = {
@@ -29817,6 +29823,21 @@ void main() {
     inspectorToggle: document.querySelector("#inspectorToggle"),
     utilitiesSection: document.querySelector("#utilitiesSection"),
     utilitiesToggle: document.querySelector("#utilitiesToggle"),
+    cameraViewsSection: document.querySelector("#cameraViewsSection"),
+    cameraViewsToggle: document.querySelector("#cameraViewsToggle"),
+    addCustomCameraBtn: document.querySelector("#addCustomCameraBtn"),
+    viewCustomCameraBtn: document.querySelector("#viewCustomCameraBtn"),
+    updateCustomCameraBtn: document.querySelector("#updateCustomCameraBtn"),
+    deleteCustomCameraBtn: document.querySelector("#deleteCustomCameraBtn"),
+    customCameraList: document.querySelector("#customCameraList"),
+    customCameraNameInput: document.querySelector("#customCameraNameInput"),
+    customCameraPosX: document.querySelector("#customCameraPosX"),
+    customCameraPosY: document.querySelector("#customCameraPosY"),
+    customCameraPosZ: document.querySelector("#customCameraPosZ"),
+    customCameraTargetX: document.querySelector("#customCameraTargetX"),
+    customCameraTargetY: document.querySelector("#customCameraTargetY"),
+    customCameraTargetZ: document.querySelector("#customCameraTargetZ"),
+    showCustomCamerasInput: document.querySelector("#showCustomCamerasInput"),
     imageReliefMeshPlugin: document.querySelector("#imageReliefMeshPlugin"),
     sceneRenderingTools: document.querySelector("#sceneRenderingTools"),
     boneAxisFreeBtn: document.querySelector("#boneAxisFreeBtn"),
@@ -29909,6 +29930,8 @@ void main() {
     colorHexInput: document.querySelector("#colorHexInput"),
     roughInput: document.querySelector("#roughInput"),
     roughValue: document.querySelector("#roughValue"),
+    opacityInput: document.querySelector("#opacityInput"),
+    opacityValue: document.querySelector("#opacityValue"),
     cutSideSelect: document.querySelector("#cutSideSelect"),
     cutAmountInput: document.querySelector("#cutAmountInput"),
     cutMeshBtn: document.querySelector("#cutMeshBtn"),
@@ -31795,7 +31818,7 @@ void main() {
     };
   }
   function createMesh(spec = {}) {
-    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
+    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
     shape = normalizeShapeName(shape);
     const defaultOrdinal = idCounter;
     const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -31806,6 +31829,11 @@ void main() {
     const meshGeometry = applyGeometryCuts(baseGeometry, spec);
     const cuts = cutSpecFromObject(spec);
     const mesh = new Mesh(meshGeometry, makeMaterial(color, roughness));
+    const materialOpacity = Math.max(0.05, Math.min(1, Number(opacity) || 1));
+    mesh.material.opacity = materialOpacity;
+    mesh.material.transparent = materialOpacity < 0.999;
+    mesh.material.depthWrite = materialOpacity >= 0.999;
+    mesh.material.needsUpdate = true;
     mesh.name = name || `${shape} ${defaultOrdinal}`;
     mesh.userData = {
       id: objectId,
@@ -31813,6 +31841,7 @@ void main() {
       geometry: geometry || null,
       color,
       roughness,
+      opacity: materialOpacity,
       textureUrl,
       textureName,
       textureRobloxAssetId: normalizeRobloxAssetId(textureRobloxAssetId || ""),
@@ -32474,7 +32503,7 @@ void main() {
       transform.setSpace(activeTransformMode === "rotate" ? "local" : "world");
     }
     updateTransformAttachment();
-    els.hudText.textContent = activeTransformMode ? `${activeTransformMode[0].toUpperCase()}${activeTransformMode.slice(1)} gizmo active | Click ${activeTransformMode} again to turn it off` : "Orbit: drag | Select: click | Transform tools: toggle Move/Rotate/Scale";
+    els.hudText.textContent = activeTransformMode ? `${activeTransformMode[0].toUpperCase()}${activeTransformMode.slice(1)} gizmo active | Click ${activeTransformMode} again to turn it off` : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
   }
   function setDragPushMode(enabled, { silent = false } = {}) {
     finishDragPushSession();
@@ -32485,7 +32514,7 @@ void main() {
       setFacePickMode(true);
       els.hudText.textContent = `Drag/Push mode: drag left or right to move selected triangles along ${String(els.dragPushAxisSelect?.value || "normal").toUpperCase()} in snapped ${Number(els.dragPushStepInput?.value || 0.01)} steps`;
     } else {
-      els.hudText.textContent = facePickMode ? "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, Push, or Bevel Face" : "Orbit: drag | Select: click | Transform tools: toggle Move/Rotate/Scale";
+      els.hudText.textContent = facePickMode ? "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, Push, or Bevel Face" : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
     }
     if (!silent) log(dragPushMode ? "Drag/Push mode enabled." : "Drag/Push mode disabled.");
   }
@@ -32698,6 +32727,9 @@ void main() {
     const linked = linkedObjects(mesh);
     return linked.length > 1 ? linked.map((object) => object.userData.id) : [];
   }
+  function additiveSelectionRequested(event) {
+    return !!(event?.shiftKey || event?.ctrlKey || event?.metaKey);
+  }
   function selectObject(mesh, { keepGroup = false, append = false } = {}) {
     if (append && !mesh) return;
     if (selectedHoleLoopInfo?.targetId) {
@@ -32707,6 +32739,7 @@ void main() {
       }
     }
     if (mesh) selectedGroupRecordId = null;
+    let nextSelected = mesh || null;
     if (!keepGroup) {
       if (append && mesh) {
         const seedIds = activeGroupIds.length ? activeGroupIds : selected ? linkSelectionIds(selected).length ? linkSelectionIds(selected) : [selected.userData.id] : [];
@@ -32719,12 +32752,15 @@ void main() {
           else nextIds.add(id);
         });
         activeGroupIds = [...nextIds];
+        if (allPresent) {
+          nextSelected = objects.find((object) => nextIds.has(object.userData.id)) || null;
+        }
       } else {
         activeGroupIds = mesh ? linkSelectionIds(mesh) : [];
       }
     }
     const previousSelected = selected;
-    selected = mesh || null;
+    selected = nextSelected;
     if (previousSelected !== selected && document.activeElement?.matches(".props input")) {
       document.activeElement.blur();
     }
@@ -32965,7 +33001,7 @@ void main() {
     if (!activeTransformMode && pivotReturnMode) activeTransformMode = pivotReturnMode;
     document.querySelectorAll("[data-mode]").forEach((btn) => btn.classList.toggle("active", activeTransformMode === btn.dataset.mode));
     updateTransformAttachment();
-    els.hudText.textContent = activeTransformMode ? `${activeTransformMode[0].toUpperCase()}${activeTransformMode.slice(1)} gizmo active | Click ${activeTransformMode} again to turn it off` : "Orbit: drag | Select: click | Transform tools: toggle Move/Rotate/Scale";
+    els.hudText.textContent = activeTransformMode ? `${activeTransformMode[0].toUpperCase()}${activeTransformMode.slice(1)} gizmo active | Click ${activeTransformMode} again to turn it off` : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
     syncInspector();
     updateState();
     if (!silent) log("Pivot edit mode off.");
@@ -33081,9 +33117,16 @@ void main() {
       return [];
     }
     recordHistory(`flip ${axis}`);
-    for (const mesh of targets) mirrorMeshGeometry(mesh, axis);
+    if (targets.length > 1) {
+      const sharedCenter = groupBoundsCenter(targets);
+      for (const mesh of targets) mirrorMeshAcrossWorldPlane(mesh, axis, sharedCenter);
+      currentTransformTargetKey = "";
+      syncGroupPivotToObjects(targets, { forceCenter: true });
+    } else {
+      mirrorMeshGeometry(targets[0], axis);
+    }
     updateAll();
-    log(`Flipped ${targets.length} part${targets.length === 1 ? "" : "s"} around local ${axis.toUpperCase()} center.`);
+    log(targets.length > 1 ? `Flipped ${targets.length} parts around their shared ${axis.toUpperCase()} center.` : `Flipped 1 part around its local ${axis.toUpperCase()} center.`);
     return targets;
   }
   function setChecked(mesh, checked) {
@@ -33837,7 +33880,7 @@ void main() {
       els.hudText.textContent = "Opening mode: hover a hole edge and click to lock the opening Fill Hole should cap | Shift-click picks another opening without clearing triangle work";
       return;
     }
-    els.hudText.textContent = facePickMode ? coplanarFacePickMode ? "Face mode: click a flat region to select connected coplanar triangles | Shift adds more | Double-click still selects full connected islands" : els.areaTriInput.checked ? "Area mode: drag a rectangle to select triangles | Double-click selects connected" : els.paintTriInput.checked ? "Paint mode: drag to select triangles | Hold Space to orbit camera" : "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, or Bevel Face" : "Orbit: drag | Select: click | Transform: gizmo";
+    els.hudText.textContent = facePickMode ? coplanarFacePickMode ? "Face mode: click a flat region to select connected coplanar triangles | Shift/Ctrl adds more | Double-click still selects full connected islands" : els.areaTriInput.checked ? "Area mode: drag a rectangle to select triangles | Double-click selects connected" : els.paintTriInput.checked ? "Paint mode: drag to select triangles | Hold Space to orbit camera" : "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, or Bevel Face" : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform: gizmo";
     if (!facePickMode && !selectedFace) faceMarker.visible = false;
   }
   function setFacePickMode(enabled) {
@@ -34076,6 +34119,45 @@ void main() {
     if (announce) log(`Deleted ${deleted} selected triangle${deleted === 1 ? "" : "s"} from ${editedMeshes} mesh${editedMeshes === 1 ? "" : "es"}.`, { removedMarkers });
     return { deleted, editedMeshes, removedMarkers };
   }
+  function mirrorMeshAcrossWorldPlane(mesh, axis, center) {
+    const index = axisIndex(axis);
+    mesh.updateWorldMatrix(true, false);
+    const previousWorldMatrix = mesh.matrixWorld.clone();
+    const mirroredWorldPosition = mesh.getWorldPosition(new Vector3());
+    setComponent(
+      mirroredWorldPosition,
+      index,
+      component(center, index) * 2 - component(mirroredWorldPosition, index)
+    );
+    mesh.position.copy(mesh.parent ? mesh.parent.worldToLocal(mirroredWorldPosition.clone()) : mirroredWorldPosition);
+    mesh.updateWorldMatrix(true, false);
+    const mirroredWorldInverse = mesh.matrixWorld.clone().invert();
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const position = geometry.getAttribute("position");
+    const uv = geometry.getAttribute("uv");
+    const point = new Vector3();
+    for (let i = 0; i < position.count; i++) {
+      point.fromBufferAttribute(position, i).applyMatrix4(previousWorldMatrix);
+      setComponent(point, index, component(center, index) * 2 - component(point, index));
+      point.applyMatrix4(mirroredWorldInverse);
+      position.setXYZ(i, point.x, point.y, point.z);
+    }
+    position.needsUpdate = true;
+    for (let i = 0; i < position.count; i += 3) {
+      swapAttributeVertices(position, i + 1, i + 2);
+      swapAttributeVertices(uv, i + 1, i + 2);
+    }
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    mesh.geometry.dispose();
+    mesh.geometry = geometry;
+    mesh.userData.shape = "custom";
+    mesh.userData.geometry = geometryToData(geometry);
+    mesh.userData.bevel = null;
+    mesh.userData.depth = null;
+    mesh.userData.direction = null;
+  }
   function makeSelectionMarkerBatch(faces) {
     const fillPositions = [];
     const linePositions = [];
@@ -34134,7 +34216,7 @@ void main() {
     selectedFace = selectedFaces.at(-1) || null;
     if (selected !== mesh) selectObject(mesh);
     updateFaceMarker();
-    if (!silent) log(`${append ? "Updated" : "Selected"} triangle selection on ${mesh.name}. Hold Shift to add/remove more.`, { selected: selectedFaces.length, triangle: hit.faceIndex, width: round2(width), height: round2(height) });
+    if (!silent) log(`${append ? "Updated" : "Selected"} triangle selection on ${mesh.name}. Hold Shift or Ctrl to add/remove more.`, { selected: selectedFaces.length, triangle: hit.faceIndex, width: round2(width), height: round2(height) });
     return pickedFace;
   }
   function updateFaceMarker() {
@@ -36682,7 +36764,7 @@ void main() {
     lastGroupMatrix.copy(groupPivot.matrixWorld);
     setStoredPivotForObjects(groupObjects, groupPivot.position);
   }
-  function removeObject(mesh, { record = true } = {}) {
+  function removeObject(mesh, { record = true, update = true } = {}) {
     if (!mesh) return;
     if (record) recordHistory("delete");
     const previousLinkId = mesh.userData.linkId || null;
@@ -36702,15 +36784,32 @@ void main() {
     if (selected === mesh) selectObject(null);
     if (previousLinkId) ensureLinkGroupColors();
     if (previousSceneGroupId) ensureSceneGroups();
-    updateAll();
+    if (update) updateAll();
   }
   function duplicateSelected() {
-    if (!selected) return;
-    const data = serializeObject(selected);
-    data.name = `${selected.name} copy`;
-    data.position[0] += 0.35;
-    data.position[2] += 0.35;
-    addObject(data);
+    const transformTargets = transformTargetObjects();
+    const targets = transformTargets.length > 1 ? transformTargets : selected ? [selected] : checkedObjects().slice(0, 1);
+    if (!targets.length) {
+      log("Select one or more objects before duplicating.");
+      return [];
+    }
+    recordHistory(targets.length === 1 ? "duplicate object" : "duplicate objects");
+    const copies = targets.map((source) => {
+      const data = serializeObject(source);
+      delete data.id;
+      data.name = `${source.name} copy`;
+      data.linkId = null;
+      data.linkColor = null;
+      return addObject(data, { record: false, select: false, update: false });
+    });
+    checkedIds.clear();
+    activeGroupIds = copies.map((copy) => copy.userData.id);
+    selectedGroupRecordId = null;
+    selected = copies.at(-1) || null;
+    currentTransformTargetKey = "";
+    updateAll();
+    log(`Duplicated ${copies.length} object${copies.length === 1 ? "" : "s"} in place.`);
+    return copies;
   }
   function clearObjects({ record = true } = {}) {
     if (record && objects.length) recordHistory("clear");
@@ -36749,6 +36848,7 @@ void main() {
       scale: mesh.scale.toArray().map(round2),
       color: `#${mesh.material.color.getHexString()}`,
       roughness: round2(mesh.material.roughness),
+      opacity: round2(mesh.material.opacity ?? 1),
       hidden: !!mesh.userData.hidden,
       groupId: mesh.userData.groupId || null,
       groupName: mesh.userData.groupName || null,
@@ -36850,6 +36950,18 @@ void main() {
         activeGroupIds: [...activeGroupIds],
         activeTransformMode,
         facePickMode,
+        cameraViews: {
+          selectedId: selectedCustomCameraId,
+          showMarkers: !!els.showCustomCamerasInput?.checked,
+          views: customCameraViews.map((view) => ({
+            id: view.id,
+            name: view.name,
+            position: view.position.map(round2),
+            target: view.target.map(round2),
+            up: view.up.map(round2),
+            fov: round2(view.fov)
+          }))
+        },
         view: {
           cameraPosition: camera.position.toArray().map(round2),
           orbitTarget: orbit.target.toArray().map(round2),
@@ -36866,6 +36978,7 @@ void main() {
           addMeshCollapsed: els.addMeshSection.classList.contains("collapsed"),
           inspectorCollapsed: els.inspectorSection.classList.contains("collapsed"),
           utilitiesCollapsed: els.utilitiesSection.classList.contains("collapsed"),
+          cameraViewsCollapsed: els.cameraViewsSection.classList.contains("collapsed"),
           statusCollapsed: els.statusSection.classList.contains("collapsed")
         },
         toolbars: toolbarVisibilityState(),
@@ -37017,6 +37130,7 @@ void main() {
     setSectionCollapsed(els.addMeshSection, els.addMeshToggle, !!panels.addMeshCollapsed);
     setSectionCollapsed(els.inspectorSection, els.inspectorToggle, !!panels.inspectorCollapsed);
     setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, !!panels.utilitiesCollapsed);
+    setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, !!panels.cameraViewsCollapsed);
     setSectionCollapsed(els.statusSection, els.statusToggle, !!panels.statusCollapsed);
     applyToolbarVisibility(setToolbarToggleState(editor.toolbars || defaultToolbarVisibility));
     const tools = editor.tools || {};
@@ -37059,6 +37173,7 @@ void main() {
     els.lightAngleInput.value = String(lighting.angle ?? 24);
     syncSpotLightRig();
     restoreBoneRig(editor.rigging || {});
+    restoreCustomCameraViews(editor.cameraViews || {});
     const selectedMesh = editor.selectedId ? findObject(editor.selectedId) : null;
     selectObject(selectedMesh, { keepGroup: true });
     const requestedMode = ["translate", "rotate", "scale"].includes(editor.activeTransformMode) ? editor.activeTransformMode : null;
@@ -37246,7 +37361,7 @@ void main() {
         event.stopPropagation();
         openMeshDetails(mesh.userData.id);
       });
-      row.addEventListener("click", (event) => selectObject(mesh, { append: event.shiftKey }));
+      row.addEventListener("click", (event) => selectObject(mesh, { append: additiveSelectionRequested(event) }));
       return row;
     };
     const buildPersistentGroup = (record, depth = 0) => {
@@ -37339,6 +37454,8 @@ void main() {
       els.colorHexInput.value = "#40C7A5";
       els.roughInput.value = 0.6;
       els.roughValue.value = "0.60";
+      els.opacityInput.value = 1;
+      els.opacityValue.value = "1.00";
       els.textureName.textContent = pivotEditMode ? pivotTargets.length > 1 ? "Shared pivot edit mode" : "Single-part pivot edit mode" : pivotTargets.length > 1 ? "Shared checked-parts transform" : "Single-part custom pivot transform";
       els.cutSideSelect.disabled = true;
       els.cutAmountInput.disabled = true;
@@ -37349,6 +37466,8 @@ void main() {
       syncTextureButtonLabel();
       els.nameInput.value = "";
       els.colorHexInput.value = "";
+      els.opacityInput.value = 1;
+      els.opacityValue.value = "1.00";
       els.textureName.textContent = "No texture";
       els.cutSideSelect.disabled = true;
       els.cutAmountInput.disabled = true;
@@ -37373,6 +37492,8 @@ void main() {
     els.colorHexInput.value = `#${selected.material.color.getHexString()}`.toUpperCase();
     els.roughInput.value = selected.material.roughness;
     els.roughValue.value = Number(selected.material.roughness).toFixed(2);
+    els.opacityInput.value = selected.material.opacity ?? 1;
+    els.opacityValue.value = Number(selected.material.opacity ?? 1).toFixed(2);
     if (selected.userData.cuts?.bottom !== void 0) {
       els.cutSideSelect.value = "bottom";
       els.cutAmountInput.value = selected.userData.cuts.bottom;
@@ -37450,14 +37571,17 @@ void main() {
     );
     selected.material.color.set(normalizedColor);
     selected.material.roughness = +els.roughInput.value;
-    selected.material.transparent = false;
-    selected.material.opacity = 1;
+    const opacity = Math.max(0.05, Math.min(1, Number(els.opacityInput.value) || 1));
+    selected.material.transparent = opacity < 0.999;
+    selected.material.opacity = opacity;
     selected.material.wireframe = false;
-    selected.material.depthWrite = true;
+    selected.material.depthWrite = opacity >= 0.999;
     selected.material.needsUpdate = true;
     selected.userData.color = normalizedColor;
     selected.userData.roughness = +els.roughInput.value;
+    selected.userData.opacity = opacity;
     els.roughValue.value = Number(selected.material.roughness).toFixed(2);
+    els.opacityValue.value = opacity.toFixed(2);
     updateAll();
   }
   function importJsonData(data, fileName = "JSON") {
@@ -37476,14 +37600,18 @@ void main() {
   }
   function deleteSelection() {
     const groupObjects = transformTargetObjects();
-    if (!selected && groupObjects.length > 1) {
-      recordHistory("delete group");
-      for (const mesh of groupObjects) removeObject(mesh, { record: false });
+    if (groupObjects.length > 1) {
+      const targets = [...groupObjects];
+      recordHistory("delete selection");
+      selected = null;
+      for (const mesh of targets) removeObject(mesh, { record: false, update: false });
       activeGroupIds = [];
       checkedIds.clear();
+      selectedGroupRecordId = null;
       currentTransformTargetKey = "";
       transform.detach();
       updateAll();
+      log(`Deleted ${targets.length} selected objects.`);
       return;
     }
     removeObject(selected);
@@ -40168,6 +40296,191 @@ end
     camera.updateProjectionMatrix();
     orbit.update();
   }
+  function customCameraViewById(id = selectedCustomCameraId) {
+    return customCameraViews.find((view) => view.id === id) || null;
+  }
+  function nextCustomCameraId() {
+    customCameraIdCounter += 1;
+    return `camera-director-${customCameraIdCounter}`;
+  }
+  function validCameraVector(value, fallback) {
+    return Array.isArray(value) && value.length === 3 && value.every(Number.isFinite) ? value.map(Number) : [...fallback];
+  }
+  function disposeCameraDirectorMarkers() {
+    cameraDirectorGroup.traverse((object) => {
+      object.geometry?.dispose?.();
+      if (Array.isArray(object.material)) object.material.forEach((material) => material?.dispose?.());
+      else object.material?.dispose?.();
+    });
+    cameraDirectorGroup.clear();
+  }
+  function makeCameraDirectorMarker(view, selectedMarker = false) {
+    const color = selectedMarker ? 14790987 : 4245413;
+    const material = new MeshBasicMaterial({ color, depthWrite: false });
+    const marker = new Group();
+    marker.name = `Camera Director: ${view.name}`;
+    marker.userData.cameraViewId = view.id;
+    marker.position.fromArray(view.position);
+    const body = new Mesh(new BoxGeometry(0.46, 0.28, 0.32), material.clone());
+    const lens = new Mesh(new CylinderGeometry(0.1, 0.14, 0.22, 12), material.clone());
+    lens.rotation.x = Math.PI / 2;
+    lens.position.z = 0.25;
+    const head = new Mesh(new SphereGeometry(0.11, 12, 8), material.clone());
+    head.position.set(0, 0.27, 0);
+    const tripod = new Mesh(new CylinderGeometry(0.035, 0.08, 0.48, 8), material.clone());
+    tripod.position.y = -0.35;
+    marker.add(body, lens, head, tripod);
+    const aim = new Vector3().fromArray(view.target);
+    if (aim.distanceToSquared(marker.position) < 1e-8) aim.z += 1;
+    marker.lookAt(aim);
+    marker.traverse((object) => {
+      object.renderOrder = 50;
+      object.userData.cameraViewId = view.id;
+    });
+    return marker;
+  }
+  function renderCustomCameraMarkers() {
+    disposeCameraDirectorMarkers();
+    for (const view of customCameraViews) {
+      cameraDirectorGroup.add(makeCameraDirectorMarker(view, view.id === selectedCustomCameraId));
+    }
+    cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked;
+  }
+  function customCameraInputs() {
+    return [
+      els.customCameraNameInput,
+      els.customCameraPosX,
+      els.customCameraPosY,
+      els.customCameraPosZ,
+      els.customCameraTargetX,
+      els.customCameraTargetY,
+      els.customCameraTargetZ
+    ];
+  }
+  function syncCustomCameraInputs() {
+    const view = customCameraViewById();
+    for (const input of customCameraInputs()) input.disabled = !view;
+    els.viewCustomCameraBtn.disabled = !view;
+    els.updateCustomCameraBtn.disabled = !view;
+    els.deleteCustomCameraBtn.disabled = !view;
+    if (!view) {
+      els.customCameraNameInput.value = "";
+      for (const input of customCameraInputs().slice(1)) input.value = "";
+      return;
+    }
+    els.customCameraNameInput.value = view.name;
+    [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ].forEach((input, index) => {
+      input.value = round2(view.position[index]);
+    });
+    [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ].forEach((input, index) => {
+      input.value = round2(view.target[index]);
+    });
+  }
+  function renderCustomCameraViews() {
+    if (!customCameraViewById()) selectedCustomCameraId = customCameraViews[0]?.id || null;
+    els.customCameraList.innerHTML = "";
+    for (const view of customCameraViews) {
+      const option = document.createElement("option");
+      option.value = view.id;
+      option.textContent = view.name;
+      option.selected = view.id === selectedCustomCameraId;
+      els.customCameraList.append(option);
+    }
+    syncCustomCameraInputs();
+    renderCustomCameraMarkers();
+  }
+  function selectCustomCameraView(id) {
+    selectedCustomCameraId = customCameraViews.some((view) => view.id === id) ? id : null;
+    renderCustomCameraViews();
+  }
+  function addCustomCameraView() {
+    recordHistory("add camera director");
+    const view = {
+      id: nextCustomCameraId(),
+      name: `Camera ${customCameraViews.length + 1}`,
+      position: camera.position.toArray(),
+      target: orbit.target.toArray(),
+      up: camera.up.toArray(),
+      fov: camera.fov
+    };
+    customCameraViews.push(view);
+    selectedCustomCameraId = view.id;
+    renderCustomCameraViews();
+    log(`Added ${view.name} at the current viewport.`);
+    return view;
+  }
+  function updateCustomCameraFromCurrentView() {
+    const view = customCameraViewById();
+    if (!view) return;
+    recordHistory("update camera director");
+    view.position = camera.position.toArray();
+    view.target = orbit.target.toArray();
+    view.up = camera.up.toArray();
+    view.fov = camera.fov;
+    renderCustomCameraViews();
+    log(`Moved ${view.name} to the current viewport.`);
+  }
+  function updateCustomCameraFromInputs({ record = true, render = true, refreshMarkers = true } = {}) {
+    const view = customCameraViewById();
+    if (!view) return;
+    if (record) recordHistory("edit camera director");
+    view.name = els.customCameraNameInput.value.trim() || view.name;
+    const positionInputs = [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ];
+    const targetInputs = [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ];
+    view.position = positionInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.position[index]);
+    view.target = targetInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.target[index]);
+    if (render) renderCustomCameraViews();
+    else {
+      const option = els.customCameraList.querySelector(`option[value="${view.id}"]`);
+      if (option) option.textContent = view.name;
+      if (refreshMarkers) renderCustomCameraMarkers();
+    }
+  }
+  function deleteCustomCameraView() {
+    const view = customCameraViewById();
+    if (!view) return;
+    recordHistory("delete camera director");
+    customCameraViews = customCameraViews.filter((candidate) => candidate.id !== view.id);
+    selectedCustomCameraId = customCameraViews[0]?.id || null;
+    renderCustomCameraViews();
+    log(`Deleted ${view.name}.`);
+  }
+  function activateCustomCameraView(id = selectedCustomCameraId) {
+    const view = customCameraViewById(id);
+    if (!view) return;
+    selectedCustomCameraId = view.id;
+    camera.position.fromArray(view.position);
+    orbit.target.fromArray(view.target);
+    camera.up.fromArray(view.up);
+    camera.fov = Math.max(10, Math.min(120, Number(view.fov) || 55));
+    const distance = Math.max(0.05, camera.position.distanceTo(orbit.target));
+    camera.near = Math.max(0.01, distance / 2e3);
+    camera.far = Math.max(1e6, distance * 100);
+    camera.lookAt(orbit.target);
+    camera.updateProjectionMatrix();
+    orbit.update();
+    renderCustomCameraViews();
+    log(`Viewing the scene through ${view.name}.`);
+  }
+  function restoreCustomCameraViews(cameraState = {}) {
+    customCameraIdCounter = 0;
+    customCameraViews = (cameraState.views || []).map((view, index) => {
+      const id = typeof view?.id === "string" && view.id ? view.id : `camera-director-${index + 1}`;
+      const match = id.match(/(\d+)$/);
+      if (match) customCameraIdCounter = Math.max(customCameraIdCounter, Number(match[1]));
+      return {
+        id,
+        name: String(view?.name || `Camera ${index + 1}`),
+        position: validCameraVector(view?.position, [6, 5, 7]),
+        target: validCameraVector(view?.target, [0, 1, 0]),
+        up: validCameraVector(view?.up, [0, 1, 0]),
+        fov: Math.max(10, Math.min(120, Number(view?.fov) || 55))
+      };
+    });
+    selectedCustomCameraId = customCameraViews.some((view) => view.id === cameraState.selectedId) ? cameraState.selectedId : customCameraViews[0]?.id || null;
+    els.showCustomCamerasInput.checked = cameraState.showMarkers ?? true;
+    renderCustomCameraViews();
+  }
   var screenshotViewDirections = {
     front: new Vector3(0, 0.05, 1),
     back: new Vector3(0, 0.05, -1),
@@ -40216,6 +40529,7 @@ end
     const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
     const oldOpeningPickGuideVisible = openingPickGuideGroup.visible;
     const oldMarkerGroupVisible = markerGroup.visible;
+    const oldCameraDirectorGroupVisible = cameraDirectorGroup.visible;
     const oldGridVisible = grid.visible;
     const oldGridLabelsVisible = gridLabelGroup.visible;
     transform.visible = false;
@@ -40223,6 +40537,7 @@ end
     selectionOutlineGroup.visible = false;
     openingPickGuideGroup.visible = false;
     markerGroup.visible = false;
+    cameraDirectorGroup.visible = false;
     if (els.hideGridInShotsInput?.checked) {
       grid.visible = false;
       gridLabelGroup.visible = false;
@@ -40251,6 +40566,7 @@ end
     selectionOutlineGroup.visible = oldSelectionOutlineVisible;
     openingPickGuideGroup.visible = oldOpeningPickGuideVisible;
     markerGroup.visible = oldMarkerGroupVisible;
+    cameraDirectorGroup.visible = oldCameraDirectorGroupVisible;
     grid.visible = oldGridVisible;
     gridLabelGroup.visible = oldGridLabelsVisible;
     camera.position.copy(oldPosition);
@@ -40390,6 +40706,7 @@ end
     const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
     const oldOpeningPickGuideVisible = openingPickGuideGroup.visible;
     const oldMarkerGroupVisible = markerGroup.visible;
+    const oldCameraDirectorGroupVisible = cameraDirectorGroup.visible;
     const oldGridVisible = grid.visible;
     const oldGridLabelsVisible = gridLabelGroup.visible;
     const oldObjectVisibility = objects.map((object) => ({ object, visible: object.visible }));
@@ -40400,6 +40717,7 @@ end
     selectionOutlineGroup.visible = false;
     openingPickGuideGroup.visible = false;
     markerGroup.visible = false;
+    cameraDirectorGroup.visible = false;
     grid.visible = false;
     gridLabelGroup.visible = false;
     photoEnvironment.visible = false;
@@ -40445,6 +40763,7 @@ end
     selectionOutlineGroup.visible = oldSelectionOutlineVisible;
     openingPickGuideGroup.visible = oldOpeningPickGuideVisible;
     markerGroup.visible = oldMarkerGroupVisible;
+    cameraDirectorGroup.visible = oldCameraDirectorGroupVisible;
     grid.visible = oldGridVisible;
     gridLabelGroup.visible = oldGridLabelsVisible;
     camera.position.copy(oldPosition);
@@ -41191,6 +41510,34 @@ end
   els.previewRightBtn.addEventListener("click", () => previewShotView("right"));
   els.previewTopBtn.addEventListener("click", () => previewShotView("top"));
   els.previewIsoBtn.addEventListener("click", () => previewShotView("iso"));
+  els.addCustomCameraBtn.addEventListener("click", addCustomCameraView);
+  els.viewCustomCameraBtn.addEventListener("click", () => activateCustomCameraView());
+  els.updateCustomCameraBtn.addEventListener("click", updateCustomCameraFromCurrentView);
+  els.deleteCustomCameraBtn.addEventListener("click", deleteCustomCameraView);
+  els.customCameraList.addEventListener("change", () => selectCustomCameraView(els.customCameraList.value));
+  els.customCameraList.addEventListener("dblclick", () => activateCustomCameraView(els.customCameraList.value));
+  var activeCustomCameraEdits = /* @__PURE__ */ new WeakSet();
+  customCameraInputs().forEach((input) => {
+    input.addEventListener("input", () => {
+      if (!activeCustomCameraEdits.has(input)) {
+        recordHistory("edit camera director");
+        activeCustomCameraEdits.add(input);
+      }
+      updateCustomCameraFromInputs({
+        record: false,
+        render: false,
+        refreshMarkers: input !== els.customCameraNameInput
+      });
+    });
+    input.addEventListener("blur", () => {
+      activeCustomCameraEdits.delete(input);
+      renderCustomCameraViews();
+    });
+  });
+  els.showCustomCamerasInput.addEventListener("change", () => {
+    cameraDirectorGroup.visible = els.showCustomCamerasInput.checked;
+    log(`${els.showCustomCamerasInput.checked ? "Showing" : "Hiding"} camera directors in the viewport.`);
+  });
   els.saveFrontPngBtn.addEventListener("click", async () => saveSingleViewPng("front"));
   els.saveBackPngBtn.addEventListener("click", async () => saveSingleViewPng("back"));
   els.saveLeftPngBtn.addEventListener("click", async () => saveSingleViewPng("left"));
@@ -41556,8 +41903,8 @@ end
       return;
     }
     if (facePickMode && hit) {
-      if (coplanarFacePickMode) selectCoplanarFaceFromHit(hit, { append: event.shiftKey });
-      else pickFace(hit, { append: event.shiftKey });
+      if (coplanarFacePickMode) selectCoplanarFaceFromHit(hit, { append: additiveSelectionRequested(event) });
+      else pickFace(hit, { append: additiveSelectionRequested(event) });
       return;
     }
     pendingScenePick = {
@@ -41565,7 +41912,7 @@ end
       startClientX: event.clientX,
       startClientY: event.clientY,
       hitObject: hit?.object || null,
-      append: !!event.shiftKey,
+      append: additiveSelectionRequested(event),
       dragged: false
     };
   });
@@ -41619,7 +41966,7 @@ end
     const hit = hitFromPointerEvent(event);
     if (!hit) return;
     event.preventDefault();
-    selectConnectedTrianglesFromHit(hit, { append: event.shiftKey });
+    selectConnectedTrianglesFromHit(hit, { append: additiveSelectionRequested(event) });
   });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Shift") isShiftHeld = true;
@@ -41701,6 +42048,9 @@ end
     }),
     captureView,
     captureViews,
+    customCameraViews: () => customCameraViews.map((view) => ({ ...view, position: [...view.position], target: [...view.target], up: [...view.up] })),
+    addCustomCameraView,
+    activateCustomCameraView,
     saveQaSheet,
     exportObjParts,
     frameSelected,
@@ -41744,6 +42094,7 @@ end
   updateGridLabels();
   syncSpotLightRig();
   updateUndoButton();
+  renderCustomCameraViews();
   selectObject(null);
   frameSelected();
   detectLocalHost().then(async (localHost) => {

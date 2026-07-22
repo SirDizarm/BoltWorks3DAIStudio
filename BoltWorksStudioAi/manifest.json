@@ -1,0 +1,31 @@
+{
+  "name": "BoltWorksStudioAi Authoring Handbook",
+  "version": 2,
+  "studioVersion": "0.48.14",
+  "purpose": "Create, validate, render and visually inspect editable BoltWorks 3D AI Studio projects.",
+  "canonicalProjectExtension": ".modelerproj",
+  "entryPoint": "README.md",
+  "readingOrder": [
+    "AI_AUTHORING_PROTOCOL.md",
+    "PROJECT_FORMAT.md",
+    "SHAPE_CATALOG.md",
+    "TEXTURE_WORKFLOW.md",
+    "VISUAL_QA.md",
+    "SYSTEM_PROMPT.md"
+  ],
+  "machineResources": {
+    "schema": "schemas/modeler-project.schema.json",
+    "minimalExample": "examples/minimal-valid.modelerproj",
+    "inspector": "tools/inspect-project.mjs",
+    "styleLibraries": [
+      "libraries/medieval-house/README.md"
+    ]
+  },
+  "requiredCompletionEvidence": [
+    "project inspector exits successfully",
+    "project loads in the real BoltWorks studio",
+    "fresh QA Sheet contains front, back, left, right, top and iso views",
+    "AI has inspected the fresh QA Sheet",
+    "no known visual defect remains unexplained"
+  ]
+}

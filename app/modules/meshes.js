@@ -1809,7 +1809,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -1820,6 +1820,11 @@ function createMesh(spec = {}) {
   const meshGeometry = applyGeometryCuts(baseGeometry, spec);
   const cuts = cutSpecFromObject(spec);
   const mesh = new THREE.Mesh(meshGeometry, makeMaterial(color, roughness));
+  const materialOpacity = Math.max(.05, Math.min(1, Number(opacity) || 1));
+  mesh.material.opacity = materialOpacity;
+  mesh.material.transparent = materialOpacity < .999;
+  mesh.material.depthWrite = materialOpacity >= .999;
+  mesh.material.needsUpdate = true;
   mesh.name = name || `${shape} ${defaultOrdinal}`;
   mesh.userData = {
     id: objectId,
@@ -1827,6 +1832,7 @@ function createMesh(spec = {}) {
     geometry: geometry || null,
     color,
     roughness,
+    opacity: materialOpacity,
     textureUrl,
     textureName,
     textureRobloxAssetId: normalizeRobloxAssetId(textureRobloxAssetId || ""),
@@ -2564,7 +2570,7 @@ function setTransformMode(mode) {
   updateTransformAttachment();
   els.hudText.textContent = activeTransformMode
     ? `${activeTransformMode[0].toUpperCase()}${activeTransformMode.slice(1)} gizmo active | Click ${activeTransformMode} again to turn it off`
-    : "Orbit: drag | Select: click | Transform tools: toggle Move/Rotate/Scale";
+    : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
 }
 
 function setDragPushMode(enabled, { silent = false } = {}) {
@@ -2578,7 +2584,7 @@ function setDragPushMode(enabled, { silent = false } = {}) {
   } else {
     els.hudText.textContent = facePickMode
       ? "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, Push, or Bevel Face"
-      : "Orbit: drag | Select: click | Transform tools: toggle Move/Rotate/Scale";
+      : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
   }
   if (!silent) log(dragPushMode ? "Drag/Push mode enabled." : "Drag/Push mode disabled.");
 }
@@ -2832,6 +2838,10 @@ function linkSelectionIds(mesh) {
   return linked.length > 1 ? linked.map(object => object.userData.id) : [];
 }
 
+function additiveSelectionRequested(event) {
+  return !!(event?.shiftKey || event?.ctrlKey || event?.metaKey);
+}
+
 function selectObject(mesh, { keepGroup = false, append = false } = {}) {
   if (append && !mesh) return;
   if (selectedHoleLoopInfo?.targetId) {
@@ -2841,6 +2851,7 @@ function selectObject(mesh, { keepGroup = false, append = false } = {}) {
     }
   }
   if (mesh) selectedGroupRecordId = null;
+  let nextSelected = mesh || null;
   if (!keepGroup) {
     if (append && mesh) {
       const seedIds = activeGroupIds.length
@@ -2857,13 +2868,16 @@ function selectObject(mesh, { keepGroup = false, append = false } = {}) {
         else nextIds.add(id);
       });
       activeGroupIds = [...nextIds];
+      if (allPresent) {
+        nextSelected = objects.find(object => nextIds.has(object.userData.id)) || null;
+      }
     }
     else {
       activeGroupIds = mesh ? linkSelectionIds(mesh) : [];
     }
   }
   const previousSelected = selected;
-  selected = mesh || null;
+  selected = nextSelected;
   // Clicking a different scene object does not necessarily move focus away
   // from a numeric inspector field (notably when selecting on the canvas).
   // End the old edit session so its stale values cannot be applied to the new
@@ -3136,7 +3150,7 @@ function setPivotEditMode(enabled, { silent = false } = {}) {
   updateTransformAttachment();
   els.hudText.textContent = activeTransformMode
     ? `${activeTransformMode[0].toUpperCase()}${activeTransformMode.slice(1)} gizmo active | Click ${activeTransformMode} again to turn it off`
-    : "Orbit: drag | Select: click | Transform tools: toggle Move/Rotate/Scale";
+    : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
   syncInspector();
   updateState();
   if (!silent) log("Pivot edit mode off.");
@@ -3265,9 +3279,18 @@ function flipSelectedParts(axis) {
     return [];
   }
   recordHistory(`flip ${axis}`);
-  for (const mesh of targets) mirrorMeshGeometry(mesh, axis);
+  if (targets.length > 1) {
+    const sharedCenter = groupBoundsCenter(targets);
+    for (const mesh of targets) mirrorMeshAcrossWorldPlane(mesh, axis, sharedCenter);
+    currentTransformTargetKey = "";
+    syncGroupPivotToObjects(targets, { forceCenter: true });
+  } else {
+    mirrorMeshGeometry(targets[0], axis);
+  }
   updateAll();
-  log(`Flipped ${targets.length} part${targets.length === 1 ? "" : "s"} around local ${axis.toUpperCase()} center.`);
+  log(targets.length > 1
+    ? `Flipped ${targets.length} parts around their shared ${axis.toUpperCase()} center.`
+    : `Flipped 1 part around its local ${axis.toUpperCase()} center.`);
   return targets;
 }
 
@@ -4096,13 +4119,13 @@ function updateFacePickHud() {
   }
   els.hudText.textContent = facePickMode
     ? (coplanarFacePickMode
-      ? "Face mode: click a flat region to select connected coplanar triangles | Shift adds more | Double-click still selects full connected islands"
+      ? "Face mode: click a flat region to select connected coplanar triangles | Shift/Ctrl adds more | Double-click still selects full connected islands"
       : els.areaTriInput.checked
         ? "Area mode: drag a rectangle to select triangles | Double-click selects connected"
         : els.paintTriInput.checked
           ? "Paint mode: drag to select triangles | Hold Space to orbit camera"
           : "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, or Bevel Face")
-    : "Orbit: drag | Select: click | Transform: gizmo";
+    : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform: gizmo";
   if (!facePickMode && !selectedFace) faceMarker.visible = false;
 }
 
@@ -4373,6 +4396,49 @@ function deleteSelectedTriangles({ record = true, update = true, announce = true
   return { deleted, editedMeshes, removedMarkers };
 }
 
+function mirrorMeshAcrossWorldPlane(mesh, axis, center) {
+  const index = axisIndex(axis);
+  mesh.updateWorldMatrix(true, false);
+  const previousWorldMatrix = mesh.matrixWorld.clone();
+  const mirroredWorldPosition = mesh.getWorldPosition(new THREE.Vector3());
+  setComponent(
+    mirroredWorldPosition,
+    index,
+    component(center, index) * 2 - component(mirroredWorldPosition, index)
+  );
+  mesh.position.copy(mesh.parent ? mesh.parent.worldToLocal(mirroredWorldPosition.clone()) : mirroredWorldPosition);
+  mesh.updateWorldMatrix(true, false);
+  const mirroredWorldInverse = mesh.matrixWorld.clone().invert();
+  const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const position = geometry.getAttribute("position");
+  const uv = geometry.getAttribute("uv");
+  const point = new THREE.Vector3();
+
+  for (let i = 0; i < position.count; i++) {
+    point.fromBufferAttribute(position, i).applyMatrix4(previousWorldMatrix);
+    setComponent(point, index, component(center, index) * 2 - component(point, index));
+    point.applyMatrix4(mirroredWorldInverse);
+    position.setXYZ(i, point.x, point.y, point.z);
+  }
+  position.needsUpdate = true;
+
+  for (let i = 0; i < position.count; i += 3) {
+    swapAttributeVertices(position, i + 1, i + 2);
+    swapAttributeVertices(uv, i + 1, i + 2);
+  }
+
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  mesh.geometry.dispose();
+  mesh.geometry = geometry;
+  mesh.userData.shape = "custom";
+  mesh.userData.geometry = geometryToData(geometry);
+  mesh.userData.bevel = null;
+  mesh.userData.depth = null;
+  mesh.userData.direction = null;
+}
+
 function makeSelectionMarker(face, index) {
   const trianglePoints = worldTrianglePoints(face);
   const normalWorld = worldFaceNormal(face);
@@ -4456,7 +4522,7 @@ function pickFace(hit, { append = false, toggleExisting = true, silent = false }
   selectedFace = selectedFaces.at(-1) || null;
   if (selected !== mesh) selectObject(mesh);
   updateFaceMarker();
-  if (!silent) log(`${append ? "Updated" : "Selected"} triangle selection on ${mesh.name}. Hold Shift to add/remove more.`, { selected: selectedFaces.length, triangle: hit.faceIndex, width: round(width), height: round(height) });
+  if (!silent) log(`${append ? "Updated" : "Selected"} triangle selection on ${mesh.name}. Hold Shift or Ctrl to add/remove more.`, { selected: selectedFaces.length, triangle: hit.faceIndex, width: round(width), height: round(height) });
   return pickedFace;
 }
 
@@ -7369,7 +7435,7 @@ function applyGroupPivotDelta() {
   setStoredPivotForObjects(groupObjects, groupPivot.position);
 }
 
-function removeObject(mesh, { record = true } = {}) {
+function removeObject(mesh, { record = true, update = true } = {}) {
   if (!mesh) return;
   if (record) recordHistory("delete");
   const previousLinkId = mesh.userData.linkId || null;
@@ -7389,16 +7455,35 @@ function removeObject(mesh, { record = true } = {}) {
   if (selected === mesh) selectObject(null);
   if (previousLinkId) ensureLinkGroupColors();
   if (previousSceneGroupId) ensureSceneGroups();
-  updateAll();
+  if (update) updateAll();
 }
 
 function duplicateSelected() {
-  if (!selected) return;
-  const data = serializeObject(selected);
-  data.name = `${selected.name} copy`;
-  data.position[0] += .35;
-  data.position[2] += .35;
-  addObject(data);
+  const transformTargets = transformTargetObjects();
+  const targets = transformTargets.length > 1
+    ? transformTargets
+    : (selected ? [selected] : checkedObjects().slice(0, 1));
+  if (!targets.length) {
+    log("Select one or more objects before duplicating.");
+    return [];
+  }
+  recordHistory(targets.length === 1 ? "duplicate object" : "duplicate objects");
+  const copies = targets.map(source => {
+    const data = serializeObject(source);
+    delete data.id;
+    data.name = `${source.name} copy`;
+    data.linkId = null;
+    data.linkColor = null;
+    return addObject(data, { record: false, select: false, update: false });
+  });
+  checkedIds.clear();
+  activeGroupIds = copies.map(copy => copy.userData.id);
+  selectedGroupRecordId = null;
+  selected = copies.at(-1) || null;
+  currentTransformTargetKey = "";
+  updateAll();
+  log(`Duplicated ${copies.length} object${copies.length === 1 ? "" : "s"} in place.`);
+  return copies;
 }
 
 function clearObjects({ record = true } = {}) {

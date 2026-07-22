@@ -15,6 +15,7 @@ function serializeObject(mesh) {
     scale: mesh.scale.toArray().map(round),
     color: `#${mesh.material.color.getHexString()}`,
     roughness: round(mesh.material.roughness),
+    opacity: round(mesh.material.opacity ?? 1),
     hidden: !!mesh.userData.hidden,
     groupId: mesh.userData.groupId || null,
     groupName: mesh.userData.groupName || null,
@@ -122,6 +123,18 @@ function projectState() {
       activeGroupIds: [...activeGroupIds],
       activeTransformMode,
       facePickMode,
+      cameraViews: {
+        selectedId: selectedCustomCameraId,
+        showMarkers: !!els.showCustomCamerasInput?.checked,
+        views: customCameraViews.map(view => ({
+          id: view.id,
+          name: view.name,
+          position: view.position.map(round),
+          target: view.target.map(round),
+          up: view.up.map(round),
+          fov: round(view.fov)
+        }))
+      },
       view: {
         cameraPosition: camera.position.toArray().map(round),
         orbitTarget: orbit.target.toArray().map(round),
@@ -138,6 +151,7 @@ function projectState() {
         addMeshCollapsed: els.addMeshSection.classList.contains("collapsed"),
         inspectorCollapsed: els.inspectorSection.classList.contains("collapsed"),
         utilitiesCollapsed: els.utilitiesSection.classList.contains("collapsed"),
+        cameraViewsCollapsed: els.cameraViewsSection.classList.contains("collapsed"),
         statusCollapsed: els.statusSection.classList.contains("collapsed")
       },
       toolbars: toolbarVisibilityState(),
@@ -312,6 +326,7 @@ function applyProjectEditorState(editor = {}) {
   setSectionCollapsed(els.addMeshSection, els.addMeshToggle, !!panels.addMeshCollapsed);
   setSectionCollapsed(els.inspectorSection, els.inspectorToggle, !!panels.inspectorCollapsed);
   setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, !!panels.utilitiesCollapsed);
+  setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, !!panels.cameraViewsCollapsed);
   setSectionCollapsed(els.statusSection, els.statusToggle, !!panels.statusCollapsed);
   applyToolbarVisibility(setToolbarToggleState(editor.toolbars || defaultToolbarVisibility));
 
@@ -357,6 +372,7 @@ function applyProjectEditorState(editor = {}) {
   els.lightAngleInput.value = String(lighting.angle ?? 24);
   syncSpotLightRig();
   restoreBoneRig(editor.rigging || {});
+  restoreCustomCameraViews(editor.cameraViews || {});
 
   const selectedMesh = editor.selectedId ? findObject(editor.selectedId) : null;
   selectObject(selectedMesh, { keepGroup: true });
@@ -561,7 +577,7 @@ function renderTree() {
       event.stopPropagation();
       openMeshDetails(mesh.userData.id);
     });
-    row.addEventListener("click", event => selectObject(mesh, { append: event.shiftKey }));
+    row.addEventListener("click", event => selectObject(mesh, { append: additiveSelectionRequested(event) }));
     return row;
   };
 
@@ -660,6 +676,8 @@ function syncInspector() {
     els.colorHexInput.value = "#40C7A5";
     els.roughInput.value = .6;
     els.roughValue.value = "0.60";
+    els.opacityInput.value = 1;
+    els.opacityValue.value = "1.00";
     els.textureName.textContent = pivotEditMode
       ? (pivotTargets.length > 1 ? "Shared pivot edit mode" : "Single-part pivot edit mode")
       : (pivotTargets.length > 1 ? "Shared checked-parts transform" : "Single-part custom pivot transform");
@@ -672,6 +690,8 @@ function syncInspector() {
     syncTextureButtonLabel();
     els.nameInput.value = "";
     els.colorHexInput.value = "";
+    els.opacityInput.value = 1;
+    els.opacityValue.value = "1.00";
     els.textureName.textContent = "No texture";
     els.cutSideSelect.disabled = true;
     els.cutAmountInput.disabled = true;
@@ -696,6 +716,8 @@ function syncInspector() {
   els.colorHexInput.value = `#${selected.material.color.getHexString()}`.toUpperCase();
   els.roughInput.value = selected.material.roughness;
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
+  els.opacityInput.value = selected.material.opacity ?? 1;
+  els.opacityValue.value = Number(selected.material.opacity ?? 1).toFixed(2);
   if (selected.userData.cuts?.bottom !== undefined) {
     els.cutSideSelect.value = "bottom";
     els.cutAmountInput.value = selected.userData.cuts.bottom;
@@ -775,14 +797,17 @@ function applyInspector({ record = true } = {}) {
   );
   selected.material.color.set(normalizedColor);
   selected.material.roughness = +els.roughInput.value;
-  selected.material.transparent = false;
-  selected.material.opacity = 1;
+  const opacity = Math.max(.05, Math.min(1, Number(els.opacityInput.value) || 1));
+  selected.material.transparent = opacity < .999;
+  selected.material.opacity = opacity;
   selected.material.wireframe = false;
-  selected.material.depthWrite = true;
+  selected.material.depthWrite = opacity >= .999;
   selected.material.needsUpdate = true;
   selected.userData.color = normalizedColor;
   selected.userData.roughness = +els.roughInput.value;
+  selected.userData.opacity = opacity;
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
+  els.opacityValue.value = opacity.toFixed(2);
   updateAll();
 }
 
@@ -804,14 +829,18 @@ function findObject(id) {
 
 function deleteSelection() {
   const groupObjects = transformTargetObjects();
-  if (!selected && groupObjects.length > 1) {
-    recordHistory("delete group");
-    for (const mesh of groupObjects) removeObject(mesh, { record: false });
+  if (groupObjects.length > 1) {
+    const targets = [...groupObjects];
+    recordHistory("delete selection");
+    selected = null;
+    for (const mesh of targets) removeObject(mesh, { record: false, update: false });
     activeGroupIds = [];
     checkedIds.clear();
+    selectedGroupRecordId = null;
     currentTransformTargetKey = "";
     transform.detach();
     updateAll();
+    log(`Deleted ${targets.length} selected objects.`);
     return;
   }
   removeObject(selected);
@@ -3639,6 +3668,209 @@ function frameSelected() {
   orbit.update();
 }
 
+function customCameraViewById(id = selectedCustomCameraId) {
+  return customCameraViews.find(view => view.id === id) || null;
+}
+
+function nextCustomCameraId() {
+  customCameraIdCounter += 1;
+  return `camera-director-${customCameraIdCounter}`;
+}
+
+function validCameraVector(value, fallback) {
+  return Array.isArray(value) && value.length === 3 && value.every(Number.isFinite)
+    ? value.map(Number)
+    : [...fallback];
+}
+
+function disposeCameraDirectorMarkers() {
+  cameraDirectorGroup.traverse(object => {
+    object.geometry?.dispose?.();
+    if (Array.isArray(object.material)) object.material.forEach(material => material?.dispose?.());
+    else object.material?.dispose?.();
+  });
+  cameraDirectorGroup.clear();
+}
+
+function makeCameraDirectorMarker(view, selectedMarker = false) {
+  const color = selectedMarker ? 0xe1b14b : 0x40c7a5;
+  const material = new THREE.MeshBasicMaterial({ color, depthWrite: false });
+  const marker = new THREE.Group();
+  marker.name = `Camera Director: ${view.name}`;
+  marker.userData.cameraViewId = view.id;
+  marker.position.fromArray(view.position);
+
+  const body = new THREE.Mesh(new THREE.BoxGeometry(.46, .28, .32), material.clone());
+  const lens = new THREE.Mesh(new THREE.CylinderGeometry(.1, .14, .22, 12), material.clone());
+  lens.rotation.x = Math.PI / 2;
+  lens.position.z = .25;
+  const head = new THREE.Mesh(new THREE.SphereGeometry(.11, 12, 8), material.clone());
+  head.position.set(0, .27, 0);
+  const tripod = new THREE.Mesh(new THREE.CylinderGeometry(.035, .08, .48, 8), material.clone());
+  tripod.position.y = -.35;
+  marker.add(body, lens, head, tripod);
+
+  const aim = new THREE.Vector3().fromArray(view.target);
+  if (aim.distanceToSquared(marker.position) < 1e-8) aim.z += 1;
+  marker.lookAt(aim);
+  marker.traverse(object => {
+    object.renderOrder = 50;
+    object.userData.cameraViewId = view.id;
+  });
+  return marker;
+}
+
+function renderCustomCameraMarkers() {
+  disposeCameraDirectorMarkers();
+  for (const view of customCameraViews) {
+    cameraDirectorGroup.add(makeCameraDirectorMarker(view, view.id === selectedCustomCameraId));
+  }
+  cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked;
+}
+
+function customCameraInputs() {
+  return [
+    els.customCameraNameInput,
+    els.customCameraPosX,
+    els.customCameraPosY,
+    els.customCameraPosZ,
+    els.customCameraTargetX,
+    els.customCameraTargetY,
+    els.customCameraTargetZ
+  ];
+}
+
+function syncCustomCameraInputs() {
+  const view = customCameraViewById();
+  for (const input of customCameraInputs()) input.disabled = !view;
+  els.viewCustomCameraBtn.disabled = !view;
+  els.updateCustomCameraBtn.disabled = !view;
+  els.deleteCustomCameraBtn.disabled = !view;
+  if (!view) {
+    els.customCameraNameInput.value = "";
+    for (const input of customCameraInputs().slice(1)) input.value = "";
+    return;
+  }
+  els.customCameraNameInput.value = view.name;
+  [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ].forEach((input, index) => { input.value = round(view.position[index]); });
+  [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ].forEach((input, index) => { input.value = round(view.target[index]); });
+}
+
+function renderCustomCameraViews() {
+  if (!customCameraViewById()) selectedCustomCameraId = customCameraViews[0]?.id || null;
+  els.customCameraList.innerHTML = "";
+  for (const view of customCameraViews) {
+    const option = document.createElement("option");
+    option.value = view.id;
+    option.textContent = view.name;
+    option.selected = view.id === selectedCustomCameraId;
+    els.customCameraList.append(option);
+  }
+  syncCustomCameraInputs();
+  renderCustomCameraMarkers();
+}
+
+function selectCustomCameraView(id) {
+  selectedCustomCameraId = customCameraViews.some(view => view.id === id) ? id : null;
+  renderCustomCameraViews();
+}
+
+function addCustomCameraView() {
+  recordHistory("add camera director");
+  const view = {
+    id: nextCustomCameraId(),
+    name: `Camera ${customCameraViews.length + 1}`,
+    position: camera.position.toArray(),
+    target: orbit.target.toArray(),
+    up: camera.up.toArray(),
+    fov: camera.fov
+  };
+  customCameraViews.push(view);
+  selectedCustomCameraId = view.id;
+  renderCustomCameraViews();
+  log(`Added ${view.name} at the current viewport.`);
+  return view;
+}
+
+function updateCustomCameraFromCurrentView() {
+  const view = customCameraViewById();
+  if (!view) return;
+  recordHistory("update camera director");
+  view.position = camera.position.toArray();
+  view.target = orbit.target.toArray();
+  view.up = camera.up.toArray();
+  view.fov = camera.fov;
+  renderCustomCameraViews();
+  log(`Moved ${view.name} to the current viewport.`);
+}
+
+function updateCustomCameraFromInputs({ record = true, render = true, refreshMarkers = true } = {}) {
+  const view = customCameraViewById();
+  if (!view) return;
+  if (record) recordHistory("edit camera director");
+  view.name = els.customCameraNameInput.value.trim() || view.name;
+  const positionInputs = [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ];
+  const targetInputs = [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ];
+  view.position = positionInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.position[index]);
+  view.target = targetInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.target[index]);
+  if (render) renderCustomCameraViews();
+  else {
+    const option = els.customCameraList.querySelector(`option[value="${view.id}"]`);
+    if (option) option.textContent = view.name;
+    if (refreshMarkers) renderCustomCameraMarkers();
+  }
+}
+
+function deleteCustomCameraView() {
+  const view = customCameraViewById();
+  if (!view) return;
+  recordHistory("delete camera director");
+  customCameraViews = customCameraViews.filter(candidate => candidate.id !== view.id);
+  selectedCustomCameraId = customCameraViews[0]?.id || null;
+  renderCustomCameraViews();
+  log(`Deleted ${view.name}.`);
+}
+
+function activateCustomCameraView(id = selectedCustomCameraId) {
+  const view = customCameraViewById(id);
+  if (!view) return;
+  selectedCustomCameraId = view.id;
+  camera.position.fromArray(view.position);
+  orbit.target.fromArray(view.target);
+  camera.up.fromArray(view.up);
+  camera.fov = Math.max(10, Math.min(120, Number(view.fov) || 55));
+  const distance = Math.max(.05, camera.position.distanceTo(orbit.target));
+  camera.near = Math.max(.01, distance / 2000);
+  camera.far = Math.max(1000000, distance * 100);
+  camera.lookAt(orbit.target);
+  camera.updateProjectionMatrix();
+  orbit.update();
+  renderCustomCameraViews();
+  log(`Viewing the scene through ${view.name}.`);
+}
+
+function restoreCustomCameraViews(cameraState = {}) {
+  customCameraIdCounter = 0;
+  customCameraViews = (cameraState.views || []).map((view, index) => {
+    const id = typeof view?.id === "string" && view.id ? view.id : `camera-director-${index + 1}`;
+    const match = id.match(/(\d+)$/);
+    if (match) customCameraIdCounter = Math.max(customCameraIdCounter, Number(match[1]));
+    return {
+      id,
+      name: String(view?.name || `Camera ${index + 1}`),
+      position: validCameraVector(view?.position, [6, 5, 7]),
+      target: validCameraVector(view?.target, [0, 1, 0]),
+      up: validCameraVector(view?.up, [0, 1, 0]),
+      fov: Math.max(10, Math.min(120, Number(view?.fov) || 55))
+    };
+  });
+  selectedCustomCameraId = customCameraViews.some(view => view.id === cameraState.selectedId)
+    ? cameraState.selectedId
+    : (customCameraViews[0]?.id || null);
+  els.showCustomCamerasInput.checked = cameraState.showMarkers ?? true;
+  renderCustomCameraViews();
+}
+
 const screenshotViewDirections = {
   front: new THREE.Vector3(0, .05, 1),
   back: new THREE.Vector3(0, .05, -1),
@@ -3690,6 +3922,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
   const oldOpeningPickGuideVisible = openingPickGuideGroup.visible;
   const oldMarkerGroupVisible = markerGroup.visible;
+  const oldCameraDirectorGroupVisible = cameraDirectorGroup.visible;
   const oldGridVisible = grid.visible;
   const oldGridLabelsVisible = gridLabelGroup.visible;
 
@@ -3698,6 +3931,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   selectionOutlineGroup.visible = false;
   openingPickGuideGroup.visible = false;
   markerGroup.visible = false;
+  cameraDirectorGroup.visible = false;
   if (els.hideGridInShotsInput?.checked) {
     grid.visible = false;
     gridLabelGroup.visible = false;
@@ -3728,6 +3962,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   selectionOutlineGroup.visible = oldSelectionOutlineVisible;
   openingPickGuideGroup.visible = oldOpeningPickGuideVisible;
   markerGroup.visible = oldMarkerGroupVisible;
+  cameraDirectorGroup.visible = oldCameraDirectorGroupVisible;
   grid.visible = oldGridVisible;
   gridLabelGroup.visible = oldGridLabelsVisible;
   camera.position.copy(oldPosition);
@@ -3877,6 +4112,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
   const oldOpeningPickGuideVisible = openingPickGuideGroup.visible;
   const oldMarkerGroupVisible = markerGroup.visible;
+  const oldCameraDirectorGroupVisible = cameraDirectorGroup.visible;
   const oldGridVisible = grid.visible;
   const oldGridLabelsVisible = gridLabelGroup.visible;
   const oldObjectVisibility = objects.map(object => ({ object, visible: object.visible }));
@@ -3888,6 +4124,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   selectionOutlineGroup.visible = false;
   openingPickGuideGroup.visible = false;
   markerGroup.visible = false;
+  cameraDirectorGroup.visible = false;
   grid.visible = false;
   gridLabelGroup.visible = false;
   photoEnvironment.visible = false;
@@ -3936,6 +4173,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   selectionOutlineGroup.visible = oldSelectionOutlineVisible;
   openingPickGuideGroup.visible = oldOpeningPickGuideVisible;
   markerGroup.visible = oldMarkerGroupVisible;
+  cameraDirectorGroup.visible = oldCameraDirectorGroupVisible;
   grid.visible = oldGridVisible;
   gridLabelGroup.visible = oldGridLabelsVisible;
   camera.position.copy(oldPosition);

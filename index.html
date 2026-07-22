@@ -194,7 +194,7 @@
       <div class="viewport-pane">
         <canvas id="canvas"></canvas>
         <div id="selectionBox" class="selection-box"></div>
-        <div class="hud"><span class="status-dot"></span><span id="hudText">Orbit: drag | Select: click | Transform: gizmo</span></div>
+        <div class="hud"><span class="status-dot"></span><span id="hudText">Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform: gizmo</span></div>
       </div>
       <div class="reference-viewports" aria-label="Bone placement reference views">
         <div class="reference-viewport">
@@ -237,6 +237,10 @@
             <label style="flex:1">Hex <input id="colorHexInput" class="hex-input" type="text" maxlength="7" spellcheck="false" value="#40C7A5" placeholder="#40C7A5" /></label>
             <label style="flex:1">Rough <input id="roughInput" type="range" min="0" max="1" step="0.05" /></label>
             <output id="roughValue" for="roughInput" aria-label="Roughness value">0.60</output>
+          </div>
+          <div class="compact-row">
+            <label style="flex:1">Opacity <input id="opacityInput" type="range" min="0.05" max="1" step="0.05" value="1" title="Lower opacity for transparent materials such as window glass" /></label>
+            <output id="opacityValue" for="opacityInput" aria-label="Opacity value">1.00</output>
           </div>
           <div class="texture-action-row">
             <button id="textureBtn" title="Add a texture image to the selected part">Add Texture</button>
@@ -342,15 +346,42 @@
           <label style="flex:1">Cone Deg <input id="lightAngleInput" type="number" min="5" max="80" step="1" value="24" /></label>
         </div>
         </div>
-        <div class="compact-row">
-          <button id="previewFrontBtn" title="Preview the Front save-view framing">Front</button>
-          <button id="previewBackBtn" title="Preview the Back save-view framing">Back</button>
-          <button id="previewLeftBtn" title="Preview the Left save-view framing">Left</button>
-          <button id="previewRightBtn" title="Preview the Right save-view framing">Right</button>
-          <button id="previewTopBtn" title="Preview the Top save-view framing">Top</button>
-          <button id="previewIsoBtn" title="Preview the Iso save-view framing">Iso</button>
-          <button id="resetZoomBtn" title="Reset the viewer zoom by framing the current model">Reset Zoom</button>
-        </div>
+        <section class="camera-panel section" id="cameraViewsSection" data-collapse-persist="camera-views">
+          <button class="section-header" id="cameraViewsToggle" type="button" aria-expanded="true" aria-controls="cameraViewsBody">
+            <h2>Camera Views</h2>
+          </button>
+          <div class="section-body" id="cameraViewsBody">
+            <p class="api-note">Use the standard views or place reusable camera directors anywhere in the scene. Custom cameras are saved inside the project.</p>
+            <div class="compact-row">
+              <button id="previewFrontBtn" title="Preview the Front save-view framing">Front</button>
+              <button id="previewBackBtn" title="Preview the Back save-view framing">Back</button>
+              <button id="previewLeftBtn" title="Preview the Left save-view framing">Left</button>
+              <button id="previewRightBtn" title="Preview the Right save-view framing">Right</button>
+              <button id="previewTopBtn" title="Preview the Top save-view framing">Top</button>
+              <button id="previewIsoBtn" title="Preview the Iso save-view framing">Iso</button>
+              <button id="resetZoomBtn" title="Reset the viewer zoom by framing the current model">Reset Zoom</button>
+            </div>
+            <div class="compact-row">
+              <button id="addCustomCameraBtn" type="button" title="Create a camera director from the current viewport position and aim">Add Camera Here</button>
+              <button id="viewCustomCameraBtn" type="button" title="Look through the selected camera director">View Selected</button>
+              <button id="updateCustomCameraBtn" type="button" title="Move the selected camera director to the current viewport">Use Current View</button>
+              <button id="deleteCustomCameraBtn" class="warn" type="button">Delete</button>
+            </div>
+            <select id="customCameraList" class="bone-list" size="5" aria-label="Custom camera directors"></select>
+            <label>Name <input id="customCameraNameInput" type="text" maxlength="120" placeholder="Select a camera" /></label>
+            <div class="field-grid">
+              <label>X <input id="customCameraPosX" type="number" step="0.1" /></label>
+              <label>Y <input id="customCameraPosY" type="number" step="0.1" /></label>
+              <label>Z <input id="customCameraPosZ" type="number" step="0.1" /></label>
+            </div>
+            <div class="field-grid">
+              <label>Aim X <input id="customCameraTargetX" type="number" step="0.1" /></label>
+              <label>Aim Y <input id="customCameraTargetY" type="number" step="0.1" /></label>
+              <label>Aim Z <input id="customCameraTargetZ" type="number" step="0.1" /></label>
+            </div>
+            <label class="toggle-chip"><input id="showCustomCamerasInput" type="checkbox" checked /> <span>Show camera directors in viewport</span></label>
+          </div>
+        </section>
         <section class="bone-panel section" id="bonePlacementSection" data-collapse-persist="bone-placement">
           <button class="section-header" id="bonePlacementToggle" type="button" aria-expanded="true" aria-controls="bonePlacementBody">
             <h2>Bone Placement</h2>

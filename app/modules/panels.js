@@ -296,6 +296,34 @@ els.previewLeftBtn.addEventListener("click", () => previewShotView("left"));
 els.previewRightBtn.addEventListener("click", () => previewShotView("right"));
 els.previewTopBtn.addEventListener("click", () => previewShotView("top"));
 els.previewIsoBtn.addEventListener("click", () => previewShotView("iso"));
+els.addCustomCameraBtn.addEventListener("click", addCustomCameraView);
+els.viewCustomCameraBtn.addEventListener("click", () => activateCustomCameraView());
+els.updateCustomCameraBtn.addEventListener("click", updateCustomCameraFromCurrentView);
+els.deleteCustomCameraBtn.addEventListener("click", deleteCustomCameraView);
+els.customCameraList.addEventListener("change", () => selectCustomCameraView(els.customCameraList.value));
+els.customCameraList.addEventListener("dblclick", () => activateCustomCameraView(els.customCameraList.value));
+const activeCustomCameraEdits = new WeakSet();
+customCameraInputs().forEach(input => {
+  input.addEventListener("input", () => {
+    if (!activeCustomCameraEdits.has(input)) {
+      recordHistory("edit camera director");
+      activeCustomCameraEdits.add(input);
+    }
+    updateCustomCameraFromInputs({
+      record: false,
+      render: false,
+      refreshMarkers: input !== els.customCameraNameInput
+    });
+  });
+  input.addEventListener("blur", () => {
+    activeCustomCameraEdits.delete(input);
+    renderCustomCameraViews();
+  });
+});
+els.showCustomCamerasInput.addEventListener("change", () => {
+  cameraDirectorGroup.visible = els.showCustomCamerasInput.checked;
+  log(`${els.showCustomCamerasInput.checked ? "Showing" : "Hiding"} camera directors in the viewport.`);
+});
 els.saveFrontPngBtn.addEventListener("click", async () => saveSingleViewPng("front"));
 els.saveBackPngBtn.addEventListener("click", async () => saveSingleViewPng("back"));
 els.saveLeftPngBtn.addEventListener("click", async () => saveSingleViewPng("left"));
@@ -661,8 +689,8 @@ canvas.addEventListener("pointerdown", event => {
     return;
   }
   if (facePickMode && hit) {
-    if (coplanarFacePickMode) selectCoplanarFaceFromHit(hit, { append: event.shiftKey });
-    else pickFace(hit, { append: event.shiftKey });
+    if (coplanarFacePickMode) selectCoplanarFaceFromHit(hit, { append: additiveSelectionRequested(event) });
+    else pickFace(hit, { append: additiveSelectionRequested(event) });
     return;
   }
   pendingScenePick = {
@@ -670,7 +698,7 @@ canvas.addEventListener("pointerdown", event => {
     startClientX: event.clientX,
     startClientY: event.clientY,
     hitObject: hit?.object || null,
-    append: !!event.shiftKey,
+    append: additiveSelectionRequested(event),
     dragged: false
   };
 });
@@ -727,7 +755,7 @@ canvas.addEventListener("dblclick", event => {
   const hit = hitFromPointerEvent(event);
   if (!hit) return;
   event.preventDefault();
-  selectConnectedTrianglesFromHit(hit, { append: event.shiftKey });
+  selectConnectedTrianglesFromHit(hit, { append: additiveSelectionRequested(event) });
 });
 
 window.addEventListener("keydown", event => {
@@ -812,6 +840,9 @@ window.ModelerStudio = {
   }),
   captureView,
   captureViews,
+  customCameraViews: () => customCameraViews.map(view => ({ ...view, position: [...view.position], target: [...view.target], up: [...view.up] })),
+  addCustomCameraView,
+  activateCustomCameraView,
   saveQaSheet,
   exportObjParts,
   frameSelected,
@@ -856,6 +887,7 @@ buildGridLabels();
 updateGridLabels();
 syncSpotLightRig();
 updateUndoButton();
+renderCustomCameraViews();
 selectObject(null);
 frameSelected();
 detectLocalHost().then(async localHost => {

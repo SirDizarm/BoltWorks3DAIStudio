@@ -1,0 +1,241 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boltworksstudio.com/schemas/modeler-project-v1.json",
+  "title": "BoltWorks 3D AI Studio editable project",
+  "type": "object",
+  "required": ["kind", "version", "name", "textureLibrary", "scene", "editor"],
+  "properties": {
+    "kind": { "const": "modeler-project" },
+    "version": { "const": 1 },
+    "name": { "type": "string", "minLength": 1 },
+    "savedAt": { "type": "string" },
+    "capabilities": { "type": "object" },
+    "textureLibrary": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/texture" }
+    },
+    "scene": { "$ref": "#/$defs/scene" },
+    "editor": { "$ref": "#/$defs/editor" }
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "vec3": {
+      "type": "array",
+      "prefixItems": [
+        { "type": "number" },
+        { "type": "number" },
+        { "type": "number" }
+      ],
+      "minItems": 3,
+      "maxItems": 3
+    },
+    "color": {
+      "type": "string",
+      "pattern": "^#[0-9A-Fa-f]{6}$"
+    },
+    "texture": {
+      "type": "object",
+      "required": ["name", "dataUrl"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "dataUrl": {
+          "type": "string",
+          "pattern": "^data:image/[A-Za-z0-9.+-]+;base64,"
+        },
+        "robloxAssetId": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "group": {
+      "type": "object",
+      "required": ["id", "name", "parentId"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "parentId": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "geometry": {
+      "type": "object",
+      "required": ["positions"],
+      "properties": {
+        "positions": {
+          "type": "array",
+          "items": { "type": "number" },
+          "minItems": 9
+        },
+        "normals": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "uvs": {
+          "type": "array",
+          "items": { "type": "number" }
+        },
+        "indices": {
+          "type": "array",
+          "items": { "type": "integer", "minimum": 0 }
+        }
+      },
+      "additionalProperties": true
+    },
+    "object": {
+      "type": "object",
+      "required": ["id", "name", "shape", "position", "rotation", "scale", "color", "roughness"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "name": { "type": "string", "minLength": 1 },
+        "shape": { "type": "string", "minLength": 1 },
+        "geometry": {
+          "anyOf": [
+            { "$ref": "#/$defs/geometry" },
+            { "type": "null" }
+          ]
+        },
+        "position": { "$ref": "#/$defs/vec3" },
+        "rotation": { "$ref": "#/$defs/vec3" },
+        "scale": { "$ref": "#/$defs/vec3" },
+        "color": { "$ref": "#/$defs/color" },
+        "roughness": { "type": "number", "minimum": 0, "maximum": 1 },
+        "opacity": { "type": "number", "minimum": 0.05, "maximum": 1 },
+        "hidden": { "type": "boolean" },
+        "groupId": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "groupName": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "pivot": {
+          "anyOf": [
+            { "$ref": "#/$defs/vec3" },
+            { "type": "null" }
+          ]
+        },
+        "textureName": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "textureUrl": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "textureFlipY": { "type": "boolean" },
+        "textureRotation": { "type": "number" },
+        "textureRobloxAssetId": { "type": "string" },
+        "materialRule": { "type": "string" },
+        "linkId": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "linkColor": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        }
+      },
+      "additionalProperties": true
+    },
+    "scene": {
+      "type": "object",
+      "required": ["version", "groups", "objects"],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "coordinateSystem": { "type": "object" },
+        "shapeConventions": { "type": "object" },
+        "groups": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/group" }
+        },
+        "hierarchy": { "type": "array" },
+        "objects": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/object" }
+        },
+        "boneHierarchy": { "type": "array" }
+      },
+      "additionalProperties": true
+    },
+    "editor": {
+      "type": "object",
+      "properties": {
+        "projectName": { "type": "string" },
+        "selectedId": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "selectedGroupId": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "checkedIds": { "type": "array", "items": { "type": "string" } },
+        "activeGroupIds": { "type": "array", "items": { "type": "string" } },
+        "activeTransformMode": {
+          "anyOf": [
+            { "enum": ["translate", "rotate", "scale"] },
+            { "type": "null" }
+          ]
+        },
+        "facePickMode": { "type": "boolean" },
+        "view": { "type": "object" },
+        "cameraViews": {
+          "type": "object",
+          "properties": {
+            "selectedId": {
+              "anyOf": [
+                { "type": "string" },
+                { "type": "null" }
+              ]
+            },
+            "showMarkers": { "type": "boolean" },
+            "views": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["id", "name", "position", "target", "up", "fov"],
+                "properties": {
+                  "id": { "type": "string", "minLength": 1 },
+                  "name": { "type": "string", "minLength": 1 },
+                  "position": { "$ref": "#/$defs/vec3" },
+                  "target": { "$ref": "#/$defs/vec3" },
+                  "up": { "$ref": "#/$defs/vec3" },
+                  "fov": { "type": "number", "minimum": 10, "maximum": 120 }
+                },
+                "additionalProperties": true
+              }
+            }
+          },
+          "additionalProperties": true
+        },
+        "panels": { "type": "object" },
+        "toolbars": { "type": "object" },
+        "tools": { "type": "object" },
+        "lighting": { "type": "object" },
+        "rigging": { "type": "object" }
+      },
+      "additionalProperties": true
+    }
+  }
+}

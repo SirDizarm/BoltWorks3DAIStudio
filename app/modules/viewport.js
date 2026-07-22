@@ -330,6 +330,12 @@ const markerGroup = new THREE.Group();
 markerGroup.name = "marker helpers";
 scene.add(markerGroup);
 const markerHelpers = [];
+const cameraDirectorGroup = new THREE.Group();
+cameraDirectorGroup.name = "camera director helpers";
+scene.add(cameraDirectorGroup);
+let customCameraViews = [];
+let selectedCustomCameraId = null;
+let customCameraIdCounter = 0;
 const sceneGroupRegistry = new Map();
 let selectedGroupRecordId = null;
 
@@ -369,6 +375,21 @@ const els = {
   inspectorToggle: document.querySelector("#inspectorToggle"),
   utilitiesSection: document.querySelector("#utilitiesSection"),
   utilitiesToggle: document.querySelector("#utilitiesToggle"),
+  cameraViewsSection: document.querySelector("#cameraViewsSection"),
+  cameraViewsToggle: document.querySelector("#cameraViewsToggle"),
+  addCustomCameraBtn: document.querySelector("#addCustomCameraBtn"),
+  viewCustomCameraBtn: document.querySelector("#viewCustomCameraBtn"),
+  updateCustomCameraBtn: document.querySelector("#updateCustomCameraBtn"),
+  deleteCustomCameraBtn: document.querySelector("#deleteCustomCameraBtn"),
+  customCameraList: document.querySelector("#customCameraList"),
+  customCameraNameInput: document.querySelector("#customCameraNameInput"),
+  customCameraPosX: document.querySelector("#customCameraPosX"),
+  customCameraPosY: document.querySelector("#customCameraPosY"),
+  customCameraPosZ: document.querySelector("#customCameraPosZ"),
+  customCameraTargetX: document.querySelector("#customCameraTargetX"),
+  customCameraTargetY: document.querySelector("#customCameraTargetY"),
+  customCameraTargetZ: document.querySelector("#customCameraTargetZ"),
+  showCustomCamerasInput: document.querySelector("#showCustomCamerasInput"),
   imageReliefMeshPlugin: document.querySelector("#imageReliefMeshPlugin"),
   sceneRenderingTools: document.querySelector("#sceneRenderingTools"),
   boneAxisFreeBtn: document.querySelector("#boneAxisFreeBtn"),
@@ -461,6 +482,8 @@ const els = {
   colorHexInput: document.querySelector("#colorHexInput"),
   roughInput: document.querySelector("#roughInput"),
   roughValue: document.querySelector("#roughValue"),
+  opacityInput: document.querySelector("#opacityInput"),
+  opacityValue: document.querySelector("#opacityValue"),
   cutSideSelect: document.querySelector("#cutSideSelect"),
   cutAmountInput: document.querySelector("#cutAmountInput"),
   cutMeshBtn: document.querySelector("#cutMeshBtn"),
