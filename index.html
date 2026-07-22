@@ -25,16 +25,8 @@
           <div class="toolbar-picker-menu">
             <label><input id="toggleToolbarTransform" type="checkbox" checked /> Transform</label>
             <label><input id="toggleToolbarMirror" type="checkbox" checked /> Mirror</label>
-            <label><input id="toggleToolbarSelectionTools" type="checkbox" checked /> Selection Tool</label>
-            <label><input id="toggleToolbarLineTools" type="checkbox" checked /> Line Tool</label>
-            <label><input id="toggleToolbarMarkerTools" type="checkbox" checked /> Marker Tool</label>
-            <label><input id="toggleToolbarTriEditor" type="checkbox" checked /> Tri Editor</label>
-            <label><input id="toggleToolbarMiscTools" type="checkbox" checked /> Misc</label>
-            <label><input id="toggleToolbarFaceEdit" type="checkbox" checked /> Face Edit</label>
             <label><input id="toggleToolbarScene" type="checkbox" checked /> Scene Actions</label>
             <label><input id="toggleToolbarProjectFiles" type="checkbox" checked /> Project Files</label>
-            <label><input id="toggleToolbarViews" type="checkbox" checked /> Save PNG Views</label>
-            <label><input id="toggleToolbarImportExport" type="checkbox" checked /> Import Export</label>
           </div>
         </details>
       </div>
@@ -50,6 +42,17 @@
         <button data-flip-axis="x" title="Mirror selected part around its own X center">Flip X</button>
         <button data-flip-axis="y" title="Mirror selected part around its own Y center">Flip Y</button>
         <button data-flip-axis="z" title="Mirror selected part around its own Z center">Flip Z</button>
+      </div>
+      <div class="toolbar-group" id="toolbarModelToolsLauncherGroup" aria-label="Model tools window">
+        <button id="modelToolsOpenBtn" title="Open shape, selection, sketch, triangle, and topology tools">Model Tools</button>
+      </div>
+      <div class="toolbar-group" id="toolbarShapeBuilderGroup" aria-label="Shape builder tools">
+        <label title="Axis used to order and project checked profile meshes">Loft <select id="loftAxisSelect"><option value="auto">Auto</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
+        <label title="Number of perimeter samples used for each loft profile">Pts <input id="loftPointsInput" type="number" min="3" max="64" step="1" value="16" /></label>
+        <button id="loftCheckedBtn" title="Create a smooth closed mesh through two or more checked profile objects">Loft Checked</button>
+        <label title="World axis mirrored copies cross">Sym <select id="symmetryAxisSelect"><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
+        <label title="World coordinate of the symmetry plane">Plane <input id="symmetryPlaneInput" type="number" step="0.01" value="0" /></label>
+        <button id="mirrorCopyBtn" title="Create mirrored editable copies of selected or checked parts">Mirror Copy</button>
       </div>
       <div class="toolbar-group" id="toolbarSelectionToolsGroup" aria-label="Selection tools">
         <button id="facePickBtn" title="Cursor-select a mesh triangle for marker or bevel editing">Select Tri</button>
@@ -82,19 +85,10 @@
         <button id="cutHoleSketchBtn" title="Cut a hole from the selected mesh using the closed sketch loop">Cut Hole</button>
         <button id="bridgeMeshesBtn" title="Build a connector mesh between two checked open boundary loops">Bridge</button>
         <button id="digIntoBtn" title="Use one checked cutter mesh to carve a recessed opening from the selected face">Dig Into</button>
+        <button id="duplicateBtn" title="Create an independent copy of the selected mesh or checked meshes">Duplicate</button>
       </div>
       <div class="toolbar-group" id="toolbarFaceEditGroup" aria-label="Face edit tools">
-        <label title="Choose recessed or raised bevel shape">Type <select id="bevelTypeSelect"><option value="inner">Inner</option><option value="outer">Outer</option><option value="both">Both</option></select></label>
-        <label title="Bevel slope width along the face edges">Bevel <input id="bevelSizeInput" type="number" min="0.03" max="1" step="0.03" value="0.16" /></label>
-        <label title="How deep the recess sinks or the raised bevel extends">Depth <input id="bevelDepthInput" type="number" min="0.03" max="1" step="0.03" value="0.18" /></label>
-        <label title="Axis Drag/Push should move along">Axis <select id="dragPushAxisSelect"><option value="normal">Normal</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
-        <label title="Snap size for each Drag/Push movement step">Step <input id="dragPushStepInput" type="number" min="0.001" max="1" step="0.001" value="0.01" /></label>
-        <label title="Stop Pull/Extend at the next mesh face within Depth">Connect <input id="connectFaceInput" type="checkbox" /></label>
-        <button id="extendFaceBtn" title="Extend selected triangle side by Depth without scaling the opposite side">Extend</button>
-        <button id="pullFaceBtn" title="Pull selected triangle area outward">Pull</button>
-        <button id="pushFaceBtn" title="Push selected triangle area inward by Depth">Push</button>
-        <button id="dragPushBtn" title="Toggle interactive Drag/Push mode, then drag left or right on the selected triangles">Drag/Push</button>
-        <button id="bevelFaceBtn" title="Create a true inner or outer bevel patch on the selected face">Bevel Face</button>
+        <button id="surfaceEditorOpenBtn" title="Open contextual mouse-drag and exact-value surface editing">Surface Edit</button>
       </div>
       <div class="toolbar-group" id="toolbarSceneGroup" aria-label="Scene actions">
         <button id="undoBtn" title="Undo last edit (Ctrl+Z)" disabled>Undo</button>
@@ -106,6 +100,9 @@
         <button id="saveProjectBtn" title="Save the full editable project, including scene, view, lighting, and editor state">Save Project</button>
         <button id="loadProjectBtn" title="Load a full editable project file">Load Project</button>
         <button id="stopServerBtn" class="warn" data-local-host-only hidden aria-hidden="true" title="Stop the local app server and close this app window">Stop Server</button>
+      </div>
+      <div class="toolbar-group" id="toolbarOutputToolsLauncherGroup" aria-label="Output tools window">
+        <button id="outputToolsOpenBtn" title="Open saved views, exports, and imports">Files &amp; Output</button>
       </div>
       <div class="toolbar-group" id="toolbarViewsGroup" aria-label="Save PNG views">
         <button id="captureViewsBtn" title="Save front, back, side, top, and isometric screenshots">Save Views</button>
@@ -184,7 +181,9 @@
           <button id="groupBtn" title="Move checked parts as one group">Group</button>
           <button id="ungroupBtn" title="Split the selected group hierarchy or dissolve a shallow group selection">Ungroup</button>
           <button id="mergeMeshBtn" title="Bake checked meshes or checked group contents into one editable mesh">Merge Mesh</button>
-          <button id="duplicateBtn" title="Duplicate selected">Duplicate</button>
+        </div>
+        <div class="tree-controls">
+          <button id="goToSelectedMeshBtn" type="button" title="Find the currently selected viewport mesh in the scene list">Go to Selected Mesh</button>
         </div>
       </section>
       <section class="tree" id="sceneTree" aria-label="Scene objects"></section>
@@ -193,6 +192,9 @@
     <section class="viewport" aria-label="3D and bone placement viewports">
       <div class="viewport-pane">
         <canvas id="canvas"></canvas>
+        <div id="referenceImageOverlay" class="reference-image-overlay" hidden aria-hidden="true">
+          <img id="referenceImageOverlayImg" alt="Viewport reference" />
+        </div>
         <div id="selectionBox" class="selection-box"></div>
         <div class="hud"><span class="status-dot"></span><span id="hudText">Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform: gizmo</span></div>
       </div>
@@ -319,6 +321,40 @@
               <label class="toggle-chip"><input id="showGridInput" type="checkbox" checked /> <span>Show Grid Overlay</span></label>
               <label class="toggle-chip"><input id="hideGridInShotsInput" type="checkbox" checked /> <span>Hide Grid In Shots</span></label>
             </div>
+          </div>
+        </section>
+        <section class="reference-image-panel section" id="referenceImageSection" data-collapse-persist="reference-image">
+          <button class="section-header" id="referenceImageToggle" type="button" aria-expanded="true" aria-controls="referenceImageBody">
+            <h2>Reference Image</h2>
+          </button>
+          <div class="section-body" id="referenceImageBody">
+            <p class="api-note">Keep concept art beside the model, or place it transparently over the viewport for silhouette and proportion matching.</p>
+            <div id="referenceImagePreview" class="reference-image-preview">
+              <span id="referenceImageEmpty">No reference loaded</span>
+              <img id="referenceImagePreviewImg" alt="Loaded model reference" hidden />
+            </div>
+            <div class="compact-row">
+              <button id="loadReferenceImageBtn" type="button">Load Reference</button>
+              <button id="clearReferenceImageBtn" class="warn" type="button" disabled>Clear</button>
+              <input id="referenceImageFile" type="file" accept="image/*,.png,.jpg,.jpeg,.webp,.bmp,.gif" hidden />
+            </div>
+            <label>Display
+              <select id="referenceImageMode">
+                <option value="panel">Side Screen</option>
+                <option value="overlay">Viewport Overlay</option>
+                <option value="both">Both</option>
+              </select>
+            </label>
+            <div class="compact-row">
+              <label style="flex:1">Overlay opacity <input id="referenceImageOpacity" type="range" min="0.05" max="1" step="0.05" value="0.45" /></label>
+              <output id="referenceImageOpacityValue" for="referenceImageOpacity">45%</output>
+            </div>
+            <div class="field-grid">
+              <label>Scale <input id="referenceImageScale" type="number" min="0.25" max="4" step="0.05" value="1" /></label>
+              <label>Offset X % <input id="referenceImageOffsetX" type="number" min="-200" max="200" step="1" value="0" /></label>
+              <label>Offset Y % <input id="referenceImageOffsetY" type="number" min="-200" max="200" step="1" value="0" /></label>
+            </div>
+            <span id="referenceImageName" class="api-note">No image selected</span>
           </div>
         </section>
         <div class="toggle-grid">
@@ -495,6 +531,100 @@
       </div>
     </footer>
   </main>
+
+  <section class="section docked-tools-section collapsed" id="surfaceEditorWindow" aria-label="Surface Edit" data-interaction-mode="off" data-collapse-persist="surface-edit">
+    <button class="section-header" id="surfaceEditorCloseBtn" type="button" aria-expanded="false" aria-controls="surfaceEditorBody">
+      <h2>Surface Edit</h2>
+    </button>
+    <div class="section-body surface-editor-body" id="surfaceEditorBody">
+      <span id="surfaceEditorSelection" class="api-note">Select a face to begin</span>
+      <div class="surface-selection-modes" role="group" aria-label="Surface selection mode">
+        <button id="surfaceSelectVertexBtn" type="button" title="Select and move welded mesh vertices">Vertex</button>
+        <button id="surfaceSelectEdgeBtn" type="button" title="Select and move mesh edges">Edge</button>
+        <button id="surfaceSelectTriangleBtn" type="button" title="Select one triangle at a time">Triangle</button>
+        <button id="surfaceSelectFaceBtn" type="button" title="Select the whole connected flat face">Whole Face</button>
+      </div>
+      <div class="surface-editor-tabs" role="group" aria-label="Surface edit input mode">
+        <button id="surfaceMouseModeBtn" type="button" title="Enable or release viewport surface dragging">Mouse Drag</button>
+        <button id="surfaceValueModeBtn" type="button">Exact Value</button>
+      </div>
+      <label class="toggle-chip"><input id="autoSurfaceDragInput" type="checkbox" checked /> <span>Arm mouse drag after selecting a face</span></label>
+      <div class="field-grid">
+        <label title="Axis used for mouse drag and fixed edits">Axis <select id="dragPushAxisSelect"><option value="free" selected>Free</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
+        <label class="mouse-surface-control" title="Snap size for each mouse movement step">Mouse step <input id="dragPushStepInput" type="number" min="0.001" max="1" step="0.001" value="0.01" /></label>
+        <label title="World-space radius used for soft deformation">Soft radius <input id="softRadiusInput" type="number" min="0.01" max="100" step="0.01" value="0.25" /></label>
+        <label class="mouse-surface-control" title="Choose hard selected vertices or smooth nearby falloff">Mouse shape <select id="surfaceMouseFalloffSelect"><option value="soft" selected>Soft falloff</option><option value="hard">Hard face</option></select></label>
+        <label class="value-surface-control" title="Width of the new border created inside the selected surface">Inset <input id="insetAmountInput" type="number" min="0.001" max="10" step="0.01" value="0.10" /></label>
+        <label class="value-surface-control" title="Exact movement or extrusion distance">Distance <input id="bevelDepthInput" type="number" min="0.001" max="100" step="0.01" value="0.18" /></label>
+        <label class="value-surface-control" title="Stop Pull or Extend at the next face">Connect <input id="connectFaceInput" type="checkbox" /></label>
+      </div>
+      <div class="mouse-surface-control surface-editor-actions">
+        <button id="dragPushBtn" type="button" title="Show only the move arrow for the locked Axis">Show Move Arrow</button>
+      </div>
+      <p class="api-note mouse-surface-control">Free shows all three arrows. Lock X, Y, or Z to show and drag only its matching colored arrow.</p>
+      <div class="value-surface-control surface-editor-actions">
+        <button id="insetFaceBtn" title="Create a border and a new editable center surface">Inset Face</button>
+        <button id="extendFaceBtn" title="Extend selected triangle side by Distance">Extend</button>
+        <button id="pullFaceBtn" title="Pull selected triangle area outward by Distance">Pull</button>
+        <button id="pushFaceBtn" title="Push selected triangle area inward by Distance">Push</button>
+        <button id="softPullBtn" title="Pull selected triangles and nearby vertices using Soft radius">Soft Pull</button>
+        <button id="softPushBtn" title="Push selected triangles and nearby vertices using Soft radius">Soft Push</button>
+      </div>
+      <details class="surface-bevel-details">
+        <summary>Bevel</summary>
+        <div class="field-grid">
+          <label>Type <select id="bevelTypeSelect"><option value="inner">Inner</option><option value="outer">Outer</option><option value="both">Both</option></select></label>
+          <label>Width <input id="bevelSizeInput" type="number" min="0.03" max="1" step="0.03" value="0.16" /></label>
+        </div>
+        <button id="bevelFaceBtn" title="Create a true inner or outer bevel patch on the selected face">Apply Bevel</button>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Edge Bevel</summary>
+        <div class="field-grid">
+          <label title="Width cut from each side of the selected sharp edge">Width <input id="edgeBevelWidthInput" type="number" min="0.001" max="10" step="0.01" value="0.08" /></label>
+        </div>
+        <button id="edgeBevelBtn" type="button" title="Chamfer one selected sharp edge and add a new bevel strip to the same mesh">Bevel Selected Edge</button>
+        <p class="api-note">Choose Edge, select one visible crease, then apply. Flat triangulation diagonals are ignored.</p>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Subdivide Surface</summary>
+        <div class="field-grid">
+          <label title="Number of times each selected triangle is split into four smaller triangles">Levels <input id="subdivideLevelsInput" type="number" min="1" max="2" step="1" value="1" /></label>
+        </div>
+        <button id="subdivideSelectedBtn" type="button" title="Add editable detail to the selected Triangle or Whole Face without changing its shape">Subdivide Selected</button>
+        <p class="api-note">Level 1 creates 4 triangles from each selected triangle. Level 2 creates 16. Neighboring edges are split automatically so the mesh stays closed while shaping.</p>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Loop Cut / Ring Cut</summary>
+        <div class="field-grid">
+          <label title="Local mesh axis crossed by the cutting plane">Axis <select id="loopCutAxisSelect"><option value="x">X</option><option value="y" selected>Y</option><option value="z">Z</option></select></label>
+          <label title="Position between the minimum and maximum mesh bounds when Cuts is 1">Position % <input id="loopCutPositionInput" type="number" min="1" max="99" step="1" value="50" /></label>
+          <label title="Number of evenly spaced ring cuts">Cuts <input id="loopCutCountInput" type="number" min="1" max="8" step="1" value="1" /></label>
+        </div>
+        <button id="loopCutBtn" type="button" title="Insert one or more closed topology rings through the selected mesh">Apply Loop Cut</button>
+        <p class="api-note">One cut uses Position %. Multiple cuts are evenly spaced. New ring edges stay selected for Move or Edge Slide.</p>
+      </details>
+      <p class="api-note">Mouse Drag: select a surface, then drag it left/right in the viewport. Exact Value: use Distance with the action buttons.</p>
+    </div>
+  </section>
+
+  <section class="section docked-tools-section collapsed" id="modelToolsWindow" aria-label="Model Tools" data-collapse-persist="model-tools">
+    <button class="section-header" id="modelToolsCloseBtn" type="button" aria-expanded="false" aria-controls="modelToolsBody">
+      <h2>Model Tools</h2>
+    </button>
+    <div class="section-body model-tools-body" id="modelToolsBody">
+      <p class="api-note docked-tools-description">Shape building, selection, sketches, and topology.</p>
+    </div>
+  </section>
+
+  <section class="section docked-tools-section collapsed" id="outputToolsWindow" aria-label="Files and Output" data-collapse-persist="files-output">
+    <button class="section-header" id="outputToolsCloseBtn" type="button" aria-expanded="false" aria-controls="outputToolsBody">
+      <h2>Files &amp; Output</h2>
+    </button>
+    <div class="section-body model-tools-body output-tools-body" id="outputToolsBody">
+      <p class="api-note docked-tools-description">Reference views, game exports, and model imports.</p>
+    </div>
+  </section>
 
   <div class="texture-editor-modal" id="textureEditorModal" aria-hidden="true">
     <div class="texture-editor-window" role="dialog" aria-modal="true" aria-labelledby="textureEditorMeshName">

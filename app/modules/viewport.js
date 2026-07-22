@@ -34,6 +34,11 @@ orbit.minDistance = 0.05;
 orbit.maxDistance = 500000;
 orbit.target.set(0, 1, 0);
 
+const surfaceGizmoPivot = new THREE.Object3D();
+surfaceGizmoPivot.name = "surface edit pivot";
+surfaceGizmoPivot.visible = false;
+scene.add(surfaceGizmoPivot);
+
 const transform = new TransformControls(camera, renderer.domElement);
 transform.visible = false;
 transform.addEventListener("dragging-changed", event => orbit.enabled = !event.value);
@@ -64,6 +69,17 @@ transform.addEventListener("objectChange", () => {
   updateScore();
 });
 scene.add(transform);
+
+const surfaceTransform = new TransformControls(camera, renderer.domElement);
+surfaceTransform.visible = false;
+surfaceTransform.setMode("translate");
+surfaceTransform.setSpace("world");
+surfaceTransform.setSize(.95);
+surfaceTransform.addEventListener("dragging-changed", event => orbit.enabled = !event.value);
+surfaceTransform.addEventListener("mouseDown", beginSurfaceGizmoDrag);
+surfaceTransform.addEventListener("mouseUp", finishSurfaceGizmoDrag);
+surfaceTransform.addEventListener("objectChange", applySurfaceGizmoDelta);
+scene.add(surfaceTransform);
 
 const grid = new THREE.GridHelper(18, 18, 0x7f929c, 0x34424a);
 grid.visible = true;
@@ -272,6 +288,10 @@ let lineSketchHover = null;
 const lineSketchPoints = [];
 let selectedFace = null;
 const selectedFaces = [];
+let surfaceComponentMode = "none";
+let surfaceSelectionSource = "none";
+const selectedSurfaceVertices = [];
+const selectedSurfaceEdges = [];
 let copiedTrianglePatch = null;
 let isPaintingTriangles = false;
 let isAreaSelectingTriangles = false;
@@ -281,6 +301,10 @@ let spaceCameraMode = false;
 let areaSelectionStart = null;
 let activeTransformMode = null;
 let dragPushSession = null;
+let surfaceGizmoDragging = false;
+let surfaceGizmoSyncing = false;
+let surfaceGizmoMovedDistance = 0;
+const surfaceGizmoLastPosition = new THREE.Vector3();
 let checkedIds = new Set();
 let activeGroupIds = [];
 const groupPivot = new THREE.Object3D();
@@ -303,6 +327,10 @@ const faceMarker = new THREE.Group();
 faceMarker.name = "selected triangle markers";
 faceMarker.visible = false;
 scene.add(faceMarker);
+const surfaceComponentMarker = new THREE.Group();
+surfaceComponentMarker.name = "selected vertex and edge markers";
+surfaceComponentMarker.visible = false;
+scene.add(surfaceComponentMarker);
 const selectionOutlineGroup = new THREE.Group();
 selectionOutlineGroup.name = "selected object silhouette";
 scene.add(selectionOutlineGroup);
@@ -339,11 +367,21 @@ let selectedCustomCameraId = null;
 let activeCustomCameraId = null;
 let customCameraIdCounter = 0;
 let playerLookDrag = null;
+let referenceImageState = {
+  name: "",
+  dataUrl: null,
+  mode: "panel",
+  opacity: .45,
+  scale: 1,
+  offsetX: 0,
+  offsetY: 0
+};
 const sceneGroupRegistry = new Map();
 let selectedGroupRecordId = null;
 
 const els = {
   tree: document.querySelector("#sceneTree"),
+  goToSelectedMeshBtn: document.querySelector("#goToSelectedMeshBtn"),
   log: document.querySelector("#log"),
   stateOutput: document.querySelector("#stateOutput"),
   selectionBox: document.querySelector("#selectionBox"),
@@ -352,16 +390,8 @@ const els = {
   toolbarPicker: document.querySelector("#toolbarPicker"),
   toggleToolbarTransform: document.querySelector("#toggleToolbarTransform"),
   toggleToolbarMirror: document.querySelector("#toggleToolbarMirror"),
-  toggleToolbarSelectionTools: document.querySelector("#toggleToolbarSelectionTools"),
-  toggleToolbarLineTools: document.querySelector("#toggleToolbarLineTools"),
-  toggleToolbarMarkerTools: document.querySelector("#toggleToolbarMarkerTools"),
-  toggleToolbarTriEditor: document.querySelector("#toggleToolbarTriEditor"),
-  toggleToolbarMiscTools: document.querySelector("#toggleToolbarMiscTools"),
-  toggleToolbarFaceEdit: document.querySelector("#toggleToolbarFaceEdit"),
   toggleToolbarScene: document.querySelector("#toggleToolbarScene"),
   toggleToolbarProjectFiles: document.querySelector("#toggleToolbarProjectFiles"),
-  toggleToolbarViews: document.querySelector("#toggleToolbarViews"),
-  toggleToolbarImportExport: document.querySelector("#toggleToolbarImportExport"),
   toolbarTransformGroup: document.querySelector("#toolbarTransformGroup"),
   toolbarMirrorGroup: document.querySelector("#toolbarMirrorGroup"),
   toolbarSelectionToolsGroup: document.querySelector("#toolbarSelectionToolsGroup"),
@@ -380,6 +410,23 @@ const els = {
   utilitiesToggle: document.querySelector("#utilitiesToggle"),
   cameraViewsSection: document.querySelector("#cameraViewsSection"),
   cameraViewsToggle: document.querySelector("#cameraViewsToggle"),
+  referenceImageSection: document.querySelector("#referenceImageSection"),
+  referenceImageToggle: document.querySelector("#referenceImageToggle"),
+  loadReferenceImageBtn: document.querySelector("#loadReferenceImageBtn"),
+  clearReferenceImageBtn: document.querySelector("#clearReferenceImageBtn"),
+  referenceImageFile: document.querySelector("#referenceImageFile"),
+  referenceImageMode: document.querySelector("#referenceImageMode"),
+  referenceImageOpacity: document.querySelector("#referenceImageOpacity"),
+  referenceImageOpacityValue: document.querySelector("#referenceImageOpacityValue"),
+  referenceImageScale: document.querySelector("#referenceImageScale"),
+  referenceImageOffsetX: document.querySelector("#referenceImageOffsetX"),
+  referenceImageOffsetY: document.querySelector("#referenceImageOffsetY"),
+  referenceImagePreview: document.querySelector("#referenceImagePreview"),
+  referenceImagePreviewImg: document.querySelector("#referenceImagePreviewImg"),
+  referenceImageEmpty: document.querySelector("#referenceImageEmpty"),
+  referenceImageName: document.querySelector("#referenceImageName"),
+  referenceImageOverlay: document.querySelector("#referenceImageOverlay"),
+  referenceImageOverlayImg: document.querySelector("#referenceImageOverlayImg"),
   addCustomCameraBtn: document.querySelector("#addCustomCameraBtn"),
   addPlayerCameraBtn: document.querySelector("#addPlayerCameraBtn"),
   viewCustomCameraBtn: document.querySelector("#viewCustomCameraBtn"),
@@ -466,6 +513,12 @@ const els = {
   extractTriBtn: document.querySelector("#extractTriBtn"),
   fillHoleBtn: document.querySelector("#fillHoleBtn"),
   bridgeMeshesBtn: document.querySelector("#bridgeMeshesBtn"),
+  loftAxisSelect: document.querySelector("#loftAxisSelect"),
+  loftPointsInput: document.querySelector("#loftPointsInput"),
+  loftCheckedBtn: document.querySelector("#loftCheckedBtn"),
+  symmetryAxisSelect: document.querySelector("#symmetryAxisSelect"),
+  symmetryPlaneInput: document.querySelector("#symmetryPlaneInput"),
+  mirrorCopyBtn: document.querySelector("#mirrorCopyBtn"),
   digIntoBtn: document.querySelector("#digIntoBtn"),
   removeMarksBtn: document.querySelector("#removeMarksBtn"),
   copyTriBtn: document.querySelector("#copyTriBtn"),
@@ -473,12 +526,45 @@ const els = {
   extendFaceBtn: document.querySelector("#extendFaceBtn"),
   pullFaceBtn: document.querySelector("#pullFaceBtn"),
   pushFaceBtn: document.querySelector("#pushFaceBtn"),
+  surfaceEditorOpenBtn: document.querySelector("#surfaceEditorOpenBtn"),
+  surfaceEditorWindow: document.querySelector("#surfaceEditorWindow"),
+  surfaceEditorCloseBtn: document.querySelector("#surfaceEditorCloseBtn"),
+  surfaceEditorSelection: document.querySelector("#surfaceEditorSelection"),
+  surfaceSelectVertexBtn: document.querySelector("#surfaceSelectVertexBtn"),
+  surfaceSelectEdgeBtn: document.querySelector("#surfaceSelectEdgeBtn"),
+  surfaceSelectTriangleBtn: document.querySelector("#surfaceSelectTriangleBtn"),
+  surfaceSelectFaceBtn: document.querySelector("#surfaceSelectFaceBtn"),
+  surfaceMouseModeBtn: document.querySelector("#surfaceMouseModeBtn"),
+  surfaceValueModeBtn: document.querySelector("#surfaceValueModeBtn"),
+  autoSurfaceDragInput: document.querySelector("#autoSurfaceDragInput"),
+  surfaceMouseFalloffSelect: document.querySelector("#surfaceMouseFalloffSelect"),
+  insetAmountInput: document.querySelector("#insetAmountInput"),
+  insetFaceBtn: document.querySelector("#insetFaceBtn"),
+  modelToolsOpenBtn: document.querySelector("#modelToolsOpenBtn"),
+  modelToolsWindow: document.querySelector("#modelToolsWindow"),
+  modelToolsCloseBtn: document.querySelector("#modelToolsCloseBtn"),
+  modelToolsBody: document.querySelector("#modelToolsBody"),
+  outputToolsOpenBtn: document.querySelector("#outputToolsOpenBtn"),
+  outputToolsWindow: document.querySelector("#outputToolsWindow"),
+  outputToolsCloseBtn: document.querySelector("#outputToolsCloseBtn"),
+  outputToolsBody: document.querySelector("#outputToolsBody"),
   dragPushBtn: document.querySelector("#dragPushBtn"),
   bevelTypeSelect: document.querySelector("#bevelTypeSelect"),
   bevelSizeInput: document.querySelector("#bevelSizeInput"),
   bevelDepthInput: document.querySelector("#bevelDepthInput"),
+  edgeBevelWidthInput: document.querySelector("#edgeBevelWidthInput"),
+  edgeBevelBtn: document.querySelector("#edgeBevelBtn"),
+  subdivideLevelsInput: document.querySelector("#subdivideLevelsInput"),
+  subdivideSelectedBtn: document.querySelector("#subdivideSelectedBtn"),
+  loopCutAxisSelect: document.querySelector("#loopCutAxisSelect"),
+  loopCutPositionInput: document.querySelector("#loopCutPositionInput"),
+  loopCutCountInput: document.querySelector("#loopCutCountInput"),
+  loopCutBtn: document.querySelector("#loopCutBtn"),
   dragPushAxisSelect: document.querySelector("#dragPushAxisSelect"),
   dragPushStepInput: document.querySelector("#dragPushStepInput"),
+  softRadiusInput: document.querySelector("#softRadiusInput"),
+  softPullBtn: document.querySelector("#softPullBtn"),
+  softPushBtn: document.querySelector("#softPushBtn"),
   connectFaceInput: document.querySelector("#connectFaceInput"),
   nameInput: document.querySelector("#nameInput"),
   posX: document.querySelector("#posX"),

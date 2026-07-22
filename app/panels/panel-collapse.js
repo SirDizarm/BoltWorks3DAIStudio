@@ -8,7 +8,8 @@ function restorePersistedPanelStates() {
     const toggle = section.querySelector(":scope > .section-header");
     if (!key || !toggle) return;
     try {
-      const collapsed = localStorage.getItem(panelCollapseStoragePrefix + key) === "true";
+      const saved = localStorage.getItem(panelCollapseStoragePrefix + key);
+      const collapsed = saved == null ? section.classList.contains("collapsed") : saved === "true";
       section.classList.toggle("collapsed", collapsed);
       toggle.setAttribute("aria-expanded", String(!collapsed));
     } catch (_) {

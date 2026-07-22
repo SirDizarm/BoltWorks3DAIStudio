@@ -1813,7 +1813,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, edgeBevelProtectedEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -1857,7 +1857,8 @@ function createMesh(spec = {}) {
     direction,
     cuts,
     playerAvatar: !!playerAvatar,
-    playerHeadOffset: Array.isArray(playerHeadOffset) ? playerHeadOffset.map(Number) : null
+    playerHeadOffset: Array.isArray(playerHeadOffset) ? playerHeadOffset.map(Number) : null,
+    edgeBevelProtectedEdges: Array.isArray(edgeBevelProtectedEdges) ? edgeBevelProtectedEdges.filter(value => typeof value === "string") : []
   };
   mesh.position.fromArray(position);
   mesh.rotation.set(
@@ -2589,13 +2590,338 @@ function setDragPushMode(enabled, { silent = false } = {}) {
   if (dragPushMode) {
     if (activeTransformMode) setTransformMode(activeTransformMode);
     setFacePickMode(true);
-    els.hudText.textContent = `Drag/Push mode: drag left or right to move selected triangles along ${String(els.dragPushAxisSelect?.value || "normal").toUpperCase()} in snapped ${Number(els.dragPushStepInput?.value || .01)} steps`;
+    els.hudText.textContent = `Surface mouse mode: ${surfaceAxisMode() === "free" ? "drag the X/Y/Z arrows" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow or the selected face left/right`} in snapped ${Number(els.dragPushStepInput?.value || .01)} steps`;
   } else {
     els.hudText.textContent = facePickMode
       ? "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, Push, or Bevel Face"
       : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
   }
+  updateSurfaceGizmoAttachment();
   if (!silent) log(dragPushMode ? "Drag/Push mode enabled." : "Drag/Push mode disabled.");
+}
+
+function surfaceInteractionMode() {
+  const mode = els.surfaceEditorWindow?.dataset.interactionMode;
+  if (mode === "value" || mode === "mouse") return mode;
+  return "off";
+}
+
+function surfaceComponentSelectionCount() {
+  if (surfaceComponentMode === "vertex") return selectedSurfaceVertices.length;
+  if (surfaceComponentMode === "edge") return selectedSurfaceEdges.length;
+  if (surfaceComponentMode === "none") return 0;
+  return selectedFaces.length;
+}
+
+function surfaceAxisMode() {
+  const axis = String(els.dragPushAxisSelect?.value || "free").toLowerCase();
+  return ["x", "y", "z"].includes(axis) ? axis : "free";
+}
+
+function syncSurfaceAxisUi() {
+  if (!els.dragPushAxisSelect) return;
+  els.dragPushAxisSelect.dataset.axis = surfaceAxisMode();
+}
+
+function syncSurfaceEditorUi() {
+  const mode = surfaceInteractionMode();
+  const selectedCount = surfaceComponentSelectionCount();
+  const componentOnlyMode = surfaceComponentMode === "vertex" || surfaceComponentMode === "edge";
+  els.surfaceMouseModeBtn?.classList.toggle("active", mode === "mouse");
+  els.surfaceValueModeBtn?.classList.toggle("active", mode === "value");
+  if (els.surfaceValueModeBtn) els.surfaceValueModeBtn.disabled = componentOnlyMode;
+  els.surfaceSelectVertexBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "vertex");
+  els.surfaceSelectEdgeBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "edge");
+  els.surfaceSelectTriangleBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "triangle");
+  els.surfaceSelectFaceBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "face");
+  els.surfaceEditorOpenBtn?.classList.toggle("active", !els.surfaceEditorWindow?.classList.contains("collapsed"));
+  syncSurfaceAxisUi();
+  if (els.surfaceEditorSelection) {
+    if (surfaceComponentMode === "none") {
+      els.surfaceEditorSelection.textContent = "Choose a surface selection mode";
+      return;
+    }
+    const componentLabel = surfaceComponentMode === "vertex"
+      ? (selectedCount === 1 ? "vertex" : "vertices")
+      : `${surfaceComponentMode}${selectedCount === 1 ? "" : "s"}`;
+    els.surfaceEditorSelection.textContent = selectedCount
+      ? `${selectedCount} selected ${componentLabel}`
+      : `Select a ${surfaceComponentMode} to begin`;
+  }
+}
+
+function setSurfaceEditorOpen(open = true) {
+  if (!els.surfaceEditorWindow) return;
+  setSectionCollapsed(els.surfaceEditorWindow, els.surfaceEditorCloseBtn, !open);
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  if (open) requestAnimationFrame(() => els.surfaceEditorWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
+}
+
+function setSurfaceInteractionMode(mode = "mouse") {
+  const normalized = mode === "value" ? "value" : mode === "mouse" ? "mouse" : "off";
+  els.surfaceEditorWindow.dataset.interactionMode = normalized;
+  if (normalized !== "mouse" && dragPushMode) setDragPushMode(false, { silent: true });
+  if (normalized === "mouse" && surfaceComponentSelectionCount() && els.autoSurfaceDragInput?.checked) setDragPushMode(true, { silent: true });
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  log(normalized === "off"
+    ? "Surface Edit input released."
+    : `Surface Edit input set to ${normalized === "mouse" ? "Mouse Drag" : "Exact Value"}.`);
+}
+
+function toggleSurfaceMouseMode() {
+  if (surfaceInteractionMode() === "mouse") {
+    if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "off";
+    if (dragPushMode) setDragPushMode(false, { silent: true });
+    syncSurfaceEditorUi();
+    els.surfaceMouseModeBtn?.blur();
+    els.hudText.textContent = "Mouse Drag released. Triangle and Whole Face selection remain available.";
+    log("Surface Mouse Drag released.");
+    return false;
+  }
+  if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "mouse";
+  if (surfaceComponentSelectionCount()) setDragPushMode(true, { silent: true });
+  else syncSurfaceEditorUi();
+  els.surfaceMouseModeBtn?.blur();
+  log("Surface Mouse Drag enabled.");
+  return true;
+}
+
+function toggleSurfaceValueMode() {
+  if (surfaceInteractionMode() === "value") {
+    setSurfaceInteractionMode("off");
+    els.surfaceValueModeBtn?.blur();
+    return false;
+  }
+  setSurfaceInteractionMode("value");
+  els.surfaceValueModeBtn?.blur();
+  return true;
+}
+
+function setSurfaceSelectionMode(mode = "face") {
+  const normalized = ["vertex", "edge", "triangle", "face"].includes(mode) ? mode : "face";
+  const releasingActiveMode = surfaceSelectionSource === "surface" && surfaceComponentMode === normalized;
+  if (releasingActiveMode) {
+    clearSelectedTriangles();
+    surfaceComponentMode = "none";
+    surfaceSelectionSource = "none";
+    coplanarFacePickMode = false;
+    setFacePickMode(false);
+    updateState();
+    syncSurfaceEditorUi();
+    log("Surface selection mode released.");
+    return false;
+  }
+  const wholeFace = normalized === "face";
+  clearSelectedTriangles();
+  surfaceComponentMode = normalized;
+  surfaceSelectionSource = "surface";
+  if (normalized === "vertex" || normalized === "edge") {
+    if (surfaceInteractionMode() === "value") setSurfaceInteractionMode("off");
+    els.paintTriInput.checked = false;
+    els.areaTriInput.checked = false;
+  }
+  updateState();
+  setCoplanarFacePickMode(wholeFace, { activatePicker: true });
+  if (!wholeFace) setFacePickMode(true);
+  setSurfaceEditorOpen(true);
+  syncSurfaceEditorUi();
+  log(`Surface selection set to ${normalized === "face" ? "Whole Face" : normalized[0].toUpperCase() + normalized.slice(1)}.`);
+  return true;
+}
+
+function releaseSurfaceInteractionForClassicSelection() {
+  if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "off";
+  if (dragPushMode) setDragPushMode(false, { silent: true });
+  updateSurfaceGizmoAttachment();
+}
+
+function toggleClassicTriangleSelection() {
+  const releasing = surfaceSelectionSource === "classic"
+    && facePickMode
+    && surfaceComponentMode === "triangle"
+    && !coplanarFacePickMode;
+  releaseSurfaceInteractionForClassicSelection();
+  if (releasing) {
+    surfaceComponentMode = "none";
+    surfaceSelectionSource = "none";
+    coplanarFacePickMode = false;
+    setFacePickMode(false);
+    return false;
+  }
+  clearSelectedSurfaceComponents();
+  surfaceComponentMode = "triangle";
+  surfaceSelectionSource = "classic";
+  coplanarFacePickMode = false;
+  els.paintTriInput.checked = false;
+  els.areaTriInput.checked = false;
+  setFacePickMode(true);
+  log("Classic Select Tri enabled. Surface movement and axis locks are released.");
+  return true;
+}
+
+function toggleClassicFaceSelection() {
+  const releasing = surfaceSelectionSource === "classic"
+    && facePickMode
+    && surfaceComponentMode === "face"
+    && coplanarFacePickMode;
+  releaseSurfaceInteractionForClassicSelection();
+  if (releasing) {
+    surfaceComponentMode = "none";
+    surfaceSelectionSource = "none";
+    coplanarFacePickMode = false;
+    setFacePickMode(false);
+    return false;
+  }
+  clearSelectedSurfaceComponents();
+  surfaceComponentMode = "face";
+  surfaceSelectionSource = "classic";
+  setCoplanarFacePickMode(true, { activatePicker: true });
+  log("Classic Select Face enabled. Surface movement and axis locks are released.");
+  return true;
+}
+
+function selectedSurfaceWorldCenter() {
+  const points = surfaceComponentMode === "vertex"
+    ? selectedSurfaceVertices.map(vertex => vertex.localPoint.clone().applyMatrix4(vertex.mesh.matrixWorld))
+    : surfaceComponentMode === "edge"
+      ? selectedSurfaceEdges.map(edge => edge.localA.clone().add(edge.localB).multiplyScalar(.5).applyMatrix4(edge.mesh.matrixWorld))
+      : selectedFaces.map(face => worldFacePoint(face));
+  if (!points.length) return null;
+  return points.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / points.length);
+}
+
+function surfaceAxisWorldDirection(axisMode = surfaceAxisMode()) {
+  if (axisMode === "x") return new THREE.Vector3(1, 0, 0);
+  if (axisMode === "y") return new THREE.Vector3(0, 1, 0);
+  return new THREE.Vector3(0, 0, 1);
+}
+
+function configureSurfaceTransformAxis() {
+  const axisMode = surfaceAxisMode();
+  surfaceTransform.showX = axisMode === "free" || axisMode === "x";
+  surfaceTransform.showY = axisMode === "free" || axisMode === "y";
+  surfaceTransform.showZ = axisMode === "free" || axisMode === "z";
+  surfaceTransform.setSpace("world");
+  syncSurfaceAxisUi();
+}
+
+function surfaceGizmoShouldShow() {
+  return dragPushMode
+    && surfaceInteractionMode() === "mouse"
+    && surfaceComponentSelectionCount() > 0
+    && !els.surfaceEditorWindow?.classList.contains("collapsed");
+}
+
+function hideSurfacePlaneHandles() {
+  const planeNames = new Set(["XY", "XZ", "YZ"]);
+  const gizmo = surfaceTransform?._gizmo;
+  for (const group of [gizmo?.gizmo?.translate, gizmo?.picker?.translate, gizmo?.helper?.translate]) {
+    for (const handle of group?.children || []) {
+      if (!planeNames.has(handle.name)) continue;
+      handle.layers.set(3);
+    }
+  }
+  if (["XY", "XZ", "YZ"].includes(surfaceTransform.axis)) surfaceTransform.axis = null;
+}
+
+function updateSurfaceGizmoAttachment() {
+  if (!surfaceTransform) return;
+  if (!surfaceGizmoShouldShow()) {
+    surfaceTransform.enabled = true;
+    surfaceTransform.detach();
+    surfaceTransform.visible = false;
+    surfaceGizmoPivot.visible = false;
+    surfaceGizmoDragging = false;
+    return;
+  }
+  const center = selectedSurfaceWorldCenter();
+  if (!center) return;
+  surfaceGizmoSyncing = true;
+  surfaceGizmoPivot.position.copy(center);
+  surfaceGizmoPivot.quaternion.identity();
+  surfaceGizmoPivot.scale.set(1, 1, 1);
+  surfaceGizmoPivot.updateMatrixWorld(true);
+  surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
+  surfaceGizmoSyncing = false;
+  surfaceTransform.setMode("translate");
+  configureSurfaceTransformAxis();
+  surfaceTransform.setTranslationSnap(dragPushStepSize());
+  surfaceTransform.enabled = true;
+  surfaceTransform.attach(surfaceGizmoPivot);
+  surfaceTransform.visible = true;
+  hideSurfacePlaneHandles();
+}
+
+function beginSurfaceGizmoDrag() {
+  if (!surfaceGizmoShouldShow()) return;
+  surfaceGizmoDragging = true;
+  surfaceGizmoMovedDistance = 0;
+  surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
+  recordHistory("move selected surface with gizmo");
+  els.hudText.textContent = "Surface arrows active: drag X, Y, or Z to move the selected surface";
+}
+
+function applySurfaceGizmoDelta() {
+  if (!surfaceGizmoDragging || surfaceGizmoSyncing || !surfaceComponentSelectionCount()) return;
+  const delta = surfaceGizmoPivot.position.clone().sub(surfaceGizmoLastPosition);
+  let axisMode = surfaceAxisMode();
+  if (axisMode === "free") {
+    const activeAxis = String(surfaceTransform.axis || "").toLowerCase();
+    if (["x", "y", "z"].includes(activeAxis)) axisMode = activeAxis;
+    else {
+      const components = [Math.abs(delta.x), Math.abs(delta.y), Math.abs(delta.z)];
+      axisMode = ["x", "y", "z"][components.indexOf(Math.max(...components))];
+    }
+  }
+  const axisDirection = surfaceAxisWorldDirection(axisMode);
+  const distance = delta.dot(axisDirection);
+  if (Math.abs(distance) < .0000001) return;
+  const softFalloff = els.surfaceMouseFalloffSelect?.value === "soft";
+  const radius = Math.max(.01, Number(els.softRadiusInput?.value) || .25);
+  const movement = axisDirection.clone().multiplyScalar(distance);
+  if (surfaceComponentMode === "vertex" || surfaceComponentMode === "edge") {
+    moveSelectedSurfaceComponentsByWorldDelta(movement);
+  } else {
+    const facesByMesh = new Map();
+    for (const face of selectedFaces) {
+      if (!facesByMesh.has(face.mesh)) facesByMesh.set(face.mesh, []);
+      facesByMesh.get(face.mesh).push(face);
+    }
+    for (const [mesh, faces] of facesByMesh) {
+      if (softFalloff) softMoveFacesByDistance(mesh, faces, distance, radius, axisMode);
+      else moveSelectedVerticesAlongAxis(mesh, faces, distance, axisMode);
+    }
+  }
+  surfaceGizmoMovedDistance += Math.abs(distance);
+  surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
+  updateFaceMarker();
+  updateSurfaceComponentMarker();
+  updateTriangleHelpers();
+  syncSelectionOutlineTransforms();
+  updateState();
+  const shapeLabel = surfaceComponentMode === "vertex" || surfaceComponentMode === "edge"
+    ? `${surfaceComponentMode} component`
+    : softFalloff ? `Soft radius ${round(radius)}` : "Hard face";
+  els.hudText.textContent = `Surface arrow: moved ${axisMode.toUpperCase()} ${round(distance)} | ${shapeLabel}`;
+}
+
+function finishSurfaceGizmoDrag() {
+  if (!surfaceGizmoDragging) return;
+  surfaceGizmoDragging = false;
+  updateAll();
+  updateSurfaceGizmoAttachment();
+  log(`Moved selected surface with viewport arrows.`, { distance: round(surfaceGizmoMovedDistance) });
+}
+
+function armContextualSurfaceDrag() {
+  syncSurfaceEditorUi();
+  if (!surfaceComponentSelectionCount() || surfaceInteractionMode() !== "mouse" || !els.autoSurfaceDragInput?.checked) return;
+  setSurfaceEditorOpen(true);
+  setDragPushMode(true, { silent: true });
+  updateSurfaceGizmoAttachment();
+  els.hudText.textContent = `Surface ready: ${surfaceAxisMode() === "free" ? "drag an X/Y/Z arrow" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow or the selected face left/right`} | ${els.surfaceMouseFalloffSelect?.value === "hard" ? "Hard face" : `Soft radius ${Number(els.softRadiusInput?.value || .25)}`}`;
 }
 
 function applyRotationSnap() {
@@ -4127,7 +4453,11 @@ function updateFacePickHud() {
     return;
   }
   els.hudText.textContent = facePickMode
-    ? (coplanarFacePickMode
+    ? (surfaceComponentMode === "vertex"
+      ? "Vertex mode: click the nearest corner | Shift/Ctrl adds vertices | use the X/Y/Z arrows to move"
+      : surfaceComponentMode === "edge"
+        ? "Edge mode: click near an edge | Shift/Ctrl adds edges | use the X/Y/Z arrows to move"
+        : coplanarFacePickMode
       ? "Face mode: click a flat region to select connected coplanar triangles | Shift/Ctrl adds more | Double-click still selects full connected islands"
       : els.areaTriInput.checked
         ? "Area mode: drag a rectangle to select triangles | Double-click selects connected"
@@ -4136,6 +4466,7 @@ function updateFacePickHud() {
           : "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, or Bevel Face")
     : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform: gizmo";
   if (!facePickMode && !selectedFace) faceMarker.visible = false;
+  syncSurfaceEditorUi();
 }
 
 function setFacePickMode(enabled) {
@@ -4292,7 +4623,132 @@ function meshTriangleFaces(mesh) {
   return faces;
 }
 
+function surfaceVertexKey(mesh, localPoint) {
+  return `${mesh.userData.id}:${vertexKey(localPoint)}`;
+}
+
+function surfaceEdgeKey(mesh, localA, localB) {
+  return `${mesh.userData.id}:${[vertexKey(localA), vertexKey(localB)].sort().join("|")}`;
+}
+
+function updateSurfaceComponentMarker() {
+  while (surfaceComponentMarker.children.length) {
+    const child = surfaceComponentMarker.children.pop();
+    disposeObject3D(child);
+  }
+  if (surfaceComponentMode === "vertex") {
+    for (const vertex of selectedSurfaceVertices) {
+      const marker = new THREE.Mesh(
+        new THREE.SphereGeometry(.045, 12, 8),
+        new THREE.MeshBasicMaterial({ color: "#ffd36a", depthTest: false })
+      );
+      marker.position.copy(vertex.localPoint).applyMatrix4(vertex.mesh.matrixWorld);
+      marker.renderOrder = 1005;
+      surfaceComponentMarker.add(marker);
+    }
+  } else if (surfaceComponentMode === "edge") {
+    const positions = [];
+    const hasProtectedBevelEdge = selectedSurfaceEdges.some(edge =>
+      (edge.mesh?.userData.edgeBevelProtectedEdges || []).includes(localEdgeSignature(edge.localA, edge.localB))
+    );
+    for (const edge of selectedSurfaceEdges) {
+      positions.push(
+        ...edge.localA.clone().applyMatrix4(edge.mesh.matrixWorld).toArray(),
+        ...edge.localB.clone().applyMatrix4(edge.mesh.matrixWorld).toArray()
+      );
+    }
+    if (positions.length) {
+      const geometry = new THREE.BufferGeometry();
+      geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+      const marker = new THREE.LineSegments(
+        geometry,
+        new THREE.LineBasicMaterial({ color: hasProtectedBevelEdge ? "#ff5a5f" : "#ffd36a", depthTest: false })
+      );
+      marker.renderOrder = 1005;
+      surfaceComponentMarker.add(marker);
+    }
+  }
+  surfaceComponentMarker.visible = surfaceComponentMarker.children.length > 0;
+}
+
+function clearSelectedSurfaceComponents() {
+  selectedSurfaceVertices.length = 0;
+  selectedSurfaceEdges.length = 0;
+  updateSurfaceComponentMarker();
+}
+
+function pickSurfaceVertex(hit, { append = false } = {}) {
+  if (!hit?.object || !hit.face) return null;
+  hit.object.updateWorldMatrix(true, false);
+  const localPoints = triangleLocalPoints(hit);
+  const localPoint = localPoints.reduce((best, point) => {
+    const distance = point.clone().applyMatrix4(hit.object.matrixWorld).distanceToSquared(hit.point);
+    return !best || distance < best.distance ? { point, distance } : best;
+  }, null)?.point;
+  if (!localPoint) return null;
+  if (!append) selectedSurfaceVertices.length = 0;
+  selectedSurfaceEdges.length = 0;
+  selectedFaces.length = 0;
+  selectedFace = null;
+  updateFaceMarker();
+  const key = surfaceVertexKey(hit.object, localPoint);
+  const existingIndex = selectedSurfaceVertices.findIndex(vertex => vertex.key === key);
+  if (existingIndex >= 0) selectedSurfaceVertices.splice(existingIndex, 1);
+  else selectedSurfaceVertices.push({ mesh: hit.object, localPoint: localPoint.clone(), key });
+  if (selected !== hit.object) selectObject(hit.object);
+  updateSurfaceComponentMarker();
+  updateState();
+  armContextualSurfaceDrag();
+  log(`${append ? "Updated" : "Selected"} vertex on ${hit.object.name}.`, { selected: selectedSurfaceVertices.length });
+  return localPoint;
+}
+
+function pointToSegmentDistanceSquared(point, start, end) {
+  return new THREE.Line3(start, end).closestPointToPoint(point, true, new THREE.Vector3()).distanceToSquared(point);
+}
+
+function pickSurfaceEdge(hit, { append = false } = {}) {
+  if (!hit?.object || !hit.face) return null;
+  hit.object.updateWorldMatrix(true, false);
+  const localPoints = triangleLocalPoints(hit);
+  const edges = [[0, 1], [1, 2], [2, 0]].map(([a, b]) => {
+    const worldA = localPoints[a].clone().applyMatrix4(hit.object.matrixWorld);
+    const worldB = localPoints[b].clone().applyMatrix4(hit.object.matrixWorld);
+    return { localA: localPoints[a], localB: localPoints[b], distance: pointToSegmentDistanceSquared(hit.point, worldA, worldB) };
+  });
+  edges.sort((a, b) => a.distance - b.distance);
+  const picked = edges[0];
+  if (!append) selectedSurfaceEdges.length = 0;
+  selectedSurfaceVertices.length = 0;
+  selectedFaces.length = 0;
+  selectedFace = null;
+  updateFaceMarker();
+  const key = surfaceEdgeKey(hit.object, picked.localA, picked.localB);
+  const protectedBevelEdge = (hit.object.userData.edgeBevelProtectedEdges || [])
+    .includes(localEdgeSignature(picked.localA, picked.localB));
+  const existingIndex = selectedSurfaceEdges.findIndex(edge => edge.key === key);
+  if (existingIndex >= 0) selectedSurfaceEdges.splice(existingIndex, 1);
+  else selectedSurfaceEdges.push({ mesh: hit.object, localA: picked.localA.clone(), localB: picked.localB.clone(), key, protectedBevelEdge });
+  if (selected !== hit.object) selectObject(hit.object);
+  updateSurfaceComponentMarker();
+  updateState();
+  armContextualSurfaceDrag();
+  log(protectedBevelEdge
+    ? `Selected a protected bevel edge on ${hit.object.name}. It is shown red; choose a yellow outer edge instead.`
+    : `${append ? "Updated" : "Selected"} edge on ${hit.object.name}.`, { selected: selectedSurfaceEdges.length });
+  return picked;
+}
+
+function pickSurfaceComponentFromHit(hit, options = {}) {
+  if (surfaceComponentMode === "none") return false;
+  if (surfaceComponentMode === "vertex") return pickSurfaceVertex(hit, options);
+  if (surfaceComponentMode === "edge") return pickSurfaceEdge(hit, options);
+  if (surfaceComponentMode === "face") return selectCoplanarFaceFromHit(hit, options);
+  return pickFace(hit, options);
+}
+
 function setTriangleSelection(faces, { append = false } = {}) {
+  clearSelectedSurfaceComponents();
   if (!append) selectedFaces.length = 0;
   for (const face of faces) {
     if (!selectedFaces.some(existing => existing.markerKey === face.markerKey)) selectedFaces.push(face);
@@ -4301,6 +4757,7 @@ function setTriangleSelection(faces, { append = false } = {}) {
   if (selectedFace) selectObject(selectedFace.mesh);
   updateFaceMarker();
   updateState();
+  armContextualSurfaceDrag();
   return selectedFaces.length;
 }
 
@@ -4317,6 +4774,10 @@ function clearSelectedTriangles() {
   selectedFaces.length = 0;
   selectedFace = null;
   updateFaceMarker();
+  clearSelectedSurfaceComponents();
+  if (dragPushMode) setDragPushMode(false, { silent: true });
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
 }
 
 function clearTriangleSelection() {
@@ -4521,6 +4982,7 @@ function pickFace(hit, { append = false, toggleExisting = true, silent = false }
   const mesh = hit.object;
   const localTrianglePoints = triangleLocalPoints(hit);
   const pickedFace = faceFromLocalTriangle(mesh, localTrianglePoints, hit.faceIndex, triangleLocalUvs(hit));
+  clearSelectedSurfaceComponents();
   pickedFace.hitPoint = hit.point.clone();
   if (!append) selectedFaces.length = 0;
   const existingIndex = selectedFaces.findIndex(face => face.markerKey === pickedFace.markerKey);
@@ -4531,7 +4993,14 @@ function pickFace(hit, { append = false, toggleExisting = true, silent = false }
   selectedFace = selectedFaces.at(-1) || null;
   if (selected !== mesh) selectObject(mesh);
   updateFaceMarker();
-  if (!silent) log(`${append ? "Updated" : "Selected"} triangle selection on ${mesh.name}. Hold Shift or Ctrl to add/remove more.`, { selected: selectedFaces.length, triangle: hit.faceIndex, width: round(width), height: round(height) });
+  updateState();
+  armContextualSurfaceDrag();
+  if (!silent) log(`${append ? "Updated" : "Selected"} triangle selection on ${mesh.name}. Hold Shift or Ctrl to add/remove more.`, {
+    selected: selectedFaces.length,
+    triangle: hit.faceIndex,
+    width: round(pickedFace.width),
+    height: round(pickedFace.height)
+  });
   return pickedFace;
 }
 
@@ -5359,6 +5828,195 @@ function bridgeCheckedMeshes() {
     hint: "Merge Mesh can combine the bridge later if you want one final piece."
   });
   return bridge;
+}
+
+function profileAxisName(meshes) {
+  const requested = els.loftAxisSelect?.value || "auto";
+  if (["x", "y", "z"].includes(requested)) return requested;
+  const centers = meshes.map(mesh => new THREE.Box3().setFromObject(mesh).getCenter(new THREE.Vector3()));
+  const ranges = ["x", "y", "z"].map(axis => {
+    const values = centers.map(point => point[axis]);
+    return Math.max(...values) - Math.min(...values);
+  });
+  return ["x", "y", "z"][ranges.indexOf(Math.max(...ranges))];
+}
+
+function profileBasis(axis) {
+  if (axis === "x") return { axis: new THREE.Vector3(1, 0, 0), u: new THREE.Vector3(0, 1, 0), v: new THREE.Vector3(0, 0, 1) };
+  if (axis === "z") return { axis: new THREE.Vector3(0, 0, 1), u: new THREE.Vector3(1, 0, 0), v: new THREE.Vector3(0, 1, 0) };
+  return { axis: new THREE.Vector3(0, 1, 0), u: new THREE.Vector3(1, 0, 0), v: new THREE.Vector3(0, 0, -1) };
+}
+
+function convexHull2d(points) {
+  const unique = [...new Map(points.map(point => [`${round(point.x, 5)},${round(point.y, 5)}`, point])).values()];
+  if (unique.length < 3) return unique;
+  unique.sort((a, b) => a.x - b.x || a.y - b.y);
+  const cross = (o, a, b) => (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const lower = [];
+  for (const point of unique) {
+    while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), point) <= 0) lower.pop();
+    lower.push(point);
+  }
+  const upper = [];
+  for (let index = unique.length - 1; index >= 0; index--) {
+    const point = unique[index];
+    while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), point) <= 0) upper.pop();
+    upper.push(point);
+  }
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+}
+
+function resampleClosedProfile(points, count) {
+  const lengths = [];
+  let perimeter = 0;
+  for (let index = 0; index < points.length; index++) {
+    const length = points[index].distanceTo(points[(index + 1) % points.length]);
+    lengths.push(length);
+    perimeter += length;
+  }
+  if (perimeter <= .000001) return [];
+  const sampled = [];
+  for (let sample = 0; sample < count; sample++) {
+    let target = perimeter * sample / count;
+    let edge = 0;
+    while (edge < lengths.length - 1 && target > lengths[edge]) target -= lengths[edge++];
+    const start = points[edge];
+    const end = points[(edge + 1) % points.length];
+    sampled.push(start.clone().lerp(end, lengths[edge] ? target / lengths[edge] : 0));
+  }
+  return sampled;
+}
+
+function alignProfileLoop(previous, loop) {
+  let best = loop;
+  let bestScore = Infinity;
+  for (const candidate of [loop, [...loop].reverse()]) {
+    for (let shift = 0; shift < candidate.length; shift++) {
+      const shifted = candidate.map((_, index) => candidate[(index + shift) % candidate.length]);
+      const score = shifted.reduce((sum, point, index) => sum + point.distanceToSquared(previous[index]), 0);
+      if (score < bestScore) {
+        bestScore = score;
+        best = shifted;
+      }
+    }
+  }
+  return best;
+}
+
+function worldProfileLoop(mesh, basis, sampleCount) {
+  mesh.updateWorldMatrix(true, false);
+  const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
+  const position = source.getAttribute("position");
+  const world = new THREE.Vector3();
+  const points2d = [];
+  let axisTotal = 0;
+  for (let index = 0; index < position.count; index++) {
+    world.fromBufferAttribute(position, index).applyMatrix4(mesh.matrixWorld);
+    axisTotal += world.dot(basis.axis);
+    points2d.push(new THREE.Vector2(world.dot(basis.u), world.dot(basis.v)));
+  }
+  if (source !== mesh.geometry) source.dispose();
+  const hull = convexHull2d(points2d);
+  if (hull.length < 3) return null;
+  const axisPosition = axisTotal / Math.max(1, position.count);
+  const loop2d = resampleClosedProfile(hull, sampleCount);
+  return {
+    axisPosition,
+    points: loop2d.map(point => basis.axis.clone().multiplyScalar(axisPosition)
+      .addScaledVector(basis.u, point.x)
+      .addScaledVector(basis.v, point.y))
+  };
+}
+
+function loftCheckedProfiles() {
+  const meshes = checkedObjects();
+  if (meshes.length < 2) {
+    log("Check two or more profile meshes, place them along an axis, then press Loft Checked.");
+    return null;
+  }
+  const axisName = profileAxisName(meshes);
+  const basis = profileBasis(axisName);
+  const sampleCount = Math.max(3, Math.min(64, Math.round(Number(els.loftPointsInput?.value) || 16)));
+  const profiles = meshes.map(mesh => ({ mesh, profile: worldProfileLoop(mesh, basis, sampleCount) }))
+    .filter(entry => entry.profile)
+    .sort((a, b) => a.profile.axisPosition - b.profile.axisPosition);
+  if (profiles.length < 2) {
+    log("Loft could not find usable closed silhouettes on the checked meshes.");
+    return null;
+  }
+  for (let index = 1; index < profiles.length; index++) {
+    profiles[index].profile.points = alignProfileLoop(profiles[index - 1].profile.points, profiles[index].profile.points);
+  }
+  const positions = [];
+  const first = profiles[0].profile.points;
+  const last = profiles.at(-1).profile.points;
+  const firstCenter = first.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / first.length);
+  const lastCenter = last.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / last.length);
+  for (let index = 0; index < sampleCount; index++) {
+    const next = (index + 1) % sampleCount;
+    positions.push(...firstCenter.toArray(), ...first[next].toArray(), ...first[index].toArray());
+    positions.push(...lastCenter.toArray(), ...last[index].toArray(), ...last[next].toArray());
+  }
+  for (let profileIndex = 0; profileIndex < profiles.length - 1; profileIndex++) {
+    const a = profiles[profileIndex].profile.points;
+    const b = profiles[profileIndex + 1].profile.points;
+    for (let index = 0; index < sampleCount; index++) {
+      const next = (index + 1) % sampleCount;
+      positions.push(...a[index].toArray(), ...a[next].toArray(), ...b[next].toArray());
+      positions.push(...a[index].toArray(), ...b[next].toArray(), ...b[index].toArray());
+    }
+  }
+  const points = [];
+  for (let index = 0; index < positions.length; index += 3) points.push(new THREE.Vector3(positions[index], positions[index + 1], positions[index + 2]));
+  const center = new THREE.Box3().setFromPoints(points).getCenter(new THREE.Vector3());
+  const geometry = geometryFromPositions(points.flatMap(point => point.clone().sub(center).toArray()));
+  const color = profiles[0].mesh.material.color.clone().lerp(profiles.at(-1).mesh.material.color, .5);
+  recordHistory("loft checked profiles");
+  const loft = addObject({
+    shape: "custom",
+    geometry: geometryToData(geometry),
+    name: `Loft ${profiles[0].mesh.name} to ${profiles.at(-1).mesh.name}`,
+    position: center.toArray(),
+    color: `#${color.getHexString()}`,
+    roughness: round(profiles.reduce((sum, entry) => sum + entry.mesh.material.roughness, 0) / profiles.length)
+  }, { record: false });
+  geometry.dispose();
+  selectObject(loft);
+  updateAll();
+  log(`Created a ${sampleCount}-point ${axisName.toUpperCase()} loft through ${profiles.length} checked profiles.`, { part: loft.name });
+  return loft;
+}
+
+function mirrorCopySelection() {
+  const targets = checkedObjects().length ? checkedObjects() : (selected ? [selected] : []);
+  if (!targets.length) {
+    log("Select or check one or more parts before Mirror Copy.");
+    return [];
+  }
+  const axis = ["x", "y", "z"].includes(els.symmetryAxisSelect?.value) ? els.symmetryAxisSelect.value : "x";
+  const plane = Number(els.symmetryPlaneInput?.value) || 0;
+  const center = new THREE.Vector3();
+  center[axis] = plane;
+  recordHistory(`mirror copy ${axis}`);
+  const copies = targets.map(source => {
+    const data = serializeObject(source);
+    delete data.id;
+    data.name = `${source.name} ${axis.toUpperCase()} mirror`;
+    data.linkId = null;
+    data.linkColor = null;
+    const copy = addObject(data, { record: false, select: false, update: false });
+    mirrorMeshAcrossWorldPlane(copy, axis, center);
+    return copy;
+  });
+  checkedIds.clear();
+  copies.forEach(copy => checkedIds.add(copy.userData.id));
+  selected = copies.at(-1) || null;
+  currentTransformTargetKey = "";
+  updateAll();
+  log(`Created ${copies.length} mirrored editable cop${copies.length === 1 ? "y" : "ies"} across ${axis.toUpperCase()}=${round(plane)}.`);
+  return copies;
 }
 
 function replaceEditableMeshGeometry(mesh, geometry) {
@@ -6628,16 +7286,15 @@ function moveSelectedSideVertices(mesh, faces, length) {
   return movedVertices;
 }
 
-function moveSelectedVerticesAlongAxis(mesh, faces, distance, axisMode = "normal") {
+function moveSelectedVerticesByWorldDelta(mesh, faces, worldDelta) {
   const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
   const position = geometry.getAttribute("position");
   const targets = [];
   const epsilon = .0002;
 
   for (const face of faces) {
-    const faceDistance = typeof distance === "function" ? distance(face) : distance;
-    const worldAxis = dragPushWorldAxis(face, axisMode).normalize();
-    const displacement = localDisplacementFromWorldVector(mesh, worldAxis.multiplyScalar(faceDistance));
+    const requestedDelta = typeof worldDelta === "function" ? worldDelta(face) : worldDelta;
+    const displacement = localDisplacementFromWorldVector(mesh, requestedDelta.clone());
     for (const point of face.localTrianglePoints) {
       targets.push({ point: point.clone(), displacement: displacement.clone() });
     }
@@ -6676,6 +7333,762 @@ function moveSelectedVerticesAlongAxis(mesh, faces, distance, axisMode = "normal
   mesh.userData.depth = null;
   mesh.userData.direction = null;
   return movedVertices;
+}
+
+function moveSelectedSurfaceComponentsByWorldDelta(worldDelta) {
+  const components = surfaceComponentMode === "vertex" ? selectedSurfaceVertices : selectedSurfaceEdges;
+  const byMesh = new Map();
+  for (const componentEntry of components) {
+    if (!byMesh.has(componentEntry.mesh)) byMesh.set(componentEntry.mesh, []);
+    byMesh.get(componentEntry.mesh).push(componentEntry);
+  }
+  let movedVertices = 0;
+  for (const [mesh, meshComponents] of byMesh) {
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const position = geometry.getAttribute("position");
+    const targetPoints = surfaceComponentMode === "vertex"
+      ? meshComponents.map(vertex => vertex.localPoint)
+      : meshComponents.flatMap(edge => [edge.localA, edge.localB]);
+    const targetKeys = new Set(targetPoints.map(vertexKey));
+    const localDelta = localDisplacementFromWorldVector(mesh, worldDelta.clone());
+    const localPoint = new THREE.Vector3();
+    for (let index = 0; index < position.count; index++) {
+      localPoint.fromBufferAttribute(position, index);
+      if (!targetKeys.has(vertexKey(localPoint))) continue;
+      localPoint.add(localDelta);
+      position.setXYZ(index, localPoint.x, localPoint.y, localPoint.z);
+      movedVertices++;
+    }
+    position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    replaceEditableMeshGeometry(mesh, geometry);
+    for (const componentEntry of meshComponents) {
+      if (surfaceComponentMode === "vertex") {
+        componentEntry.localPoint.add(localDelta);
+        componentEntry.key = surfaceVertexKey(mesh, componentEntry.localPoint);
+      } else {
+        componentEntry.localA.add(localDelta);
+        componentEntry.localB.add(localDelta);
+        componentEntry.key = surfaceEdgeKey(mesh, componentEntry.localA, componentEntry.localB);
+      }
+    }
+  }
+  updateSurfaceComponentMarker();
+  return movedVertices;
+}
+
+function moveSelectedVerticesAlongAxis(mesh, faces, distance, axisMode = "normal") {
+  return moveSelectedVerticesByWorldDelta(mesh, faces, face => {
+    const faceDistance = typeof distance === "function" ? distance(face) : distance;
+    return dragPushWorldAxis(face, axisMode).normalize().multiplyScalar(faceDistance);
+  });
+}
+
+function softMoveFacesByWorldDelta(mesh, faces, worldDelta, radius) {
+  mesh.updateWorldMatrix(true, false);
+  const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const position = geometry.getAttribute("position");
+  const seeds = faces.flatMap(face => face.localTrianglePoints.map(point => point.clone().applyMatrix4(mesh.matrixWorld)));
+  const localDisplacement = localDisplacementFromWorldVector(mesh, worldDelta.clone());
+  const localPoint = new THREE.Vector3();
+  const worldPoint = new THREE.Vector3();
+  let movedVertices = 0;
+
+  for (let index = 0; index < position.count; index++) {
+    localPoint.fromBufferAttribute(position, index);
+    worldPoint.copy(localPoint).applyMatrix4(mesh.matrixWorld);
+    let nearest = Infinity;
+    for (const seed of seeds) nearest = Math.min(nearest, worldPoint.distanceTo(seed));
+    if (nearest > radius) continue;
+    const normalized = Math.max(0, 1 - nearest / radius);
+    const weight = normalized * normalized * (3 - 2 * normalized);
+    localPoint.addScaledVector(localDisplacement, weight);
+    position.setXYZ(index, localPoint.x, localPoint.y, localPoint.z);
+    movedVertices++;
+  }
+
+  for (const face of faces) {
+    face.localTrianglePoints = face.localTrianglePoints.map(point => point.clone().add(localDisplacement));
+    face.localPoint = triangleCenter(face.localTrianglePoints);
+    face.point = face.localPoint.clone().applyMatrix4(mesh.matrixWorld);
+    face.hitPoint = face.point.clone();
+    face.trianglePoints = face.localTrianglePoints.map(point => point.clone().applyMatrix4(mesh.matrixWorld));
+  }
+
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  replaceEditableMeshGeometry(mesh, geometry);
+  return movedVertices;
+}
+
+function softMoveFacesByDistance(mesh, faces, distance, radius, axisMode = "normal") {
+  const worldDirection = axisMode === "normal"
+    ? faces.reduce((sum, face) => sum.add(worldFaceNormal(face)), new THREE.Vector3()).normalize()
+    : dragPushWorldAxis(faces[0], axisMode).normalize();
+  return softMoveFacesByWorldDelta(mesh, faces, worldDirection.multiplyScalar(distance), radius);
+}
+
+function softMoveSelectedFaces(directionSign = 1) {
+  if (!selectedFaces.length) {
+    log("Select one or more triangles before using Soft Pull or Soft Push.");
+    setFacePickMode(true);
+    return [];
+  }
+  const distance = faceEditDepth() * (directionSign < 0 ? -1 : 1);
+  const radius = Math.max(.01, Number(els.softRadiusInput?.value) || .25);
+  const axisMode = surfaceAxisMode() === "free" ? "normal" : surfaceAxisMode();
+  const facesByMesh = new Map();
+  for (const face of selectedFaces) {
+    if (!facesByMesh.has(face.mesh)) facesByMesh.set(face.mesh, []);
+    facesByMesh.get(face.mesh).push(face);
+  }
+  recordHistory(directionSign < 0 ? "soft push faces" : "soft pull faces");
+  let movedVertices = 0;
+  for (const [mesh, faces] of facesByMesh) {
+    movedVertices += softMoveFacesByDistance(mesh, faces, distance, radius, axisMode);
+  }
+  clearSelectedTriangles();
+  updateAll();
+  log(`${directionSign < 0 ? "Soft Push" : "Soft Pull"} moved ${movedVertices} vertices with radius ${round(radius)}.`, { editedMeshes: facesByMesh.size });
+  return [...facesByMesh.keys()];
+}
+
+function insetFaceAmount({ min = .001, max = 10 } = {}) {
+  return Math.max(min, Math.min(max, Number(els.insetAmountInput?.value) || .10));
+}
+
+function selectedFaceRegionIsConnected(faces) {
+  if (faces.length <= 1) return true;
+  const edgeToFaces = new Map();
+  faces.forEach((face, faceIndex) => {
+    const keys = face.localTrianglePoints.map(vertexKey);
+    [[0, 1], [1, 2], [2, 0]].forEach(([a, b]) => {
+      const edgeKey = [keys[a], keys[b]].sort().join("|");
+      if (!edgeToFaces.has(edgeKey)) edgeToFaces.set(edgeKey, []);
+      edgeToFaces.get(edgeKey).push(faceIndex);
+    });
+  });
+  const adjacency = faces.map(() => new Set());
+  for (const linkedFaces of edgeToFaces.values()) {
+    for (const faceIndex of linkedFaces) {
+      for (const neighborIndex of linkedFaces) {
+        if (faceIndex !== neighborIndex) adjacency[faceIndex].add(neighborIndex);
+      }
+    }
+  }
+  const visited = new Set([0]);
+  const queue = [0];
+  while (queue.length) {
+    const faceIndex = queue.shift();
+    for (const neighborIndex of adjacency[faceIndex]) {
+      if (visited.has(neighborIndex)) continue;
+      visited.add(neighborIndex);
+      queue.push(neighborIndex);
+    }
+  }
+  return visited.size === faces.length;
+}
+
+function selectedFaceRegionIsPlanar(faces) {
+  if (!faces.length) return false;
+  const normal = faces[0].localNormal.clone().normalize();
+  const planeOffset = faces[0].localTrianglePoints[0].dot(normal);
+  return faces.every(face =>
+    face.localNormal.clone().normalize().dot(normal) >= .999
+    && face.localTrianglePoints.every(point => Math.abs(point.dot(normal) - planeOffset) <= .0015)
+  );
+}
+
+function convexPolygon2D(points) {
+  if (points.length < 3) return false;
+  let winding = 0;
+  for (let index = 0; index < points.length; index++) {
+    const previous = points[(index - 1 + points.length) % points.length];
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const cross = current.clone().sub(previous).cross(next.clone().sub(current));
+    if (Math.abs(cross) <= 1e-7) continue;
+    const sign = Math.sign(cross);
+    if (!winding) winding = sign;
+    else if (winding !== sign) return false;
+  }
+  return Boolean(winding);
+}
+
+function affineUvSampler(faces, localCenter, u, v) {
+  const samplesByVertex = new Map();
+  for (const face of faces) {
+    if (!face.localUvs?.length) continue;
+    face.localTrianglePoints.forEach((point, index) => {
+      const key = vertexKey(point);
+      if (samplesByVertex.has(key)) return;
+      const offset = point.clone().sub(localCenter);
+      samplesByVertex.set(key, {
+        point: new THREE.Vector2(offset.dot(u), offset.dot(v)),
+        uv: face.localUvs[index].clone()
+      });
+    });
+  }
+  const samples = [...samplesByVertex.values()];
+  let anchors = null;
+  for (let a = 0; a < samples.length - 2 && !anchors; a++) {
+    for (let b = a + 1; b < samples.length - 1 && !anchors; b++) {
+      for (let c = b + 1; c < samples.length; c++) {
+        const area = Math.abs(samples[b].point.clone().sub(samples[a].point).cross(samples[c].point.clone().sub(samples[a].point)));
+        if (area > 1e-7) anchors = [samples[a], samples[b], samples[c]];
+      }
+    }
+  }
+  if (!anchors) return null;
+  const [a, b, c] = anchors;
+  const denominator = (b.point.y - c.point.y) * (a.point.x - c.point.x)
+    + (c.point.x - b.point.x) * (a.point.y - c.point.y);
+  if (Math.abs(denominator) <= 1e-8) return null;
+  return point => {
+    const weightA = ((b.point.y - c.point.y) * (point.x - c.point.x)
+      + (c.point.x - b.point.x) * (point.y - c.point.y)) / denominator;
+    const weightB = ((c.point.y - a.point.y) * (point.x - c.point.x)
+      + (a.point.x - c.point.x) * (point.y - c.point.y)) / denominator;
+    const weightC = 1 - weightA - weightB;
+    return a.uv.clone().multiplyScalar(weightA)
+      .addScaledVector(b.uv, weightB)
+      .addScaledVector(c.uv, weightC);
+  };
+}
+
+function buildInsetFacePatch(mesh, faces, requestedInset, buffers) {
+  const localNormal = faces[0].localNormal.clone().normalize();
+  const u = faces[0].u.clone().normalize();
+  const v = faces[0].v.clone().normalize();
+  const uniqueVertices = new Map();
+  for (const face of faces) {
+    for (const point of face.localTrianglePoints) uniqueVertices.set(vertexKey(point), point.clone());
+  }
+  const localCenter = [...uniqueVertices.values()]
+    .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+    .multiplyScalar(1 / Math.max(1, uniqueVertices.size));
+  let outer = coplanarRegionBoundary(faces, localCenter, u, v);
+  if (outer.length < 3) return null;
+  if (geometryLoopArea2D(outer) < 0) outer = [...outer].reverse();
+  if (!convexPolygon2D(outer)) return { error: "Inset Face currently needs a convex surface." };
+
+  const xs = outer.map(point => point.x);
+  const ys = outer.map(point => point.y);
+  const maxInset = Math.max(.001, Math.min(Math.max(...xs) - Math.min(...xs), Math.max(...ys) - Math.min(...ys)) * .45);
+  let usedInset = Math.min(requestedInset, maxInset);
+  let inner = [];
+  for (let attempt = 0; attempt < 8; attempt++) {
+    inner = insetConvexPolygon(outer, usedInset);
+    const valid = inner.length === outer.length
+      && inner.every(point => Number.isFinite(point.x) && Number.isFinite(point.y) && pointInPolygon2D(point, outer))
+      && Math.abs(geometryLoopArea2D(inner)) > 1e-7;
+    if (valid) break;
+    usedInset *= .5;
+    inner = [];
+  }
+  if (!inner.length) return { error: "The inset is too large for this surface." };
+
+  const uvFor = buffers.hadUv ? affineUvSampler(faces, localCenter, u, v) : null;
+  const localPoint = point => localCenter.clone().addScaledVector(u, point.x).addScaledVector(v, point.y);
+  const patchPositions = [];
+  const patchUvs = [];
+  const centerTriangles = [];
+  const addPatchTriangle = (points2, center = false) => {
+    let points3 = points2.map(localPoint);
+    let uvs = uvFor ? points2.map(uvFor) : null;
+    const normal = new THREE.Vector3().crossVectors(
+      points3[1].clone().sub(points3[0]),
+      points3[2].clone().sub(points3[0])
+    );
+    if (normal.dot(localNormal) < 0) {
+      points3 = [points3[0], points3[2], points3[1]];
+      if (uvs) uvs = [uvs[0], uvs[2], uvs[1]];
+    }
+    const faceIndex = (buffers.keptPositions.length + patchPositions.length) / 9;
+    patchPositions.push(...points3.flatMap(point => vecArray(point)));
+    if (buffers.hadUv) {
+      for (const uv of uvs || [new THREE.Vector2(.5, .5), new THREE.Vector2(.5, .5), new THREE.Vector2(.5, .5)]) {
+        patchUvs.push(uv.x, uv.y);
+      }
+    }
+    if (center) centerTriangles.push({ points: points3.map(point => point.clone()), uvs: uvs?.map(uv => uv.clone()) || null, faceIndex });
+  };
+
+  for (let index = 0; index < outer.length; index++) {
+    const next = (index + 1) % outer.length;
+    addPatchTriangle([outer[index], outer[next], inner[next]]);
+    addPatchTriangle([outer[index], inner[next], inner[index]]);
+  }
+  for (const triangle of THREE.ShapeUtils.triangulateShape(inner, [])) {
+    addPatchTriangle(triangle.map(index => inner[index]), true);
+  }
+  return { patchPositions, patchUvs, centerTriangles, usedInset };
+}
+
+function insetSelectedFace() {
+  if (!selectedFaces.length) {
+    log("Select one Triangle or Whole Face before using Inset Face.");
+    return [];
+  }
+  const meshes = [...new Set(selectedFaces.map(face => face.mesh).filter(Boolean))];
+  if (meshes.length !== 1) {
+    log("Inset Face works on one mesh surface at a time.");
+    return [];
+  }
+  const mesh = meshes[0];
+  const faces = selectedFaces.filter(face => face.mesh === mesh);
+  if (!selectedFaceRegionIsConnected(faces)) {
+    log("Inset Face needs one connected surface selection.");
+    return [];
+  }
+  if (!selectedFaceRegionIsPlanar(faces)) {
+    log("Inset Face needs a flat surface. Inset angled regions separately.");
+    return [];
+  }
+  const buffers = removeSelectedFaceRegionFromMesh(mesh);
+  if (!buffers?.removed) {
+    log("The selected surface could not be found in the editable mesh.");
+    return [];
+  }
+  const requestedInset = insetFaceAmount();
+  const patch = buildInsetFacePatch(mesh, faces, requestedInset, buffers);
+  if (!patch || patch.error) {
+    log(patch?.error || "Could not build an inset for this surface.");
+    return [];
+  }
+
+  recordHistory("inset selected face");
+  const selectedSignatures = new Map([[mesh.userData.id, new Set(faces.map(face => triangleSignature(face.localTrianglePoints)))] ]);
+  deleteMarkersByTriangleSignatures(selectedSignatures);
+  const positions = [...buffers.keptPositions, ...patch.patchPositions];
+  const uvs = buffers.hadUv ? [...buffers.keptUvs, ...patch.patchUvs] : [];
+  const geometry = geometryFromPositions(positions);
+  if (buffers.hadUv) geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  replaceEditableMeshGeometry(mesh, geometry);
+  mesh.updateMatrixWorld(true);
+
+  selectedFaces.length = 0;
+  selectedFaces.push(...patch.centerTriangles.map(triangle =>
+    faceFromLocalTriangle(mesh, triangle.points, triangle.faceIndex, triangle.uvs)
+  ));
+  selectedFace = selectedFaces.at(-1) || null;
+  clearSelectedSurfaceComponents();
+  if (selected !== mesh) selectObject(mesh);
+  updateFaceMarker();
+  syncSurfaceEditorUi();
+  updateAll();
+  log(`Inset ${faces.length === 1 ? "triangle" : "surface"} by ${round(patch.usedInset)}. The new center surface stays selected for Push or Pull.`, {
+    removedTriangles: buffers.removed,
+    selectedCenterTriangles: selectedFaces.length
+  });
+  return selectedFaces;
+}
+
+function surfaceSubdivisionLevels() {
+  const levels = Math.max(1, Math.min(2, Math.round(Number(els.subdivideLevelsInput?.value) || 1)));
+  if (els.subdivideLevelsInput) els.subdivideLevelsInput.value = String(levels);
+  return levels;
+}
+
+function subdivideSelectedSurface() {
+  if (!selectedFaces.length) {
+    log("Select a Triangle or Whole Face before using Subdivide Surface.");
+    return [];
+  }
+
+  const levels = surfaceSubdivisionLevels();
+  const facesByMesh = new Map();
+  for (const face of selectedFaces) {
+    if (!face?.mesh?.geometry) continue;
+    if (!facesByMesh.has(face.mesh)) facesByMesh.set(face.mesh, []);
+    facesByMesh.get(face.mesh).push(face);
+  }
+  if (!facesByMesh.size) {
+    log("The selected surface does not belong to an editable mesh.");
+    return [];
+  }
+
+  const originalSignaturesByMesh = new Map();
+  for (const [mesh, faces] of facesByMesh) {
+    originalSignaturesByMesh.set(mesh.userData.id, new Set(faces.map(face => triangleSignature(face.localTrianglePoints))));
+  }
+
+  recordHistory("subdivide selected surface");
+  deleteMarkersByTriangleSignatures(originalSignaturesByMesh);
+  const nextSelection = [];
+  let beforeTriangles = 0;
+  let afterTriangles = 0;
+  let subdividedTriangles = 0;
+
+  for (const [mesh, faces] of facesByMesh) {
+    const selectedSignatures = originalSignaturesByMesh.get(mesh.userData.id);
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const position = source.getAttribute("position");
+    const uv = source.getAttribute("uv");
+    const protectedEdges = new Set(mesh.userData.edgeBevelProtectedEdges || []);
+    beforeTriangles += position.count / 3;
+    let triangles = [];
+    for (let index = 0; index < position.count; index += 3) {
+      const vertices = [0, 1, 2].map(offset => ({
+        point: new THREE.Vector3(
+          position.getX(index + offset),
+          position.getY(index + offset),
+          position.getZ(index + offset)
+        ),
+        uv: uv ? new THREE.Vector2(uv.getX(index + offset), uv.getY(index + offset)) : null
+      }));
+      const selectedTriangle = selectedSignatures.has(triangleSignature(vertices.map(vertex => vertex.point)));
+      if (selectedTriangle) subdividedTriangles++;
+      triangles.push({ vertices, selected: selectedTriangle });
+    }
+
+    const midpoint = (a, b) => ({
+      point: a.point.clone().lerp(b.point, .5),
+      uv: uv ? (a.uv || new THREE.Vector2(.5, .5)).clone().lerp(b.uv || new THREE.Vector2(.5, .5), .5) : null
+    });
+    const addTriangle = (target, selectedTriangle, a, b, c) => {
+      target.push({ vertices: [a, b, c], selected: selectedTriangle });
+    };
+
+    for (let level = 0; level < levels; level++) {
+      const edgesToSplit = new Set();
+      for (const triangle of triangles) {
+        if (!triangle.selected) continue;
+        const [a, b, c] = triangle.vertices;
+        edgesToSplit.add(localEdgeSignature(a.point, b.point));
+        edgesToSplit.add(localEdgeSignature(b.point, c.point));
+        edgesToSplit.add(localEdgeSignature(c.point, a.point));
+      }
+
+      const nextTriangles = [];
+      for (const triangle of triangles) {
+        const [a, b, c] = triangle.vertices;
+        const abSignature = localEdgeSignature(a.point, b.point);
+        const bcSignature = localEdgeSignature(b.point, c.point);
+        const caSignature = localEdgeSignature(c.point, a.point);
+        const splitAb = edgesToSplit.has(abSignature);
+        const splitBc = edgesToSplit.has(bcSignature);
+        const splitCa = edgesToSplit.has(caSignature);
+        const splitCount = Number(splitAb) + Number(splitBc) + Number(splitCa);
+        if (!splitCount) {
+          nextTriangles.push(triangle);
+          continue;
+        }
+
+        const ab = splitAb ? midpoint(a, b) : null;
+        const bc = splitBc ? midpoint(b, c) : null;
+        const ca = splitCa ? midpoint(c, a) : null;
+        if (splitAb && protectedEdges.has(abSignature)) {
+          protectedEdges.add(localEdgeSignature(a.point, ab.point));
+          protectedEdges.add(localEdgeSignature(ab.point, b.point));
+        }
+        if (splitBc && protectedEdges.has(bcSignature)) {
+          protectedEdges.add(localEdgeSignature(b.point, bc.point));
+          protectedEdges.add(localEdgeSignature(bc.point, c.point));
+        }
+        if (splitCa && protectedEdges.has(caSignature)) {
+          protectedEdges.add(localEdgeSignature(c.point, ca.point));
+          protectedEdges.add(localEdgeSignature(ca.point, a.point));
+        }
+
+        const keepSelected = triangle.selected;
+        if (splitCount === 3) {
+          addTriangle(nextTriangles, keepSelected, a, ab, ca);
+          addTriangle(nextTriangles, keepSelected, ab, b, bc);
+          addTriangle(nextTriangles, keepSelected, ca, bc, c);
+          addTriangle(nextTriangles, keepSelected, ab, bc, ca);
+        } else if (splitAb && splitBc) {
+          addTriangle(nextTriangles, keepSelected, ab, b, bc);
+          addTriangle(nextTriangles, keepSelected, a, ab, bc);
+          addTriangle(nextTriangles, keepSelected, a, bc, c);
+        } else if (splitBc && splitCa) {
+          addTriangle(nextTriangles, keepSelected, bc, c, ca);
+          addTriangle(nextTriangles, keepSelected, b, bc, ca);
+          addTriangle(nextTriangles, keepSelected, b, ca, a);
+        } else if (splitCa && splitAb) {
+          addTriangle(nextTriangles, keepSelected, ca, a, ab);
+          addTriangle(nextTriangles, keepSelected, c, ca, ab);
+          addTriangle(nextTriangles, keepSelected, c, ab, b);
+        } else if (splitAb) {
+          addTriangle(nextTriangles, keepSelected, a, ab, c);
+          addTriangle(nextTriangles, keepSelected, ab, b, c);
+        } else if (splitBc) {
+          addTriangle(nextTriangles, keepSelected, b, bc, a);
+          addTriangle(nextTriangles, keepSelected, bc, c, a);
+        } else {
+          addTriangle(nextTriangles, keepSelected, c, ca, b);
+          addTriangle(nextTriangles, keepSelected, ca, a, b);
+        }
+      }
+      triangles = nextTriangles;
+    }
+
+    source.dispose();
+    const positions = [];
+    const uvs = [];
+    const generated = [];
+    for (const triangle of triangles) {
+      const faceIndex = positions.length / 9;
+      for (const vertex of triangle.vertices) {
+        positions.push(vertex.point.x, vertex.point.y, vertex.point.z);
+        if (uv) uvs.push(vertex.uv?.x ?? .5, vertex.uv?.y ?? .5);
+      }
+      if (triangle.selected) {
+        generated.push({
+          points: triangle.vertices.map(vertex => vertex.point.clone()),
+          uvs: uv ? triangle.vertices.map(vertex => vertex.uv?.clone() || new THREE.Vector2(.5, .5)) : null,
+          faceIndex
+        });
+      }
+    }
+    const geometry = geometryFromPositions(positions);
+    if (uv) geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    replaceEditableMeshGeometry(mesh, geometry);
+    mesh.userData.edgeBevelProtectedEdges = [...protectedEdges];
+    mesh.updateMatrixWorld(true);
+    afterTriangles += positions.length / 9;
+    nextSelection.push(...generated.map(triangle =>
+      faceFromLocalTriangle(mesh, triangle.points, triangle.faceIndex, triangle.uvs)
+    ));
+  }
+
+  selectedFaces.length = 0;
+  selectedFaces.push(...nextSelection);
+  selectedFace = selectedFaces.at(-1) || null;
+  clearSelectedSurfaceComponents();
+  if (selectedFace && selected !== selectedFace.mesh) selectObject(selectedFace.mesh);
+  updateFaceMarker();
+  syncSurfaceEditorUi();
+  updateAll();
+  log(`Subdivided ${subdividedTriangles} selected triangle${subdividedTriangles === 1 ? "" : "s"} at level ${levels}. The new detail stays selected.`, {
+    beforeTriangles,
+    afterTriangles,
+    selectedTriangles: selectedFaces.length
+  });
+  return selectedFaces;
+}
+
+function loopCutSettings() {
+  const axis = ["x", "y", "z"].includes(els.loopCutAxisSelect?.value) ? els.loopCutAxisSelect.value : "y";
+  const position = Math.max(1, Math.min(99, Number(els.loopCutPositionInput?.value) || 50));
+  const count = Math.max(1, Math.min(8, Math.round(Number(els.loopCutCountInput?.value) || 1)));
+  if (els.loopCutAxisSelect) els.loopCutAxisSelect.value = axis;
+  if (els.loopCutPositionInput) els.loopCutPositionInput.value = String(position);
+  if (els.loopCutCountInput) els.loopCutCountInput.value = String(count);
+  return { axis, position, count };
+}
+
+function loopCutVertex(point, uv = null) {
+  return { point: point.clone(), uv: uv?.clone() || null };
+}
+
+function interpolateLoopCutVertex(a, b, amount) {
+  return {
+    point: a.point.clone().lerp(b.point, amount),
+    uv: a.uv && b.uv ? a.uv.clone().lerp(b.uv, amount) : null
+  };
+}
+
+function clipLoopCutPolygon(vertices, axis, planePosition, keepPositive, epsilon) {
+  const clipped = [];
+  for (let index = 0; index < vertices.length; index++) {
+    const current = vertices[index];
+    const next = vertices[(index + 1) % vertices.length];
+    const currentDistance = current.point[axis] - planePosition;
+    const nextDistance = next.point[axis] - planePosition;
+    const currentInside = keepPositive ? currentDistance >= -epsilon : currentDistance <= epsilon;
+    const nextInside = keepPositive ? nextDistance >= -epsilon : nextDistance <= epsilon;
+    if (currentInside) clipped.push(loopCutVertex(current.point, current.uv));
+    if (currentInside === nextInside) continue;
+    const denominator = currentDistance - nextDistance;
+    if (Math.abs(denominator) <= epsilon) continue;
+    clipped.push(interpolateLoopCutVertex(current, next, currentDistance / denominator));
+  }
+  return clipped.filter((vertex, index) => {
+    const previous = clipped[(index - 1 + clipped.length) % clipped.length];
+    return !previous || vertex.point.distanceToSquared(previous.point) > epsilon * epsilon;
+  });
+}
+
+function appendLoopCutPolygon(target, polygon, hadUv, epsilon) {
+  if (polygon.length < 3) return 0;
+  let created = 0;
+  for (let index = 1; index < polygon.length - 1; index++) {
+    const vertices = [polygon[0], polygon[index], polygon[index + 1]];
+    const areaNormal = new THREE.Vector3().crossVectors(
+      vertices[1].point.clone().sub(vertices[0].point),
+      vertices[2].point.clone().sub(vertices[0].point)
+    );
+    if (areaNormal.lengthSq() <= epsilon * epsilon) continue;
+    for (const vertex of vertices) {
+      target.positions.push(vertex.point.x, vertex.point.y, vertex.point.z);
+      if (hadUv) target.uvs.push(vertex.uv?.x ?? .5, vertex.uv?.y ?? .5);
+    }
+    created++;
+  }
+  return created;
+}
+
+function uniqueLoopCutPoints(points, epsilon) {
+  const unique = [];
+  for (const point of points) {
+    if (unique.some(existing => existing.distanceToSquared(point) <= epsilon * epsilon)) continue;
+    unique.push(point.clone());
+  }
+  return unique;
+}
+
+function splitGeometryAtLoopPlane(source, axis, planePosition, protectedEdges) {
+  const position = source.getAttribute("position");
+  const uv = source.getAttribute("uv");
+  const epsilon = 1e-6;
+  const output = { positions: [], uvs: [] };
+  const segments = [];
+  let splitTriangles = 0;
+
+  for (let index = 0; index < position.count; index += 3) {
+    const vertices = [0, 1, 2].map(offset => new THREE.Vector3(
+      position.getX(index + offset),
+      position.getY(index + offset),
+      position.getZ(index + offset)
+    )).map((point, offset) => loopCutVertex(point, uv ? new THREE.Vector2(
+      uv.getX(index + offset),
+      uv.getY(index + offset)
+    ) : null));
+    const distances = vertices.map(vertex => vertex.point[axis] - planePosition);
+    const crossesPlane = Math.min(...distances) < -epsilon && Math.max(...distances) > epsilon;
+    if (!crossesPlane) {
+      appendLoopCutPolygon(output, vertices, Boolean(uv), epsilon);
+      continue;
+    }
+
+    const intersections = [];
+    for (let edgeIndex = 0; edgeIndex < 3; edgeIndex++) {
+      const a = vertices[edgeIndex];
+      const b = vertices[(edgeIndex + 1) % 3];
+      const aDistance = a.point[axis] - planePosition;
+      const bDistance = b.point[axis] - planePosition;
+      if (Math.abs(aDistance) <= epsilon) intersections.push(a.point);
+      if (aDistance * bDistance >= -epsilon * epsilon) continue;
+      const amount = aDistance / (aDistance - bDistance);
+      const intersection = interpolateLoopCutVertex(a, b, amount);
+      intersections.push(intersection.point);
+      const originalSignature = localEdgeSignature(a.point, b.point);
+      if (protectedEdges.has(originalSignature)) {
+        protectedEdges.add(localEdgeSignature(a.point, intersection.point));
+        protectedEdges.add(localEdgeSignature(intersection.point, b.point));
+      }
+    }
+
+    const negative = clipLoopCutPolygon(vertices, axis, planePosition, false, epsilon);
+    const positive = clipLoopCutPolygon(vertices, axis, planePosition, true, epsilon);
+    const created = appendLoopCutPolygon(output, negative, Boolean(uv), epsilon)
+      + appendLoopCutPolygon(output, positive, Boolean(uv), epsilon);
+    const segmentPoints = uniqueLoopCutPoints(intersections, epsilon);
+    if (created >= 2 && segmentPoints.length === 2) {
+      segments.push({ localA: segmentPoints[0], localB: segmentPoints[1] });
+      splitTriangles++;
+    }
+  }
+
+  const geometry = geometryFromPositions(output.positions);
+  if (uv && output.uvs.length) geometry.setAttribute("uv", new THREE.Float32BufferAttribute(output.uvs, 2));
+  return { geometry, segments, splitTriangles };
+}
+
+function loopCutTargetMesh() {
+  return selectedFace?.mesh
+    || selectedSurfaceEdges.at(-1)?.mesh
+    || selectedSurfaceVertices.at(-1)?.mesh
+    || selected;
+}
+
+function applyLoopCut() {
+  const mesh = loopCutTargetMesh();
+  if (!mesh?.geometry || !objects.includes(mesh)) {
+    log("Select one mesh before using Loop Cut / Ring Cut.");
+    return null;
+  }
+  const { axis, position, count } = loopCutSettings();
+  let working = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  working.computeBoundingBox();
+  const minimum = working.boundingBox.min[axis];
+  const maximum = working.boundingBox.max[axis];
+  const span = maximum - minimum;
+  if (!Number.isFinite(span) || span <= 1e-5) {
+    working.dispose();
+    log(`The selected mesh has no usable ${axis.toUpperCase()} thickness for a loop cut.`);
+    return null;
+  }
+
+  const planes = count === 1
+    ? [minimum + span * position / 100]
+    : Array.from({ length: count }, (_, index) => minimum + span * (index + 1) / (count + 1));
+  const protectedEdges = new Set(mesh.userData.edgeBevelProtectedEdges || []);
+  const ringSegments = [];
+  let appliedCuts = 0;
+  let splitTriangles = 0;
+  const beforeTriangles = working.getAttribute("position").count / 3;
+
+  for (const planePosition of planes) {
+    const result = splitGeometryAtLoopPlane(working, axis, planePosition, protectedEdges);
+    if (!result.splitTriangles) {
+      result.geometry.dispose();
+      continue;
+    }
+    working.dispose();
+    working = result.geometry;
+    ringSegments.push(...result.segments);
+    splitTriangles += result.splitTriangles;
+    appliedCuts++;
+  }
+  if (!appliedCuts || !ringSegments.length) {
+    working.dispose();
+    log("Loop Cut did not cross any closed mesh surfaces at the requested position.");
+    return null;
+  }
+
+  recordHistory("apply loop cut");
+  clearMarkers(mesh.userData.id);
+  clearSelectedTriangles();
+  clearSelectedSurfaceComponents();
+  if (selected !== mesh) selectObject(mesh);
+  replaceEditableMeshGeometry(mesh, working);
+  mesh.userData.edgeBevelProtectedEdges = [...protectedEdges];
+  mesh.updateMatrixWorld(true);
+
+  surfaceComponentMode = "edge";
+  surfaceSelectionSource = "surface";
+  coplanarFacePickMode = false;
+  setFacePickMode(false);
+  const seenEdges = new Set();
+  for (const segment of ringSegments) {
+    const key = surfaceEdgeKey(mesh, segment.localA, segment.localB);
+    if (seenEdges.has(key)) continue;
+    seenEdges.add(key);
+    selectedSurfaceEdges.push({
+      mesh,
+      localA: segment.localA.clone(),
+      localB: segment.localB.clone(),
+      key,
+      protectedBevelEdge: protectedEdges.has(localEdgeSignature(segment.localA, segment.localB))
+    });
+  }
+  updateSurfaceComponentMarker();
+  updateAll();
+  syncSurfaceEditorUi();
+  armContextualSurfaceDrag();
+  log(`Applied ${appliedCuts} ${axis.toUpperCase()} loop cut${appliedCuts === 1 ? "" : "s"} to ${mesh.name}. New ring edges stay selected.`, {
+    beforeTriangles,
+    afterTriangles: working.getAttribute("position").count / 3,
+    splitTriangles,
+    selectedRingEdges: selectedSurfaceEdges.length
+  });
+  return mesh;
 }
 
 function extendSelectedFaces() {
@@ -6741,8 +8154,7 @@ function pushSelectedFaces() {
 }
 
 function dragPushAxisLabel() {
-  const axis = String(els.dragPushAxisSelect?.value || "normal");
-  return axis === "normal" ? "Normal" : axis.toUpperCase();
+  return surfaceAxisMode().toUpperCase();
 }
 
 function dragPushTargetMeshes() {
@@ -6750,14 +8162,15 @@ function dragPushTargetMeshes() {
 }
 
 function canStartDragPushFromHit(hit) {
-  if (!dragPushMode || !selectedFaces.length || !hit?.object) return false;
-  return selectedFaces.some(face => face.mesh === hit.object);
+  if (!dragPushMode || surfaceAxisMode() === "free" || !selectedFaces.length || !hit?.object || !hit.face) return false;
+  const hitSignature = triangleSignature(triangleLocalPoints(hit));
+  return selectedFaces.some(face => face.mesh === hit.object && triangleSignature(face.localTrianglePoints) === hitSignature);
 }
 
 function beginDragPushSession(event) {
-  if (!dragPushMode || !selectedFaces.length) return false;
+  if (!dragPushMode || surfaceAxisMode() === "free" || !selectedFaces.length) return false;
   const step = dragPushStepSize();
-  const axis = String(els.dragPushAxisSelect?.value || "normal");
+  const axis = surfaceAxisMode();
   dragPushSession = {
     pointerId: event.pointerId,
     startClientX: event.clientX,
@@ -6769,7 +8182,10 @@ function beginDragPushSession(event) {
   orbit.enabled = false;
   canvas.setPointerCapture?.(event.pointerId);
   recordHistory("drag/push selected area");
-  els.hudText.textContent = `Drag/Push active: drag left or right | Axis ${dragPushAxisLabel()} | Step ${step}`;
+  const shape = els.surfaceMouseFalloffSelect?.value === "soft"
+    ? `Soft radius ${Math.max(.01, Number(els.softRadiusInput?.value) || .25)}`
+    : "Hard face";
+  els.hudText.textContent = `Surface drag active: drag left or right | ${shape} | Axis ${dragPushAxisLabel()} | Step ${step}`;
   return true;
 }
 
@@ -6785,10 +8201,15 @@ function updateDragPushSession(event) {
     if (!facesByMesh.has(face.mesh)) facesByMesh.set(face.mesh, []);
     facesByMesh.get(face.mesh).push(face);
   }
-  for (const [mesh, faces] of facesByMesh) moveSelectedVerticesAlongAxis(mesh, faces, deltaToApply, dragPushSession.axis);
+  const softFalloff = els.surfaceMouseFalloffSelect?.value === "soft";
+  const radius = Math.max(.01, Number(els.softRadiusInput?.value) || .25);
+  for (const [mesh, faces] of facesByMesh) {
+    if (softFalloff) softMoveFacesByDistance(mesh, faces, deltaToApply, radius, dragPushSession.axis);
+    else moveSelectedVerticesAlongAxis(mesh, faces, deltaToApply, dragPushSession.axis);
+  }
   dragPushSession.appliedDistance = targetDistance;
   updateAll();
-  els.hudText.textContent = `Drag/Push active: ${dragPushAxisLabel()} ${round(targetDistance)} | Step ${dragPushSession.step}`;
+  els.hudText.textContent = `Surface drag active: ${softFalloff ? `Soft radius ${round(radius)}` : "Hard face"} | ${dragPushAxisLabel()} ${round(targetDistance)} | Step ${dragPushSession.step}`;
   return true;
 }
 
@@ -6798,8 +8219,12 @@ function finishDragPushSession(pointerId = null) {
   dragPushSession = null;
   if (!spaceCameraMode) orbit.enabled = true;
   if (dragPushMode) {
-    els.hudText.textContent = `Drag/Push mode: drag left or right to move selected triangles along ${dragPushAxisLabel()} in snapped ${dragPushStepSize()} steps`;
+    const shape = els.surfaceMouseFalloffSelect?.value === "soft"
+      ? `soft falloff radius ${round(Math.max(.01, Number(els.softRadiusInput?.value) || .25))}`
+      : "hard face";
+    els.hudText.textContent = `Surface drag ready: ${shape} along ${dragPushAxisLabel()} in snapped ${dragPushStepSize()} steps`;
   }
+  syncSurfaceEditorUi();
   return true;
 }
 
@@ -6851,6 +8276,357 @@ function createBevelFacePatch(face, type, size, depth) {
     depth: Math.abs(depth),
     direction: type
   }, { record: false });
+}
+
+function edgeBevelWidth({ min = .001, max = 10 } = {}) {
+  return Math.max(min, Math.min(max, Number(els.edgeBevelWidthInput?.value) || .08));
+}
+
+function localEdgeSignature(localA, localB) {
+  return [vertexKey(localA), vertexKey(localB)].sort().join("|");
+}
+
+function appendAlignedTriangle(positions, uvs, points, triangleUvs, targetNormal, hadUv) {
+  const orderedPoints = points.map(point => point.clone());
+  const orderedUvs = triangleUvs?.map(uv => uv.clone()) || null;
+  const normal = new THREE.Vector3().crossVectors(
+    orderedPoints[1].clone().sub(orderedPoints[0]),
+    orderedPoints[2].clone().sub(orderedPoints[0])
+  );
+  if (normal.dot(targetNormal) < 0) {
+    [orderedPoints[1], orderedPoints[2]] = [orderedPoints[2], orderedPoints[1]];
+    if (orderedUvs) [orderedUvs[1], orderedUvs[2]] = [orderedUvs[2], orderedUvs[1]];
+  }
+  positions.push(...orderedPoints.flatMap(point => point.toArray()));
+  if (!hadUv) return;
+  for (const uv of orderedUvs || [new THREE.Vector2(.5, .5), new THREE.Vector2(.5, .5), new THREE.Vector2(.5, .5)]) {
+    uvs.push(uv.x, uv.y);
+  }
+}
+
+function clipLocalPolygon(points, signedDistance) {
+  const clipped = [];
+  for (let index = 0; index < points.length; index++) {
+    const current = points[index];
+    const next = points[(index + 1) % points.length];
+    const currentDistance = signedDistance(current);
+    const nextDistance = signedDistance(next);
+    const currentInside = currentDistance >= -.000001;
+    const nextInside = nextDistance >= -.000001;
+    if (currentInside) clipped.push(current.clone());
+    if (currentInside === nextInside) continue;
+    const denominator = currentDistance - nextDistance;
+    if (Math.abs(denominator) <= .0000001) continue;
+    clipped.push(current.clone().lerp(next, currentDistance / denominator));
+  }
+  return clipped.filter((point, index) => !index || point.distanceToSquared(clipped[index - 1]) > 1e-12);
+}
+
+function convexHullEntries2D(entries) {
+  const sorted = [...entries].sort((a, b) => a.point2.x - b.point2.x || a.point2.y - b.point2.y);
+  if (sorted.length <= 3) return sorted;
+  const cross = (origin, a, b) => a.point2.clone().sub(origin.point2).cross(b.point2.clone().sub(origin.point2));
+  const lower = [];
+  for (const entry of sorted) {
+    while (lower.length >= 2 && cross(lower.at(-2), lower.at(-1), entry) <= .0000001) lower.pop();
+    lower.push(entry);
+  }
+  const upper = [];
+  for (const entry of [...sorted].reverse()) {
+    while (upper.length >= 2 && cross(upper.at(-2), upper.at(-1), entry) <= .0000001) upper.pop();
+    upper.push(entry);
+  }
+  lower.pop();
+  upper.pop();
+  return [...lower, ...upper];
+}
+
+function clipGeometryByLocalPlane(geometry, planeNormal, planePoint) {
+  const source = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  const position = source.getAttribute("position");
+  const uv = source.getAttribute("uv");
+  const buffers = { positions: [], uvs: [], hasUv: Boolean(uv) };
+  const capPoints = new Map();
+  const epsilon = .00001;
+  const distance = vertex => planeNormal.dot(vertex.point.clone().sub(planePoint));
+  const inside = vertex => distance(vertex) <= epsilon;
+  const registerCapPoint = vertex => {
+    if (Math.abs(distance(vertex)) > .0001) return;
+    const key = vertexKey(vertex.point);
+    if (!capPoints.has(key)) capPoints.set(key, vertex.point.clone());
+  };
+  const intersection = (a, b) => {
+    const da = distance(a);
+    const db = distance(b);
+    const vertex = lerpClipVertex(a, b, da / (da - db));
+    vertex.point.addScaledVector(planeNormal, -distance(vertex));
+    registerCapPoint(vertex);
+    return vertex;
+  };
+
+  for (let index = 0; index < position.count; index += 3) {
+    const polygon = [
+      geometryClipVertex(position, uv, index),
+      geometryClipVertex(position, uv, index + 1),
+      geometryClipVertex(position, uv, index + 2)
+    ];
+    const clipped = [];
+    for (let edgeIndex = 0; edgeIndex < polygon.length; edgeIndex++) {
+      const current = polygon[edgeIndex];
+      const next = polygon[(edgeIndex + 1) % polygon.length];
+      const currentInside = inside(current);
+      const nextInside = inside(next);
+      if (currentInside && nextInside) clipped.push(next);
+      else if (currentInside && !nextInside) clipped.push(intersection(current, next));
+      else if (!currentInside && nextInside) clipped.push(intersection(current, next), next);
+    }
+    clipped.forEach(registerCapPoint);
+    for (let triangleIndex = 1; triangleIndex < clipped.length - 1; triangleIndex++) {
+      pushClipTriangle(buffers, clipped[0], clipped[triangleIndex], clipped[triangleIndex + 1]);
+    }
+  }
+
+  const capCenter = [...capPoints.values()]
+    .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+    .multiplyScalar(1 / Math.max(1, capPoints.size));
+  const { u, v } = faceBasisFromNormal(planeNormal);
+  const hull = convexHullEntries2D([...capPoints.values()].map(point => {
+    const offset = point.clone().sub(capCenter);
+    return { point, point2: new THREE.Vector2(offset.dot(u), offset.dot(v)) };
+  }));
+  if (hull.length >= 3) {
+    for (let index = 1; index < hull.length - 1; index++) {
+      const points = [hull[0].point, hull[index].point, hull[index + 1].point];
+      const normal = new THREE.Vector3().crossVectors(
+        points[1].clone().sub(points[0]),
+        points[2].clone().sub(points[0])
+      );
+      const ordered = normal.dot(planeNormal) >= 0 ? points : [points[0], points[2], points[1]];
+      pushClipTriangle(buffers,
+        { point: ordered[0], uv: null },
+        { point: ordered[1], uv: null },
+        { point: ordered[2], uv: null }
+      );
+    }
+  }
+
+  source.dispose();
+  const result = new THREE.BufferGeometry();
+  result.setAttribute("position", new THREE.Float32BufferAttribute(buffers.positions, 3));
+  if (buffers.hasUv) result.setAttribute("uv", new THREE.Float32BufferAttribute(buffers.uvs, 2));
+  result.computeVertexNormals();
+  result.computeBoundingBox();
+  result.computeBoundingSphere();
+  return { geometry: result, capLoop: hull.map(entry => entry.point.clone()) };
+}
+
+function planarSurfaceRegionData(seedFace) {
+  const faces = coplanarConnectedFaces(seedFace);
+  const uniqueVertices = new Map();
+  for (const face of faces) {
+    for (const point of face.localTrianglePoints) uniqueVertices.set(vertexKey(point), point.clone());
+  }
+  const localCenter = [...uniqueVertices.values()]
+    .reduce((sum, point) => sum.add(point), new THREE.Vector3())
+    .multiplyScalar(1 / Math.max(1, uniqueVertices.size));
+  const u = seedFace.u.clone().normalize();
+  const v = seedFace.v.clone().normalize();
+  const normal = seedFace.localNormal.clone().normalize();
+  const boundary2 = coplanarRegionBoundary(faces, localCenter, u, v);
+  const boundary = boundary2.map(point => localCenter.clone().addScaledVector(u, point.x).addScaledVector(v, point.y));
+  return {
+    faces,
+    normal,
+    u,
+    v,
+    localCenter,
+    boundary,
+    uvFor: faces.some(face => face.localUvs?.length) ? affineUvSampler(faces, localCenter, u, v) : null
+  };
+}
+
+function edgeBevelRegionData(mesh, triangle, endpoints, edgeDirection) {
+  const seedFace = faceFromLocalTriangle(mesh, triangle.points, null, triangle.uvs);
+  const region = planarSurfaceRegionData(seedFace);
+  const edgeCenter = endpoints[0].clone().add(endpoints[1]).multiplyScalar(.5);
+  const inward = new THREE.Vector3().crossVectors(region.normal, edgeDirection).normalize();
+  if (inward.dot(region.localCenter.clone().sub(edgeCenter)) < 0) inward.negate();
+  const depths = region.boundary.map(point => point.clone().sub(endpoints[0]).dot(inward));
+  const maxDepth = Math.max(...depths);
+  return {
+    ...region,
+    inward,
+    maxDepth
+  };
+}
+
+function edgeBevelEndRegion(mesh, endpoint, excludedSignatures) {
+  const endpointKey = vertexKey(endpoint);
+  const candidates = meshTriangleFaces(mesh).filter(face =>
+    face.localTrianglePoints.some(point => vertexKey(point) === endpointKey)
+    && !excludedSignatures.has(triangleSignature(face.localTrianglePoints))
+  );
+  const regions = [];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const region = planarSurfaceRegionData(candidate);
+    const signatures = region.faces.map(face => triangleSignature(face.localTrianglePoints));
+    if (signatures.some(signature => excludedSignatures.has(signature))) continue;
+    const key = [...signatures].sort().join("::");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    regions.push(region);
+  }
+  return regions;
+}
+
+function prepareEdgeBevelEndCut(region, endpoint, cutA, cutB) {
+  const cutDirection = cutB.clone().sub(cutA);
+  if (cutDirection.lengthSq() <= 1e-10) return false;
+  cutDirection.normalize();
+  const inward = new THREE.Vector3().crossVectors(region.normal, cutDirection).normalize();
+  const cutCenter = cutA.clone().add(cutB).multiplyScalar(.5);
+  if (inward.dot(region.localCenter.clone().sub(cutCenter)) < 0) inward.negate();
+  const signedDistance = point => point.clone().sub(cutA).dot(inward);
+  if (signedDistance(endpoint) >= -.000001 || signedDistance(region.localCenter) <= .000001) return false;
+  region.clippedBoundary = clipLocalPolygon(region.boundary, signedDistance);
+  return region.clippedBoundary.length >= 3;
+}
+
+function appendTriangulatedSurfaceRegion(region, positions, uvs, hadUv) {
+  let projected = region.clippedBoundary.map(point => {
+    const offset = point.clone().sub(region.localCenter);
+    return new THREE.Vector2(offset.dot(region.u), offset.dot(region.v));
+  });
+  if (THREE.ShapeUtils.area(projected) < 0) {
+    region.clippedBoundary.reverse();
+    projected = projected.reverse();
+  }
+  let created = 0;
+  for (const indices of THREE.ShapeUtils.triangulateShape(projected, [])) {
+    const points = indices.map(index => region.clippedBoundary[index]);
+    const triangleUvs = region.uvFor ? indices.map(index => region.uvFor(projected[index])) : null;
+    appendAlignedTriangle(positions, uvs, points, triangleUvs, region.normal, hadUv);
+    created++;
+  }
+  return created;
+}
+
+function bevelSelectedEdge() {
+  if (selectedSurfaceEdges.length !== 1) {
+    log("Choose Edge and select exactly one sharp edge before using Edge Bevel.");
+    return null;
+  }
+  const selectedEdge = selectedSurfaceEdges[0];
+  const mesh = selectedEdge.mesh;
+  if (!mesh?.geometry) {
+    log("The selected edge does not belong to an editable mesh.");
+    return null;
+  }
+  const selectedEdgeSignature = localEdgeSignature(selectedEdge.localA, selectedEdge.localB);
+  if ((mesh.userData.edgeBevelProtectedEdges || []).includes(selectedEdgeSignature)) {
+    log("That edge belongs to an existing bevel. Choose the next outer model edge instead so the first bevel is not folded inward.");
+    return null;
+  }
+
+  const edgeKeys = new Set([vertexKey(selectedEdge.localA), vertexKey(selectedEdge.localB)]);
+  const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const position = source.getAttribute("position");
+  const uv = source.getAttribute("uv");
+  const triangles = [];
+  for (let index = 0; index < position.count; index += 3) {
+    const points = [0, 1, 2].map(offset => new THREE.Vector3(
+      position.getX(index + offset),
+      position.getY(index + offset),
+      position.getZ(index + offset)
+    ));
+    const triangleUvs = uv ? [0, 1, 2].map(offset => new THREE.Vector2(
+      uv.getX(index + offset),
+      uv.getY(index + offset)
+    )) : null;
+    const keys = points.map(vertexKey);
+    const normal = new THREE.Vector3().crossVectors(
+      points[1].clone().sub(points[0]),
+      points[2].clone().sub(points[0])
+    ).normalize();
+    triangles.push({ points, uvs: triangleUvs, keys, normal, signature: triangleSignature(points) });
+  }
+
+  const adjacent = triangles.filter(triangle => [...edgeKeys].every(key => triangle.keys.includes(key)));
+  if (adjacent.length !== 2) {
+    source.dispose();
+    log(adjacent.length < 2
+      ? "Edge Bevel needs a closed sharp edge with a surface on both sides."
+      : "Edge Bevel cannot edit this non-manifold edge because more than two surfaces meet there.");
+    return null;
+  }
+  if (adjacent[0].normal.dot(adjacent[1].normal) >= .999) {
+    source.dispose();
+    log("That line is a flat triangulation diagonal, not a visible sharp edge. Choose an outer crease instead.");
+    return null;
+  }
+
+  const endpoints = [selectedEdge.localA.clone(), selectedEdge.localB.clone()];
+  const edgeDirection = endpoints[1].clone().sub(endpoints[0]);
+  const edgeLength = edgeDirection.length();
+  if (edgeLength <= .00001) {
+    source.dispose();
+    log("The selected edge is too short to bevel.");
+    return null;
+  }
+  edgeDirection.normalize();
+
+  const sideData = adjacent.map(triangle => edgeBevelRegionData(mesh, triangle, endpoints, edgeDirection));
+  if (sideData.some(side => side.boundary.length < 3 || !Number.isFinite(side.maxDepth) || side.maxDepth <= .002)) {
+    source.dispose();
+    log("Edge Bevel could not trace both complete planar sides of this edge.");
+    return null;
+  }
+  const maximumSafeWidth = Math.min(...sideData.map(side => side.maxDepth)) * .45;
+  const usedWidth = Math.min(edgeBevelWidth(), maximumSafeWidth);
+  if (!Number.isFinite(usedWidth) || usedWidth < .001) {
+    source.dispose();
+    log("There is not enough surface beside this edge to create a bevel.");
+    return null;
+  }
+
+  const cutPointA = endpoints[0].clone().addScaledVector(sideData[0].inward, usedWidth);
+  const cutPointB = endpoints[0].clone().addScaledVector(sideData[1].inward, usedWidth);
+  const planeNormal = new THREE.Vector3().crossVectors(
+    edgeDirection,
+    cutPointB.clone().sub(cutPointA)
+  ).normalize();
+  if (planeNormal.dot(endpoints[0].clone().sub(cutPointA)) < 0) planeNormal.negate();
+  const beforeTriangles = position.count / 3;
+  const clipped = clipGeometryByLocalPlane(source, planeNormal, cutPointA);
+  if (clipped.capLoop.length < 3 || !clipped.geometry.getAttribute("position")?.count) {
+    clipped.geometry.dispose();
+    source.dispose();
+    log("Edge Bevel could not create a closed planar cut for this edge.");
+    return null;
+  }
+
+  const protectedEdges = new Set(mesh.userData.edgeBevelProtectedEdges || []);
+  for (let index = 0; index < clipped.capLoop.length; index++) {
+    protectedEdges.add(localEdgeSignature(clipped.capLoop[index], clipped.capLoop[(index + 1) % clipped.capLoop.length]));
+  }
+
+  recordHistory("bevel selected edge");
+  clearMarkers(mesh.userData.id);
+  source.dispose();
+  replaceEditableMeshGeometry(mesh, clipped.geometry);
+  mesh.userData.edgeBevelProtectedEdges = [...protectedEdges];
+  mesh.updateMatrixWorld(true);
+  clearSelectedSurfaceComponents();
+  if (selected !== mesh) selectObject(mesh);
+  syncSurfaceEditorUi();
+  updateAll();
+  log(`Beveled one sharp edge on ${mesh.name} by ${round(usedWidth)}.`, {
+    beforeTriangles,
+    afterTriangles: clipped.geometry.getAttribute("position").count / 3,
+    capVertices: clipped.capLoop.length
+  });
+  return mesh;
 }
 
 function bevelSelectedFace() {

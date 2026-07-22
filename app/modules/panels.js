@@ -25,8 +25,11 @@ function animate() {
   const mainFog = scene.fog;
   scene.background = studioBackground;
   scene.fog = null;
+  const surfaceTransformWasVisible = surfaceTransform.visible;
+  surfaceTransform.visible = false;
   frontBoneRenderer.render(scene, frontBoneCamera);
   sideBoneRenderer.render(scene, sideBoneCamera);
+  surfaceTransform.visible = surfaceTransformWasVisible;
   scene.background = mainBackground;
   scene.fog = mainFog;
 }
@@ -128,16 +131,8 @@ document.querySelectorAll("[data-flip-axis]").forEach(btn => {
 [
   els.toggleToolbarTransform,
   els.toggleToolbarMirror,
-  els.toggleToolbarSelectionTools,
-  els.toggleToolbarLineTools,
-  els.toggleToolbarMarkerTools,
-  els.toggleToolbarTriEditor,
-  els.toggleToolbarMiscTools,
-  els.toggleToolbarFaceEdit,
   els.toggleToolbarScene,
-  els.toggleToolbarProjectFiles,
-  els.toggleToolbarViews,
-  els.toggleToolbarImportExport
+  els.toggleToolbarProjectFiles
 ].filter(Boolean).forEach(input => input.addEventListener("change", () => {
   applyToolbarVisibility();
   updateTransformAttachment();
@@ -145,6 +140,7 @@ document.querySelectorAll("[data-flip-axis]").forEach(btn => {
 els.rotationSnapSelect.addEventListener("change", applyRotationSnap);
 
 document.querySelector("#duplicateBtn").addEventListener("click", duplicateSelected);
+els.goToSelectedMeshBtn?.addEventListener("click", goToSelectedMesh);
 document.querySelector("#deleteBtn").addEventListener("click", deleteSelection);
 document.querySelector("#undoBtn").addEventListener("click", undo);
 els.selectAllBtn.addEventListener("click", () => {
@@ -228,8 +224,8 @@ document.querySelector("#ungroupBtn").addEventListener("click", ungroupParts);
 document.querySelector("#mergeMeshBtn").addEventListener("click", async () => mergeCheckedMeshes());
 els.pivotBtn.addEventListener("click", () => setPivotEditMode(!pivotEditMode));
 els.centerPivotBtn.addEventListener("click", centerSharedPivot);
-document.querySelector("#facePickBtn").addEventListener("click", () => setFacePickMode(!facePickMode));
-els.faceRegionBtn.addEventListener("click", () => setCoplanarFacePickMode(!coplanarFacePickMode));
+document.querySelector("#facePickBtn").addEventListener("click", toggleClassicTriangleSelection);
+els.faceRegionBtn.addEventListener("click", toggleClassicFaceSelection);
 els.openingPickBtn?.addEventListener("click", () => setOpeningPickMode(!openingPickMode));
 els.lineToolBtn.addEventListener("click", () => setLineSketchMode(!lineSketchMode));
 els.closeLineBtn.addEventListener("click", closeLineSketch);
@@ -243,6 +239,57 @@ document.querySelector("#deleteTriBtn").addEventListener("click", deleteSelected
 document.querySelector("#extractTriBtn").addEventListener("click", extractSelectedTriangles);
 document.querySelector("#fillHoleBtn").addEventListener("click", fillSelectedHole);
 document.querySelector("#bridgeMeshesBtn").addEventListener("click", bridgeCheckedMeshes);
+els.loftCheckedBtn?.addEventListener("click", loftCheckedProfiles);
+els.mirrorCopyBtn?.addEventListener("click", mirrorCopySelection);
+
+const modelToolGroupIds = [
+  "toolbarShapeBuilderGroup",
+  "toolbarSelectionToolsGroup",
+  "toolbarLineToolsGroup",
+  "toolbarMarkerToolsGroup",
+  "toolbarTriEditorGroup",
+  "toolbarMiscToolsGroup"
+];
+const rightDock = els.inspectorSection?.parentElement;
+if (rightDock && els.utilitiesSection) {
+  for (const section of [els.modelToolsWindow, els.surfaceEditorWindow, els.outputToolsWindow]) {
+    if (section) rightDock.insertBefore(section, els.utilitiesSection);
+  }
+}
+for (const groupId of modelToolGroupIds) {
+  const group = document.querySelector(`#${groupId}`);
+  if (group && els.modelToolsBody) els.modelToolsBody.append(group);
+}
+
+for (const groupId of ["toolbarViewsGroup", "toolbarImportExportGroup"]) {
+  const group = document.querySelector(`#${groupId}`);
+  if (group && els.outputToolsBody) els.outputToolsBody.append(group);
+}
+
+function setModelToolsOpen(open = true) {
+  if (!els.modelToolsWindow) return;
+  setSectionCollapsed(els.modelToolsWindow, els.modelToolsCloseBtn, !open);
+  els.modelToolsOpenBtn?.classList.toggle("active", open);
+  if (open) requestAnimationFrame(() => els.modelToolsWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
+}
+
+function setOutputToolsOpen(open = true) {
+  if (!els.outputToolsWindow) return;
+  setSectionCollapsed(els.outputToolsWindow, els.outputToolsCloseBtn, !open);
+  els.outputToolsOpenBtn?.classList.toggle("active", open);
+  if (open) requestAnimationFrame(() => els.outputToolsWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
+}
+
+els.modelToolsOpenBtn?.addEventListener("click", () => setModelToolsOpen(true));
+els.modelToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
+  els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
+}));
+els.outputToolsOpenBtn?.addEventListener("click", () => setOutputToolsOpen(true));
+els.outputToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
+  els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
+}));
+els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
+els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
 document.querySelector("#digIntoBtn").addEventListener("click", digIntoSelectedFace);
 document.querySelector("#removeMarksBtn").addEventListener("click", removeMarkersForSelection);
 document.querySelector("#copyTriBtn").addEventListener("click", copySelectedTriangles);
@@ -265,14 +312,41 @@ els.areaTriBtn.addEventListener("click", () => {
   else updateFacePickHud();
 });
 document.querySelector("#extendFaceBtn").addEventListener("click", extendSelectedFaces);
+els.insetFaceBtn?.addEventListener("click", insetSelectedFace);
 document.querySelector("#pullFaceBtn").addEventListener("click", pullSelectedFaces);
 document.querySelector("#pushFaceBtn").addEventListener("click", pushSelectedFaces);
+els.softPullBtn?.addEventListener("click", () => softMoveSelectedFaces(1));
+els.softPushBtn?.addEventListener("click", () => softMoveSelectedFaces(-1));
 els.dragPushBtn.addEventListener("click", () => setDragPushMode(!dragPushMode));
-[els.dragPushAxisSelect, els.dragPushStepInput].forEach(input => input?.addEventListener("input", () => {
-  if (!dragPushMode) return;
-  els.hudText.textContent = `Drag/Push mode: drag left or right to move selected triangles along ${dragPushAxisLabel()} in snapped ${dragPushStepSize()} steps`;
+els.surfaceEditorOpenBtn?.addEventListener("click", () => setSurfaceEditorOpen(true));
+els.surfaceEditorCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
 }));
+els.surfaceSelectTriangleBtn?.addEventListener("click", () => setSurfaceSelectionMode("triangle"));
+els.surfaceSelectFaceBtn?.addEventListener("click", () => setSurfaceSelectionMode("face"));
+els.surfaceSelectVertexBtn?.addEventListener("click", () => setSurfaceSelectionMode("vertex"));
+els.surfaceSelectEdgeBtn?.addEventListener("click", () => setSurfaceSelectionMode("edge"));
+els.surfaceMouseModeBtn?.addEventListener("click", toggleSurfaceMouseMode);
+els.surfaceValueModeBtn?.addEventListener("click", toggleSurfaceValueMode);
+els.autoSurfaceDragInput?.addEventListener("change", () => {
+  if (els.autoSurfaceDragInput.checked) armContextualSurfaceDrag();
+  else if (dragPushMode) setDragPushMode(false, { silent: true });
+  syncSurfaceEditorUi();
+});
+[els.dragPushAxisSelect, els.dragPushStepInput, els.softRadiusInput, els.surfaceMouseFalloffSelect].forEach(input => input?.addEventListener("input", () => {
+  updateSurfaceGizmoAttachment();
+  if (!dragPushMode) return;
+  const shape = els.surfaceMouseFalloffSelect?.value === "soft"
+    ? `soft falloff radius ${round(Math.max(.01, Number(els.softRadiusInput?.value) || .25))}`
+    : "hard face";
+  els.hudText.textContent = `Surface drag ready: ${shape} along ${dragPushAxisLabel()} in snapped ${dragPushStepSize()} steps`;
+}));
+syncSurfaceEditorUi();
 document.querySelector("#bevelFaceBtn").addEventListener("click", bevelSelectedFace);
+els.edgeBevelBtn?.addEventListener("click", bevelSelectedEdge);
+els.subdivideSelectedBtn?.addEventListener("click", subdivideSelectedSurface);
+els.loopCutBtn?.addEventListener("click", applyLoopCut);
 els.cutMeshBtn.addEventListener("click", cutSelectedMesh);
 document.querySelector("#clearBtn").addEventListener("click", clearObjects);
 document.querySelector("#frameBtn").addEventListener("click", frameSelected);
@@ -297,7 +371,7 @@ els.previewBackBtn.addEventListener("click", () => previewShotView("back"));
 els.previewLeftBtn.addEventListener("click", () => previewShotView("left"));
 els.previewRightBtn.addEventListener("click", () => previewShotView("right"));
 els.previewTopBtn.addEventListener("click", () => previewShotView("top"));
-els.previewIsoBtn.addEventListener("click", () => previewShotView("iso"));
+els.previewIsoBtn.addEventListener("click", previewIsoOrReference);
 els.addCustomCameraBtn.addEventListener("click", addCustomCameraView);
 els.addPlayerCameraBtn.addEventListener("click", addPlayerCameraOnSelectedJoint);
 els.viewCustomCameraBtn.addEventListener("click", () => activateCustomCameraView());
@@ -377,6 +451,36 @@ els.backgroundSelect?.addEventListener("change", () => {
   const label = els.backgroundSelect.selectedOptions?.[0]?.textContent || els.backgroundSelect.value;
   log(`Viewport background set to ${label}. Saved PNG views use the same background.`);
 });
+els.loadReferenceImageBtn.addEventListener("click", () => els.referenceImageFile.click());
+els.referenceImageFile.addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    await loadReferenceImageFile(file);
+  } catch (error) {
+    log(`Reference image import failed: ${error.message}`);
+  }
+  event.target.value = "";
+});
+els.clearReferenceImageBtn.addEventListener("click", clearReferenceImage);
+els.referenceImageMode.addEventListener("change", () => {
+  referenceImageState.mode = els.referenceImageMode.value;
+  syncReferenceImageUi();
+  log(`Reference image display set to ${els.referenceImageMode.selectedOptions?.[0]?.textContent || referenceImageState.mode}.`);
+});
+els.referenceImageOpacity.addEventListener("input", () => {
+  referenceImageState.opacity = Number(els.referenceImageOpacity.value) || .45;
+  syncReferenceImageUi();
+});
+[els.referenceImageScale, els.referenceImageOffsetX, els.referenceImageOffsetY].forEach(input => {
+  input.addEventListener("input", () => {
+    referenceImageState.scale = Number(els.referenceImageScale.value) || 1;
+    referenceImageState.offsetX = Number(els.referenceImageOffsetX.value) || 0;
+    referenceImageState.offsetY = Number(els.referenceImageOffsetY.value) || 0;
+    syncReferenceImageUi();
+  });
+});
+syncReferenceImageUi();
 els.showGridInput.addEventListener("change", () => {
   syncGridVisibility();
   log(`${els.showGridInput.checked ? "Showing" : "Hiding"} the grid overlay.`);
@@ -667,12 +771,41 @@ document.querySelectorAll(".props input").forEach(input => {
   input.addEventListener("blur", () => activeInspectorEdits.delete(input));
 });
 
+function pointerInsideMainCanvas(event) {
+  const rect = canvas.getBoundingClientRect();
+  return event.clientX >= rect.left && event.clientX <= rect.right
+    && event.clientY >= rect.top && event.clientY <= rect.bottom;
+}
+
+function prioritizeUnselectedSurfaceTriangle(event) {
+  if (!pointerInsideMainCanvas(event)) return;
+  if (!surfaceTransform.visible || surfaceTransform.dragging || !facePickMode) {
+    surfaceTransform.enabled = true;
+    return;
+  }
+  const hit = hitFromPointerEvent(event);
+  const overMeshTriangle = !!hit?.face;
+  surfaceTransform.enabled = !overMeshTriangle;
+  if (overMeshTriangle) surfaceTransform.axis = null;
+  if (event.type === "pointerdown" && overMeshTriangle && !canStartDragPushFromHit(hit)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
+  }
+}
+
+window.addEventListener("pointermove", prioritizeUnselectedSurfaceTriangle, true);
+window.addEventListener("pointerdown", prioritizeUnselectedSurfaceTriangle, true);
+canvas.addEventListener("pointerleave", () => {
+  if (!surfaceTransform.dragging) surfaceTransform.enabled = true;
+}, true);
+
 canvas.addEventListener("pointerdown", event => {
   const rect = renderer.domElement.getBoundingClientRect();
   lastCanvasPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  if (event.button !== 0 || transform.dragging) return;
-  if (transform.visible && transform.axis) {
+  if (event.button !== 0 || transform.dragging || surfaceTransform.dragging) return;
+  if ((transform.visible && transform.axis) || (surfaceTransform.visible && surfaceTransform.axis)) {
     pendingScenePick = null;
     return;
   }
@@ -706,7 +839,7 @@ canvas.addEventListener("pointerdown", event => {
     }
     return;
   }
-  if (facePickMode && els.areaTriInput.checked) {
+  if (facePickMode && surfaceComponentMode === "triangle" && els.areaTriInput.checked) {
     isAreaSelectingTriangles = true;
     areaSelectionStart = canvasPointFromEvent(event);
     orbit.enabled = false;
@@ -714,7 +847,7 @@ canvas.addEventListener("pointerdown", event => {
     updateSelectionBox(areaSelectionStart, areaSelectionStart);
     return;
   }
-  if (facePickMode && els.paintTriInput.checked && hit) {
+  if (facePickMode && surfaceComponentMode === "triangle" && els.paintTriInput.checked && hit) {
     isPaintingTriangles = true;
     lastPaintedTriangleKey = null;
     orbit.enabled = false;
@@ -723,8 +856,7 @@ canvas.addEventListener("pointerdown", event => {
     return;
   }
   if (facePickMode && hit) {
-    if (coplanarFacePickMode) selectCoplanarFaceFromHit(hit, { append: additiveSelectionRequested(event) });
-    else pickFace(hit, { append: additiveSelectionRequested(event) });
+    pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
     return;
   }
   pendingScenePick = {
@@ -745,7 +877,7 @@ canvas.addEventListener("pointermove", event => {
     const hit = lineSketchPickFromEvent(event);
     setLineSketchCursor(hit?.point || null, hit?.normal || null);
   }
-  if (openingPickMode && !spaceCameraMode && !transform.dragging) {
+  if (openingPickMode && !spaceCameraMode && !transform.dragging && !surfaceTransform.dragging) {
     updateHoveredHoleLoopFromHit(openingPickCandidateFromEvent(event));
   }
   if (pendingScenePick?.pointerId === event.pointerId && scenePickDragged(pendingScenePick, event)) {
@@ -756,7 +888,7 @@ canvas.addEventListener("pointermove", event => {
     updateSelectionBox(areaSelectionStart, canvasPointFromEvent(event));
     return;
   }
-  if (!isPaintingTriangles || !facePickMode || !els.paintTriInput.checked || transform.dragging || spaceCameraMode) return;
+  if (!isPaintingTriangles || !facePickMode || !els.paintTriInput.checked || transform.dragging || surfaceTransform.dragging || spaceCameraMode) return;
   paintTriangleFromPointer(event);
 });
 
@@ -767,7 +899,7 @@ window.addEventListener("pointerup", event => {
   if (pendingScenePick?.pointerId === event.pointerId) {
     const pick = pendingScenePick;
     pendingScenePick = null;
-    if (!pick.dragged && pick.hitObject && !transform.dragging && !spaceCameraMode) {
+    if (!pick.dragged && pick.hitObject && !transform.dragging && !surfaceTransform.dragging && !spaceCameraMode) {
       selectObject(pick.hitObject, { append: pick.append });
     }
   }
@@ -779,7 +911,7 @@ canvas.addEventListener("dblclick", event => {
     closeLineSketch();
     return;
   }
-  if (transform.dragging || spaceCameraMode) return;
+  if (transform.dragging || surfaceTransform.dragging || spaceCameraMode) return;
   if (!facePickMode) {
     event.preventDefault();
     pendingScenePick = null;
@@ -789,7 +921,17 @@ canvas.addEventListener("dblclick", event => {
   const hit = hitFromPointerEvent(event);
   if (!hit) return;
   event.preventDefault();
-  selectConnectedTrianglesFromHit(hit, { append: additiveSelectionRequested(event) });
+  if (selectedFaces.length || selectedSurfaceVertices.length || selectedSurfaceEdges.length) {
+    clearSelectedTriangles();
+    updateAll();
+    log("Released the current surface selection with a double-click.");
+    return;
+  }
+  if (surfaceComponentMode === "vertex" || surfaceComponentMode === "edge") {
+    pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
+  } else {
+    selectConnectedTrianglesFromHit(hit, { append: additiveSelectionRequested(event) });
+  }
 });
 
 window.addEventListener("keydown", event => {
@@ -836,7 +978,11 @@ window.addEventListener("keydown", event => {
   }
   if (event.target.matches("input, textarea")) return;
   if (event.key === "Delete" || event.key === "Backspace") {
-    if (selectedFaces.length) deleteSelectedTriangles();
+    if (selectedSurfaceVertices.length || selectedSurfaceEdges.length) {
+      clearSelectedTriangles();
+      updateAll();
+      log("Vertex/edge selection cleared. Delete geometry will be added with the topology tools.");
+    } else if (selectedFaces.length) deleteSelectedTriangles();
     else deleteSelection();
   }
   if (event.key.toLowerCase() === "w") setTransformMode("translate");
@@ -892,8 +1038,23 @@ window.ModelerStudio = {
   fillSelectedHole,
   flipSelectedParts,
   extendSelectedFaces,
+  insetSelectedFace,
   pullSelectedFaces,
   pushSelectedFaces,
+  bevelSelectedEdge,
+  subdivideSelectedSurface,
+  applyLoopCut,
+  surfaceGizmoState: () => ({
+    visible: surfaceTransform.visible,
+    axis: surfaceTransform.axis,
+    lockedAxis: surfaceAxisMode(),
+    space: surfaceTransform.space,
+    visibleHandles: { x: surfaceTransform.showX, y: surfaceTransform.showY, z: surfaceTransform.showZ },
+    dragging: surfaceTransform.dragging,
+    orbitEnabled: orbit.enabled,
+    controlLayerMask: surfaceTransform.layers.mask,
+    raycasterLayerMask: surfaceTransform.getRaycaster().layers.mask
+  }),
   selectedTriangles: () => selectedFaces.map(face => ({
     targetId: face.mesh.userData.id,
     targetName: face.mesh.name,
@@ -902,6 +1063,18 @@ window.ModelerStudio = {
     normal: worldFaceNormal(face).toArray().map(round),
     triangle: worldTrianglePoints(face).map(point => point.toArray().map(round))
   })),
+  selectedSurfaceComponents: () => ({
+    mode: surfaceComponentMode,
+    vertices: selectedSurfaceVertices.map(vertex => ({
+      targetId: vertex.mesh.userData.id,
+      point: vertex.localPoint.clone().applyMatrix4(vertex.mesh.matrixWorld).toArray().map(round)
+    })),
+    edges: selectedSurfaceEdges.map(edge => ({
+      targetId: edge.mesh.userData.id,
+      start: edge.localA.clone().applyMatrix4(edge.mesh.matrixWorld).toArray().map(round),
+      end: edge.localB.clone().applyMatrix4(edge.mesh.matrixWorld).toArray().map(round)
+    }))
+  }),
   markers: () => markerHelpers.map(marker => {
     redrawMarker(marker);
     return { name: marker.name, ...marker.userData };

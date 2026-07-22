@@ -27,7 +27,8 @@ function serializeObject(mesh) {
     textureFlipY: mesh.userData.textureFlipY ?? true,
     textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0),
     playerAvatar: !!mesh.userData.playerAvatar,
-    playerHeadOffset: Array.isArray(mesh.userData.playerHeadOffset) ? [...mesh.userData.playerHeadOffset] : null
+    playerHeadOffset: Array.isArray(mesh.userData.playerHeadOffset) ? [...mesh.userData.playerHeadOffset] : null,
+    edgeBevelProtectedEdges: Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? [...mesh.userData.edgeBevelProtectedEdges] : []
   };
 }
 
@@ -125,6 +126,15 @@ function projectState() {
       activeGroupIds: [...activeGroupIds],
       activeTransformMode,
       facePickMode,
+      referenceImage: {
+        name: referenceImageState.name,
+        dataUrl: referenceImageState.dataUrl,
+        mode: referenceImageState.mode,
+        opacity: round(referenceImageState.opacity),
+        scale: round(referenceImageState.scale),
+        offsetX: round(referenceImageState.offsetX),
+        offsetY: round(referenceImageState.offsetY)
+      },
       cameraViews: {
         selectedId: selectedCustomCameraId,
         showMarkers: !!els.showCustomCamerasInput?.checked,
@@ -158,8 +168,11 @@ function projectState() {
         addMeshCollapsed: els.addMeshSection.classList.contains("collapsed"),
         inspectorCollapsed: els.inspectorSection.classList.contains("collapsed"),
         utilitiesCollapsed: els.utilitiesSection.classList.contains("collapsed"),
+        referenceImageCollapsed: els.referenceImageSection.classList.contains("collapsed"),
         cameraViewsCollapsed: els.cameraViewsSection.classList.contains("collapsed"),
-        statusCollapsed: els.statusSection.classList.contains("collapsed")
+        statusCollapsed: els.statusSection.classList.contains("collapsed"),
+        modelToolsOpen: !els.modelToolsWindow?.classList.contains("collapsed"),
+        outputToolsOpen: !els.outputToolsWindow?.classList.contains("collapsed")
       },
       toolbars: toolbarVisibilityState(),
       tools: {
@@ -167,8 +180,21 @@ function projectState() {
         bevelType: els.bevelTypeSelect.value,
         bevelSize: Number(els.bevelSizeInput.value) || 0.16,
         bevelDepth: Number(els.bevelDepthInput.value) || 0.18,
-        dragPushAxis: els.dragPushAxisSelect.value || "normal",
+        edgeBevelWidth: Number(els.edgeBevelWidthInput?.value) || 0.08,
+        subdivideLevels: Math.max(1, Math.min(2, Math.round(Number(els.subdivideLevelsInput?.value) || 1))),
+        loopCutAxis: ["x", "y", "z"].includes(els.loopCutAxisSelect?.value) ? els.loopCutAxisSelect.value : "y",
+        loopCutPosition: Math.max(1, Math.min(99, Number(els.loopCutPositionInput?.value) || 50)),
+        loopCutCount: Math.max(1, Math.min(8, Math.round(Number(els.loopCutCountInput?.value) || 1))),
+        dragPushAxis: els.dragPushAxisSelect.value || "free",
         dragPushStep: Number(els.dragPushStepInput.value) || 0.01,
+        insetAmount: Number(els.insetAmountInput?.value) || 0.10,
+        softRadius: Number(els.softRadiusInput?.value) || 0.25,
+        surfaceInteractionMode: surfaceInteractionMode(),
+        surfaceComponentMode,
+        surfaceSelectionSource,
+        surfaceMouseFalloff: els.surfaceMouseFalloffSelect?.value === "hard" ? "hard" : "soft",
+        autoSurfaceDrag: !!els.autoSurfaceDragInput?.checked,
+        surfaceEditorOpen: !els.surfaceEditorWindow?.classList.contains("collapsed"),
         connectFace: !!els.connectFaceInput.checked,
         coplanarFaceSelection: !!coplanarFacePickMode,
         paintSelection: !!els.paintTriInput.checked,
@@ -208,6 +234,75 @@ function hydrateProjectTextureReferences(scene, entries = []) {
     if (object.textureUrl || !object.textureName) continue;
     object.textureUrl = textureByName.get(object.textureName) || null;
   }
+}
+
+function syncReferenceImageUi() {
+  const hasImage = typeof referenceImageState.dataUrl === "string" && referenceImageState.dataUrl.startsWith("data:image/");
+  const mode = ["panel", "overlay", "both"].includes(referenceImageState.mode) ? referenceImageState.mode : "panel";
+  const opacity = Math.max(.05, Math.min(1, Number(referenceImageState.opacity) || .45));
+  const scale = Math.max(.25, Math.min(4, Number(referenceImageState.scale) || 1));
+  const offsetX = Math.max(-200, Math.min(200, Number(referenceImageState.offsetX) || 0));
+  const offsetY = Math.max(-200, Math.min(200, Number(referenceImageState.offsetY) || 0));
+  referenceImageState.mode = mode;
+  referenceImageState.opacity = opacity;
+  referenceImageState.scale = scale;
+  referenceImageState.offsetX = offsetX;
+  referenceImageState.offsetY = offsetY;
+  els.referenceImageMode.value = mode;
+  els.referenceImageOpacity.value = String(opacity);
+  els.referenceImageOpacityValue.value = `${Math.round(opacity * 100)}%`;
+  els.referenceImageScale.value = String(scale);
+  els.referenceImageOffsetX.value = String(offsetX);
+  els.referenceImageOffsetY.value = String(offsetY);
+  els.referenceImageName.textContent = hasImage ? referenceImageState.name || "Reference image" : "No image selected";
+  els.clearReferenceImageBtn.disabled = !hasImage;
+  els.previewIsoBtn.textContent = hasImage ? "Reference" : "Iso";
+  els.previewIsoBtn.title = hasImage
+    ? "Show the loaded reference image; multi-view exports use it instead of Iso"
+    : "Preview the Iso save-view framing";
+  els.previewIsoBtn.classList.toggle("reference-active", hasImage);
+  els.referenceImageEmpty.hidden = hasImage;
+  els.referenceImagePreview.hidden = hasImage && mode === "overlay";
+  els.referenceImagePreviewImg.hidden = !hasImage;
+  els.referenceImageOverlay.hidden = !hasImage || mode === "panel";
+  if (hasImage) {
+    if (els.referenceImagePreviewImg.src !== referenceImageState.dataUrl) els.referenceImagePreviewImg.src = referenceImageState.dataUrl;
+    if (els.referenceImageOverlayImg.src !== referenceImageState.dataUrl) els.referenceImageOverlayImg.src = referenceImageState.dataUrl;
+  } else {
+    els.referenceImagePreviewImg.removeAttribute("src");
+    els.referenceImageOverlayImg.removeAttribute("src");
+  }
+  els.referenceImageOverlayImg.style.opacity = String(opacity);
+  els.referenceImageOverlayImg.style.transform = `translate(${offsetX}%, ${offsetY}%) scale(${scale})`;
+}
+
+function restoreReferenceImageState(saved = null) {
+  referenceImageState = {
+    name: typeof saved?.name === "string" ? saved.name : "",
+    dataUrl: typeof saved?.dataUrl === "string" && saved.dataUrl.startsWith("data:image/") ? saved.dataUrl : null,
+    mode: ["panel", "overlay", "both"].includes(saved?.mode) ? saved.mode : "panel",
+    opacity: Math.max(.05, Math.min(1, Number(saved?.opacity) || .45)),
+    scale: Math.max(.25, Math.min(4, Number(saved?.scale) || 1)),
+    offsetX: Math.max(-200, Math.min(200, Number(saved?.offsetX) || 0)),
+    offsetY: Math.max(-200, Math.min(200, Number(saved?.offsetY) || 0))
+  };
+  syncReferenceImageUi();
+}
+
+async function loadReferenceImageFile(file) {
+  if (!file) return;
+  const dataUrl = await readFileAsDataUrl(file);
+  referenceImageState.name = file.name;
+  referenceImageState.dataUrl = dataUrl;
+  syncReferenceImageUi();
+  log(`Loaded reference image ${file.name}. Choose Side Screen, Viewport Overlay, or Both.`);
+}
+
+function clearReferenceImage() {
+  referenceImageState.name = "";
+  referenceImageState.dataUrl = null;
+  syncReferenceImageUi();
+  log("Cleared the project reference image.");
 }
 
 function cloneSceneState() {
@@ -333,8 +428,11 @@ function applyProjectEditorState(editor = {}) {
   setSectionCollapsed(els.addMeshSection, els.addMeshToggle, !!panels.addMeshCollapsed);
   setSectionCollapsed(els.inspectorSection, els.inspectorToggle, !!panels.inspectorCollapsed);
   setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, !!panels.utilitiesCollapsed);
+  setSectionCollapsed(els.referenceImageSection, els.referenceImageToggle, !!panels.referenceImageCollapsed);
   setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, !!panels.cameraViewsCollapsed);
   setSectionCollapsed(els.statusSection, els.statusToggle, !!panels.statusCollapsed);
+  setModelToolsOpen(!!panels.modelToolsOpen);
+  setOutputToolsOpen(!!panels.outputToolsOpen);
   applyToolbarVisibility(setToolbarToggleState(editor.toolbars || defaultToolbarVisibility));
 
   const tools = editor.tools || {};
@@ -343,10 +441,32 @@ function applyProjectEditorState(editor = {}) {
   els.bevelTypeSelect.value = tools.bevelType || "inner";
   els.bevelSizeInput.value = String(tools.bevelSize ?? 0.16);
   els.bevelDepthInput.value = String(tools.bevelDepth ?? 0.18);
-  els.dragPushAxisSelect.value = ["normal", "x", "y", "z"].includes(tools.dragPushAxis) ? tools.dragPushAxis : "normal";
+  if (els.edgeBevelWidthInput) els.edgeBevelWidthInput.value = String(tools.edgeBevelWidth ?? 0.08);
+  if (els.subdivideLevelsInput) els.subdivideLevelsInput.value = String(Math.max(1, Math.min(2, Math.round(Number(tools.subdivideLevels) || 1))));
+  if (els.loopCutAxisSelect) els.loopCutAxisSelect.value = ["x", "y", "z"].includes(tools.loopCutAxis) ? tools.loopCutAxis : "y";
+  if (els.loopCutPositionInput) els.loopCutPositionInput.value = String(Math.max(1, Math.min(99, Number(tools.loopCutPosition) || 50)));
+  if (els.loopCutCountInput) els.loopCutCountInput.value = String(Math.max(1, Math.min(8, Math.round(Number(tools.loopCutCount) || 1))));
+  els.dragPushAxisSelect.value = ["x", "y", "z"].includes(tools.dragPushAxis) ? tools.dragPushAxis : "free";
   els.dragPushStepInput.value = String(tools.dragPushStep ?? 0.01);
+  if (els.insetAmountInput) els.insetAmountInput.value = String(tools.insetAmount ?? 0.10);
+  if (els.softRadiusInput) els.softRadiusInput.value = String(tools.softRadius ?? 0.25);
+  if (els.surfaceMouseFalloffSelect) els.surfaceMouseFalloffSelect.value = tools.surfaceMouseFalloff === "hard" ? "hard" : "soft";
+  if (els.autoSurfaceDragInput) els.autoSurfaceDragInput.checked = tools.autoSurfaceDrag ?? true;
+  surfaceComponentMode = ["none", "vertex", "edge", "triangle", "face"].includes(tools.surfaceComponentMode)
+    ? tools.surfaceComponentMode
+    : (tools.coplanarFaceSelection ? "face" : "triangle");
+  surfaceSelectionSource = ["none", "surface", "classic"].includes(tools.surfaceSelectionSource)
+    ? tools.surfaceSelectionSource
+    : (surfaceComponentMode === "none" ? "none" : "surface");
+  if (els.surfaceEditorWindow) {
+    els.surfaceEditorWindow.dataset.interactionMode = ["off", "mouse", "value"].includes(tools.surfaceInteractionMode)
+      ? tools.surfaceInteractionMode
+      : "mouse";
+    setSectionCollapsed(els.surfaceEditorWindow, els.surfaceEditorCloseBtn, !(tools.surfaceEditorOpen ?? false));
+  }
+  syncSurfaceEditorUi();
   els.connectFaceInput.checked = !!tools.connectFace;
-  coplanarFacePickMode = !!tools.coplanarFaceSelection;
+  coplanarFacePickMode = surfaceComponentMode === "face" && !!tools.coplanarFaceSelection;
   els.paintTriInput.checked = !!tools.paintSelection && !coplanarFacePickMode;
   els.areaTriInput.checked = !!tools.areaSelection && !coplanarFacePickMode;
   if (els.paintTriInput.checked) els.areaTriInput.checked = false;
@@ -364,6 +484,7 @@ function applyProjectEditorState(editor = {}) {
   els.useCurrentZoomInShotsInput.checked = view.useCurrentZoomInShots ?? true;
   els.hideGridInShotsInput.checked = view.hideGridInShots ?? true;
   syncGridVisibility();
+  restoreReferenceImageState(editor.referenceImage || null);
 
   const lighting = editor.lighting || {};
   els.showLightGuidesInput.checked = lighting.showGuides ?? false;
@@ -399,7 +520,7 @@ function applyProjectEditorState(editor = {}) {
   camera.updateProjectionMatrix();
   orbit.update();
 
-  setFacePickMode(!!editor.facePickMode);
+  setFacePickMode(surfaceComponentMode !== "none" && !!editor.facePickMode);
   syncTextureButtonLabel();
   updateAll();
 }
@@ -551,6 +672,7 @@ function renderTree() {
     const linkColor = mesh.userData.linkColor || "#6fb8ff";
     const materialLabel = materialRulePill(mesh.userData.materialRule || "auto");
     row.className = `object-row child${mesh === selected || activeGroupIds.includes(mesh.userData.id) || (transformTargets.length > 1 && checkedIds.has(mesh.userData.id)) ? " selected" : ""}${mesh.userData.hidden ? " hidden-row" : ""}`;
+    row.dataset.meshId = mesh.userData.id;
     row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${rowType}</small><button class="mesh-details-btn" type="button" title="Open mesh details for ${mesh.name}">...</button>`;
     row.children[0].checked = checkedIds.has(mesh.userData.id);
     row.children[1].querySelector("input").checked = !!mesh.userData.linkId;
@@ -660,11 +782,34 @@ function renderTree() {
   }
 }
 
+function goToSelectedMesh() {
+  if (!selected?.userData?.id) {
+    log("Select a mesh in the viewport or scene list first.");
+    return false;
+  }
+  renderTree();
+  requestAnimationFrame(() => {
+    const row = [...els.tree.querySelectorAll(".object-row")]
+      .find(candidate => candidate.dataset.meshId === selected.userData.id);
+    if (!row) {
+      log(`Could not find ${selected.name} in the scene list.`);
+      return;
+    }
+    row.scrollIntoView({ behavior: "smooth", block: "center", inline: "nearest" });
+    row.classList.remove("locate-pulse");
+    requestAnimationFrame(() => row.classList.add("locate-pulse"));
+    setTimeout(() => row.classList.remove("locate-pulse"), 1400);
+    log(`Located ${selected.name} in the scene list.`);
+  });
+  return true;
+}
+
 function syncInspector() {
   const groupObjects = transformTargetObjects();
   const pivotTargets = pivotManagedObjects();
   const groupMode = pivotTargets.length > 0 && transform.object === groupPivot;
   const disabled = !selected && !groupMode;
+  if (els.goToSelectedMeshBtn) els.goToSelectedMeshBtn.disabled = !selected;
   for (const input of document.querySelectorAll(".props input, .props button, .props select")) input.disabled = disabled;
   if (groupMode) {
     syncTextureButtonLabel();
@@ -859,7 +1004,8 @@ function updateState() {
   const selectedName = selected?.name || (transformTargets.length > 1 ? `${pivotEditMode ? "Pivot" : "Group"} (${transformTargets.length})` : "None");
   const markerCount = markerHelpers.length;
   const triangleCount = selectedFaces.length;
-  els.stateOutput.textContent = `Scene: ${totalObjects} object${totalObjects === 1 ? "" : "s"} | Selected mesh: ${selectedName} | Selected triangles: ${triangleCount} | Marks: ${markerCount}`;
+  const componentCount = selectedSurfaceVertices.length + selectedSurfaceEdges.length;
+  els.stateOutput.textContent = `Scene: ${totalObjects} object${totalObjects === 1 ? "" : "s"} | Selected mesh: ${selectedName} | Selected triangles: ${triangleCount} | Selected components: ${componentCount} | Marks: ${markerCount}`;
 }
 
 function updateAll() {
@@ -3876,14 +4022,48 @@ function addCustomCameraView() {
 function lowPolyPlayerAvatarGeometryData() {
   const parts = [];
   const palette = {
-    armor: "#727980",
-    armorLight: "#a8adb1",
-    armorDark: "#41474c",
-    joint: "#15191c",
-    visor: "#070a0c",
-    accent: "#ff3e38"
+    armor: "#697077",
+    armorLight: "#a9afb4",
+    armorDark: "#3b4146",
+    edge: "#c1c5c8",
+    joint: "#121619",
+    visor: "#05080a",
+    accent: "#ff3b35"
+  };
+  const chamferedBox = (width, height, depth, chamfer = .035, bevel = .008) => {
+    const x = width / 2;
+    const y = height / 2;
+    const cut = Math.min(chamfer, x * .45, y * .45);
+    const shape = new THREE.Shape();
+    shape.moveTo(-x + cut, -y);
+    shape.lineTo(x - cut, -y);
+    shape.lineTo(x, -y + cut);
+    shape.lineTo(x, y - cut);
+    shape.lineTo(x - cut, y);
+    shape.lineTo(-x + cut, y);
+    shape.lineTo(-x, y - cut);
+    shape.lineTo(-x, -y + cut);
+    shape.closePath();
+    const bevelSize = Math.min(bevel, depth * .18, cut * .45);
+    const coreDepth = Math.max(.002, depth - bevelSize * 2);
+    const geometry = new THREE.ExtrudeGeometry(shape, {
+      depth: coreDepth,
+      steps: 1,
+      curveSegments: 1,
+      bevelEnabled: bevelSize > 0,
+      bevelSegments: 1,
+      bevelSize,
+      bevelThickness: bevelSize
+    });
+    geometry.translate(0, 0, -coreDepth / 2);
+    return geometry;
   };
   const addPart = (geometry, position, rotation = [0, 0, 0], scale = [1, 1, 1], color = palette.armor) => {
+    if (geometry.index) {
+      const source = geometry;
+      geometry = source.toNonIndexed();
+      source.dispose();
+    }
     const vertexColor = new THREE.Color(color);
     const count = geometry.getAttribute("position").count;
     const colors = new Float32Array(count * 3);
@@ -3902,54 +4082,81 @@ function lowPolyPlayerAvatarGeometryData() {
     parts.push(geometry);
   };
 
-  // Feet, legs, and articulated knee details.
+  // Layered boots, shin armor, knees, and thigh shells.
   for (const side of [-1, 1]) {
     const x = side * .17;
-    addPart(new THREE.BoxGeometry(.25, .12, .38, 1, 1, 1), [x, .08, -.055], [0, 0, 0], [1, 1, 1], palette.armorLight);
-    addPart(new THREE.BoxGeometry(.21, .09, .17), [x, .15, .075], [0, 0, 0], [1, 1, 1], palette.armorDark);
-    addPart(new THREE.CylinderGeometry(.125, .145, .36, 6), [x, .37, .02], [0, 0, 0], [1, 1, .82], palette.armor);
+    addPart(chamferedBox(.27, .13, .40, .045, .014), [x, .075, -.07], [0, 0, 0], [1, 1, 1], palette.armorLight);
+    addPart(chamferedBox(.23, .075, .27, .03, .008), [x, .15, -.105], [-.13, 0, 0], [1, 1, 1], palette.edge);
+    addPart(chamferedBox(.21, .11, .16, .025, .008), [x, .16, .095], [0, 0, 0], [1, 1, 1], palette.joint);
+    addPart(new THREE.CylinderGeometry(.105, .115, .09, 8), [x, .205, .015], [0, 0, 0], [1, 1, .82], palette.joint);
+    addPart(new THREE.CylinderGeometry(.115, .135, .32, 6), [x, .385, .02], [0, 0, 0], [1, 1, .80], palette.armor);
+    addPart(chamferedBox(.18, .255, .045, .025, .007), [x, .405, -.115], [0, 0, 0], [1, 1, 1], palette.armorLight);
+    addPart(chamferedBox(.13, .18, .026, .018, .004), [x, .40, -.143], [0, 0, 0], [1, 1, 1], palette.edge);
     addPart(new THREE.SphereGeometry(.125, 7, 5), [x, .59, 0], [0, 0, 0], [1, .82, .88], palette.joint);
     addPart(new THREE.TorusGeometry(.078, .018, 5, 10), [x, .59, -.105], [0, 0, 0], [1, 1, 1], palette.accent);
-    addPart(new THREE.CylinderGeometry(.145, .125, .34, 6), [x, .79, 0], [0, 0, side * .025], [1, 1, .88], palette.armor);
-    addPart(new THREE.BoxGeometry(.20, .27, .04), [x, .80, -.13], [0, 0, side * .025], [1, 1, 1], palette.armorLight);
+    addPart(new THREE.CylinderGeometry(.145, .12, .31, 6), [x, .785, 0], [0, 0, side * .035], [1, 1, .82], palette.armorDark);
+    addPart(chamferedBox(.22, .27, .055, .03, .008), [x, .80, -.125], [0, 0, side * .035], [1, 1, 1], palette.armorLight);
+    addPart(chamferedBox(.155, .20, .025, .022, .004), [x, .805, -.165], [0, 0, side * .035], [1, 1, 1], palette.armor);
+    addPart(new THREE.SphereGeometry(.105, 7, 5), [x, .965, 0], [0, 0, 0], [1, .82, .9], palette.joint);
   }
 
-  // Pelvis, flexible abdomen, and faceted torso armor.
-  addPart(new THREE.CylinderGeometry(.29, .25, .20, 6), [0, 1.00, 0], [0, 0, 0], [1, 1, .78], palette.armorLight);
-  addPart(new THREE.CylinderGeometry(.22, .20, .24, 8), [0, 1.15, 0], [0, 0, 0], [1, 1, .82], palette.joint);
-  for (const y of [1.08, 1.15, 1.22]) {
-    addPart(new THREE.TorusGeometry(.205, .022, 4, 10), [0, y, 0], [Math.PI / 2, 0, 0], [1, .78, 1], palette.armorDark);
+  // Mechanical pelvis and ribbed waist.
+  addPart(new THREE.CylinderGeometry(.285, .245, .20, 6), [0, 1.02, 0], [0, 0, 0], [1, 1, .74], palette.armorDark);
+  addPart(chamferedBox(.46, .16, .27, .055, .012), [0, 1.045, -.01], [0, 0, 0], [1, 1, 1], palette.armorLight);
+  addPart(chamferedBox(.22, .11, .035, .025, .006), [0, 1.055, -.158], [0, 0, 0], [1, 1, 1], palette.armor);
+  addPart(new THREE.CylinderGeometry(.205, .195, .24, 8), [0, 1.18, 0], [0, 0, 0], [1, 1, .76], palette.joint);
+  for (const y of [1.105, 1.17, 1.235]) {
+    addPart(new THREE.TorusGeometry(.188, .018, 4, 10), [0, y, 0], [Math.PI / 2, 0, 0], [1, .75, 1], palette.armorDark);
   }
-  addPart(new THREE.CylinderGeometry(.36, .25, .43, 6), [0, 1.36, 0], [0, 0, 0], [1, 1, .72], palette.armor);
-  addPart(new THREE.BoxGeometry(.46, .29, .055), [0, 1.39, -.245], [0, 0, 0], [1, 1, 1], palette.armorDark);
-  addPart(new THREE.BoxGeometry(.24, .22, .025), [0, 1.40, -.281], [0, 0, 0], [1, 1, 1], palette.visor);
-  addPart(new THREE.BoxGeometry(.055, .15, .018), [-.025, 1.43, -.300], [0, 0, -.42], [1, 1, 1], palette.accent);
-  addPart(new THREE.BoxGeometry(.052, .13, .018), [.027, 1.35, -.300], [0, 0, -.42], [1, 1, 1], palette.accent);
 
-  // Shoulder shells, segmented arms, elbow rings, hands, and fingers.
+  // Broad faceted torso with layered breastplate, collar, and rear identity plate.
+  addPart(new THREE.CylinderGeometry(.36, .245, .40, 6), [0, 1.39, 0], [0, 0, 0], [1, 1, .70], palette.armorDark);
+  addPart(chamferedBox(.55, .34, .085, .07, .014), [0, 1.40, -.205], [0, 0, 0], [1, 1, 1], palette.armor);
+  addPart(chamferedBox(.39, .25, .045, .055, .010), [0, 1.405, -.272], [0, 0, 0], [1, 1, 1], palette.armorLight);
+  addPart(chamferedBox(.24, .19, .026, .035, .006), [0, 1.405, -.310], [0, 0, 0], [1, 1, 1], palette.visor);
+  addPart(chamferedBox(.48, .09, .12, .035, .010), [0, 1.57, -.04], [0, 0, 0], [1, 1, 1], palette.armorLight);
+  addPart(chamferedBox(.44, .29, .065, .06, .012), [0, 1.40, .215], [0, 0, 0], [1, 1, 1], palette.armor);
+  addPart(chamferedBox(.25, .18, .025, .03, .005), [0, 1.41, .260], [0, 0, 0], [1, 1, 1], palette.visor);
+
+  // Lightning chest emblem and a compact BW-like mark on the back.
+  addPart(chamferedBox(.052, .13, .018, .012, .003), [-.024, 1.455, -.330], [0, 0, -.42], [1, 1, 1], palette.accent);
+  addPart(chamferedBox(.052, .12, .018, .012, .003), [.018, 1.38, -.330], [0, 0, -.42], [1, 1, 1], palette.accent);
+  addPart(chamferedBox(.045, .095, .015, .010, .002), [-.055, 1.425, .278], [0, 0, -.18], [1, 1, 1], palette.accent);
+  addPart(chamferedBox(.045, .095, .015, .010, .002), [0, 1.425, .278], [0, 0, .18], [1, 1, 1], palette.accent);
+  addPart(chamferedBox(.045, .095, .015, .010, .002), [.055, 1.425, .278], [0, 0, -.18], [1, 1, 1], palette.accent);
+
+  // Multi-layer shoulder caps, upper/lower arm plates, elbow rings, and articulated hands.
   for (const side of [-1, 1]) {
     const shoulderX = side * .43;
-    addPart(new THREE.SphereGeometry(.17, 7, 5), [shoulderX, 1.43, 0], [0, 0, 0], [1.12, .82, .92], palette.armorLight);
-    addPart(new THREE.SphereGeometry(.10, 7, 5), [shoulderX, 1.40, 0], [0, 0, 0], [1, 1, 1], palette.joint);
-    addPart(new THREE.CylinderGeometry(.115, .095, .29, 6), [side * .47, 1.22, 0], [0, 0, side * .10], [1, 1, .86], palette.armor);
-    addPart(new THREE.SphereGeometry(.095, 7, 5), [side * .49, 1.04, 0], [0, 0, 0], [1, .85, .9], palette.joint);
-    addPart(new THREE.TorusGeometry(.059, .014, 5, 10), [side * .49, 1.04, -.083], [0, 0, 0], [1, 1, 1], palette.accent);
-    addPart(new THREE.CylinderGeometry(.09, .115, .29, 6), [side * .50, .86, 0], [0, 0, side * .035], [1, 1, .80], palette.armorLight);
-    addPart(new THREE.BoxGeometry(.15, .13, .16), [side * .505, .66, -.01], [0, 0, 0], [1, 1, 1], palette.joint);
-    for (const finger of [-1, 0, 1]) {
-      addPart(new THREE.BoxGeometry(.035, .15, .045), [side * (.515 + finger * .002), .545, finger * .052], [0, 0, side * .04], [1, 1, 1], palette.armorDark);
+    addPart(new THREE.SphereGeometry(.12, 7, 5), [shoulderX, 1.46, 0], [0, 0, 0], [1, .95, 1], palette.joint);
+    addPart(chamferedBox(.22, .19, .23, .045, .012), [side * .455, 1.465, 0], [0, 0, side * .18], [1, 1, 1], palette.armorLight);
+    addPart(chamferedBox(.19, .13, .055, .03, .008), [side * .465, 1.49, -.135], [0, 0, side * .18], [1, 1, 1], palette.edge);
+    addPart(new THREE.CylinderGeometry(.105, .09, .27, 6), [side * .49, 1.275, 0], [0, 0, side * .10], [1, 1, .82], palette.armorDark);
+    addPart(chamferedBox(.16, .23, .05, .025, .008), [side * .505, 1.285, -.105], [0, 0, side * .10], [1, 1, 1], palette.armor);
+    addPart(new THREE.SphereGeometry(.094, 7, 5), [side * .515, 1.105, 0], [0, 0, 0], [1, .84, .92], palette.joint);
+    addPart(new THREE.TorusGeometry(.060, .014, 5, 10), [side * .515, 1.105, -.082], [0, 0, 0], [1, 1, 1], palette.accent);
+    addPart(new THREE.CylinderGeometry(.082, .105, .27, 6), [side * .52, .925, 0], [0, 0, side * .035], [1, 1, .78], palette.armorDark);
+    addPart(chamferedBox(.145, .23, .052, .025, .008), [side * .525, .93, -.10], [0, 0, side * .035], [1, 1, 1], palette.armorLight);
+    addPart(new THREE.CylinderGeometry(.068, .072, .075, 8), [side * .53, .755, 0], [0, 0, 0], [1, 1, .86], palette.joint);
+    addPart(chamferedBox(.145, .13, .17, .025, .008), [side * .535, .675, -.015], [0, 0, 0], [1, 1, 1], palette.armorDark);
+    for (const finger of [-1.5, -.5, .5, 1.5]) {
+      addPart(chamferedBox(.027, .14, .032, .006, .002), [side * .54, .565, finger * .035], [0, 0, side * .045], [1, 1, 1], palette.armorLight);
     }
+    addPart(chamferedBox(.035, .105, .04, .007, .002), [side * .61, .64, -.01], [0, 0, side * .38], [1, 1, 1], palette.armorLight);
   }
 
-  // Neck and helmet: armored shell, black faceplate, red eyes, and side modules.
-  addPart(new THREE.CylinderGeometry(.095, .11, .12, 8), [0, 1.61, 0], [0, 0, 0], [1, 1, 1], palette.joint);
-  addPart(new THREE.SphereGeometry(.21, 8, 6), [0, 1.70, 0], [0, 0, 0], [1.04, .84, .90], palette.armorLight);
-  addPart(new THREE.BoxGeometry(.31, .25, .045), [0, 1.69, -.183], [0, 0, 0], [1, 1, 1], palette.visor);
-  addPart(new THREE.BoxGeometry(.033, .105, .018), [-.070, 1.70, -.216], [0, 0, 0], [1, 1, 1], palette.accent);
-  addPart(new THREE.BoxGeometry(.033, .105, .018), [.070, 1.70, -.216], [0, 0, 0], [1, 1, 1], palette.accent);
+  // Octagonal helmet with an inset face, metallic rim, red eyes, crown, and ear modules.
+  addPart(new THREE.CylinderGeometry(.09, .105, .105, 8), [0, 1.59, 0], [0, 0, 0], [1, 1, 1], palette.joint);
+  addPart(chamferedBox(.37, .28, .33, .065, .015), [0, 1.66, 0], [0, 0, 0], [1, 1, 1], palette.armorDark);
+  addPart(chamferedBox(.32, .235, .055, .052, .010), [0, 1.655, -.180], [0, 0, 0], [1, 1, 1], palette.edge);
+  addPart(chamferedBox(.275, .19, .030, .043, .006), [0, 1.652, -.221], [0, 0, 0], [1, 1, 1], palette.visor);
+  addPart(chamferedBox(.24, .045, .055, .018, .006), [0, 1.79, -.015], [0, 0, 0], [1, 1, 1], palette.armorLight);
+  addPart(chamferedBox(.032, .095, .014, .010, .003), [-.068, 1.66, -.242], [0, 0, 0], [1, 1, 1], palette.accent);
+  addPart(chamferedBox(.032, .095, .014, .010, .003), [.068, 1.66, -.242], [0, 0, 0], [1, 1, 1], palette.accent);
   for (const side of [-1, 1]) {
-    addPart(new THREE.CylinderGeometry(.082, .082, .055, 8), [side * .205, 1.70, 0], [0, 0, Math.PI / 2], [1, 1, 1], palette.armorDark);
-    addPart(new THREE.CylinderGeometry(.050, .050, .061, 8), [side * .208, 1.70, 0], [0, 0, Math.PI / 2], [1, 1, 1], palette.joint);
+    addPart(new THREE.CylinderGeometry(.085, .085, .070, 8), [side * .20, 1.66, 0], [0, 0, Math.PI / 2], [1, 1, 1], palette.armorLight);
+    addPart(new THREE.CylinderGeometry(.052, .052, .078, 8), [side * .204, 1.66, 0], [0, 0, Math.PI / 2], [1, 1, 1], palette.joint);
+    addPart(new THREE.TorusGeometry(.040, .010, 5, 10), [side * .246, 1.66, 0], [0, Math.PI / 2, 0], [1, 1, 1], palette.armorDark);
   }
 
   const geometry = mergeGeometries(parts, false);
@@ -4119,7 +4326,7 @@ function addPlayerCameraOnSelectedJoint() {
     roughness: .58,
     materialRule: "metal",
     playerAvatar: true,
-    playerHeadOffset: [0, 1.70, 0]
+    playerHeadOffset: [0, 1.66, 0]
   }, { record: false, select: false, update: false });
   placePlayerAvatarAtCamera(avatar, direction);
   const bone = {
@@ -4456,9 +4663,43 @@ function previewShotView(viewName = "iso") {
   log(`Previewing ${viewName} shot framing.`);
 }
 
+function previewIsoOrReference() {
+  const hasReference = typeof referenceImageState.dataUrl === "string" && referenceImageState.dataUrl.startsWith("data:image/");
+  if (!hasReference) {
+    previewShotView("iso");
+    return;
+  }
+  referenceImageState.mode = "panel";
+  syncReferenceImageUi();
+  setSectionCollapsed(els.referenceImageSection, els.referenceImageToggle, false);
+  els.referenceImageSection.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  previewShotView("front");
+  log("Showing the reference image in place of the Iso comparison view.");
+}
+
+async function captureReferenceImage({ download = false, prefix = currentProjectBaseName() } = {}) {
+  const dataUrl = referenceImageState.dataUrl;
+  const image = await loadShotImage(dataUrl);
+  const shot = {
+    view: "reference",
+    fileName: `${prefix}-reference.png`,
+    width: image.naturalWidth || image.width,
+    height: image.naturalHeight || image.height,
+    dataUrl
+  };
+  if (download) downloadDataUrl(shot.fileName, dataUrl);
+  return shot;
+}
+
 async function captureViews({ views = ["front", "back", "left", "right", "top", "iso"], download = false, prefix = currentProjectBaseName() } = {}) {
   await waitForSceneTextures();
-  return views.map(view => captureView(view, { download, prefix }));
+  const hasReference = typeof referenceImageState.dataUrl === "string" && referenceImageState.dataUrl.startsWith("data:image/");
+  const shots = [];
+  for (const view of views) {
+    if (view === "iso" && hasReference) shots.push(await captureReferenceImage({ download, prefix }));
+    else shots.push(captureView(view, { download, prefix }));
+  }
+  return shots;
 }
 
 async function saveSingleViewPng(viewName = "iso") {
@@ -4669,7 +4910,7 @@ async function saveQaSheet() {
   const fileName = `${prefix}-qa-sheet.png`;
   const dataUrl = sheet.toDataURL("image/png");
   downloadDataUrl(fileName, dataUrl);
-  log("Saved one six-view AI QA sheet after all textures finished loading.", {
+  log("Saved one six-panel AI QA sheet after all textures finished loading.", {
     fileName,
     views: shots.map(shot => shot.view),
     objects: objects.length

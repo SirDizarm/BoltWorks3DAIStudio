@@ -124,16 +124,8 @@ textarea {
 /* Keep toolbar visibility usable even if another experimental script fails. */
 body:has(#toggleToolbarTransform:not(:checked)) #toolbarTransformGroup,
 body:has(#toggleToolbarMirror:not(:checked)) #toolbarMirrorGroup,
-body:has(#toggleToolbarSelectionTools:not(:checked)) #toolbarSelectionToolsGroup,
-body:has(#toggleToolbarLineTools:not(:checked)) #toolbarLineToolsGroup,
-body:has(#toggleToolbarMarkerTools:not(:checked)) #toolbarMarkerToolsGroup,
-body:has(#toggleToolbarTriEditor:not(:checked)) #toolbarTriEditorGroup,
-body:has(#toggleToolbarMiscTools:not(:checked)) #toolbarMiscToolsGroup,
-body:has(#toggleToolbarFaceEdit:not(:checked)) #toolbarFaceEditGroup,
 body:has(#toggleToolbarScene:not(:checked)) #toolbarSceneGroup,
-body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup,
-body:has(#toggleToolbarViews:not(:checked)) #toolbarViewsGroup,
-body:has(#toggleToolbarImportExport:not(:checked)) #toolbarImportExportGroup {
+body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup {
   display: none !important;
 }
 
@@ -422,6 +414,22 @@ label {
   --scene-tree-content-width: 520px;
 }
 
+#sceneTree {
+  flex: 1 1 260px;
+  min-height: 180px;
+  overflow: auto;
+  scroll-behavior: smooth;
+}
+
+.object-row.locate-pulse {
+  animation: locate-mesh-pulse 1.35s ease-out;
+}
+
+@keyframes locate-mesh-pulse {
+  0%, 35% { box-shadow: inset 0 0 0 2px #f2c14e, 0 0 16px rgba(242, 193, 78, .5); }
+  100% { box-shadow: inset 0 0 0 0 transparent, 0 0 0 transparent; }
+}
+
 .tree-controls {
   display: flex;
   gap: 8px;
@@ -593,6 +601,28 @@ label {
   background: #0b0e10;
 }
 
+.reference-image-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.reference-image-overlay img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  user-select: none;
+}
+
+.selection-box,
+.hud {
+  z-index: 3;
+}
+
 .reference-viewports {
   display: grid;
   grid-template-rows: 1fr 1fr;
@@ -653,6 +683,44 @@ label {
   border: 0;
   border-top: 1px solid var(--line);
   overflow: visible;
+}
+
+.reference-image-panel.section {
+  padding: 10px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+  overflow: visible;
+}
+
+.reference-image-panel > .section-body {
+  gap: 8px;
+  margin-top: 8px;
+  overflow: visible;
+}
+
+.reference-image-preview {
+  min-height: 150px;
+  max-height: 320px;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid #334046;
+  border-radius: 6px;
+  background: #090c0e;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.reference-image-preview img {
+  width: 100%;
+  max-height: 320px;
+  object-fit: contain;
+  display: block;
+}
+
+#previewIsoBtn.reference-active {
+  border-color: #b78a2d;
+  color: #f1c65b;
 }
 
 .environment-panel > .section-body {
@@ -919,6 +987,153 @@ label {
   padding: 18px;
   background: rgba(4, 7, 9, .72);
   backdrop-filter: blur(8px);
+}
+
+.model-tools-body {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+}
+
+.model-tools-body .toolbar-group {
+  position: relative;
+  display: flex;
+  flex-wrap: wrap;
+  align-content: flex-start;
+  gap: 6px;
+  min-width: 0;
+  padding: 28px 8px 8px;
+  border: 1px solid #344047;
+  border-radius: 7px;
+  background: rgba(8, 12, 14, .35);
+}
+
+.model-tools-body .toolbar-group::before {
+  content: attr(aria-label);
+  position: absolute;
+  top: 7px;
+  left: 9px;
+  color: #aebdc2;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+#modelToolsOpenBtn.active {
+  border-color: #d1a53d;
+  color: #f1c65b;
+}
+
+#outputToolsOpenBtn.active {
+  border-color: #d1a53d;
+  color: #f1c65b;
+}
+
+.output-tools-body {
+  grid-template-columns: 1fr;
+}
+
+@media (max-width: 980px) {
+  .model-tools-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.surface-editor-body {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.surface-editor-tabs,
+.surface-selection-modes,
+.surface-editor-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.surface-editor-actions {
+  grid-template-columns: repeat(auto-fit, minmax(95px, 1fr));
+}
+
+.surface-editor-tabs button.active,
+.surface-selection-modes button.active,
+#surfaceEditorOpenBtn.active,
+#dragPushBtn.active {
+  border-color: #d1a53d;
+  color: #f1c65b;
+}
+
+#dragPushAxisSelect {
+  font-weight: 700;
+  transition: color .14s ease, border-color .14s ease, box-shadow .14s ease, background-color .14s ease;
+}
+
+#dragPushAxisSelect[data-axis="x"] {
+  color: #ff7777;
+  border-color: #d94b4b;
+  box-shadow: inset 3px 0 0 #ff4d4d;
+}
+
+#dragPushAxisSelect[data-axis="y"] {
+  color: #73e690;
+  border-color: #3fa85b;
+  box-shadow: inset 3px 0 0 #38d965;
+}
+
+#dragPushAxisSelect[data-axis="z"] {
+  color: #78aaff;
+  border-color: #447ed8;
+  box-shadow: inset 3px 0 0 #438cff;
+}
+
+#dragPushAxisSelect[data-axis="free"] {
+  color: #dce7e9;
+  border-color: #59676d;
+  box-shadow: inset 3px 0 0 #8f9ba0;
+}
+
+#surfaceEditorWindow[data-interaction-mode="mouse"] .value-surface-control,
+#surfaceEditorWindow[data-interaction-mode="value"] .mouse-surface-control {
+  display: none !important;
+}
+
+.docked-tools-section {
+  flex: 0 0 auto;
+  min-height: 54px;
+}
+
+.docked-tools-section .surface-editor-body,
+.docked-tools-section .model-tools-body {
+  grid-template-columns: 1fr;
+  padding: 0;
+}
+
+.docked-tools-section .toolbar-group {
+  width: 100%;
+  border-right: 0;
+}
+
+.docked-tools-description {
+  margin: 0;
+}
+
+.surface-bevel-details {
+  padding: 8px;
+  border: 1px solid #334046;
+  border-radius: 6px;
+}
+
+.surface-bevel-details summary {
+  cursor: pointer;
+  color: #dce7e9;
+}
+
+.surface-bevel-details[open] summary {
+  margin-bottom: 8px;
 }
 
 .texture-editor-modal.open {

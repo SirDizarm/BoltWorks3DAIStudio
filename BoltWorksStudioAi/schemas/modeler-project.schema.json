@@ -150,6 +150,11 @@
             { "type": "null" }
           ]
         },
+        "edgeBevelProtectedEdges": {
+          "type": "array",
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
         "linkId": {
           "anyOf": [
             { "type": "string" },
@@ -210,6 +215,24 @@
           ]
         },
         "facePickMode": { "type": "boolean" },
+        "referenceImage": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "dataUrl": {
+              "anyOf": [
+                { "type": "string", "pattern": "^data:image/[A-Za-z0-9.+-]+;base64," },
+                { "type": "null" }
+              ]
+            },
+            "mode": { "enum": ["panel", "overlay", "both"] },
+            "opacity": { "type": "number", "minimum": 0.05, "maximum": 1 },
+            "scale": { "type": "number", "minimum": 0.25, "maximum": 4 },
+            "offsetX": { "type": "number", "minimum": -200, "maximum": 200 },
+            "offsetY": { "type": "number", "minimum": -200, "maximum": 200 }
+          },
+          "additionalProperties": true
+        },
         "view": { "type": "object" },
         "cameraViews": {
           "type": "object",
