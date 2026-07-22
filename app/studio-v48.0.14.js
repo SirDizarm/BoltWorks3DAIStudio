@@ -40794,8 +40794,7 @@ end
     disposeCameraDirectorMarkers();
     if (activeCustomCameraId) {
       cameraDirectorGroup.visible = false;
-      const activeView2 = customCameraViewById(activeCustomCameraId);
-      boneRigGroup.visible = !!els.showBonesInput?.checked && activeView2?.type !== "player";
+      boneRigGroup.visible = !!els.showBonesInput?.checked;
       return;
     }
     for (const view of customCameraViews) {
@@ -40803,8 +40802,7 @@ end
       cameraDirectorGroup.add(makeCameraDirectorMarker(view, view.id === selectedCustomCameraId));
     }
     cameraDirectorGroup.visible = !!els.showCustomCamerasInput?.checked && !activeCustomCameraId;
-    const activeView = customCameraViewById(activeCustomCameraId);
-    boneRigGroup.visible = !!els.showBonesInput?.checked && activeView?.type !== "player";
+    boneRigGroup.visible = !!els.showBonesInput?.checked;
   }
   function syncCameraDirectorVisibility() {
     const cameraNearDirector = customCameraViews.some((view) => {
@@ -40886,19 +40884,23 @@ end
     return view;
   }
   function addPlayerCameraOnSelectedJoint() {
-    const bone = selectedBone();
-    if (!bone) {
-      log("Select or place a joint first, then attach the player camera.");
-      return null;
-    }
-    recordHistory("add player camera on joint");
-    const rotation = boneCameraQuaternion(bone);
-    const inverseRotation = rotation.clone().invert();
+    recordHistory("create player camera at current view");
+    const playerIndex = rigBones.filter((bone2) => bone2.role === "camera").length + 1;
+    const bone = {
+      id: freshBoneId(),
+      name: `Player Head ${playerIndex}`,
+      parentId: null,
+      role: "camera",
+      position: camera.position.clone(),
+      rotation: new Vector3()
+    };
+    rigBones.push(bone);
+    selectedBoneId = bone.id;
     const worldDirection = orbit.target.clone().sub(camera.position);
     if (worldDirection.lengthSq() < 1e-8) worldDirection.set(0, 0, -1);
     const view = {
       id: nextCustomCameraId(),
-      name: `${bone.name} Player View`,
+      name: `Player View ${playerIndex}`,
       type: "player",
       anchorBoneId: bone.id,
       position: bone.position.toArray(),
@@ -40906,14 +40908,16 @@ end
       up: camera.up.toArray(),
       fov: camera.fov,
       positionOffset: [0, 0, 0],
-      localDirection: worldDirection.normalize().applyQuaternion(inverseRotation).toArray(),
-      localUp: camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray()
+      localDirection: worldDirection.normalize().toArray(),
+      localUp: camera.up.clone().normalize().toArray()
     };
     customCameraViews.push(view);
     selectedCustomCameraId = view.id;
     activeCustomCameraId = view.id;
+    rebuildBoneVisuals();
+    syncBonePanel();
     activateCustomCameraView(view.id);
-    log(`Attached ${view.name} to ${bone.name}. Moving or rotating that joint now moves the viewpoint.`);
+    log(`Created ${view.name} exactly at the current camera. Move ${bone.name} in Front/Side to move the viewpoint.`);
     return view;
   }
   function updateCustomCameraFromCurrentView() {
@@ -40926,18 +40930,22 @@ end
     if (view.type === "player") {
       const bone = boneById(view.anchorBoneId);
       if (bone) {
-        const rotation = boneCameraQuaternion(bone);
-        const inverseRotation = rotation.clone().invert();
-        view.positionOffset = camera.position.clone().sub(bone.position).applyQuaternion(inverseRotation).toArray();
-        const direction = orbit.target.clone().sub(camera.position).normalize();
-        view.localDirection = direction.applyQuaternion(inverseRotation).toArray();
-        view.localUp = camera.up.clone().normalize().applyQuaternion(inverseRotation).toArray();
+        bone.position.copy(camera.position);
+        bone.rotation.set(0, 0, 0);
+        bone.role = "camera";
+        view.positionOffset = [0, 0, 0];
+        const direction = orbit.target.clone().sub(camera.position);
+        if (direction.lengthSq() < 1e-8) direction.set(0, 0, -1);
+        view.localDirection = direction.normalize().toArray();
+        view.localUp = camera.up.clone().normalize().toArray();
+        rebuildBoneVisuals();
+        syncBonePanel();
       }
     }
     view.fov = camera.fov;
     activeCustomCameraId = view.id;
     renderCustomCameraViews();
-    log(`Moved ${view.name} to the current viewport.`);
+    log(view.type === "player" ? `Moved ${view.name} and its head joint exactly to the current viewport.` : `Moved ${view.name} to the current viewport.`);
   }
   function updateCustomCameraFromInputs({ record = true, render = true, refreshMarkers = true } = {}) {
     const view = customCameraViewById();
@@ -40997,11 +41005,10 @@ end
   }
   function syncActiveJointCamera() {
     const view = customCameraViewById(activeCustomCameraId);
+    boneRigGroup.visible = !!els.showBonesInput?.checked;
     if (!view || view.type !== "player" || !boneById(view.anchorBoneId)) {
-      boneRigGroup.visible = !!els.showBonesInput?.checked;
       return;
     }
-    boneRigGroup.visible = false;
     const pose = resolvedCustomCameraPose(view);
     camera.position.copy(pose.position);
     orbit.target.copy(pose.target);
@@ -41560,6 +41567,8 @@ end
   var boneMoveAxis = null;
   var boneDrag = null;
   var boneRaycaster = new Raycaster();
+  boneRaycaster.layers.enable(1);
+  boneRaycaster.layers.enable(2);
   var bonePointer = new Vector2();
   var boneDragPlane = new Plane();
   var boneDragHit = new Vector3();
@@ -41580,6 +41589,7 @@ end
         id: bone.id,
         name: bone.name,
         parentId: bone.parentId || null,
+        role: bone.role || null,
         position: bone.position.toArray().map(round2),
         rotation: bone.rotation.toArray().map(round2)
       }))
@@ -41590,6 +41600,7 @@ end
       id: bone.id || freshBoneId(),
       name: bone.name || `Bone ${index + 1}`,
       parentId: bone.parentId || null,
+      role: bone.role === "camera" ? "camera" : null,
       position: new Vector3().fromArray(Array.isArray(bone.position) ? bone.position : [0, index, 0]),
       rotation: new Vector3().fromArray(Array.isArray(bone.rotation) ? bone.rotation : [0, 0, 0])
     }));
@@ -41708,6 +41719,9 @@ end
       joint.renderOrder = 1e4;
       joint.userData.boneId = bone2.id;
       joint.userData.boneJoint = true;
+      joint.layers.disable(0);
+      joint.layers.enable(1);
+      joint.layers.enable(2);
       boneRigGroup.add(joint);
       const parent = boneById(bone2.parentId);
       if (parent) {
@@ -41715,6 +41729,9 @@ end
         const line = new Line(geometry, new LineBasicMaterial({ color: 14790987, depthTest: false }));
         line.renderOrder = 9999;
         line.userData.boneId = bone2.id;
+        line.layers.disable(0);
+        line.layers.enable(1);
+        line.layers.enable(2);
         boneRigGroup.add(line);
       }
     }

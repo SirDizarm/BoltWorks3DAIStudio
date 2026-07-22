@@ -70,6 +70,8 @@ let boneToolMode = null;
 let boneMoveAxis = null;
 let boneDrag = null;
 const boneRaycaster = new THREE.Raycaster();
+boneRaycaster.layers.enable(1);
+boneRaycaster.layers.enable(2);
 const bonePointer = new THREE.Vector2();
 const boneDragPlane = new THREE.Plane();
 const boneDragHit = new THREE.Vector3();
@@ -94,6 +96,7 @@ function serializeBoneRig() {
       id: bone.id,
       name: bone.name,
       parentId: bone.parentId || null,
+      role: bone.role || null,
       position: bone.position.toArray().map(round),
       rotation: bone.rotation.toArray().map(round)
     }))
@@ -105,6 +108,7 @@ function restoreBoneRig(data = {}) {
     id: bone.id || freshBoneId(),
     name: bone.name || `Bone ${index + 1}`,
     parentId: bone.parentId || null,
+    role: bone.role === "camera" ? "camera" : null,
     position: new THREE.Vector3().fromArray(Array.isArray(bone.position) ? bone.position : [0, index, 0]),
     rotation: new THREE.Vector3().fromArray(Array.isArray(bone.rotation) ? bone.rotation : [0, 0, 0])
   }));
@@ -232,6 +236,9 @@ function rebuildBoneVisuals() {
     joint.renderOrder = 10000;
     joint.userData.boneId = bone.id;
     joint.userData.boneJoint = true;
+    joint.layers.disable(0);
+    joint.layers.enable(1);
+    joint.layers.enable(2);
     boneRigGroup.add(joint);
     const parent = boneById(bone.parentId);
     if (parent) {
@@ -239,6 +246,9 @@ function rebuildBoneVisuals() {
       const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xe1b14b, depthTest: false }));
       line.renderOrder = 9999;
       line.userData.boneId = bone.id;
+      line.layers.disable(0);
+      line.layers.enable(1);
+      line.layers.enable(2);
       boneRigGroup.add(line);
     }
   }

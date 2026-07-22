@@ -705,7 +705,7 @@ $playerRig = [pscustomobject]@{
   selectedBoneId = 'player-head-upper-hall'
   showGuides = $true
   bones = @(
-    [pscustomobject]@{ id = 'player-head-upper-hall'; name = 'Player Head - Upper Hall'; parentId = $null; position = @(0.0, 4.75, -1.65); rotation = @(0.0, 0.0, 0.0) }
+    [pscustomobject]@{ id = 'player-head-upper-hall'; name = 'Player Head - Upper Hall'; parentId = $null; role = 'camera'; position = @(0.0, 4.75, -1.65); rotation = @(0.0, 0.0, 0.0) }
   )
 }
 $project.editor | Add-Member -NotePropertyName rigging -NotePropertyValue $playerRig -Force

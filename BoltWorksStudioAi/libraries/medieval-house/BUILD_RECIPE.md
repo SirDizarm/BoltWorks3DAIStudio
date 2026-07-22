@@ -69,7 +69,7 @@ Every completed building should include at least:
 
 Name cameras by location or purpose, not `Camera 1` once the view is known.
 
-For a player view, place a joint at eye height and choose **Player Camera on Joint**. The camera stores its direction and offset relative to that joint, follows joint translation and rotation, and hides camera/bone helpers while active.
+For a player view, navigate to the exact eye position and choose **Create Player View Here**. BoltWorks creates a dedicated head joint at the current camera, preserves the current aim, and keeps the joint editable in Front/Side while hiding it from the main viewport. **Use Current View** moves both the saved player camera and its head joint to the current view with zero offset.
 
 ## 10. Make a separate game copy
 
