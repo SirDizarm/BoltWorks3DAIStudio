@@ -338,6 +338,7 @@ let customCameraViews = [];
 let selectedCustomCameraId = null;
 let activeCustomCameraId = null;
 let customCameraIdCounter = 0;
+let playerLookDrag = null;
 const sceneGroupRegistry = new Map();
 let selectedGroupRecordId = null;
 
@@ -382,6 +383,7 @@ const els = {
   addCustomCameraBtn: document.querySelector("#addCustomCameraBtn"),
   addPlayerCameraBtn: document.querySelector("#addPlayerCameraBtn"),
   viewCustomCameraBtn: document.querySelector("#viewCustomCameraBtn"),
+  detachCustomCameraBtn: document.querySelector("#detachCustomCameraBtn"),
   updateCustomCameraBtn: document.querySelector("#updateCustomCameraBtn"),
   deleteCustomCameraBtn: document.querySelector("#deleteCustomCameraBtn"),
   customCameraList: document.querySelector("#customCameraList"),

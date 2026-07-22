@@ -301,6 +301,7 @@ els.previewIsoBtn.addEventListener("click", () => previewShotView("iso"));
 els.addCustomCameraBtn.addEventListener("click", addCustomCameraView);
 els.addPlayerCameraBtn.addEventListener("click", addPlayerCameraOnSelectedJoint);
 els.viewCustomCameraBtn.addEventListener("click", () => activateCustomCameraView());
+els.detachCustomCameraBtn.addEventListener("click", () => detachCustomCameraView({ showPlayer: true }));
 els.updateCustomCameraBtn.addEventListener("click", updateCustomCameraFromCurrentView);
 els.deleteCustomCameraBtn.addEventListener("click", deleteCustomCameraView);
 els.customCameraList.addEventListener("change", () => selectCustomCameraView(els.customCameraList.value));
@@ -329,11 +330,34 @@ els.showCustomCamerasInput.addEventListener("change", () => {
 });
 els.exportGameCopyBtn.addEventListener("click", saveGameOptimizedCopy);
 els.savePixelRenderBtn.addEventListener("click", savePixelRenderPng);
-canvas.addEventListener("pointerdown", () => {
-  if (!activeCustomCameraId) return;
-  activeCustomCameraId = null;
-  renderCustomCameraMarkers();
-});
+canvas.addEventListener("pointerdown", event => {
+  if (beginPlayerCameraLook(event)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
+  if (activeCustomCameraId) detachCustomCameraView({ showPlayer: false });
+}, true);
+canvas.addEventListener("pointermove", event => {
+  if (!movePlayerCameraLook(event)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+canvas.addEventListener("pointerup", event => {
+  if (!endPlayerCameraLook(event)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+canvas.addEventListener("pointercancel", event => {
+  if (!endPlayerCameraLook(event)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
+canvas.addEventListener("wheel", event => {
+  if (!activePlayerCameraView()) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, { capture: true, passive: false });
 els.saveFrontPngBtn.addEventListener("click", async () => saveSingleViewPng("front"));
 els.saveBackPngBtn.addEventListener("click", async () => saveSingleViewPng("back"));
 els.saveLeftPngBtn.addEventListener("click", async () => saveSingleViewPng("left"));

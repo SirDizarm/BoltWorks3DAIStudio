@@ -30341,6 +30341,7 @@ void main() {
   var selectedCustomCameraId = null;
   var activeCustomCameraId = null;
   var customCameraIdCounter = 0;
+  var playerLookDrag = null;
   var sceneGroupRegistry = /* @__PURE__ */ new Map();
   var selectedGroupRecordId = null;
   var els = {
@@ -30384,6 +30385,7 @@ void main() {
     addCustomCameraBtn: document.querySelector("#addCustomCameraBtn"),
     addPlayerCameraBtn: document.querySelector("#addPlayerCameraBtn"),
     viewCustomCameraBtn: document.querySelector("#viewCustomCameraBtn"),
+    detachCustomCameraBtn: document.querySelector("#detachCustomCameraBtn"),
     updateCustomCameraBtn: document.querySelector("#updateCustomCameraBtn"),
     deleteCustomCameraBtn: document.querySelector("#deleteCustomCameraBtn"),
     customCameraList: document.querySelector("#customCameraList"),
@@ -40836,6 +40838,9 @@ end
   }
   function frameSelected() {
     activeCustomCameraId = null;
+    playerLookDrag = null;
+    orbit.enabled = true;
+    syncPlayerAvatarVisibility(null);
     let box = selectedTrianglesBounds();
     if (!box) box = new Box3();
     const transformTargets = transformTargetObjects();
@@ -40983,6 +40988,7 @@ end
     const view = customCameraViewById();
     for (const input of customCameraInputs()) input.disabled = !view;
     els.viewCustomCameraBtn.disabled = !view;
+    els.detachCustomCameraBtn.disabled = !view || activeCustomCameraId !== view.id;
     els.updateCustomCameraBtn.disabled = !view;
     els.deleteCustomCameraBtn.disabled = !view;
     if (!view) {
@@ -40993,7 +40999,11 @@ end
     }
     const pose = resolvedCustomCameraPose(view);
     const anchor = view.type === "player" ? boneById(view.anchorBoneId) : null;
-    els.customCameraTypeLabel.textContent = view.type === "player" ? `Type: player eye on joint ${anchor?.name || "(missing joint)"}` : "Type: free camera director";
+    for (const input of [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ]) {
+      input.disabled = !view || view.type === "player";
+      input.title = view.type === "player" ? "Locked to the player head; move the avatar to change position" : "";
+    }
+    els.customCameraTypeLabel.textContent = view.type === "player" ? `Type: player eye on joint ${anchor?.name || "(missing joint)"}${activeCustomCameraId === view.id ? " \u2014 attached; drag to look" : " \u2014 detached"}` : "Type: free camera director";
     els.customCameraNameInput.value = view.name;
     [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ].forEach((input, index) => {
       input.value = round2(pose.position.toArray()[index]);
@@ -41116,6 +41126,88 @@ end
       avatar.visible = !avatar.userData.hidden && avatar.userData.id !== hiddenAvatarId;
     }
   }
+  function activePlayerCameraView() {
+    const view = customCameraViewById(activeCustomCameraId);
+    return view?.type === "player" ? view : null;
+  }
+  function beginPlayerCameraLook(event) {
+    const view = activePlayerCameraView();
+    if (!view || event.button !== 0) return false;
+    playerLookDrag = {
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY
+    };
+    orbit.enabled = false;
+    canvas.setPointerCapture?.(event.pointerId);
+    return true;
+  }
+  function movePlayerCameraLook(event) {
+    if (!playerLookDrag || event.pointerId !== playerLookDrag.pointerId) return false;
+    const view = activePlayerCameraView();
+    const bone = view ? boneById(view.anchorBoneId) : null;
+    if (!view || !bone) return false;
+    const dx = event.clientX - playerLookDrag.clientX;
+    const dy = event.clientY - playerLookDrag.clientY;
+    playerLookDrag.clientX = event.clientX;
+    playerLookDrag.clientY = event.clientY;
+    if (!dx && !dy) return true;
+    const pose = resolvedCustomCameraPose(view);
+    const direction = pose.target.clone().sub(pose.position).normalize();
+    direction.applyQuaternion(new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), -dx * 5e-3));
+    const right = direction.clone().cross(new Vector3(0, 1, 0)).normalize();
+    if (right.lengthSq() > 1e-8) {
+      const pitched = direction.clone().applyQuaternion(new Quaternion().setFromAxisAngle(right, -dy * 5e-3)).normalize();
+      if (Math.abs(pitched.y) < 0.985) direction.copy(pitched);
+    }
+    const inverseRotation = boneCameraQuaternion(bone).invert();
+    view.localDirection = direction.clone().applyQuaternion(inverseRotation).normalize().toArray();
+    view.localUp = new Vector3(0, 1, 0).applyQuaternion(inverseRotation).toArray();
+    view.position = pose.position.toArray();
+    view.target = pose.position.clone().add(direction).toArray();
+    camera.position.copy(pose.position);
+    orbit.target.copy(pose.position).add(direction);
+    camera.up.set(0, 1, 0);
+    camera.lookAt(orbit.target);
+    syncCustomCameraInputs();
+    return true;
+  }
+  function endPlayerCameraLook(event) {
+    if (!playerLookDrag || event.pointerId !== playerLookDrag.pointerId) return false;
+    canvas.releasePointerCapture?.(event.pointerId);
+    playerLookDrag = null;
+    return true;
+  }
+  function detachCustomCameraView({ showPlayer = true } = {}) {
+    const view = customCameraViewById(activeCustomCameraId);
+    if (!view) return;
+    const pose = resolvedCustomCameraPose(view);
+    const bone = view.type === "player" ? boneById(view.anchorBoneId) : null;
+    const avatar = bone?.avatarObjectId ? findObject(bone.avatarObjectId) : null;
+    activeCustomCameraId = null;
+    playerLookDrag = null;
+    orbit.enabled = true;
+    syncPlayerAvatarVisibility(null);
+    if (showPlayer && avatar?.userData?.playerAvatar) {
+      avatar.updateMatrixWorld(true);
+      const box = new Box3().setFromObject(avatar);
+      const center = box.getCenter(new Vector3());
+      const size = Math.max(0.5, box.getSize(new Vector3()).length());
+      const forward = pose.target.clone().sub(pose.position);
+      forward.y = 0;
+      if (forward.lengthSq() < 1e-8) forward.set(0, 0, -1);
+      forward.normalize();
+      orbit.target.copy(center).add(new Vector3(0, size * 0.08, 0));
+      camera.position.copy(center).addScaledVector(forward, -size * 1.55).add(new Vector3(0, size * 0.35, 0));
+      camera.up.set(0, 1, 0);
+      camera.near = Math.max(0.01, size / 2e3);
+      camera.lookAt(orbit.target);
+      camera.updateProjectionMatrix();
+      orbit.update();
+    }
+    renderCustomCameraViews();
+    log(showPlayer && avatar ? `Detached from ${view.name}; third-person view is framing ${avatar.name}.` : `Detached from ${view.name}.`);
+  }
   function addPlayerCameraOnSelectedJoint() {
     recordHistory("create player camera at current view");
     const playerIndex = rigBones.filter((bone2) => bone2.role === "camera").length + 1;
@@ -41209,16 +41301,18 @@ end
     view.name = els.customCameraNameInput.value.trim() || view.name;
     const positionInputs = [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ];
     const targetInputs = [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ];
-    view.position = positionInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.position[index]);
     view.target = targetInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.target[index]);
     if (view.type === "player") {
       const bone = boneById(view.anchorBoneId);
       if (bone) {
         const inverseRotation = boneCameraQuaternion(bone).invert();
-        view.positionOffset = new Vector3().fromArray(view.position).sub(bone.position).applyQuaternion(inverseRotation).toArray();
-        const direction = new Vector3().fromArray(view.target).sub(new Vector3().fromArray(view.position));
+        view.position = bone.position.toArray();
+        view.positionOffset = [0, 0, 0];
+        const direction = new Vector3().fromArray(view.target).sub(bone.position);
         if (direction.lengthSq() > 1e-8) view.localDirection = direction.normalize().applyQuaternion(inverseRotation).toArray();
       }
+    } else {
+      view.position = positionInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.position[index]);
     }
     if (render) renderCustomCameraViews();
     else {
@@ -41232,7 +41326,11 @@ end
     if (!view) return;
     recordHistory("delete camera director");
     customCameraViews = customCameraViews.filter((candidate) => candidate.id !== view.id);
-    if (activeCustomCameraId === view.id) activeCustomCameraId = null;
+    if (activeCustomCameraId === view.id) {
+      activeCustomCameraId = null;
+      orbit.enabled = true;
+      syncPlayerAvatarVisibility(null);
+    }
     selectedCustomCameraId = customCameraViews[0]?.id || null;
     renderCustomCameraViews();
     log(`Deleted ${view.name}.`);
@@ -41242,6 +41340,9 @@ end
     if (!view) return;
     selectedCustomCameraId = view.id;
     activeCustomCameraId = view.id;
+    playerLookDrag = null;
+    if (view.type === "player") view.positionOffset = [0, 0, 0];
+    orbit.enabled = view.type !== "player";
     els.showCustomCamerasInput.checked = false;
     cameraDirectorGroup.visible = false;
     const pose = resolvedCustomCameraPose(view);
@@ -41265,6 +41366,7 @@ end
     if (!view || view.type !== "player" || !boneById(view.anchorBoneId)) {
       return;
     }
+    orbit.enabled = false;
     syncPlayerAvatarBone(boneById(view.anchorBoneId));
     const pose = resolvedCustomCameraPose(view);
     camera.position.copy(pose.position);
@@ -41275,6 +41377,9 @@ end
   function restoreCustomCameraViews(cameraState = {}) {
     customCameraIdCounter = 0;
     activeCustomCameraId = null;
+    playerLookDrag = null;
+    orbit.enabled = true;
+    syncPlayerAvatarVisibility(null);
     customCameraViews = (cameraState.views || []).map((view, index) => {
       const id = typeof view?.id === "string" && view.id ? view.id : `camera-director-${index + 1}`;
       const match = id.match(/(\d+)$/);
@@ -41420,6 +41525,9 @@ end
   }
   function previewShotView(viewName = "iso") {
     activeCustomCameraId = null;
+    playerLookDrag = null;
+    orbit.enabled = true;
+    syncPlayerAvatarVisibility(null);
     renderCustomCameraMarkers();
     const currentDistance = camera.position.distanceTo(orbit.target);
     setCameraToView(viewName, {
@@ -42501,6 +42609,7 @@ end
   els.addCustomCameraBtn.addEventListener("click", addCustomCameraView);
   els.addPlayerCameraBtn.addEventListener("click", addPlayerCameraOnSelectedJoint);
   els.viewCustomCameraBtn.addEventListener("click", () => activateCustomCameraView());
+  els.detachCustomCameraBtn.addEventListener("click", () => detachCustomCameraView({ showPlayer: true }));
   els.updateCustomCameraBtn.addEventListener("click", updateCustomCameraFromCurrentView);
   els.deleteCustomCameraBtn.addEventListener("click", deleteCustomCameraView);
   els.customCameraList.addEventListener("change", () => selectCustomCameraView(els.customCameraList.value));
@@ -42529,11 +42638,34 @@ end
   });
   els.exportGameCopyBtn.addEventListener("click", saveGameOptimizedCopy);
   els.savePixelRenderBtn.addEventListener("click", savePixelRenderPng);
-  canvas.addEventListener("pointerdown", () => {
-    if (!activeCustomCameraId) return;
-    activeCustomCameraId = null;
-    renderCustomCameraMarkers();
-  });
+  canvas.addEventListener("pointerdown", (event) => {
+    if (beginPlayerCameraLook(event)) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return;
+    }
+    if (activeCustomCameraId) detachCustomCameraView({ showPlayer: false });
+  }, true);
+  canvas.addEventListener("pointermove", (event) => {
+    if (!movePlayerCameraLook(event)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+  canvas.addEventListener("pointerup", (event) => {
+    if (!endPlayerCameraLook(event)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+  canvas.addEventListener("pointercancel", (event) => {
+    if (!endPlayerCameraLook(event)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, true);
+  canvas.addEventListener("wheel", (event) => {
+    if (!activePlayerCameraView()) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }, { capture: true, passive: false });
   els.saveFrontPngBtn.addEventListener("click", async () => saveSingleViewPng("front"));
   els.saveBackPngBtn.addEventListener("click", async () => saveSingleViewPng("back"));
   els.saveLeftPngBtn.addEventListener("click", async () => saveSingleViewPng("left"));

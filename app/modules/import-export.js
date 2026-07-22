@@ -3635,6 +3635,9 @@ function selectedTrianglesBounds() {
 
 function frameSelected() {
   activeCustomCameraId = null;
+  playerLookDrag = null;
+  orbit.enabled = true;
+  syncPlayerAvatarVisibility(null);
   let box = selectedTrianglesBounds();
   if (!box) box = new THREE.Box3();
   const transformTargets = transformTargetObjects();
@@ -3809,6 +3812,7 @@ function syncCustomCameraInputs() {
   const view = customCameraViewById();
   for (const input of customCameraInputs()) input.disabled = !view;
   els.viewCustomCameraBtn.disabled = !view;
+  els.detachCustomCameraBtn.disabled = !view || activeCustomCameraId !== view.id;
   els.updateCustomCameraBtn.disabled = !view;
   els.deleteCustomCameraBtn.disabled = !view;
   if (!view) {
@@ -3819,8 +3823,12 @@ function syncCustomCameraInputs() {
   }
   const pose = resolvedCustomCameraPose(view);
   const anchor = view.type === "player" ? boneById(view.anchorBoneId) : null;
+  for (const input of [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ]) {
+    input.disabled = !view || view.type === "player";
+    input.title = view.type === "player" ? "Locked to the player head; move the avatar to change position" : "";
+  }
   els.customCameraTypeLabel.textContent = view.type === "player"
-    ? `Type: player eye on joint ${anchor?.name || "(missing joint)"}`
+    ? `Type: player eye on joint ${anchor?.name || "(missing joint)"}${activeCustomCameraId === view.id ? " — attached; drag to look" : " — detached"}`
     : "Type: free camera director";
   els.customCameraNameInput.value = view.name;
   [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ].forEach((input, index) => { input.value = round(pose.position.toArray()[index]); });
@@ -3950,6 +3958,93 @@ function syncPlayerAvatarVisibility(activeView = null) {
   }
 }
 
+function activePlayerCameraView() {
+  const view = customCameraViewById(activeCustomCameraId);
+  return view?.type === "player" ? view : null;
+}
+
+function beginPlayerCameraLook(event) {
+  const view = activePlayerCameraView();
+  if (!view || event.button !== 0) return false;
+  playerLookDrag = {
+    pointerId: event.pointerId,
+    clientX: event.clientX,
+    clientY: event.clientY
+  };
+  orbit.enabled = false;
+  canvas.setPointerCapture?.(event.pointerId);
+  return true;
+}
+
+function movePlayerCameraLook(event) {
+  if (!playerLookDrag || event.pointerId !== playerLookDrag.pointerId) return false;
+  const view = activePlayerCameraView();
+  const bone = view ? boneById(view.anchorBoneId) : null;
+  if (!view || !bone) return false;
+  const dx = event.clientX - playerLookDrag.clientX;
+  const dy = event.clientY - playerLookDrag.clientY;
+  playerLookDrag.clientX = event.clientX;
+  playerLookDrag.clientY = event.clientY;
+  if (!dx && !dy) return true;
+  const pose = resolvedCustomCameraPose(view);
+  const direction = pose.target.clone().sub(pose.position).normalize();
+  direction.applyQuaternion(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), -dx * .005));
+  const right = direction.clone().cross(new THREE.Vector3(0, 1, 0)).normalize();
+  if (right.lengthSq() > 1e-8) {
+    const pitched = direction.clone().applyQuaternion(new THREE.Quaternion().setFromAxisAngle(right, -dy * .005)).normalize();
+    if (Math.abs(pitched.y) < .985) direction.copy(pitched);
+  }
+  const inverseRotation = boneCameraQuaternion(bone).invert();
+  view.localDirection = direction.clone().applyQuaternion(inverseRotation).normalize().toArray();
+  view.localUp = new THREE.Vector3(0, 1, 0).applyQuaternion(inverseRotation).toArray();
+  view.position = pose.position.toArray();
+  view.target = pose.position.clone().add(direction).toArray();
+  camera.position.copy(pose.position);
+  orbit.target.copy(pose.position).add(direction);
+  camera.up.set(0, 1, 0);
+  camera.lookAt(orbit.target);
+  syncCustomCameraInputs();
+  return true;
+}
+
+function endPlayerCameraLook(event) {
+  if (!playerLookDrag || event.pointerId !== playerLookDrag.pointerId) return false;
+  canvas.releasePointerCapture?.(event.pointerId);
+  playerLookDrag = null;
+  return true;
+}
+
+function detachCustomCameraView({ showPlayer = true } = {}) {
+  const view = customCameraViewById(activeCustomCameraId);
+  if (!view) return;
+  const pose = resolvedCustomCameraPose(view);
+  const bone = view.type === "player" ? boneById(view.anchorBoneId) : null;
+  const avatar = bone?.avatarObjectId ? findObject(bone.avatarObjectId) : null;
+  activeCustomCameraId = null;
+  playerLookDrag = null;
+  orbit.enabled = true;
+  syncPlayerAvatarVisibility(null);
+  if (showPlayer && avatar?.userData?.playerAvatar) {
+    avatar.updateMatrixWorld(true);
+    const box = new THREE.Box3().setFromObject(avatar);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = Math.max(.5, box.getSize(new THREE.Vector3()).length());
+    const forward = pose.target.clone().sub(pose.position);
+    forward.y = 0;
+    if (forward.lengthSq() < 1e-8) forward.set(0, 0, -1);
+    forward.normalize();
+    orbit.target.copy(center).add(new THREE.Vector3(0, size * .08, 0));
+    camera.position.copy(center).addScaledVector(forward, -size * 1.55).add(new THREE.Vector3(0, size * .35, 0));
+    camera.up.set(0, 1, 0);
+    camera.near = Math.max(.01, size / 2000);
+    camera.lookAt(orbit.target);
+    camera.updateProjectionMatrix();
+    orbit.update();
+  }
+  renderCustomCameraViews();
+  log(showPlayer && avatar ? `Detached from ${view.name}; third-person view is framing ${avatar.name}.` : `Detached from ${view.name}.`);
+}
+
 function addPlayerCameraOnSelectedJoint() {
   recordHistory("create player camera at current view");
   const playerIndex = rigBones.filter(bone => bone.role === "camera").length + 1;
@@ -4047,16 +4142,19 @@ function updateCustomCameraFromInputs({ record = true, render = true, refreshMar
   view.name = els.customCameraNameInput.value.trim() || view.name;
   const positionInputs = [els.customCameraPosX, els.customCameraPosY, els.customCameraPosZ];
   const targetInputs = [els.customCameraTargetX, els.customCameraTargetY, els.customCameraTargetZ];
-  view.position = positionInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.position[index]);
   view.target = targetInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.target[index]);
   if (view.type === "player") {
     const bone = boneById(view.anchorBoneId);
     if (bone) {
       const inverseRotation = boneCameraQuaternion(bone).invert();
-      view.positionOffset = new THREE.Vector3().fromArray(view.position).sub(bone.position).applyQuaternion(inverseRotation).toArray();
-      const direction = new THREE.Vector3().fromArray(view.target).sub(new THREE.Vector3().fromArray(view.position));
+      view.position = bone.position.toArray();
+      view.positionOffset = [0, 0, 0];
+      const direction = new THREE.Vector3().fromArray(view.target).sub(bone.position);
       if (direction.lengthSq() > 1e-8) view.localDirection = direction.normalize().applyQuaternion(inverseRotation).toArray();
     }
+  }
+  else {
+    view.position = positionInputs.map((input, index) => Number.isFinite(Number(input.value)) ? Number(input.value) : view.position[index]);
   }
   if (render) renderCustomCameraViews();
   else {
@@ -4071,7 +4169,11 @@ function deleteCustomCameraView() {
   if (!view) return;
   recordHistory("delete camera director");
   customCameraViews = customCameraViews.filter(candidate => candidate.id !== view.id);
-  if (activeCustomCameraId === view.id) activeCustomCameraId = null;
+  if (activeCustomCameraId === view.id) {
+    activeCustomCameraId = null;
+    orbit.enabled = true;
+    syncPlayerAvatarVisibility(null);
+  }
   selectedCustomCameraId = customCameraViews[0]?.id || null;
   renderCustomCameraViews();
   log(`Deleted ${view.name}.`);
@@ -4082,6 +4184,9 @@ function activateCustomCameraView(id = selectedCustomCameraId) {
   if (!view) return;
   selectedCustomCameraId = view.id;
   activeCustomCameraId = view.id;
+  playerLookDrag = null;
+  if (view.type === "player") view.positionOffset = [0, 0, 0];
+  orbit.enabled = view.type !== "player";
   // Directors are editor helpers, never part of the photographed view. Turning
   // the overlay off here also covers overlapping cameras at the same joint.
   els.showCustomCamerasInput.checked = false;
@@ -4108,6 +4213,7 @@ function syncActiveJointCamera() {
   if (!view || view.type !== "player" || !boneById(view.anchorBoneId)) {
     return;
   }
+  orbit.enabled = false;
   syncPlayerAvatarBone(boneById(view.anchorBoneId));
   const pose = resolvedCustomCameraPose(view);
   camera.position.copy(pose.position);
@@ -4119,6 +4225,9 @@ function syncActiveJointCamera() {
 function restoreCustomCameraViews(cameraState = {}) {
   customCameraIdCounter = 0;
   activeCustomCameraId = null;
+  playerLookDrag = null;
+  orbit.enabled = true;
+  syncPlayerAvatarVisibility(null);
   customCameraViews = (cameraState.views || []).map((view, index) => {
     const id = typeof view?.id === "string" && view.id ? view.id : `camera-director-${index + 1}`;
     const match = id.match(/(\d+)$/);
@@ -4275,6 +4384,9 @@ function waitForSceneTextures(timeoutMs = 10000) {
 
 function previewShotView(viewName = "iso") {
   activeCustomCameraId = null;
+  playerLookDrag = null;
+  orbit.enabled = true;
+  syncPlayerAvatarVisibility(null);
   renderCustomCameraMarkers();
   const currentDistance = camera.position.distanceTo(orbit.target);
   setCameraToView(viewName, {

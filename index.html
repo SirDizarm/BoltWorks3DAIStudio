@@ -351,7 +351,7 @@
             <h2>Camera Views</h2>
           </button>
           <div class="section-body" id="cameraViewsBody">
-            <p class="api-note">Create a player-eye view exactly where the current camera is. BoltWorks also places a low-poly avatar: move or rotate the avatar like any mesh and its head camera follows. The head joint stays in Front/Side only.</p>
+            <p class="api-note">Create a player-eye view exactly where the current camera is. While attached, drag to look up, down, left, or right; the camera position and wheel zoom stay locked to the avatar's head. Use Detach / See Player for a third-person view. Move or rotate the avatar like any mesh and its head camera follows. The head joint stays in Front/Side only.</p>
             <div class="compact-row">
               <button id="previewFrontBtn" title="Preview the Front save-view framing">Front</button>
               <button id="previewBackBtn" title="Preview the Back save-view framing">Back</button>
@@ -365,6 +365,7 @@
               <button id="addCustomCameraBtn" type="button" title="Create a camera director from the current viewport position and aim">Add Camera Here</button>
               <button id="addPlayerCameraBtn" type="button" title="Place a movable low-poly avatar, attach a head joint, and save this exact first-person view">Create Player + View Here</button>
               <button id="viewCustomCameraBtn" type="button" title="Look through the selected camera director">View Selected</button>
+              <button id="detachCustomCameraBtn" type="button" title="Unlock the active player camera and move behind the avatar">Detach / See Player</button>
               <button id="updateCustomCameraBtn" type="button" title="Move the selected camera director to the current viewport">Use Current View</button>
               <button id="deleteCustomCameraBtn" class="warn" type="button">Delete</button>
             </div>
