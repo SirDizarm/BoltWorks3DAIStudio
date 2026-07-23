@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <rect width="1024" height="1024" fill="#10161d"/>
+  <rect x="72" y="72" width="880" height="880" rx="18" fill="#18232d" stroke="#f4f7fa" stroke-width="8"/>
+
+  <g font-family="Arial, Helvetica, sans-serif" font-weight="700" text-anchor="middle">
+    <text x="512" y="48" fill="#ffffff" font-size="34">V ▲ TOP</text>
+    <text x="512" y="998" fill="#ffffff" font-size="30">BOTTOM ▼</text>
+    <text x="42" y="522" fill="#ffffff" font-size="30" transform="rotate(-90 42 522)">U = 0</text>
+    <text x="982" y="522" fill="#ffffff" font-size="30" transform="rotate(90 982 522)">U → 1</text>
+
+    <g stroke="#0b0f14" stroke-width="6">
+      <rect x="100" y="100" width="206" height="206" fill="#ee4d5a"/>
+      <rect x="306" y="100" width="206" height="206" fill="#ffd166"/>
+      <rect x="512" y="100" width="206" height="206" fill="#48cae4"/>
+      <rect x="718" y="100" width="206" height="206" fill="#8ac926"/>
+
+      <rect x="100" y="306" width="206" height="206" fill="#f78c6b"/>
+      <rect x="306" y="306" width="206" height="206" fill="#d7e3fc"/>
+      <rect x="512" y="306" width="206" height="206" fill="#bde0fe"/>
+      <rect x="718" y="306" width="206" height="206" fill="#a7c957"/>
+
+      <rect x="100" y="512" width="206" height="206" fill="#c77dff"/>
+      <rect x="306" y="512" width="206" height="206" fill="#e2e8f0"/>
+      <rect x="512" y="512" width="206" height="206" fill="#90e0ef"/>
+      <rect x="718" y="512" width="206" height="206" fill="#52b788"/>
+
+      <rect x="100" y="718" width="206" height="206" fill="#9d4edd"/>
+      <rect x="306" y="718" width="206" height="206" fill="#ffb703"/>
+      <rect x="512" y="718" width="206" height="206" fill="#219ebc"/>
+      <rect x="718" y="718" width="206" height="206" fill="#2d6a4f"/>
+    </g>
+
+    <g fill="#111820" font-size="54">
+      <text x="203" y="222">A1</text><text x="409" y="222">B1</text><text x="615" y="222">C1</text><text x="821" y="222">D1</text>
+      <text x="203" y="428">A2</text><text x="409" y="428">B2</text><text x="615" y="428">C2</text><text x="821" y="428">D2</text>
+      <text x="203" y="634">A3</text><text x="409" y="634">B3</text><text x="615" y="634">C3</text><text x="821" y="634">D3</text>
+      <text x="203" y="840">A4</text><text x="409" y="840">B4</text><text x="615" y="840">C4</text><text x="821" y="840">D4</text>
+    </g>
+  </g>
+
+  <g fill="none" stroke="#10161d" stroke-width="16">
+    <circle cx="512" cy="512" r="78"/>
+    <path d="M512 414V610M414 512H610"/>
+  </g>
+  <circle cx="512" cy="512" r="18" fill="#ffffff" stroke="#10161d" stroke-width="8"/>
+
+  <path d="M116 884V760H240" fill="none" stroke="#ffffff" stroke-width="18"/>
+  <path d="M116 760l-22 32m22-32 32 22M240 760l-32-22m32 22-22 32" fill="none" stroke="#ffffff" stroke-width="12"/>
+  <text x="185" y="910" fill="#ffffff" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" text-anchor="middle">ORIGIN 0,0</text>
+</svg>

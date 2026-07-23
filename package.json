@@ -1,6 +1,6 @@
 {
   "name": "boltworks-3d-ai-studio",
-  "version": "49.0.0",
+  "version": "49.2.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "build:web": "node tools/build-web.mjs",
     "check:mobile": "node tools/mobile-smoke-check.mjs",
     "check:server": "node tools/localserver/smoke-check.mjs",
+    "generate:uv-test": "node tools/generate-uv-topology-test.mjs",
     "pack:project-textures": "node tools/pack-project-textures.mjs"
   },
   "dependencies": {

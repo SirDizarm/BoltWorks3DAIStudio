@@ -1,0 +1,262 @@
+{
+  "kind": "modeler-project",
+  "version": 1,
+  "name": "uv-topology-test",
+  "savedAt": "2026-07-23T11:09:06.064Z",
+  "textureLibrary": [
+    {
+      "name": "UV Topology Grid A1-D4",
+      "dataUrl": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDI0IiBoZWlnaHQ9IjEwMjQiIHZpZXdCb3g9IjAgMCAxMDI0IDEwMjQiPgogIDxyZWN0IHdpZHRoPSIxMDI0IiBoZWlnaHQ9IjEwMjQiIGZpbGw9IiMxMDE2MWQiLz4KICA8cmVjdCB4PSI3MiIgeT0iNzIiIHdpZHRoPSI4ODAiIGhlaWdodD0iODgwIiByeD0iMTgiIGZpbGw9IiMxODIzMmQiIHN0cm9rZT0iI2Y0ZjdmYSIgc3Ryb2tlLXdpZHRoPSI4Ii8+CgogIDxnIGZvbnQtZmFtaWx5PSJBcmlhbCwgSGVsdmV0aWNhLCBzYW5zLXNlcmlmIiBmb250LXdlaWdodD0iNzAwIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIj4KICAgIDx0ZXh0IHg9IjUxMiIgeT0iNDgiIGZpbGw9IiNmZmZmZmYiIGZvbnQtc2l6ZT0iMzQiPlYg4payIFRPUDwvdGV4dD4KICAgIDx0ZXh0IHg9IjUxMiIgeT0iOTk4IiBmaWxsPSIjZmZmZmZmIiBmb250LXNpemU9IjMwIj5CT1RUT00g4pa8PC90ZXh0PgogICAgPHRleHQgeD0iNDIiIHk9IjUyMiIgZmlsbD0iI2ZmZmZmZiIgZm9udC1zaXplPSIzMCIgdHJhbnNmb3JtPSJyb3RhdGUoLTkwIDQyIDUyMikiPlUgPSAwPC90ZXh0PgogICAgPHRleHQgeD0iOTgyIiB5PSI1MjIiIGZpbGw9IiNmZmZmZmYiIGZvbnQtc2l6ZT0iMzAiIHRyYW5zZm9ybT0icm90YXRlKDkwIDk4MiA1MjIpIj5VIOKGkiAxPC90ZXh0PgoKICAgIDxnIHN0cm9rZT0iIzBiMGYxNCIgc3Ryb2tlLXdpZHRoPSI2Ij4KICAgICAgPHJlY3QgeD0iMTAwIiB5PSIxMDAiIHdpZHRoPSIyMDYiIGhlaWdodD0iMjA2IiBmaWxsPSIjZWU0ZDVhIi8+CiAgICAgIDxyZWN0IHg9IjMwNiIgeT0iMTAwIiB3aWR0aD0iMjA2IiBoZWlnaHQ9IjIwNiIgZmlsbD0iI2ZmZDE2NiIvPgogICAgICA8cmVjdCB4PSI1MTIiIHk9IjEwMCIgd2lkdGg9IjIwNiIgaGVpZ2h0PSIyMDYiIGZpbGw9IiM0OGNhZTQiLz4KICAgICAgPHJlY3QgeD0iNzE4IiB5PSIxMDAiIHdpZHRoPSIyMDYiIGhlaWdodD0iMjA2IiBmaWxsPSIjOGFjOTI2Ii8+CgogICAgICA8cmVjdCB4PSIxMDAiIHk9IjMwNiIgd2lkdGg9IjIwNiIgaGVpZ2h0PSIyMDYiIGZpbGw9IiNmNzhjNmIiLz4KICAgICAgPHJlY3QgeD0iMzA2IiB5PSIzMDYiIHdpZHRoPSIyMDYiIGhlaWdodD0iMjA2IiBmaWxsPSIjZDdlM2ZjIi8+CiAgICAgIDxyZWN0IHg9IjUxMiIgeT0iMzA2IiB3aWR0aD0iMjA2IiBoZWlnaHQ9IjIwNiIgZmlsbD0iI2JkZTBmZSIvPgogICAgICA8cmVjdCB4PSI3MTgiIHk9IjMwNiIgd2lkdGg9IjIwNiIgaGVpZ2h0PSIyMDYiIGZpbGw9IiNhN2M5NTciLz4KCiAgICAgIDxyZWN0IHg9IjEwMCIgeT0iNTEyIiB3aWR0aD0iMjA2IiBoZWlnaHQ9IjIwNiIgZmlsbD0iI2M3N2RmZiIvPgogICAgICA8cmVjdCB4PSIzMDYiIHk9IjUxMiIgd2lkdGg9IjIwNiIgaGVpZ2h0PSIyMDYiIGZpbGw9IiNlMmU4ZjAiLz4KICAgICAgPHJlY3QgeD0iNTEyIiB5PSI1MTIiIHdpZHRoPSIyMDYiIGhlaWdodD0iMjA2IiBmaWxsPSIjOTBlMGVmIi8+CiAgICAgIDxyZWN0IHg9IjcxOCIgeT0iNTEyIiB3aWR0aD0iMjA2IiBoZWlnaHQ9IjIwNiIgZmlsbD0iIzUyYjc4OCIvPgoKICAgICAgPHJlY3QgeD0iMTAwIiB5PSI3MTgiIHdpZHRoPSIyMDYiIGhlaWdodD0iMjA2IiBmaWxsPSIjOWQ0ZWRkIi8+CiAgICAgIDxyZWN0IHg9IjMwNiIgeT0iNzE4IiB3aWR0aD0iMjA2IiBoZWlnaHQ9IjIwNiIgZmlsbD0iI2ZmYjcwMyIvPgogICAgICA8cmVjdCB4PSI1MTIiIHk9IjcxOCIgd2lkdGg9IjIwNiIgaGVpZ2h0PSIyMDYiIGZpbGw9IiMyMTllYmMiLz4KICAgICAgPHJlY3QgeD0iNzE4IiB5PSI3MTgiIHdpZHRoPSIyMDYiIGhlaWdodD0iMjA2IiBmaWxsPSIjMmQ2YTRmIi8+CiAgICA8L2c+CgogICAgPGcgZmlsbD0iIzExMTgyMCIgZm9udC1zaXplPSI1NCI+CiAgICAgIDx0ZXh0IHg9IjIwMyIgeT0iMjIyIj5BMTwvdGV4dD48dGV4dCB4PSI0MDkiIHk9IjIyMiI+QjE8L3RleHQ+PHRleHQgeD0iNjE1IiB5PSIyMjIiPkMxPC90ZXh0Pjx0ZXh0IHg9IjgyMSIgeT0iMjIyIj5EMTwvdGV4dD4KICAgICAgPHRleHQgeD0iMjAzIiB5PSI0MjgiPkEyPC90ZXh0Pjx0ZXh0IHg9IjQwOSIgeT0iNDI4Ij5CMjwvdGV4dD48dGV4dCB4PSI2MTUiIHk9IjQyOCI+QzI8L3RleHQ+PHRleHQgeD0iODIxIiB5PSI0MjgiPkQyPC90ZXh0PgogICAgICA8dGV4dCB4PSIyMDMiIHk9IjYzNCI+QTM8L3RleHQ+PHRleHQgeD0iNDA5IiB5PSI2MzQiPkIzPC90ZXh0Pjx0ZXh0IHg9IjYxNSIgeT0iNjM0Ij5DMzwvdGV4dD48dGV4dCB4PSI4MjEiIHk9IjYzNCI+RDM8L3RleHQ+CiAgICAgIDx0ZXh0IHg9IjIwMyIgeT0iODQwIj5BNDwvdGV4dD48dGV4dCB4PSI0MDkiIHk9Ijg0MCI+QjQ8L3RleHQ+PHRleHQgeD0iNjE1IiB5PSI4NDAiPkM0PC90ZXh0Pjx0ZXh0IHg9IjgyMSIgeT0iODQwIj5ENDwvdGV4dD4KICAgIDwvZz4KICA8L2c+CgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzEwMTYxZCIgc3Ryb2tlLXdpZHRoPSIxNiI+CiAgICA8Y2lyY2xlIGN4PSI1MTIiIGN5PSI1MTIiIHI9Ijc4Ii8+CiAgICA8cGF0aCBkPSJNNTEyIDQxNFY2MTBNNDE0IDUxMkg2MTAiLz4KICA8L2c+CiAgPGNpcmNsZSBjeD0iNTEyIiBjeT0iNTEyIiByPSIxOCIgZmlsbD0iI2ZmZmZmZiIgc3Ryb2tlPSIjMTAxNjFkIiBzdHJva2Utd2lkdGg9IjgiLz4KCiAgPHBhdGggZD0iTTExNiA4ODRWNzYwSDI0MCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjE4Ii8+CiAgPHBhdGggZD0iTTExNiA3NjBsLTIyIDMybTIyLTMyIDMyIDIyTTI0MCA3NjBsLTMyLTIybTMyIDIyLTIyIDMyIiBmaWxsPSJub25lIiBzdHJva2U9IiNmZmZmZmYiIHN0cm9rZS13aWR0aD0iMTIiLz4KICA8dGV4dCB4PSIxODUiIHk9IjkxMCIgZmlsbD0iI2ZmZmZmZiIgZm9udC1mYW1pbHk9IkFyaWFsLCBIZWx2ZXRpY2EsIHNhbnMtc2VyaWYiIGZvbnQtc2l6ZT0iMjQiIGZvbnQtd2VpZ2h0PSI3MDAiIHRleHQtYW5jaG9yPSJtaWRkbGUiPk9SSUdJTiAwLDA8L3RleHQ+Cjwvc3ZnPgo=",
+      "robloxAssetId": ""
+    }
+  ],
+  "scene": {
+    "version": 2,
+    "coordinateSystem": {
+      "handedness": "right-handed",
+      "units": "meters",
+      "upAxis": "+Y",
+      "groundPlane": "XZ",
+      "rotationUnits": "degrees",
+      "eulerOrder": "XYZ",
+      "objectPositions": "world space",
+      "geometryAndPivots": "object-local space"
+    },
+    "groups": [
+      {
+        "id": "uv-edit",
+        "name": "EDIT THIS - UV and topology test",
+        "parentId": null
+      },
+      {
+        "id": "uv-reference",
+        "name": "REFERENCE - keep unchanged",
+        "parentId": null
+      },
+      {
+        "id": "uv-stage",
+        "name": "Display stage",
+        "parentId": null
+      }
+    ],
+    "objects": [
+      {
+        "id": "uv-test-main-block",
+        "name": "EDIT ME - Textured topology block",
+        "shape": "box",
+        "position": [
+          -0.85,
+          1.25,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          2.1,
+          2.1,
+          2.1
+        ],
+        "color": "#ffffff",
+        "roughness": 0.48,
+        "opacity": 1,
+        "materialRule": "auto",
+        "hidden": false,
+        "groupId": "uv-edit",
+        "groupName": "EDIT THIS - UV and topology test",
+        "textureUrl": null,
+        "textureName": "UV Topology Grid A1-D4",
+        "textureFlipY": true,
+        "textureRotation": 0,
+        "textureRobloxAssetId": ""
+      },
+      {
+        "id": "uv-test-reference-block",
+        "name": "REFERENCE - Original textured block",
+        "shape": "box",
+        "position": [
+          1.55,
+          0.72,
+          0.15
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.82,
+          0.82,
+          0.82
+        ],
+        "color": "#ffffff",
+        "roughness": 0.48,
+        "opacity": 1,
+        "materialRule": "auto",
+        "hidden": false,
+        "groupId": "uv-reference",
+        "groupName": "REFERENCE - keep unchanged",
+        "textureUrl": null,
+        "textureName": "UV Topology Grid A1-D4",
+        "textureFlipY": true,
+        "textureRotation": 0,
+        "textureRobloxAssetId": ""
+      },
+      {
+        "id": "uv-test-plinth",
+        "name": "Test display plinth",
+        "shape": "box",
+        "position": [
+          0,
+          0.08,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          4.8,
+          0.16,
+          3.5
+        ],
+        "color": "#202b34",
+        "roughness": 0.8,
+        "opacity": 1,
+        "materialRule": "metal",
+        "hidden": false,
+        "groupId": "uv-stage",
+        "groupName": "Display stage",
+        "textureUrl": null,
+        "textureName": null,
+        "textureFlipY": true,
+        "textureRotation": 0,
+        "textureRobloxAssetId": ""
+      }
+    ]
+  },
+  "editor": {
+    "projectName": "uv-topology-test",
+    "selectedId": "uv-test-main-block",
+    "selectedGroupId": null,
+    "checkedIds": [],
+    "activeGroupIds": [],
+    "activeTransformMode": null,
+    "facePickMode": false,
+    "cameraViews": {
+      "selectedId": "uv-test-iso",
+      "showMarkers": false,
+      "views": [
+        {
+          "id": "uv-test-iso",
+          "name": "UV Test Iso",
+          "type": "director",
+          "position": [
+            5.4,
+            4.1,
+            6.2
+          ],
+          "target": [
+            0,
+            1.05,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "fov": 42
+        },
+        {
+          "id": "uv-test-front",
+          "name": "UV Test Front",
+          "type": "director",
+          "position": [
+            0,
+            1.25,
+            -7
+          ],
+          "target": [
+            0,
+            1.15,
+            0
+          ],
+          "up": [
+            0,
+            1,
+            0
+          ],
+          "fov": 42
+        }
+      ]
+    },
+    "view": {
+      "cameraPosition": [
+        5.4,
+        4.1,
+        6.2
+      ],
+      "orbitTarget": [
+        0,
+        1.05,
+        0
+      ],
+      "cameraUp": [
+        0,
+        1,
+        0
+      ],
+      "viewSpace": 1.15,
+      "shotZoom": 0.9,
+      "environment": "studio",
+      "background": "dark",
+      "showGrid": true,
+      "useCurrentZoomInShots": true,
+      "hideGridInShots": true
+    },
+    "panels": {
+      "addMeshCollapsed": false,
+      "inspectorCollapsed": false,
+      "utilitiesCollapsed": true,
+      "cameraViewsCollapsed": true,
+      "statusCollapsed": true
+    },
+    "toolbars": {},
+    "tools": {
+      "rotationSnap": 0,
+      "bevelType": "outer",
+      "bevelSize": 0.08,
+      "bevelDepth": 0.08,
+      "dragPushAxis": "free",
+      "dragPushStep": 0.01,
+      "connectFace": false,
+      "coplanarFaceSelection": false
+    },
+    "lighting": {
+      "showGuides": false,
+      "enablePrimary": true,
+      "enableMirror": true,
+      "lampPosition": [
+        -4,
+        6,
+        -5
+      ],
+      "lampTarget": [
+        0,
+        1,
+        0
+      ],
+      "intensity": 10,
+      "angle": 32
+    },
+    "rigging": {
+      "selectedBoneId": null,
+      "showGuides": false,
+      "bones": []
+    }
+  }
+}

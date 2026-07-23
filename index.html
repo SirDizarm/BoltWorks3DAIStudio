@@ -3,23 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoltWorks 3D AI Studio v49.0.0 Experimental</title>
-  <meta name="application-version" content="v49.0.0 modular studio" />
+  <title>BoltWorks 3D AI Studio v49.2.5 Experimental</title>
+  <meta name="application-version" content="v49.2.5 modular studio" />
   <link rel="icon" type="image/png" href="./app/assets/branding/boltworks-logo.png" />
-  <link rel="stylesheet" href="./app/styles/studio.css?v=49.0.0" />
+  <link rel="stylesheet" href="./app/styles/studio.css?v=49.2.5" />
 
 </head>
 <body>
-  <script defer src="./app/panels/panel-collapse.js?v=49.0.0"></script>
-  <script defer src="./app/panels/tool-docking.js?v=49.0.0"></script>
+  <script defer src="./app/panels/panel-collapse.js?v=49.2.5"></script>
+  <script defer src="./app/panels/tool-docking.js?v=49.2.5"></script>
 
   <div class="persistent-notices" aria-label="Version and copyright notices">
-    <div class="persistent-notice experimental-notice" role="status"><strong>v49.0.0 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+    <div class="persistent-notice experimental-notice" role="status"><strong>v49.2.5 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
     <div class="persistent-notice copyright-notice" role="note"><strong>© 2026 Daniel Rydin</strong><span>BoltWorks branding and visual assets. All rights reserved.</span></div>
   </div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.0.0 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.2.5 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -565,6 +565,7 @@
       <p class="api-note mouse-surface-control">Free shows all three arrows. Lock X, Y, or Z to show and drag only its matching colored arrow.</p>
       <div class="value-surface-control surface-editor-actions">
         <button id="insetFaceBtn" title="Create a border and a new editable center surface">Inset Face</button>
+        <button id="extrudeRegionBtn" title="Extrude the connected selected surface as one region inside the same mesh">Extrude Region</button>
         <button id="extendFaceBtn" title="Extend selected triangle side by Distance">Extend</button>
         <button id="pullFaceBtn" title="Pull selected triangle area outward by Distance">Pull</button>
         <button id="pushFaceBtn" title="Push selected triangle area inward by Distance">Push</button>
@@ -604,6 +605,15 @@
         </div>
         <button id="loopCutBtn" type="button" title="Insert one or more closed topology rings through the selected mesh">Apply Loop Cut</button>
         <p class="api-note">One cut uses Position %. Multiple cuts are evenly spaced. New ring edges stay selected for Move or Edge Slide.</p>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Edge Slide</summary>
+        <div class="field-grid">
+          <label title="Auto follows the rails around a loop cut. X, Y, or Z forces a local mesh direction">Direction <select id="edgeSlideAxisSelect"><option value="auto" selected>Auto</option><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
+          <label title="Signed percentage toward the next supporting vertices; negative slides the opposite way">Amount % <input id="edgeSlideAmountInput" type="number" min="-95" max="95" step="1" value="10" /></label>
+        </div>
+        <button id="edgeSlideBtn" type="button" title="Slide selected edges along their surrounding topology without changing the mesh vertex count">Slide Selected Edge(s)</button>
+        <p class="api-note">Choose Edge or create a Loop Cut. Positive and negative values slide in opposite directions. Auto remembers the Loop Cut direction and otherwise follows the strongest neighboring rail.</p>
       </details>
       <p class="api-note">Mouse Drag: select a surface, then drag it left/right in the viewport. Exact Value: use Distance with the action buttons.</p>
     </div>
@@ -738,7 +748,7 @@
     </div>
   </div>
 
-  <script defer src="./app/studio-v49.0.0.js?v=49.0.0"></script>
+  <script defer src="./app/studio-v49.2.5.js?v=49.2.5"></script>
 <script src="./app/selection/runtime-bridge.js"></script>
 </body>
 </html>

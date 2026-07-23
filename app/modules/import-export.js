@@ -185,6 +185,8 @@ function projectState() {
         loopCutAxis: ["x", "y", "z"].includes(els.loopCutAxisSelect?.value) ? els.loopCutAxisSelect.value : "y",
         loopCutPosition: Math.max(1, Math.min(99, Number(els.loopCutPositionInput?.value) || 50)),
         loopCutCount: Math.max(1, Math.min(8, Math.round(Number(els.loopCutCountInput?.value) || 1))),
+        edgeSlideAxis: ["auto", "x", "y", "z"].includes(els.edgeSlideAxisSelect?.value) ? els.edgeSlideAxisSelect.value : "auto",
+        edgeSlideAmount: Math.max(-95, Math.min(95, Number.isFinite(Number(els.edgeSlideAmountInput?.value)) ? Number(els.edgeSlideAmountInput.value) : 10)),
         dragPushAxis: els.dragPushAxisSelect.value || "free",
         dragPushStep: Number(els.dragPushStepInput.value) || 0.01,
         insetAmount: Number(els.insetAmountInput?.value) || 0.10,
@@ -446,6 +448,11 @@ function applyProjectEditorState(editor = {}) {
   if (els.loopCutAxisSelect) els.loopCutAxisSelect.value = ["x", "y", "z"].includes(tools.loopCutAxis) ? tools.loopCutAxis : "y";
   if (els.loopCutPositionInput) els.loopCutPositionInput.value = String(Math.max(1, Math.min(99, Number(tools.loopCutPosition) || 50)));
   if (els.loopCutCountInput) els.loopCutCountInput.value = String(Math.max(1, Math.min(8, Math.round(Number(tools.loopCutCount) || 1))));
+  if (els.edgeSlideAxisSelect) els.edgeSlideAxisSelect.value = ["auto", "x", "y", "z"].includes(tools.edgeSlideAxis) ? tools.edgeSlideAxis : "auto";
+  if (els.edgeSlideAmountInput) {
+    const edgeSlideAmount = Number(tools.edgeSlideAmount);
+    els.edgeSlideAmountInput.value = String(Math.max(-95, Math.min(95, Number.isFinite(edgeSlideAmount) ? edgeSlideAmount : 10)));
+  }
   els.dragPushAxisSelect.value = ["x", "y", "z"].includes(tools.dragPushAxis) ? tools.dragPushAxis : "free";
   els.dragPushStepInput.value = String(tools.dragPushStep ?? 0.01);
   if (els.insetAmountInput) els.insetAmountInput.value = String(tools.insetAmount ?? 0.10);

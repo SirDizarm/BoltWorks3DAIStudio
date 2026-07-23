@@ -7,8 +7,8 @@ Den här listan är den låsta verktygsplanen för BoltWorks 3D AI Studio.
 ## Modellverktyg – först
 
 - [x] Loop Cut / Ring Cut
-- [ ] Edge Slide
-- [ ] Riktig Extrude Region i samma mesh
+- [x] Edge Slide
+- [x] Riktig Extrude Region i samma mesh
 - [ ] Weld / Merge Vertices
 - [ ] Dissolve Edge / Vertex
 - [ ] Live Mirror / Symmetry

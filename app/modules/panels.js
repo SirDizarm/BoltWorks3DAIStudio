@@ -313,6 +313,7 @@ els.areaTriBtn.addEventListener("click", () => {
 });
 document.querySelector("#extendFaceBtn").addEventListener("click", extendSelectedFaces);
 els.insetFaceBtn?.addEventListener("click", insetSelectedFace);
+els.extrudeRegionBtn?.addEventListener("click", extrudeSelectedRegion);
 document.querySelector("#pullFaceBtn").addEventListener("click", pullSelectedFaces);
 document.querySelector("#pushFaceBtn").addEventListener("click", pushSelectedFaces);
 els.softPullBtn?.addEventListener("click", () => softMoveSelectedFaces(1));
@@ -347,6 +348,7 @@ document.querySelector("#bevelFaceBtn").addEventListener("click", bevelSelectedF
 els.edgeBevelBtn?.addEventListener("click", bevelSelectedEdge);
 els.subdivideSelectedBtn?.addEventListener("click", subdivideSelectedSurface);
 els.loopCutBtn?.addEventListener("click", applyLoopCut);
+els.edgeSlideBtn?.addEventListener("click", slideSelectedEdges);
 els.cutMeshBtn.addEventListener("click", cutSelectedMesh);
 document.querySelector("#clearBtn").addEventListener("click", clearObjects);
 document.querySelector("#frameBtn").addEventListener("click", frameSelected);
@@ -1039,6 +1041,7 @@ window.ModelerStudio = {
   flipSelectedParts,
   extendSelectedFaces,
   insetSelectedFace,
+  extrudeSelectedRegion,
   pullSelectedFaces,
   pushSelectedFaces,
   bevelSelectedEdge,

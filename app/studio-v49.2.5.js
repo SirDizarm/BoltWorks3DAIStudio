@@ -30540,6 +30540,7 @@ void main() {
     surfaceMouseFalloffSelect: document.querySelector("#surfaceMouseFalloffSelect"),
     insetAmountInput: document.querySelector("#insetAmountInput"),
     insetFaceBtn: document.querySelector("#insetFaceBtn"),
+    extrudeRegionBtn: document.querySelector("#extrudeRegionBtn"),
     modelToolsOpenBtn: document.querySelector("#modelToolsOpenBtn"),
     modelToolsWindow: document.querySelector("#modelToolsWindow"),
     modelToolsCloseBtn: document.querySelector("#modelToolsCloseBtn"),
@@ -30560,6 +30561,9 @@ void main() {
     loopCutPositionInput: document.querySelector("#loopCutPositionInput"),
     loopCutCountInput: document.querySelector("#loopCutCountInput"),
     loopCutBtn: document.querySelector("#loopCutBtn"),
+    edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
+    edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
+    edgeSlideBtn: document.querySelector("#edgeSlideBtn"),
     dragPushAxisSelect: document.querySelector("#dragPushAxisSelect"),
     dragPushStepInput: document.querySelector("#dragPushStepInput"),
     softRadiusInput: document.querySelector("#softRadiusInput"),
@@ -37115,57 +37119,6 @@ void main() {
   function faceLengthResolver(fallback) {
     return (face) => connectedFaceDistance(face, fallback);
   }
-  function signedFaceLengthResolver(fallback, direction = 1) {
-    const resolve = faceLengthResolver(Math.abs(fallback));
-    return (face) => resolve(face) * Math.sign(direction || 1);
-  }
-  function makePulledSelectionSpec(faces, length) {
-    const worldPositions = [];
-    for (const face of faces) {
-      const faceLength = typeof length === "function" ? length(face) : length;
-      const normal = worldFaceNormal(face);
-      const [a, b, c] = worldTrianglePoints(face);
-      const a2 = a.clone().addScaledVector(normal, faceLength);
-      const b2 = b.clone().addScaledVector(normal, faceLength);
-      const c2 = c.clone().addScaledVector(normal, faceLength);
-      const av = vecArray(a);
-      const bv = vecArray(b);
-      const cv = vecArray(c);
-      const a2v = vecArray(a2);
-      const b2v = vecArray(b2);
-      const c2v = vecArray(c2);
-      addTriangleBothSides(worldPositions, av, bv, cv);
-      addTriangleBothSides(worldPositions, a2v, c2v, b2v);
-      addQuadBothSides(worldPositions, av, bv, b2v, a2v);
-      addQuadBothSides(worldPositions, bv, cv, c2v, b2v);
-      addQuadBothSides(worldPositions, cv, av, a2v, c2v);
-    }
-    const points = [];
-    for (let i = 0; i < worldPositions.length; i += 3) points.push(new Vector3(worldPositions[i], worldPositions[i + 1], worldPositions[i + 2]));
-    const box = new Box3().setFromPoints(points);
-    const center = box.getCenter(new Vector3());
-    const { xAxis, yAxis, zAxis } = faceFrame(faces[0]);
-    const basis = new Matrix4().makeBasis(xAxis, yAxis, zAxis).setPosition(center);
-    const inverseBasis = basis.clone().invert();
-    const localPositions = points.flatMap((point) => vecArray(point.applyMatrix4(inverseBasis)));
-    const geometry = geometryFromPositions(localPositions);
-    const quaternion = new Quaternion().setFromRotationMatrix(basis);
-    const euler = new Euler().setFromQuaternion(quaternion, "XYZ");
-    const firstMesh = faces[0].mesh;
-    const color = `#${firstMesh.material.color.getHexString()}`;
-    const geometryData = geometryToData(geometry);
-    geometry.dispose();
-    return {
-      shape: "custom",
-      geometry: geometryData,
-      name: `${firstMesh.name} pulled triangle extrusion`,
-      position: center.toArray().map(round2),
-      rotation: [euler.x, euler.y, euler.z].map((value) => round2(MathUtils.radToDeg(value))),
-      scale: [1, 1, 1],
-      color,
-      roughness: firstMesh.material.roughness
-    };
-  }
   function worldScaleAlongLocalNormal(mesh, localNormal) {
     mesh.updateMatrixWorld(true);
     const origin = new Vector3().applyMatrix4(mesh.matrixWorld);
@@ -37610,6 +37563,160 @@ void main() {
     });
     return selectedFaces;
   }
+  function extrudeRegionWorldDirection(faces) {
+    const axisMode = surfaceAxisMode();
+    if (["x", "y", "z"].includes(axisMode)) return surfaceAxisWorldDirection(axisMode);
+    const direction = faces.reduce((sum, face) => sum.add(worldFaceNormal(face)), new Vector3());
+    return direction.lengthSq() > 1e-10 ? direction.normalize() : null;
+  }
+  function buildExtrudedRegionGeometry(mesh, faces, distance, buffers) {
+    const localNormal = faces[0].localNormal.clone().normalize();
+    const u = faces[0].u.clone().normalize();
+    const v = faces[0].v.clone().normalize();
+    const uniqueVertices = /* @__PURE__ */ new Map();
+    for (const face of faces) {
+      for (const point of face.localTrianglePoints) uniqueVertices.set(vertexKey(point), point.clone());
+    }
+    const localCenter = [...uniqueVertices.values()].reduce((sum, point) => sum.add(point), new Vector3()).multiplyScalar(1 / Math.max(1, uniqueVertices.size));
+    const boundary2 = coplanarRegionBoundary(faces, localCenter, u, v);
+    if (boundary2.length < 3) return { error: "Extrude Region could not trace one closed outer boundary." };
+    const worldDirection = extrudeRegionWorldDirection(faces);
+    if (!worldDirection) return { error: "Extrude Region could not determine a movement direction." };
+    const localDelta = localDisplacementFromWorldVector(mesh, worldDirection.multiplyScalar(distance));
+    if (localDelta.lengthSq() <= 1e-10) return { error: "Extrude Region distance is too small." };
+    const positions = [...buffers.keptPositions];
+    const uvs = buffers.hadUv ? [...buffers.keptUvs] : [];
+    const topTriangles = [];
+    const pushTriangle = (trianglePoints, triangleUvs, targetNormal, { selectedTop = false } = {}) => {
+      const points = trianglePoints.map((point) => point.clone());
+      const mappedUvs = triangleUvs?.map((uv) => uv.clone()) || null;
+      const triangleNormal = new Vector3().crossVectors(
+        points[1].clone().sub(points[0]),
+        points[2].clone().sub(points[0])
+      );
+      if (triangleNormal.dot(targetNormal) < 0) {
+        [points[1], points[2]] = [points[2], points[1]];
+        if (mappedUvs) [mappedUvs[1], mappedUvs[2]] = [mappedUvs[2], mappedUvs[1]];
+      }
+      const faceIndex = positions.length / 9;
+      positions.push(...points.flatMap((point) => vecArray(point)));
+      if (buffers.hadUv) {
+        for (const texturePoint of mappedUvs || [new Vector2(0.5, 0.5), new Vector2(0.5, 0.5), new Vector2(0.5, 0.5)]) {
+          uvs.push(texturePoint.x, texturePoint.y);
+        }
+      }
+      if (selectedTop) {
+        topTriangles.push({
+          points: points.map((point) => point.clone()),
+          uvs: mappedUvs?.map((uv) => uv.clone()) || null,
+          faceIndex
+        });
+      }
+    };
+    for (const face of faces) {
+      pushTriangle(
+        face.localTrianglePoints.map((point) => point.clone().add(localDelta)),
+        face.localUvs,
+        localNormal,
+        { selectedTop: true }
+      );
+    }
+    const boundary = boundary2.map((point) => localCenter.clone().addScaledVector(u, point.x).addScaledVector(v, point.y));
+    for (let index = 0; index < boundary.length; index++) {
+      const next = (index + 1) % boundary.length;
+      const baseA = boundary[index];
+      const baseB = boundary[next];
+      const topA = baseA.clone().add(localDelta);
+      const topB = baseB.clone().add(localDelta);
+      const sideCenter = baseA.clone().add(baseB).add(topA).add(topB).multiplyScalar(0.25);
+      const targetNormal = sideCenter.clone().sub(localCenter);
+      targetNormal.addScaledVector(localNormal, -targetNormal.dot(localNormal));
+      if (distance < 0) targetNormal.negate();
+      if (targetNormal.lengthSq() <= 1e-10) {
+        targetNormal.crossVectors(baseB.clone().sub(baseA), localDelta).normalize();
+      } else {
+        targetNormal.normalize();
+      }
+      pushTriangle(
+        [baseA, baseB, topB],
+        [new Vector2(0, 0), new Vector2(1, 0), new Vector2(1, 1)],
+        targetNormal
+      );
+      pushTriangle(
+        [baseA, topB, topA],
+        [new Vector2(0, 0), new Vector2(1, 1), new Vector2(0, 1)],
+        targetNormal
+      );
+    }
+    const geometry = geometryFromPositions(positions);
+    if (buffers.hadUv) geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    return { geometry, topTriangles, boundaryVertices: boundary.length, localDelta };
+  }
+  function extrudeSelectedRegion({
+    distance = null,
+    historyLabel = "extrude selected region",
+    toolLabel = "Extrude Region",
+    actionLabel = "Extruded"
+  } = {}) {
+    if (!selectedFaces.length) {
+      log(`Select one Triangle or Whole Face before using ${toolLabel}.`);
+      setFacePickMode(true);
+      return [];
+    }
+    const meshes = [...new Set(selectedFaces.map((face) => face.mesh).filter(Boolean))];
+    if (meshes.length !== 1) {
+      log(`${toolLabel} works on one mesh surface at a time.`);
+      return [];
+    }
+    const mesh = meshes[0];
+    const faces = selectedFaces.filter((face) => face.mesh === mesh);
+    if (!selectedFaceRegionIsConnected(faces)) {
+      log(`${toolLabel} needs one connected surface selection.`);
+      return [];
+    }
+    if (!selectedFaceRegionIsPlanar(faces)) {
+      log(`${toolLabel} currently needs one flat region. Edit angled surfaces separately.`);
+      return [];
+    }
+    const requestedDistance = Number(distance);
+    const signedDistance = Number.isFinite(requestedDistance) && Math.abs(requestedDistance) >= 1e-3 ? Math.max(-100, Math.min(100, requestedDistance)) : faceEditDepth({ min: 1e-3, max: 100 });
+    const buffers = removeSelectedFaceRegionFromMesh(mesh);
+    if (!buffers?.removed) {
+      log("The selected region could not be found in the editable mesh.");
+      return [];
+    }
+    const patch = buildExtrudedRegionGeometry(mesh, faces, signedDistance, buffers);
+    if (!patch?.geometry || patch.error) {
+      patch?.geometry?.dispose();
+      log(patch?.error || "Extrude Region could not build the new geometry.");
+      return [];
+    }
+    recordHistory(historyLabel);
+    const selectedSignatures = /* @__PURE__ */ new Map([[mesh.userData.id, new Set(faces.map((face) => triangleSignature(face.localTrianglePoints)))]]);
+    deleteMarkersByTriangleSignatures(selectedSignatures);
+    const beforeTriangles = mesh.geometry.index ? mesh.geometry.index.count / 3 : mesh.geometry.getAttribute("position").count / 3;
+    replaceEditableMeshGeometry(mesh, patch.geometry);
+    mesh.updateMatrixWorld(true);
+    selectedFaces.length = 0;
+    selectedFaces.push(...patch.topTriangles.map(
+      (triangle) => faceFromLocalTriangle(mesh, triangle.points, triangle.faceIndex, triangle.uvs)
+    ));
+    selectedFace = selectedFaces.at(-1) || null;
+    clearSelectedSurfaceComponents();
+    if (selected !== mesh) selectObject(mesh);
+    updateFaceMarker();
+    syncSurfaceEditorUi();
+    updateAll();
+    log(`${actionLabel} ${faces.length === 1 ? "one triangle" : `${faces.length} triangles as one region`} by ${round2(Math.abs(signedDistance))} inside ${mesh.name}. The new cap stays selected.`, {
+      beforeTriangles,
+      afterTriangles: patch.geometry.getAttribute("position").count / 3,
+      removedBaseTriangles: buffers.removed,
+      boundaryVertices: patch.boundaryVertices,
+      selectedCapTriangles: selectedFaces.length,
+      axis: surfaceAxisMode() === "free" ? "surface normal" : surfaceAxisMode().toUpperCase()
+    });
+    return [mesh];
+  }
   function surfaceSubdivisionLevels() {
     const levels = Math.max(1, Math.min(2, Math.round(Number(els.subdivideLevelsInput?.value) || 1)));
     if (els.subdivideLevelsInput) els.subdivideLevelsInput.value = String(levels);
@@ -37962,6 +38069,7 @@ void main() {
         localA: segment.localA.clone(),
         localB: segment.localB.clone(),
         key: key2,
+        slideAxis: axis,
         protectedBevelEdge: protectedEdges.has(localEdgeSignature(segment.localA, segment.localB))
       });
     }
@@ -37976,6 +38084,217 @@ void main() {
       selectedRingEdges: selectedSurfaceEdges.length
     });
     return mesh;
+  }
+  function edgeSlideSettings() {
+    const requestedAxis = ["auto", "x", "y", "z"].includes(els.edgeSlideAxisSelect?.value) ? els.edgeSlideAxisSelect.value : "auto";
+    const rawAmount = Number(els.edgeSlideAmountInput?.value);
+    const amount = Math.max(-95, Math.min(95, Number.isFinite(rawAmount) ? rawAmount : 10));
+    if (els.edgeSlideAxisSelect) els.edgeSlideAxisSelect.value = requestedAxis;
+    if (els.edgeSlideAmountInput) els.edgeSlideAmountInput.value = String(amount);
+    return { requestedAxis, amount };
+  }
+  function edgeSlideTopology(geometry) {
+    const position = geometry.getAttribute("position");
+    const adjacency = /* @__PURE__ */ new Map();
+    const points = /* @__PURE__ */ new Map();
+    const edgePairs = /* @__PURE__ */ new Map();
+    const connect = (a, b) => {
+      const aKey = vertexKey(a);
+      const bKey = vertexKey(b);
+      if (aKey === bKey) return;
+      points.set(aKey, a.clone());
+      points.set(bKey, b.clone());
+      if (!adjacency.has(aKey)) adjacency.set(aKey, /* @__PURE__ */ new Map());
+      if (!adjacency.has(bKey)) adjacency.set(bKey, /* @__PURE__ */ new Map());
+      adjacency.get(aKey).set(bKey, b.clone());
+      adjacency.get(bKey).set(aKey, a.clone());
+      const signature = localEdgeSignature(a, b);
+      if (!edgePairs.has(signature)) edgePairs.set(signature, [a.clone(), b.clone()]);
+    };
+    for (let index = 0; index < position.count; index += 3) {
+      const triangle = [0, 1, 2].map((offset) => new Vector3(
+        position.getX(index + offset),
+        position.getY(index + offset),
+        position.getZ(index + offset)
+      ));
+      connect(triangle[0], triangle[1]);
+      connect(triangle[1], triangle[2]);
+      connect(triangle[2], triangle[0]);
+    }
+    return { adjacency, points, edgePairs };
+  }
+  function edgeSlideCandidates(vertexPoint, topology, selectedEdgeSignatures) {
+    const originKey = vertexKey(vertexPoint);
+    return [...topology.adjacency.get(originKey)?.values() || []].filter(
+      (neighbor) => !selectedEdgeSignatures.has(localEdgeSignature(vertexPoint, neighbor))
+    );
+  }
+  function inferredEdgeSlideDirection(meshEdges, topology, selectedEdgeSignatures, requestedAxis) {
+    const rememberedAxes = new Set(meshEdges.map((edge) => edge.slideAxis).filter((axis2) => ["x", "y", "z"].includes(axis2)));
+    const axis = requestedAxis !== "auto" ? requestedAxis : rememberedAxes.size === 1 ? [...rememberedAxes][0] : null;
+    if (axis) {
+      return {
+        direction: new Vector3(axis === "x" ? 1 : 0, axis === "y" ? 1 : 0, axis === "z" ? 1 : 0),
+        label: `local ${axis.toUpperCase()}`,
+        axis
+      };
+    }
+    const selectedPoints = /* @__PURE__ */ new Map();
+    for (const edge of meshEdges) {
+      selectedPoints.set(vertexKey(edge.localA), edge.localA);
+      selectedPoints.set(vertexKey(edge.localB), edge.localB);
+    }
+    const deltas = [];
+    for (const point of selectedPoints.values()) {
+      for (const neighbor of edgeSlideCandidates(point, topology, selectedEdgeSignatures)) {
+        const delta = neighbor.clone().sub(point);
+        if (delta.lengthSq() > 1e-10) deltas.push(delta.normalize());
+      }
+    }
+    if (!deltas.length) return null;
+    let xx = 0;
+    let xy = 0;
+    let xz = 0;
+    let yy = 0;
+    let yz = 0;
+    let zz = 0;
+    for (const delta of deltas) {
+      xx += delta.x * delta.x;
+      xy += delta.x * delta.y;
+      xz += delta.x * delta.z;
+      yy += delta.y * delta.y;
+      yz += delta.y * delta.z;
+      zz += delta.z * delta.z;
+    }
+    const diagonal = [xx, yy, zz];
+    const initialAxis = diagonal.indexOf(Math.max(...diagonal));
+    const direction = new Vector3(initialAxis === 0 ? 1 : 0, initialAxis === 1 ? 1 : 0, initialAxis === 2 ? 1 : 0);
+    for (let iteration = 0; iteration < 10; iteration++) {
+      direction.set(
+        xx * direction.x + xy * direction.y + xz * direction.z,
+        xy * direction.x + yy * direction.y + yz * direction.z,
+        xz * direction.x + yz * direction.y + zz * direction.z
+      );
+      if (direction.lengthSq() <= 1e-10) break;
+      direction.normalize();
+    }
+    if (direction.lengthSq() <= 1e-10) return null;
+    const dominant = dominantAxis(direction);
+    if (direction.getComponent(dominant) < 0) direction.negate();
+    return { direction, label: "automatic topology rail", axis: null };
+  }
+  function prepareEdgeSlidePlan(mesh, meshEdges, requestedAxis, amount) {
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const topology = edgeSlideTopology(geometry);
+    const selectedEdgeSignatures = new Set(meshEdges.map((edge) => localEdgeSignature(edge.localA, edge.localB)));
+    const directionData = inferredEdgeSlideDirection(meshEdges, topology, selectedEdgeSignatures, requestedAxis);
+    if (!directionData) {
+      geometry.dispose();
+      return null;
+    }
+    const selectedPoints = /* @__PURE__ */ new Map();
+    for (const edge of meshEdges) {
+      selectedPoints.set(vertexKey(edge.localA), edge.localA.clone());
+      selectedPoints.set(vertexKey(edge.localB), edge.localB.clone());
+    }
+    const targets = /* @__PURE__ */ new Map();
+    const directionSign = amount < 0 ? -1 : 1;
+    const factor = Math.abs(amount) / 100;
+    for (const [pointKey, point] of selectedPoints) {
+      let best = null;
+      for (const neighbor of edgeSlideCandidates(point, topology, selectedEdgeSignatures)) {
+        const delta = neighbor.clone().sub(point);
+        const distance = delta.length();
+        if (distance <= 1e-6) continue;
+        const alignment = delta.clone().multiplyScalar(1 / distance).dot(directionData.direction) * directionSign;
+        if (alignment <= 0.15 || best && alignment <= best.alignment) continue;
+        best = { neighbor, alignment };
+      }
+      if (best) targets.set(pointKey, point.clone().lerp(best.neighbor, factor));
+    }
+    if (!targets.size) {
+      geometry.dispose();
+      return null;
+    }
+    return { mesh, meshEdges, geometry, topology, targets, directionData };
+  }
+  function applyEdgeSlidePlan(plan) {
+    const { mesh, meshEdges, geometry, topology, targets } = plan;
+    const position = geometry.getAttribute("position");
+    const point = new Vector3();
+    let movedOccurrences = 0;
+    for (let index = 0; index < position.count; index++) {
+      point.fromBufferAttribute(position, index);
+      const target = targets.get(vertexKey(point));
+      if (!target) continue;
+      position.setXYZ(index, target.x, target.y, target.z);
+      movedOccurrences++;
+    }
+    position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    const protectedEdges = /* @__PURE__ */ new Set();
+    for (const signature of mesh.userData.edgeBevelProtectedEdges || []) {
+      const endpoints = topology.edgePairs.get(signature);
+      if (!endpoints) {
+        protectedEdges.add(signature);
+        continue;
+      }
+      const movedA = targets.get(vertexKey(endpoints[0])) || endpoints[0];
+      const movedB = targets.get(vertexKey(endpoints[1])) || endpoints[1];
+      protectedEdges.add(localEdgeSignature(movedA, movedB));
+    }
+    replaceEditableMeshGeometry(mesh, geometry);
+    mesh.userData.edgeBevelProtectedEdges = [...protectedEdges];
+    mesh.updateMatrixWorld(true);
+    for (const edge of meshEdges) {
+      edge.localA.copy(targets.get(vertexKey(edge.localA)) || edge.localA);
+      edge.localB.copy(targets.get(vertexKey(edge.localB)) || edge.localB);
+      edge.key = surfaceEdgeKey(mesh, edge.localA, edge.localB);
+      edge.protectedBevelEdge = protectedEdges.has(localEdgeSignature(edge.localA, edge.localB));
+    }
+    return movedOccurrences;
+  }
+  function slideSelectedEdges() {
+    if (!selectedSurfaceEdges.length) {
+      log("Choose Edge and select one edge or a Loop Cut ring before using Edge Slide.");
+      return [];
+    }
+    const { requestedAxis, amount } = edgeSlideSettings();
+    if (Math.abs(amount) < 1e-6) {
+      log("Edge Slide Amount is 0%. Enter a positive or negative value.");
+      return [];
+    }
+    const byMesh = /* @__PURE__ */ new Map();
+    for (const edge of selectedSurfaceEdges) {
+      if (!byMesh.has(edge.mesh)) byMesh.set(edge.mesh, []);
+      byMesh.get(edge.mesh).push(edge);
+    }
+    const plans = [];
+    for (const [mesh, meshEdges] of byMesh) {
+      const plan = prepareEdgeSlidePlan(mesh, meshEdges, requestedAxis, amount);
+      if (plan) plans.push(plan);
+    }
+    if (!plans.length) {
+      log("Edge Slide could not find supporting topology in that direction. Try the opposite Amount sign or choose X, Y, or Z.");
+      return [];
+    }
+    recordHistory("slide selected edges");
+    let movedOccurrences = 0;
+    for (const plan of plans) movedOccurrences += applyEdgeSlidePlan(plan);
+    updateSurfaceComponentMarker();
+    updateAll();
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+    const directionLabels = [...new Set(plans.map((plan) => plan.directionData.label))];
+    log(`Slid ${selectedSurfaceEdges.length} selected edge${selectedSurfaceEdges.length === 1 ? "" : "s"} by ${round2(amount)}%.`, {
+      meshes: plans.length,
+      movedVertices: plans.reduce((sum, plan) => sum + plan.targets.size, 0),
+      movedOccurrences,
+      direction: directionLabels.join(", ")
+    });
+    return plans.map((plan) => plan.mesh);
   }
   function extendSelectedFaces() {
     if (!selectedFaces.length) {
@@ -38004,36 +38323,22 @@ void main() {
     return [...facesByMesh.keys()];
   }
   function pullSelectedFaces() {
-    if (!selectedFaces.length) {
-      log("Select one or more mesh triangles first, then press Pull.");
-      setFacePickMode(true);
-      return [];
-    }
     const depth = faceEditDepth({ min: 0.05 });
-    const length = signedFaceLengthResolver(depth, 1);
-    const selectedCount = selectedFaces.length;
-    recordHistory("pull selected area");
-    const created = [addObject(makePulledSelectionSpec(selectedFaces, length), { record: false })];
-    clearSelectedTriangles();
-    updateAll();
-    log(`Pulled ${selectedCount} selected triangle area${selectedCount === 1 ? "" : "s"} into one editable extrusion${els.connectFaceInput.checked ? " using connected-face stops" : ""}.`);
-    return created;
+    return extrudeSelectedRegion({
+      distance: depth,
+      historyLabel: "pull selected region",
+      toolLabel: "Pull",
+      actionLabel: "Pulled"
+    });
   }
   function pushSelectedFaces() {
-    if (!selectedFaces.length) {
-      log("Select one or more mesh triangles first, then press Push.");
-      setFacePickMode(true);
-      return [];
-    }
     const depth = faceEditDepth({ min: 0.05 });
-    const length = signedFaceLengthResolver(depth, -1);
-    const selectedCount = selectedFaces.length;
-    recordHistory("push selected area");
-    const created = [addObject(makePulledSelectionSpec(selectedFaces, length), { record: false })];
-    clearSelectedTriangles();
-    updateAll();
-    log(`Pushed ${selectedCount} selected triangle area${selectedCount === 1 ? "" : "s"} inward as one editable cavity patch${els.connectFaceInput.checked ? " using connected-face stops" : ""}.`);
-    return created;
+    return extrudeSelectedRegion({
+      distance: -depth,
+      historyLabel: "push selected region",
+      toolLabel: "Push",
+      actionLabel: "Pushed"
+    });
   }
   function dragPushAxisLabel() {
     return surfaceAxisMode().toUpperCase();
@@ -38149,7 +38454,7 @@ void main() {
     upper.pop();
     return [...lower, ...upper];
   }
-  function clipGeometryByLocalPlane(geometry, planeNormal, planePoint) {
+  function clipGeometryByLocalPlane(geometry, planeNormal, planePoint, { capUAxis = null } = {}) {
     const source = geometry.index ? geometry.toNonIndexed() : geometry.clone();
     const position = source.getAttribute("position");
     const uv = source.getAttribute("uv");
@@ -38193,24 +38498,46 @@ void main() {
       }
     }
     const capCenter = [...capPoints.values()].reduce((sum, point) => sum.add(point), new Vector3()).multiplyScalar(1 / Math.max(1, capPoints.size));
-    const { u, v } = faceBasisFromNormal(planeNormal);
+    const fallbackBasis = faceBasisFromNormal(planeNormal);
+    const u = capUAxis?.clone() || fallbackBasis.u.clone();
+    u.addScaledVector(planeNormal, -u.dot(planeNormal));
+    if (u.lengthSq() <= 1e-10) u.copy(fallbackBasis.u);
+    u.normalize();
+    const v = new Vector3().crossVectors(planeNormal, u).normalize();
     const hull = convexHullEntries2D([...capPoints.values()].map((point) => {
       const offset = point.clone().sub(capCenter);
       return { point, point2: new Vector2(offset.dot(u), offset.dot(v)) };
     }));
     if (hull.length >= 3) {
+      const minU = Math.min(...hull.map((entry) => entry.point2.x));
+      const maxU = Math.max(...hull.map((entry) => entry.point2.x));
+      const minV = Math.min(...hull.map((entry) => entry.point2.y));
+      const maxV = Math.max(...hull.map((entry) => entry.point2.y));
+      const spanU = Math.max(1e-7, maxU - minU);
+      const spanV = Math.max(1e-7, maxV - minV);
+      const textureSpan = Math.max(spanU, spanV);
+      const centerU = (minU + maxU) * 0.5;
+      const centerV = (minV + maxV) * 0.5;
+      const capUvForEntry = (entry) => new Vector2(
+        0.5 + (entry.point2.x - centerU) / textureSpan,
+        0.5 + (entry.point2.y - centerV) / textureSpan
+      );
       for (let index = 1; index < hull.length - 1; index++) {
-        const points = [hull[0].point, hull[index].point, hull[index + 1].point];
+        const entries = [hull[0], hull[index], hull[index + 1]];
+        const points = entries.map((entry) => entry.point);
+        const capUvs = entries.map(capUvForEntry);
         const normal = new Vector3().crossVectors(
           points[1].clone().sub(points[0]),
           points[2].clone().sub(points[0])
         );
-        const ordered = normal.dot(planeNormal) >= 0 ? points : [points[0], points[2], points[1]];
+        const aligned = normal.dot(planeNormal) >= 0;
+        const ordered = aligned ? points : [points[0], points[2], points[1]];
+        const orderedUvs = aligned ? capUvs : [capUvs[0], capUvs[2], capUvs[1]];
         pushClipTriangle(
           buffers,
-          { point: ordered[0], uv: null },
-          { point: ordered[1], uv: null },
-          { point: ordered[2], uv: null }
+          { point: ordered[0], uv: orderedUvs[0] },
+          { point: ordered[1], uv: orderedUvs[1] },
+          { point: ordered[2], uv: orderedUvs[2] }
         );
       }
     }
@@ -38338,7 +38665,7 @@ void main() {
     ).normalize();
     if (planeNormal.dot(endpoints[0].clone().sub(cutPointA)) < 0) planeNormal.negate();
     const beforeTriangles = position.count / 3;
-    const clipped = clipGeometryByLocalPlane(source, planeNormal, cutPointA);
+    const clipped = clipGeometryByLocalPlane(source, planeNormal, cutPointA, { capUAxis: edgeDirection });
     if (clipped.capLoop.length < 3 || !clipped.geometry.getAttribute("position")?.count) {
       clipped.geometry.dispose();
       source.dispose();
@@ -39152,6 +39479,8 @@ void main() {
           loopCutAxis: ["x", "y", "z"].includes(els.loopCutAxisSelect?.value) ? els.loopCutAxisSelect.value : "y",
           loopCutPosition: Math.max(1, Math.min(99, Number(els.loopCutPositionInput?.value) || 50)),
           loopCutCount: Math.max(1, Math.min(8, Math.round(Number(els.loopCutCountInput?.value) || 1))),
+          edgeSlideAxis: ["auto", "x", "y", "z"].includes(els.edgeSlideAxisSelect?.value) ? els.edgeSlideAxisSelect.value : "auto",
+          edgeSlideAmount: Math.max(-95, Math.min(95, Number.isFinite(Number(els.edgeSlideAmountInput?.value)) ? Number(els.edgeSlideAmountInput.value) : 10)),
           dragPushAxis: els.dragPushAxisSelect.value || "free",
           dragPushStep: Number(els.dragPushStepInput.value) || 0.01,
           insetAmount: Number(els.insetAmountInput?.value) || 0.1,
@@ -39383,6 +39712,11 @@ void main() {
     if (els.loopCutAxisSelect) els.loopCutAxisSelect.value = ["x", "y", "z"].includes(tools.loopCutAxis) ? tools.loopCutAxis : "y";
     if (els.loopCutPositionInput) els.loopCutPositionInput.value = String(Math.max(1, Math.min(99, Number(tools.loopCutPosition) || 50)));
     if (els.loopCutCountInput) els.loopCutCountInput.value = String(Math.max(1, Math.min(8, Math.round(Number(tools.loopCutCount) || 1))));
+    if (els.edgeSlideAxisSelect) els.edgeSlideAxisSelect.value = ["auto", "x", "y", "z"].includes(tools.edgeSlideAxis) ? tools.edgeSlideAxis : "auto";
+    if (els.edgeSlideAmountInput) {
+      const edgeSlideAmount = Number(tools.edgeSlideAmount);
+      els.edgeSlideAmountInput.value = String(Math.max(-95, Math.min(95, Number.isFinite(edgeSlideAmount) ? edgeSlideAmount : 10)));
+    }
     els.dragPushAxisSelect.value = ["x", "y", "z"].includes(tools.dragPushAxis) ? tools.dragPushAxis : "free";
     els.dragPushStepInput.value = String(tools.dragPushStep ?? 0.01);
     if (els.insetAmountInput) els.insetAmountInput.value = String(tools.insetAmount ?? 0.1);
@@ -44460,6 +44794,7 @@ end
   });
   document.querySelector("#extendFaceBtn").addEventListener("click", extendSelectedFaces);
   els.insetFaceBtn?.addEventListener("click", insetSelectedFace);
+  els.extrudeRegionBtn?.addEventListener("click", extrudeSelectedRegion);
   document.querySelector("#pullFaceBtn").addEventListener("click", pullSelectedFaces);
   document.querySelector("#pushFaceBtn").addEventListener("click", pushSelectedFaces);
   els.softPullBtn?.addEventListener("click", () => softMoveSelectedFaces(1));
@@ -44492,6 +44827,7 @@ end
   els.edgeBevelBtn?.addEventListener("click", bevelSelectedEdge);
   els.subdivideSelectedBtn?.addEventListener("click", subdivideSelectedSurface);
   els.loopCutBtn?.addEventListener("click", applyLoopCut);
+  els.edgeSlideBtn?.addEventListener("click", slideSelectedEdges);
   els.cutMeshBtn.addEventListener("click", cutSelectedMesh);
   document.querySelector("#clearBtn").addEventListener("click", clearObjects);
   document.querySelector("#frameBtn").addEventListener("click", frameSelected);
@@ -45174,6 +45510,7 @@ end
     flipSelectedParts,
     extendSelectedFaces,
     insetSelectedFace,
+    extrudeSelectedRegion,
     pullSelectedFaces,
     pushSelectedFaces,
     bevelSelectedEdge,

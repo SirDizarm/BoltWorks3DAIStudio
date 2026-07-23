@@ -11,9 +11,10 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.0.0.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.2.5.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
+const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolDockingSource}\n${applicationSource}`;
@@ -21,8 +22,21 @@ const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolD
 if (!authoringManifest.machineResources?.styleLibraries?.includes("libraries/medieval-house/README.md")) {
   throw new Error("BoltWorksStudioAi manifest must expose the medieval house style library.");
 }
+if (!authoringManifest.machineResources?.testProtocols?.includes("../docs/MESH_TEST_CODES.md")) {
+  throw new Error("BoltWorksStudioAi manifest must expose the shared mesh test code protocol.");
+}
 if (!projectSchema.$defs?.object?.properties?.opacity || !projectSchema.$defs?.editor?.properties?.cameraViews) {
   throw new Error("Project schema must describe transparent materials and custom camera views.");
+}
+const uvTestTexture = uvTopologyTest.textureLibrary?.find(texture => texture.name === "UV Topology Grid A1-D4");
+const uvTestObject = uvTopologyTest.scene?.objects?.find(object => object.id === "uv-test-main-block");
+if (
+  uvTopologyTest.kind !== "modeler-project"
+  || !uvTestTexture?.dataUrl?.startsWith("data:image/svg+xml;base64,")
+  || uvTestObject?.textureName !== uvTestTexture.name
+  || uvTopologyTest.editor?.selectedId !== uvTestObject.id
+) {
+  throw new Error("The UV topology test project must embed its diagnostic texture and select the editable block.");
 }
 
 const facetedBallBuilders = {
@@ -42,10 +56,10 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.0.0.js?v=49.0.0"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.2.5.js?v=49.2.5"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.0.0.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.2.5.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -60,7 +74,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.0.0",
+  "tool-docking.js?v=49.2.5",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -423,11 +437,10 @@ for (const required of [
   "mesh.userData.geometry = geometryToData(geometry)",
   "pullSelectedFaces",
   "pushSelectedFaces",
-  "makePulledSelectionSpec",
-  "addTriangleBothSides",
-  "addQuadBothSides",
-  "pulled triangle extrusion",
-  "one editable extrusion",
+  "historyLabel: \"pull selected region\"",
+  "historyLabel: \"push selected region\"",
+  "distance: -depth",
+  "buildExtrudedRegionGeometry",
   "transform.setSpace(activeTransformMode === \"rotate\" ? \"local\" : \"world\")",
   "pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) })",
   "function pickSurfaceVertex",
@@ -467,9 +480,19 @@ for (const required of [
   "loopCutCountInput",
   "loopCutBtn",
   "applyLoopCut",
+  "edgeSlideAxisSelect",
+  "edgeSlideAmountInput",
+  "edgeSlideBtn",
+  "slideSelectedEdges",
+  "inferredEdgeSlideDirection",
+  "extrudeRegionBtn",
+  "extrudeSelectedRegion",
+  "buildExtrudedRegionGeometry",
   "edgeBevelProtectedEdges",
   "localEdgeSignature",
   "clipGeometryByLocalPlane",
+  "capUvForEntry",
+  "capUAxis: edgeDirection",
   "makeInsetBeveledPanelGeometry",
   "makeGeometryDataForShape",
   "textureInfoFromMaterial",
@@ -580,8 +603,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.0.0 Experimental") || !documentSource.includes("v49.0.0 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.0.0 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.2.5 Experimental") || !documentSource.includes("v49.2.5 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.2.5 version.");
 }
 
 for (const expectedDefault of [

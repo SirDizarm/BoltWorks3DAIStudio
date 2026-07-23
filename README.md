@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.0.0**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.2.5**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
 ## Local development source
 
@@ -23,7 +23,7 @@ The primary document is `index.html`; canonical application logic lives under
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.0.0.js`, so direct file opening does not depend on module CORS or a
+`app/studio-v49.2.5.js`, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
@@ -31,6 +31,12 @@ also refresh it automatically.
 ## Reference images
 
 Use the collapsible **Reference Image** panel to keep concept art beside the model, display it as a transparent viewport overlay, or show both. Overlay opacity, scale, and X/Y offsets can be adjusted for silhouette matching. The image and its display settings are stored inside the editable project file. When a reference exists, Save Views and the AI QA sheet place it in the sixth panel instead of the automatic Iso view; the separate Iso PNG export remains available.
+
+## UV and topology test asset
+
+Open `samples/showcases/uv-topology-test.modelerproj` before testing topology-changing tools. The large selected block is the editable test object; the smaller block is an untouched visual reference. Its embedded A1-D4 grid, directional labels, asymmetric colors, origin marker, and center cross make stretched, flipped, rotated, missing, or discontinuous UV coordinates immediately visible. Regenerate the project after changing its source texture with `npm run generate:uv-test`.
+
+Manual mesh tests use the permanent shorthand documented in `docs/MESH_TEST_CODES.md`. For example, `M01#D` means that Extrude Region test 01 was completed through step D, while `M01#D FEL UV` reports a texture failure at that step.
 
 ## Shape building
 
@@ -44,6 +50,8 @@ Use the collapsible **Reference Image** panel to keep concept art beside the mod
 - **Edge Bevel** chamfers one selected non-coplanar crease with a closed planar solid cut. Consecutive bevel planes trim earlier bevels cleanly at shared corners instead of bending their strips inward. Its saved width is clamped safely, flat triangulation diagonals are rejected, and newly created bevel boundaries are shown red and protected from accidental re-beveling.
 - **Subdivide Surface** adds local topology without changing the model silhouette. Triangle or Whole Face selections can be split one or two levels (4x or 16x selected triangles), interpolated texture coordinates are retained, and protected bevel boundaries remain protected. Adjacent unselected triangles receive matching boundary splits, preventing T-junction cracks when the new detail is moved; only the requested surface remains selected for immediate shaping.
 - **Loop Cut / Ring Cut** inserts one or more local-axis cutting planes through the selected mesh without changing its silhouette. A single cut uses an exact percentage of the mesh bounds; multiple cuts are evenly spaced. UVs and protected bevel edges are retained, and every newly inserted ring segment stays selected for immediate movement.
+- **Edge Slide** moves selected edges along their neighboring topology rails without adding triangles. Signed percentage values choose either direction, Loop Cut rings remember their cutting axis, and Auto can infer a rail for manually selected edges.
+- **Extrude Region** replaces one connected planar selection inside its original mesh with a translated cap and one continuous set of boundary walls. Internal triangle edges do not create duplicate walls, UVs are retained, and the new cap remains selected for repeated shaping.
 - Mouse Drag only captures pointer-down events that begin on an already selected triangle. Unselected triangles remain clickable, double-click releases the current surface selection, and clicking the active Mouse Drag tab releases the drag mode and hides its arrows.
 - On small surfaces, mesh triangles take pointer priority over the gizmo's larger invisible hit areas. An unselected triangle is selected in the earliest pointer phase, while clicking an already selected triangle can still start Mouse Drag. Arrow portions extending outside the model remain directly draggable.
 - **Model Tools** moves profile/loft, selection, sketch, marker, triangle, hole, bridge, cut, and Duplicate operations into a collapsible right-side section so the main toolbar stays focused on frequent scene actions.

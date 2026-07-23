@@ -6,7 +6,7 @@ import { composeStudioSource } from "../app/source-composer.mjs";
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export async function buildStudioBundle({ outfile = join(root, "app", "studio-v49.0.0.js"), write = true } = {}) {
+export async function buildStudioBundle({ outfile = join(root, "app", "studio-v49.2.5.js"), write = true } = {}) {
   const entrySource = await composeStudioSource(name =>
     readFile(join(root, "app", "modules", `${name}.js`), "utf8")
   );

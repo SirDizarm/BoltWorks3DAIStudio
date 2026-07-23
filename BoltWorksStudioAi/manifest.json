@@ -1,7 +1,7 @@
 {
   "name": "BoltWorksStudioAi Authoring Handbook",
   "version": 2,
-  "studioVersion": "49.0.0",
+  "studioVersion": "49.2.5",
   "purpose": "Create, validate, render and visually inspect editable BoltWorks 3D AI Studio projects.",
   "canonicalProjectExtension": ".modelerproj",
   "entryPoint": "README.md",
@@ -17,6 +17,9 @@
     "schema": "schemas/modeler-project.schema.json",
     "minimalExample": "examples/minimal-valid.modelerproj",
     "inspector": "tools/inspect-project.mjs",
+    "testProtocols": [
+      "../docs/MESH_TEST_CODES.md"
+    ],
     "styleLibraries": [
       "libraries/medieval-house/README.md"
     ]
