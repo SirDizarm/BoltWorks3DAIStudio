@@ -11,7 +11,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.2.5.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.8.3.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -56,10 +56,13 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.2.5.js?v=49.2.5"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.8.3.js?v=49.8.3"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.2.5.js') || documentSource.includes('type="importmap"')) {
+if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
+  throw new Error("Top view must not replace the OrbitControls world-up axis.");
+}
+if (documentSource.includes('type="module" src="./app/studio-v49.8.3.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -74,7 +77,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.2.5",
+  "tool-docking.js?v=49.8.3",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -143,6 +146,8 @@ for (const required of [
   "loftCheckedBtn",
   "loftPointsInput",
   "mirrorCopyBtn",
+  "liveMirrorBtn",
+  "applyLiveMirrorBtn",
   "softPullBtn",
   "softPushBtn",
   "resetZoomBtn",
@@ -169,6 +174,9 @@ for (const required of [
   "function restoreReferenceImageState",
   "function loftCheckedProfiles",
   "function mirrorCopySelection",
+  "function syncLiveMirrorPreview",
+  "function toggleLiveMirror",
+  "function applyLiveMirrorSelection",
   "function softMoveSelectedFaces",
   "function softMoveFacesByDistance",
   "function setSurfaceEditorOpen",
@@ -179,8 +187,13 @@ for (const required of [
   "function applySurfaceGizmoDelta",
   "function toggleSurfaceMouseMode",
   "function prioritizeUnselectedSurfaceTriangle",
+  "surfaceTransform.pointerHover(surfaceTransform._getPointer(event))",
   "surfaceGizmoPivot",
   "surfaceTransform",
+  "createReferenceSurfaceTransform",
+  "surfaceFrontTransform",
+  "surfaceSideTransform",
+  "finishReferenceSurfaceDrag",
   "setTranslationSnap",
   "const surfaceTransformWasVisible = surfaceTransform.visible",
   "surfaceTransform.visible = false",
@@ -328,10 +341,16 @@ for (const required of [
   "insetFaceBtn",
   "insetSelectedFace",
   "surfaceEditorOpenBtn",
+  "cameraControlsOpenBtn",
+  "Camera Controls",
   "surfaceEditorWindow",
   "surfaceMouseModeBtn",
   "surfaceValueModeBtn",
   "autoSurfaceDragInput",
+  "showModelingEdgesInput",
+  "Show Modeling Edges",
+  "modelingEdgesOverlay",
+  "updateModelingEdgesOverlay",
   "surfaceMouseFalloffSelect",
   "surfaceSelectTriangleBtn",
   "surfaceSelectFaceBtn",
@@ -485,6 +504,43 @@ for (const required of [
   "edgeSlideBtn",
   "slideSelectedEdges",
   "inferredEdgeSlideDirection",
+  "surfaceScaleAxisSelect",
+  "surfaceScaleAmountInput",
+  "surfaceScaleBtn",
+  "scaleSelectedSurface",
+  "scale selected surface",
+  "Scale Selected Surface",
+  "relaxModeSelect",
+  "relaxStrengthInput",
+  "relaxIterationsInput",
+  "relaxPreserveBoundaryInput",
+  "relaxVerticesBtn",
+  "relaxSelectedVertices",
+  "prepareRelaxVertexPlan",
+  "settleSurfacePointerInteraction",
+  "Relax Selected Vertices",
+  "Smooth / Relax Vertices",
+  "weldVertexTargetSelect",
+  "weldVerticesBtn",
+  "weldSelectedVertices",
+  "geometryFromWeldedTriangles",
+  "topologyEdgeCounts",
+  "topologyIsClosedTriangleMesh",
+  "assignWeldFlatRegions",
+  "retriangulateWeldedFlatQuads",
+  "retriangulatedQuads",
+  "__boltworks_welded_vertex__",
+  "weld selected vertices",
+  "Weld Selected Vertices",
+  "dissolveSelectedBtn",
+  "dissolveSelectedSurfaceComponent",
+  "dissolveSelectedEdge",
+  "dissolveSelectedVertex",
+  "reportDissolveResult",
+  "orderedDissolveBoundary",
+  "dissolvedSurfaceEdges",
+  "Dissolve Selected",
+  "DISSOLVE COMPLETE: 1 modeling edge removed",
   "extrudeRegionBtn",
   "extrudeSelectedRegion",
   "buildExtrudedRegionGeometry",
@@ -603,8 +659,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.2.5 Experimental") || !documentSource.includes("v49.2.5 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.2.5 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.8.3 Experimental") || !documentSource.includes("v49.8.3 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.8.3 version.");
 }
 
 for (const expectedDefault of [

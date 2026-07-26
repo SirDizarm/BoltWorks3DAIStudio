@@ -1813,7 +1813,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, edgeBevelProtectedEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -1858,7 +1858,13 @@ function createMesh(spec = {}) {
     cuts,
     playerAvatar: !!playerAvatar,
     playerHeadOffset: Array.isArray(playerHeadOffset) ? playerHeadOffset.map(Number) : null,
-    edgeBevelProtectedEdges: Array.isArray(edgeBevelProtectedEdges) ? edgeBevelProtectedEdges.filter(value => typeof value === "string") : []
+    liveMirror: liveMirror?.enabled ? {
+      enabled: true,
+      axis: ["x", "y", "z"].includes(liveMirror.axis) ? liveMirror.axis : "x",
+      plane: Number(liveMirror.plane) || 0
+    } : null,
+    edgeBevelProtectedEdges: Array.isArray(edgeBevelProtectedEdges) ? edgeBevelProtectedEdges.filter(value => typeof value === "string") : [],
+    dissolvedSurfaceEdges: Array.isArray(dissolvedSurfaceEdges) ? dissolvedSurfaceEdges.filter(value => typeof value === "string") : []
   };
   mesh.position.fromArray(position);
   mesh.rotation.set(
@@ -2635,6 +2641,12 @@ function syncSurfaceEditorUi() {
   els.surfaceSelectTriangleBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "triangle");
   els.surfaceSelectFaceBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "face");
   els.surfaceEditorOpenBtn?.classList.toggle("active", !els.surfaceEditorWindow?.classList.contains("collapsed"));
+  if (els.dissolveSelectedBtn) {
+    els.dissolveSelectedBtn.disabled = !(
+      (surfaceComponentMode === "edge" && selectedSurfaceEdges.length === 1)
+      || (surfaceComponentMode === "vertex" && selectedSurfaceVertices.length === 1)
+    );
+  }
   syncSurfaceAxisUi();
   if (els.surfaceEditorSelection) {
     if (surfaceComponentMode === "none") {
@@ -2644,9 +2656,10 @@ function syncSurfaceEditorUi() {
     const componentLabel = surfaceComponentMode === "vertex"
       ? (selectedCount === 1 ? "vertex" : "vertices")
       : `${surfaceComponentMode}${selectedCount === 1 ? "" : "s"}`;
+    const article = surfaceComponentMode === "edge" ? "an" : "a";
     els.surfaceEditorSelection.textContent = selectedCount
       ? `${selectedCount} selected ${componentLabel}`
-      : `Select a ${surfaceComponentMode} to begin`;
+      : `Select ${article} ${surfaceComponentMode} to begin`;
   }
 }
 
@@ -2655,6 +2668,7 @@ function setSurfaceEditorOpen(open = true) {
   setSectionCollapsed(els.surfaceEditorWindow, els.surfaceEditorCloseBtn, !open);
   syncSurfaceEditorUi();
   updateSurfaceGizmoAttachment();
+  updateModelingEdgesOverlay();
   if (open) requestAnimationFrame(() => els.surfaceEditorWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
@@ -2800,10 +2814,12 @@ function surfaceAxisWorldDirection(axisMode = surfaceAxisMode()) {
 
 function configureSurfaceTransformAxis() {
   const axisMode = surfaceAxisMode();
-  surfaceTransform.showX = axisMode === "free" || axisMode === "x";
-  surfaceTransform.showY = axisMode === "free" || axisMode === "y";
-  surfaceTransform.showZ = axisMode === "free" || axisMode === "z";
-  surfaceTransform.setSpace("world");
+  for (const control of surfaceTransforms) {
+    control.showX = axisMode === "free" || axisMode === "x";
+    control.showY = axisMode === "free" || axisMode === "y";
+    control.showZ = axisMode === "free" || axisMode === "z";
+    control.setSpace("world");
+  }
   syncSurfaceAxisUi();
 }
 
@@ -2814,26 +2830,29 @@ function surfaceGizmoShouldShow() {
     && !els.surfaceEditorWindow?.classList.contains("collapsed");
 }
 
-function hideSurfacePlaneHandles() {
+function hideSurfacePlaneHandles(control = surfaceTransform) {
   const planeNames = new Set(["XY", "XZ", "YZ"]);
-  const gizmo = surfaceTransform?._gizmo;
+  const gizmo = control?._gizmo;
   for (const group of [gizmo?.gizmo?.translate, gizmo?.picker?.translate, gizmo?.helper?.translate]) {
     for (const handle of group?.children || []) {
       if (!planeNames.has(handle.name)) continue;
       handle.layers.set(3);
     }
   }
-  if (["XY", "XZ", "YZ"].includes(surfaceTransform.axis)) surfaceTransform.axis = null;
+  if (["XY", "XZ", "YZ"].includes(control.axis)) control.axis = null;
 }
 
 function updateSurfaceGizmoAttachment() {
   if (!surfaceTransform) return;
   if (!surfaceGizmoShouldShow()) {
-    surfaceTransform.enabled = true;
-    surfaceTransform.detach();
-    surfaceTransform.visible = false;
+    for (const control of surfaceTransforms) {
+      control.enabled = true;
+      control.detach();
+      control.visible = false;
+    }
     surfaceGizmoPivot.visible = false;
     surfaceGizmoDragging = false;
+    activeSurfaceTransform = surfaceTransform;
     return;
   }
   const center = selectedSurfaceWorldCenter();
@@ -2845,17 +2864,20 @@ function updateSurfaceGizmoAttachment() {
   surfaceGizmoPivot.updateMatrixWorld(true);
   surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
   surfaceGizmoSyncing = false;
-  surfaceTransform.setMode("translate");
   configureSurfaceTransformAxis();
-  surfaceTransform.setTranslationSnap(dragPushStepSize());
-  surfaceTransform.enabled = true;
-  surfaceTransform.attach(surfaceGizmoPivot);
-  surfaceTransform.visible = true;
-  hideSurfacePlaneHandles();
+  for (const control of surfaceTransforms) {
+    control.setMode("translate");
+    control.setTranslationSnap(dragPushStepSize());
+    control.enabled = true;
+    control.attach(surfaceGizmoPivot);
+    control.visible = true;
+    hideSurfacePlaneHandles(control);
+  }
 }
 
-function beginSurfaceGizmoDrag() {
+function beginSurfaceGizmoDrag(event) {
   if (!surfaceGizmoShouldShow()) return;
+  activeSurfaceTransform = event?.target || surfaceTransform;
   surfaceGizmoDragging = true;
   surfaceGizmoMovedDistance = 0;
   surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
@@ -2863,12 +2885,13 @@ function beginSurfaceGizmoDrag() {
   els.hudText.textContent = "Surface arrows active: drag X, Y, or Z to move the selected surface";
 }
 
-function applySurfaceGizmoDelta() {
+function applySurfaceGizmoDelta(event) {
   if (!surfaceGizmoDragging || surfaceGizmoSyncing || !surfaceComponentSelectionCount()) return;
+  const control = event?.target || activeSurfaceTransform || surfaceTransform;
   const delta = surfaceGizmoPivot.position.clone().sub(surfaceGizmoLastPosition);
   let axisMode = surfaceAxisMode();
   if (axisMode === "free") {
-    const activeAxis = String(surfaceTransform.axis || "").toLowerCase();
+    const activeAxis = String(control.axis || "").toLowerCase();
     if (["x", "y", "z"].includes(activeAxis)) axisMode = activeAxis;
     else {
       const components = [Math.abs(delta.x), Math.abs(delta.y), Math.abs(delta.z)];
@@ -2912,7 +2935,9 @@ function finishSurfaceGizmoDrag() {
   surfaceGizmoDragging = false;
   updateAll();
   updateSurfaceGizmoAttachment();
+  els.hudText.textContent = `Surface ready: ${surfaceAxisMode() === "free" ? "drag an X/Y/Z arrow" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow`} | ${els.surfaceMouseFalloffSelect?.value === "hard" ? "Hard face" : `Soft radius ${Number(els.softRadiusInput?.value || .25)}`}`;
   log(`Moved selected surface with viewport arrows.`, { distance: round(surfaceGizmoMovedDistance) });
+  activeSurfaceTransform = surfaceTransform;
 }
 
 function armContextualSurfaceDrag() {
@@ -3634,6 +3659,7 @@ function setChecked(mesh, checked) {
   else checkedIds.delete(mesh.userData.id);
   updateTransformAttachment();
   syncInspector();
+  syncLiveMirrorUi();
   updateState();
   renderTree();
 }
@@ -3645,6 +3671,7 @@ function setHidden(mesh, hidden) {
   if (hidden) clearTriangleSelectionForMeshes([mesh]);
   updateTransformAttachment();
   syncInspector();
+  syncLiveMirrorUi();
   updateState();
   renderTree();
 }
@@ -4631,6 +4658,65 @@ function surfaceEdgeKey(mesh, localA, localB) {
   return `${mesh.userData.id}:${[vertexKey(localA), vertexKey(localB)].sort().join("|")}`;
 }
 
+function updateModelingEdgesOverlay() {
+  while (modelingEdgesOverlay.children.length) {
+    const child = modelingEdgesOverlay.children.pop();
+    disposeObject3D(child);
+  }
+  const mesh = selected?.isMesh ? selected : (selectedSurfaceEdges[0]?.mesh || selectedSurfaceVertices[0]?.mesh || null);
+  const shouldShow = !!(
+    mesh?.geometry
+    && mesh.visible
+    && els.showModelingEdgesInput?.checked
+    && !els.surfaceEditorWindow?.classList.contains("collapsed")
+  );
+  if (!shouldShow) {
+    modelingEdgesOverlay.visible = false;
+    return;
+  }
+
+  mesh.updateWorldMatrix(true, false);
+  const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
+  const position = source.getAttribute("position");
+  const dissolvedEdges = new Set(mesh.userData.dissolvedSurfaceEdges || []);
+  const uniqueEdges = new Map();
+  for (let i = 0; i + 2 < position.count; i += 3) {
+    const points = [0, 1, 2].map(offset => new THREE.Vector3(
+      position.getX(i + offset),
+      position.getY(i + offset),
+      position.getZ(i + offset)
+    ));
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+      const signature = localEdgeSignature(points[a], points[b]);
+      if (!dissolvedEdges.has(signature) && !uniqueEdges.has(signature)) {
+        uniqueEdges.set(signature, [points[a], points[b]]);
+      }
+    }
+  }
+  if (source !== mesh.geometry) source.dispose();
+
+  const positions = [];
+  for (const [localA, localB] of uniqueEdges.values()) {
+    positions.push(
+      ...localA.clone().applyMatrix4(mesh.matrixWorld).toArray(),
+      ...localB.clone().applyMatrix4(mesh.matrixWorld).toArray()
+    );
+  }
+  if (!positions.length) {
+    modelingEdgesOverlay.visible = false;
+    return;
+  }
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  const lines = new THREE.LineSegments(
+    geometry,
+    new THREE.LineBasicMaterial({ color: "#62c7df", transparent: true, opacity: .48, depthTest: false, depthWrite: false })
+  );
+  lines.renderOrder = 1003;
+  modelingEdgesOverlay.add(lines);
+  modelingEdgesOverlay.visible = true;
+}
+
 function updateSurfaceComponentMarker() {
   while (surfaceComponentMarker.children.length) {
     const child = surfaceComponentMarker.children.pop();
@@ -4669,6 +4755,7 @@ function updateSurfaceComponentMarker() {
     }
   }
   surfaceComponentMarker.visible = surfaceComponentMarker.children.length > 0;
+  updateModelingEdgesOverlay();
 }
 
 function clearSelectedSurfaceComponents() {
@@ -4711,11 +4798,16 @@ function pickSurfaceEdge(hit, { append = false } = {}) {
   if (!hit?.object || !hit.face) return null;
   hit.object.updateWorldMatrix(true, false);
   const localPoints = triangleLocalPoints(hit);
+  const dissolvedEdges = new Set(hit.object.userData.dissolvedSurfaceEdges || []);
   const edges = [[0, 1], [1, 2], [2, 0]].map(([a, b]) => {
     const worldA = localPoints[a].clone().applyMatrix4(hit.object.matrixWorld);
     const worldB = localPoints[b].clone().applyMatrix4(hit.object.matrixWorld);
     return { localA: localPoints[a], localB: localPoints[b], distance: pointToSegmentDistanceSquared(hit.point, worldA, worldB) };
-  });
+  }).filter(edge => !dissolvedEdges.has(localEdgeSignature(edge.localA, edge.localB)));
+  if (!edges.length) {
+    log(`The nearest triangle on ${hit.object.name} only contains dissolved modeling edges.`);
+    return null;
+  }
   edges.sort((a, b) => a.distance - b.distance);
   const picked = edges[0];
   if (!append) selectedSurfaceEdges.length = 0;
@@ -6016,6 +6108,164 @@ function mirrorCopySelection() {
   currentTransformTargetKey = "";
   updateAll();
   log(`Created ${copies.length} mirrored editable cop${copies.length === 1 ? "y" : "ies"} across ${axis.toUpperCase()}=${round(plane)}.`);
+  return copies;
+}
+
+function liveMirrorTargets() {
+  const checked = checkedObjects();
+  return checked.length ? checked : (selected ? [selected] : []);
+}
+
+function disposeLiveMirrorPreview(preview) {
+  if (!preview) return;
+  liveMirrorPreviewGroup.remove(preview);
+  if (Array.isArray(preview.material)) preview.material.forEach(material => material.dispose());
+  else preview.material?.dispose();
+}
+
+function mirroredWorldMatrix(axis, plane, sourceWorldMatrix) {
+  const reflection = new THREE.Matrix4().identity();
+  const index = axisIndex(axis);
+  reflection.elements[index * 5] = -1;
+  reflection.elements[12 + index] = plane * 2;
+  return reflection.multiply(sourceWorldMatrix);
+}
+
+function liveMirrorMaterial(sourceMaterial) {
+  const clone = sourceMaterial.clone();
+  clone.side = THREE.DoubleSide;
+  clone.needsUpdate = true;
+  return clone;
+}
+
+function syncLiveMirrorMaterial(targetMaterial, sourceMaterial) {
+  targetMaterial.copy(sourceMaterial);
+  targetMaterial.side = THREE.DoubleSide;
+  targetMaterial.needsUpdate = true;
+}
+
+function syncLiveMirrorPreview() {
+  const activeSourceIds = new Set();
+  for (const source of objects) {
+    const config = source.userData.liveMirror;
+    if (!config?.enabled) continue;
+    const axis = ["x", "y", "z"].includes(config.axis) ? config.axis : "x";
+    const plane = Number(config.plane) || 0;
+    activeSourceIds.add(source.userData.id);
+    let preview = liveMirrorPreviewBySourceId.get(source.userData.id);
+    if (!preview) {
+      const previewMaterial = Array.isArray(source.material)
+        ? source.material.map(liveMirrorMaterial)
+        : liveMirrorMaterial(source.material);
+      preview = new THREE.Mesh(source.geometry, previewMaterial);
+      preview.name = `${source.name} live mirror preview`;
+      preview.matrixAutoUpdate = false;
+      preview.raycast = () => null;
+      preview.userData = { editorHelper: true, liveMirrorSourceId: source.userData.id };
+      preview.castShadow = false;
+      preview.receiveShadow = source.receiveShadow;
+      liveMirrorPreviewGroup.add(preview);
+      liveMirrorPreviewBySourceId.set(source.userData.id, preview);
+    }
+    if (preview.geometry !== source.geometry) preview.geometry = source.geometry;
+    const sourceMaterials = Array.isArray(source.material) ? source.material : [source.material];
+    const previewMaterials = Array.isArray(preview.material) ? preview.material : [preview.material];
+    const materialStructureMatches = Array.isArray(source.material) === Array.isArray(preview.material)
+      && sourceMaterials.length === previewMaterials.length;
+    if (!materialStructureMatches) {
+      const oldMaterials = Array.isArray(preview.material) ? preview.material : [preview.material];
+      oldMaterials.forEach(material => material?.dispose());
+      preview.material = Array.isArray(source.material)
+        ? source.material.map(liveMirrorMaterial)
+        : liveMirrorMaterial(source.material);
+    } else {
+      sourceMaterials.forEach((material, index) => syncLiveMirrorMaterial(previewMaterials[index], material));
+    }
+    source.updateWorldMatrix(true, false);
+    preview.matrix.copy(mirroredWorldMatrix(axis, plane, source.matrixWorld));
+    preview.matrixWorldNeedsUpdate = true;
+    preview.visible = source.visible && !source.userData.hidden;
+  }
+  for (const [sourceId, preview] of [...liveMirrorPreviewBySourceId]) {
+    if (activeSourceIds.has(sourceId) && objects.some(object => object.userData.id === sourceId)) continue;
+    disposeLiveMirrorPreview(preview);
+    liveMirrorPreviewBySourceId.delete(sourceId);
+  }
+}
+
+function syncLiveMirrorUi() {
+  if (!els.liveMirrorBtn || !els.applyLiveMirrorBtn) return;
+  const targets = liveMirrorTargets();
+  const enabledTargets = targets.filter(mesh => mesh.userData.liveMirror?.enabled);
+  const allEnabled = targets.length > 0 && enabledTargets.length === targets.length;
+  els.liveMirrorBtn.disabled = targets.length === 0;
+  els.liveMirrorBtn.classList.toggle("active", allEnabled);
+  els.liveMirrorBtn.setAttribute("aria-pressed", String(allEnabled));
+  els.liveMirrorBtn.textContent = allEnabled ? "Live Mirror On" : "Live Mirror";
+  els.applyLiveMirrorBtn.disabled = enabledTargets.length === 0;
+  const primaryConfig = enabledTargets.at(-1)?.userData.liveMirror;
+  if (primaryConfig && document.activeElement !== els.symmetryAxisSelect && document.activeElement !== els.symmetryPlaneInput) {
+    els.symmetryAxisSelect.value = primaryConfig.axis;
+    els.symmetryPlaneInput.value = String(primaryConfig.plane);
+  }
+}
+
+function toggleLiveMirror() {
+  const targets = liveMirrorTargets();
+  if (!targets.length) {
+    log("Select or check one or more parts before enabling Live Mirror.");
+    return false;
+  }
+  const shouldEnable = !targets.every(mesh => mesh.userData.liveMirror?.enabled);
+  const axis = ["x", "y", "z"].includes(els.symmetryAxisSelect?.value) ? els.symmetryAxisSelect.value : "x";
+  const plane = Number(els.symmetryPlaneInput?.value) || 0;
+  recordHistory(shouldEnable ? "enable live mirror" : "disable live mirror");
+  for (const mesh of targets) mesh.userData.liveMirror = shouldEnable ? { enabled: true, axis, plane } : null;
+  updateAll();
+  log(`${shouldEnable ? "Enabled" : "Disabled"} Live Mirror for ${targets.length} part${targets.length === 1 ? "" : "s"}${shouldEnable ? ` across ${axis.toUpperCase()}=${round(plane)}` : ""}.`);
+  return shouldEnable;
+}
+
+function updateLiveMirrorSettings() {
+  const targets = liveMirrorTargets().filter(mesh => mesh.userData.liveMirror?.enabled);
+  if (!targets.length) return;
+  const axis = ["x", "y", "z"].includes(els.symmetryAxisSelect?.value) ? els.symmetryAxisSelect.value : "x";
+  const plane = Number(els.symmetryPlaneInput?.value) || 0;
+  if (targets.every(mesh => mesh.userData.liveMirror.axis === axis && mesh.userData.liveMirror.plane === plane)) return;
+  recordHistory("change live mirror plane");
+  for (const mesh of targets) mesh.userData.liveMirror = { enabled: true, axis, plane };
+  updateAll();
+  log(`Updated Live Mirror to ${axis.toUpperCase()}=${round(plane)} for ${targets.length} part${targets.length === 1 ? "" : "s"}.`);
+}
+
+function applyLiveMirrorSelection() {
+  const targets = liveMirrorTargets().filter(mesh => mesh.userData.liveMirror?.enabled);
+  if (!targets.length) {
+    log("Enable Live Mirror on a selected or checked part before applying it.");
+    return [];
+  }
+  recordHistory("apply live mirror");
+  const copies = targets.map(source => {
+    const { axis, plane } = source.userData.liveMirror;
+    const data = serializeObject(source);
+    delete data.id;
+    data.name = `${source.name} ${axis.toUpperCase()} mirror`;
+    data.linkId = null;
+    data.linkColor = null;
+    data.liveMirror = null;
+    const copy = addObject(data, { record: false, select: false, update: false });
+    const center = new THREE.Vector3();
+    center[axis] = Number(plane) || 0;
+    mirrorMeshAcrossWorldPlane(copy, axis, center);
+    source.userData.liveMirror = null;
+    return copy;
+  });
+  checkedIds.clear();
+  copies.forEach(copy => checkedIds.add(copy.userData.id));
+  selected = copies.at(-1) || null;
+  currentTransformTargetKey = "";
+  updateAll();
+  log(`Applied Live Mirror and created ${copies.length} independent editable mirrored part${copies.length === 1 ? "" : "s"}. Undo restores the live preview.`);
   return copies;
 }
 
@@ -8435,6 +8685,940 @@ function slideSelectedEdges() {
     direction: directionLabels.join(", ")
   });
   return plans.map(plan => plan.mesh);
+}
+
+function surfaceScaleSettings() {
+  const requestedAxis = ["uniform", "x", "y", "z"].includes(els.surfaceScaleAxisSelect?.value)
+    ? els.surfaceScaleAxisSelect.value
+    : "uniform";
+  const rawAmount = Number(els.surfaceScaleAmountInput?.value);
+  const amount = Math.max(1, Math.min(1000, Number.isFinite(rawAmount) ? rawAmount : 80));
+  if (els.surfaceScaleAxisSelect) els.surfaceScaleAxisSelect.value = requestedAxis;
+  if (els.surfaceScaleAmountInput) els.surfaceScaleAmountInput.value = String(amount);
+  return { requestedAxis, amount, factor: amount / 100 };
+}
+
+function selectedSurfacePointMaps() {
+  const byMesh = new Map();
+  const addPoint = (mesh, point) => {
+    if (!mesh?.geometry || !point) return;
+    if (!byMesh.has(mesh)) byMesh.set(mesh, new Map());
+    byMesh.get(mesh).set(vertexKey(point), point.clone());
+  };
+  if (surfaceComponentMode === "vertex") {
+    for (const vertex of selectedSurfaceVertices) addPoint(vertex.mesh, vertex.localPoint);
+  } else if (surfaceComponentMode === "edge") {
+    for (const edge of selectedSurfaceEdges) {
+      addPoint(edge.mesh, edge.localA);
+      addPoint(edge.mesh, edge.localB);
+    }
+  } else {
+    for (const face of selectedFaces) {
+      for (const point of face.localTrianglePoints) addPoint(face.mesh, point);
+    }
+  }
+  return byMesh;
+}
+
+function scaleSurfacePoint(worldPoint, worldCenter, factor, requestedAxis) {
+  const scaled = worldPoint.clone();
+  if (requestedAxis === "uniform") return scaled.sub(worldCenter).multiplyScalar(factor).add(worldCenter);
+  scaled[requestedAxis] = worldCenter[requestedAxis] + (scaled[requestedAxis] - worldCenter[requestedAxis]) * factor;
+  return scaled;
+}
+
+function pointFromVertexKey(key) {
+  const values = String(key).split(",").map(Number);
+  return values.length === 3 && values.every(Number.isFinite) ? new THREE.Vector3(...values) : null;
+}
+
+function remapProtectedEdgesForTargets(mesh, targets) {
+  const protectedEdges = Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? mesh.userData.edgeBevelProtectedEdges : [];
+  mesh.userData.edgeBevelProtectedEdges = protectedEdges.map(signature => {
+    const [keyA, keyB] = String(signature).split("|");
+    const pointA = targets.get(keyA)?.clone() || pointFromVertexKey(keyA);
+    const pointB = targets.get(keyB)?.clone() || pointFromVertexKey(keyB);
+    return pointA && pointB ? localEdgeSignature(pointA, pointB) : signature;
+  });
+}
+
+function refreshScaledSurfaceSelection(mesh, targets) {
+  const mappedPoint = point => targets.get(vertexKey(point))?.clone() || point.clone();
+  for (const vertex of selectedSurfaceVertices.filter(entry => entry.mesh === mesh)) {
+    vertex.localPoint.copy(mappedPoint(vertex.localPoint));
+    vertex.key = surfaceVertexKey(mesh, vertex.localPoint);
+  }
+  for (const edge of selectedSurfaceEdges.filter(entry => entry.mesh === mesh)) {
+    edge.localA.copy(mappedPoint(edge.localA));
+    edge.localB.copy(mappedPoint(edge.localB));
+    edge.key = surfaceEdgeKey(mesh, edge.localA, edge.localB);
+    edge.protectedBevelEdge = (mesh.userData.edgeBevelProtectedEdges || []).includes(localEdgeSignature(edge.localA, edge.localB));
+  }
+  for (const face of selectedFaces.filter(entry => entry.mesh === mesh)) {
+    const refreshed = faceFromLocalTriangle(
+      mesh,
+      face.localTrianglePoints.map(mappedPoint),
+      face.faceIndex,
+      face.localUvs?.map(uv => uv.clone()) || null
+    );
+    Object.assign(face, refreshed);
+  }
+  selectedFace = selectedFaces.at(-1) || null;
+}
+
+function scaleSelectedSurface() {
+  const byMesh = selectedSurfacePointMaps();
+  if (!byMesh.size) {
+    log("Select vertices, edges, triangles, or a Whole Face before using Scale Selected Surface.");
+    return [];
+  }
+  const { requestedAxis, amount, factor } = surfaceScaleSettings();
+  if (Math.abs(factor - 1) < .000001) {
+    log("Scale Selected Surface is set to 100%, so the surface was left unchanged.");
+    return [];
+  }
+  for (const points of byMesh.values()) {
+    if (points.size < 2) {
+      log("Scale Selected Surface needs at least two selected points.");
+      return [];
+    }
+  }
+
+  recordHistory("scale selected surface");
+  let movedOccurrences = 0;
+  for (const [mesh, points] of byMesh) {
+    mesh.updateWorldMatrix(true, false);
+    const worldPoints = [...points.values()].map(point => point.clone().applyMatrix4(mesh.matrixWorld));
+    const worldCenter = worldPoints.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / worldPoints.length);
+    const inverseWorld = mesh.matrixWorld.clone().invert();
+    const targets = new Map();
+    for (const [key, localPoint] of points) {
+      const scaledWorld = scaleSurfacePoint(localPoint.clone().applyMatrix4(mesh.matrixWorld), worldCenter, factor, requestedAxis);
+      targets.set(key, scaledWorld.applyMatrix4(inverseWorld));
+    }
+
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const position = geometry.getAttribute("position");
+    const localPoint = new THREE.Vector3();
+    for (let index = 0; index < position.count; index++) {
+      localPoint.fromBufferAttribute(position, index);
+      const target = targets.get(vertexKey(localPoint));
+      if (!target) continue;
+      position.setXYZ(index, target.x, target.y, target.z);
+      movedOccurrences++;
+    }
+    position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    replaceEditableMeshGeometry(mesh, geometry);
+    remapProtectedEdgesForTargets(mesh, targets);
+    refreshScaledSurfaceSelection(mesh, targets);
+  }
+
+  updateFaceMarker();
+  updateSurfaceComponentMarker();
+  updateAll();
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  log(`Scaled the selected surface to ${round(amount)}% around its own center${requestedAxis === "uniform" ? "" : ` on world ${requestedAxis.toUpperCase()}`}.`, {
+    meshes: byMesh.size,
+    selectedPoints: [...byMesh.values()].reduce((sum, points) => sum + points.size, 0),
+    movedOccurrences,
+    textureCoordinatesPreserved: true
+  });
+  return [...byMesh.keys()];
+}
+
+function relaxVertexSettings() {
+  const mode = els.relaxModeSelect?.value === "smooth" ? "smooth" : "relax";
+  const rawStrength = Number(els.relaxStrengthInput?.value);
+  const rawIterations = Number(els.relaxIterationsInput?.value);
+  const strength = Math.max(1, Math.min(100, Number.isFinite(rawStrength) ? rawStrength : 50));
+  const iterations = Math.max(1, Math.min(20, Math.round(Number.isFinite(rawIterations) ? rawIterations : 1)));
+  const preserveBoundary = !!els.relaxPreserveBoundaryInput?.checked;
+  if (els.relaxModeSelect) els.relaxModeSelect.value = mode;
+  if (els.relaxStrengthInput) els.relaxStrengthInput.value = String(strength);
+  if (els.relaxIterationsInput) els.relaxIterationsInput.value = String(iterations);
+  return { mode, strength, factor: strength / 100, iterations, preserveBoundary };
+}
+
+function relaxMeshTopology(geometry) {
+  const source = geometry.index ? geometry.toNonIndexed() : geometry;
+  const position = source.getAttribute("position");
+  const points = new Map();
+  const adjacency = new Map();
+  const edgeCounts = new Map();
+  const triangles = [];
+  const point = new THREE.Vector3();
+  const addNeighbor = (from, to) => {
+    if (!adjacency.has(from)) adjacency.set(from, new Set());
+    adjacency.get(from).add(to);
+  };
+  for (let index = 0; index < position.count; index += 3) {
+    const keys = [];
+    for (let offset = 0; offset < 3; offset++) {
+      point.fromBufferAttribute(position, index + offset);
+      const key = vertexKey(point);
+      keys.push(key);
+      if (!points.has(key)) points.set(key, point.clone());
+      if (!adjacency.has(key)) adjacency.set(key, new Set());
+    }
+    triangles.push(keys);
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+      addNeighbor(keys[a], keys[b]);
+      addNeighbor(keys[b], keys[a]);
+      const edgeKey = [keys[a], keys[b]].sort().join("|");
+      edgeCounts.set(edgeKey, (edgeCounts.get(edgeKey) || 0) + 1);
+    }
+  }
+  const boundaryKeys = new Set();
+  for (const [edgeKey, count] of edgeCounts) {
+    if (count !== 1) continue;
+    const [keyA, keyB] = edgeKey.split("|");
+    boundaryKeys.add(keyA);
+    boundaryKeys.add(keyB);
+  }
+  if (source !== geometry) source.dispose();
+  return { points, adjacency, triangles, boundaryKeys };
+}
+
+function prepareRelaxVertexPlan(mesh, selectedKeys, settings) {
+  const topology = relaxMeshTopology(mesh.geometry);
+  const currentPoints = new Map([...topology.points].map(([key, point]) => [key, point.clone()]));
+  const editableKeys = [...selectedKeys].filter(key => currentPoints.has(key)
+    && (!settings.preserveBoundary || !topology.boundaryKeys.has(key))
+    && (topology.adjacency.get(key)?.size || 0) >= 2);
+  if (!editableKeys.length) return null;
+
+  for (let iteration = 0; iteration < settings.iterations; iteration++) {
+    const nextTargets = new Map();
+    const beforeCenter = new THREE.Vector3();
+    const afterCenter = new THREE.Vector3();
+    for (const key of editableKeys) {
+      const current = currentPoints.get(key);
+      const neighbors = [...topology.adjacency.get(key)].map(neighborKey => currentPoints.get(neighborKey)).filter(Boolean);
+      if (!neighbors.length) continue;
+      const average = neighbors.reduce((sum, neighbor) => sum.add(neighbor), new THREE.Vector3()).multiplyScalar(1 / neighbors.length);
+      const delta = average.sub(current);
+      const next = current.clone().addScaledVector(delta, settings.factor);
+      nextTargets.set(key, next);
+      beforeCenter.add(current);
+      afterCenter.add(next);
+    }
+    if (!nextTargets.size) continue;
+    if (settings.mode === "relax" && nextTargets.size > 1) {
+      const centerCorrection = beforeCenter.multiplyScalar(1 / nextTargets.size)
+        .sub(afterCenter.multiplyScalar(1 / nextTargets.size));
+      for (const next of nextTargets.values()) next.add(centerCorrection);
+    }
+    for (const [key, next] of nextTargets) currentPoints.set(key, next);
+  }
+
+  const targets = new Map();
+  for (const key of editableKeys) {
+    const original = topology.points.get(key);
+    const target = currentPoints.get(key);
+    if (original && target && original.distanceToSquared(target) > 1e-12) targets.set(key, target.clone());
+  }
+  return targets.size ? { mesh, targets, topology, editableKeys } : null;
+}
+
+function applyRelaxVertexPlan(plan) {
+  const { mesh, targets } = plan;
+  const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const position = geometry.getAttribute("position");
+  const point = new THREE.Vector3();
+  let movedOccurrences = 0;
+  for (let index = 0; index < position.count; index++) {
+    point.fromBufferAttribute(position, index);
+    const target = targets.get(vertexKey(point));
+    if (!target) continue;
+    position.setXYZ(index, target.x, target.y, target.z);
+    movedOccurrences++;
+  }
+  position.needsUpdate = true;
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  replaceEditableMeshGeometry(mesh, geometry);
+  remapProtectedEdgesForTargets(mesh, targets);
+  for (const vertex of selectedSurfaceVertices.filter(entry => entry.mesh === mesh)) {
+    const target = targets.get(vertexKey(vertex.localPoint));
+    if (target) vertex.localPoint.copy(target);
+    vertex.key = surfaceVertexKey(mesh, vertex.localPoint);
+  }
+  return movedOccurrences;
+}
+
+function settleSurfacePointerInteraction() {
+  finishDragPushSession();
+  const draggingControl = surfaceTransforms.find(control => control.dragging);
+  if (draggingControl) draggingControl.pointerUp({ button: 0 });
+  else if (surfaceGizmoDragging) finishSurfaceGizmoDrag();
+  for (const control of surfaceTransforms) control.enabled = true;
+  if (!spaceCameraMode) orbit.enabled = true;
+}
+
+function relaxSelectedVertices() {
+  settleSurfacePointerInteraction();
+  if (surfaceComponentMode !== "vertex" || !selectedSurfaceVertices.length) {
+    log("Choose Vertex and select one or more connected vertices before using Smooth / Relax Vertices.");
+    return [];
+  }
+  const settings = relaxVertexSettings();
+  const byMesh = new Map();
+  for (const vertex of selectedSurfaceVertices) {
+    if (!byMesh.has(vertex.mesh)) byMesh.set(vertex.mesh, new Set());
+    byMesh.get(vertex.mesh).add(vertexKey(vertex.localPoint));
+  }
+  const plans = [];
+  for (const [mesh, selectedKeys] of byMesh) {
+    const plan = prepareRelaxVertexPlan(mesh, selectedKeys, settings);
+    if (plan) plans.push(plan);
+  }
+  if (!plans.length) {
+    log(settings.preserveBoundary
+      ? "The selected vertices are already relaxed or belong only to protected open boundaries."
+      : "The selected vertices are already relaxed or do not have enough connected neighbors.");
+    return [];
+  }
+
+  recordHistory(`${settings.mode} selected vertices`);
+  let movedOccurrences = 0;
+  for (const plan of plans) movedOccurrences += applyRelaxVertexPlan(plan);
+  updateSurfaceComponentMarker();
+  updateAll();
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  log(`${settings.mode === "relax" ? "Relaxed" : "Smoothed"} ${plans.reduce((sum, plan) => sum + plan.targets.size, 0)} selected vert${plans.reduce((sum, plan) => sum + plan.targets.size, 0) === 1 ? "ex" : "ices"}.`, {
+    meshes: plans.length,
+    strength: settings.strength,
+    iterations: settings.iterations,
+    preserveOpenBoundaries: settings.preserveBoundary,
+    movedOccurrences,
+    textureCoordinatesPreserved: true
+  });
+  return plans.map(plan => plan.mesh);
+}
+
+function weldVertexTargetMode() {
+  const mode = String(els.weldVertexTargetSelect?.value || "center").toLowerCase();
+  const normalized = ["center", "first", "last"].includes(mode) ? mode : "center";
+  if (els.weldVertexTargetSelect) els.weldVertexTargetSelect.value = normalized;
+  return normalized;
+}
+
+function topologyEdgeCounts(triangles) {
+  const counts = new Map();
+  for (const keys of triangles) {
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+      const signature = JSON.stringify([keys[a], keys[b]].sort());
+      counts.set(signature, (counts.get(signature) || 0) + 1);
+    }
+  }
+  return counts;
+}
+
+function topologyIsClosedTriangleMesh(triangles) {
+  const counts = topologyEdgeCounts(triangles);
+  return counts.size > 0 && [...counts.values()].every(count => count === 2);
+}
+
+function weldTriangleNormal(points) {
+  return new THREE.Vector3().crossVectors(
+    points[1].clone().sub(points[0]),
+    points[2].clone().sub(points[0])
+  ).normalize();
+}
+
+function assignWeldFlatRegions(triangles) {
+  const edgeToTriangles = new Map();
+  triangles.forEach((triangle, triangleIndex) => {
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+      const signature = JSON.stringify([triangle.originalTopologyKeys[a], triangle.originalTopologyKeys[b]].sort());
+      if (!edgeToTriangles.has(signature)) edgeToTriangles.set(signature, []);
+      edgeToTriangles.get(signature).push(triangleIndex);
+    }
+  });
+  const adjacency = triangles.map(() => new Set());
+  for (const linkedTriangles of edgeToTriangles.values()) {
+    if (linkedTriangles.length !== 2) continue;
+    const [aIndex, bIndex] = linkedTriangles;
+    const a = triangles[aIndex];
+    const b = triangles[bIndex];
+    if (a.materialIndex !== b.materialIndex || a.sourceNormal.dot(b.sourceNormal) < .99999) continue;
+    adjacency[aIndex].add(bIndex);
+    adjacency[bIndex].add(aIndex);
+  }
+  const visited = new Set();
+  let regionId = 0;
+  for (let start = 0; start < triangles.length; start++) {
+    if (visited.has(start)) continue;
+    const members = [];
+    const queue = [start];
+    visited.add(start);
+    while (queue.length) {
+      const current = queue.shift();
+      members.push(current);
+      for (const neighbor of adjacency[current]) {
+        if (visited.has(neighbor)) continue;
+        visited.add(neighbor);
+        queue.push(neighbor);
+      }
+    }
+    for (const triangleIndex of members) {
+      triangles[triangleIndex].flatRegionId = regionId;
+      triangles[triangleIndex].flatRegionSize = members.length;
+      triangles[triangleIndex].flatRegionNormal = triangles[start].sourceNormal.clone();
+    }
+    regionId++;
+  }
+}
+
+function alignedWeldTriangle(topologyKeys, corners, template) {
+  const keys = [...topologyKeys];
+  const points = keys.map(key => corners.get(key).point.clone());
+  const sourceIndices = keys.map(key => corners.get(key).sourceIndex);
+  const normal = weldTriangleNormal(points);
+  if (normal.dot(template.flatRegionNormal) < 0) {
+    [keys[1], keys[2]] = [keys[2], keys[1]];
+    [points[1], points[2]] = [points[2], points[1]];
+    [sourceIndices[1], sourceIndices[2]] = [sourceIndices[2], sourceIndices[1]];
+  }
+  return {
+    points,
+    topologyKeys: keys,
+    sourceIndices,
+    materialIndex: template.materialIndex,
+    flatRegionId: template.flatRegionId,
+    flatRegionSize: template.flatRegionSize,
+    flatRegionNormal: template.flatRegionNormal.clone()
+  };
+}
+
+function retriangulateWeldedFlatQuads(triangles, weldedTopologyKey) {
+  const regionEntries = new Map();
+  triangles.forEach((triangle, triangleIndex) => {
+    if (triangle.flatRegionSize !== 2) return;
+    if (!regionEntries.has(triangle.flatRegionId)) regionEntries.set(triangle.flatRegionId, []);
+    regionEntries.get(triangle.flatRegionId).push({ triangle, triangleIndex });
+  });
+  let retriangulated = 0;
+  for (const entries of regionEntries.values()) {
+    if (entries.length !== 2) continue;
+    const [first, second] = entries;
+    const firstKeys = new Set(first.triangle.topologyKeys);
+    const secondKeys = new Set(second.triangle.topologyKeys);
+    const sharedKeys = [...firstKeys].filter(key => secondKeys.has(key));
+    const oppositeKeys = [
+      ...[...firstKeys].filter(key => !secondKeys.has(key)),
+      ...[...secondKeys].filter(key => !firstKeys.has(key))
+    ];
+    if (sharedKeys.length !== 2 || oppositeKeys.length !== 2 || new Set([...sharedKeys, ...oppositeKeys]).size !== 4) continue;
+    const corners = new Map();
+    for (const entry of entries) {
+      entry.triangle.topologyKeys.forEach((key, corner) => {
+        if (!corners.has(key)) {
+          corners.set(key, {
+            point: entry.triangle.points[corner].clone(),
+            sourceIndex: entry.triangle.sourceIndices[corner]
+          });
+        }
+      });
+    }
+    const currentDiagonal = corners.get(sharedKeys[0]).point.distanceToSquared(corners.get(sharedKeys[1]).point);
+    const alternateDiagonal = corners.get(oppositeKeys[0]).point.distanceToSquared(corners.get(oppositeKeys[1]).point);
+    const currentUsesWeld = sharedKeys.includes(weldedTopologyKey);
+    const alternateUsesWeld = oppositeKeys.includes(weldedTopologyKey);
+    const shouldFlip = alternateDiagonal < currentDiagonal - 1e-12
+      || (Math.abs(alternateDiagonal - currentDiagonal) <= 1e-12 && alternateUsesWeld && !currentUsesWeld);
+    if (!shouldFlip) continue;
+    triangles[first.triangleIndex] = alignedWeldTriangle(
+      [oppositeKeys[0], sharedKeys[0], oppositeKeys[1]],
+      corners,
+      first.triangle
+    );
+    triangles[second.triangleIndex] = alignedWeldTriangle(
+      [oppositeKeys[0], oppositeKeys[1], sharedKeys[1]],
+      corners,
+      second.triangle
+    );
+    retriangulated++;
+  }
+  return retriangulated;
+}
+
+function materialIndexForTriangle(geometry, triangleIndex) {
+  const vertexOffset = triangleIndex * 3;
+  const group = geometry.groups.find(candidate =>
+    vertexOffset >= candidate.start && vertexOffset < candidate.start + candidate.count
+  );
+  return group?.materialIndex ?? 0;
+}
+
+function geometryFromWeldedTriangles(source, triangles) {
+  const geometry = new THREE.BufferGeometry();
+  const sourceAttributes = Object.entries(source.attributes);
+  for (const [name, attribute] of sourceAttributes) {
+    if (name === "normal" || name === "tangent") continue;
+    const values = [];
+    for (const triangle of triangles) {
+      for (let corner = 0; corner < 3; corner++) {
+        if (name === "position") {
+          values.push(...triangle.points[corner].toArray());
+          continue;
+        }
+        const sourceIndex = triangle.sourceIndices[corner];
+        const offset = sourceIndex * attribute.itemSize;
+        for (let component = 0; component < attribute.itemSize; component++) {
+          values.push(attribute.array[offset + component]);
+        }
+      }
+    }
+    const TypedArray = attribute.array.constructor;
+    geometry.setAttribute(name, new THREE.BufferAttribute(new TypedArray(values), attribute.itemSize, attribute.normalized));
+  }
+  if (source.groups.length && triangles.length) {
+    let runStart = 0;
+    let runMaterial = triangles[0].materialIndex;
+    for (let index = 1; index <= triangles.length; index++) {
+      const materialIndex = triangles[index]?.materialIndex;
+      if (index < triangles.length && materialIndex === runMaterial) continue;
+      geometry.addGroup(runStart * 3, (index - runStart) * 3, runMaterial);
+      runStart = index;
+      runMaterial = materialIndex;
+    }
+  }
+  geometry.name = source.name;
+  geometry.userData = { ...(source.userData || {}) };
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+function dissolveTriangleRecords(source) {
+  const position = source.getAttribute("position");
+  if (!position) return [];
+  const triangles = [];
+  for (let index = 0; index < position.count; index += 3) {
+    const points = [0, 1, 2].map(offset => new THREE.Vector3(
+      position.getX(index + offset),
+      position.getY(index + offset),
+      position.getZ(index + offset)
+    ));
+    triangles.push({
+      points,
+      topologyKeys: points.map(vertexKey),
+      sourceIndices: [index, index + 1, index + 2],
+      materialIndex: materialIndexForTriangle(source, index / 3),
+      normal: weldTriangleNormal(points)
+    });
+  }
+  return triangles;
+}
+
+function triangleAttributesMatchAtKeys(source, triangles, keys) {
+  for (const key of keys) {
+    const samples = [];
+    for (const triangle of triangles) {
+      triangle.topologyKeys.forEach((triangleKey, corner) => {
+        if (triangleKey === key) samples.push(triangle.sourceIndices[corner]);
+      });
+    }
+    for (const [name, attribute] of Object.entries(source.attributes)) {
+      if (name === "position" || name === "normal" || name === "tangent" || samples.length < 2) continue;
+      for (let sample = 1; sample < samples.length; sample++) {
+        for (let component = 0; component < attribute.itemSize; component++) {
+          const first = attribute.array[samples[0] * attribute.itemSize + component];
+          const current = attribute.array[samples[sample] * attribute.itemSize + component];
+          if (Math.abs(first - current) > 1e-5) return false;
+        }
+      }
+    }
+  }
+  return true;
+}
+
+function metadataEdgesWithoutVertex(signatures, topology, removedVertexKey) {
+  const retained = [];
+  for (const signature of signatures || []) {
+    const endpoints = topology.edgePairs.get(signature);
+    if (!endpoints || endpoints.some(point => vertexKey(point) === removedVertexKey)) continue;
+    retained.push(signature);
+  }
+  return retained;
+}
+
+function orderedDissolveBoundary(boundaryEdges) {
+  const adjacency = new Map();
+  for (const [a, b] of boundaryEdges) {
+    if (!adjacency.has(a)) adjacency.set(a, []);
+    if (!adjacency.has(b)) adjacency.set(b, []);
+    adjacency.get(a).push(b);
+    adjacency.get(b).push(a);
+  }
+  if (!adjacency.size || [...adjacency.values()].some(neighbors => neighbors.length !== 2)) return null;
+  const start = boundaryEdges[0][0];
+  const ordered = [start];
+  let previous = null;
+  let current = start;
+  for (let guard = 0; guard <= boundaryEdges.length; guard++) {
+    const candidates = adjacency.get(current);
+    const next = candidates.find(candidate => candidate !== previous) ?? candidates[0];
+    if (next === start) return ordered.length === boundaryEdges.length ? ordered : null;
+    if (ordered.includes(next)) return null;
+    ordered.push(next);
+    previous = current;
+    current = next;
+  }
+  return null;
+}
+
+function reportDissolveResult(message, data = null) {
+  if (els.hudText) els.hudText.textContent = message;
+  log(message, data);
+}
+
+function dissolveSelectedEdge() {
+  if (selectedSurfaceEdges.length !== 1) {
+    reportDissolveResult("Dissolve blocked: select exactly one flat internal edge.");
+    return [];
+  }
+  const selectedEdge = selectedSurfaceEdges[0];
+  const mesh = selectedEdge.mesh;
+  const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const triangles = dissolveTriangleRecords(source);
+  const edgeKeys = [vertexKey(selectedEdge.localA), vertexKey(selectedEdge.localB)];
+  const incident = triangles.filter(triangle => edgeKeys.every(key => triangle.topologyKeys.includes(key)));
+  if (incident.length !== 2) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: the selected edge must be internal and shared by exactly two triangles.", { adjacentTriangles: incident.length });
+    return [];
+  }
+  if (incident[0].normal.dot(incident[1].normal) < .99999) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: visible creases are protected. Select a flat edge inside one surface.");
+    return [];
+  }
+  if (incident[0].materialIndex !== incident[1].materialIndex || !triangleAttributesMatchAtKeys(source, incident, edgeKeys)) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: the selected edge is a protected material or UV seam.");
+    return [];
+  }
+  source.dispose();
+  const signature = localEdgeSignature(selectedEdge.localA, selectedEdge.localB);
+  const dissolvedEdges = new Set(mesh.userData.dissolvedSurfaceEdges || []);
+  if (dissolvedEdges.has(signature)) {
+    reportDissolveResult("Dissolve blocked: that modeling edge is already dissolved.");
+    return [];
+  }
+  recordHistory("dissolve selected edge");
+  dissolvedEdges.add(signature);
+  mesh.userData.dissolvedSurfaceEdges = [...dissolvedEdges];
+  selectedSurfaceEdges.length = 0;
+  updateSurfaceComponentMarker();
+  updateAll();
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  reportDissolveResult("DISSOLVE COMPLETE: 1 modeling edge removed. Shape and texture stay unchanged; Undo is ready.", {
+    rendererTrianglesChanged: false,
+    uvPreserved: true,
+    dissolvedModelingEdges: dissolvedEdges.size
+  });
+  return [mesh];
+}
+
+function dissolveSelectedVertex() {
+  if (selectedSurfaceVertices.length !== 1) {
+    reportDissolveResult("Dissolve blocked: select exactly one internal vertex.");
+    return [];
+  }
+  const selectedVertex = selectedSurfaceVertices[0];
+  const mesh = selectedVertex.mesh;
+  const removedVertexKey = vertexKey(selectedVertex.localPoint);
+  const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const triangles = dissolveTriangleRecords(source);
+  const incidentIndexes = triangles
+    .map((triangle, index) => triangle.topologyKeys.includes(removedVertexKey) ? index : -1)
+    .filter(index => index >= 0);
+  if (incidentIndexes.length < 3) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: the vertex must be internal and surrounded by at least three triangles.", { adjacentTriangles: incidentIndexes.length });
+    return [];
+  }
+  const incident = incidentIndexes.map(index => triangles[index]);
+  if (new Set(incident.map(triangle => triangle.materialIndex)).size !== 1) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: the vertex is on a protected material boundary.");
+    return [];
+  }
+  const edgeCounts = new Map();
+  for (const triangle of incident) {
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+      const keys = [triangle.topologyKeys[a], triangle.topologyKeys[b]].sort();
+      const signature = JSON.stringify(keys);
+      const entry = edgeCounts.get(signature) || { keys, count: 0 };
+      entry.count++;
+      edgeCounts.set(signature, entry);
+    }
+  }
+  const boundaryEdges = [...edgeCounts.values()].filter(entry => entry.count === 1).map(entry => entry.keys);
+  if (boundaryEdges.some(keys => keys.includes(removedVertexKey))) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: removing this vertex would open a boundary edge.");
+    return [];
+  }
+  const boundaryKeys = orderedDissolveBoundary(boundaryEdges);
+  if (!boundaryKeys || boundaryKeys.length < 3) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: no closed manifold boundary was found around the vertex.");
+    return [];
+  }
+  const corners = new Map();
+  for (const triangle of incident) {
+    triangle.topologyKeys.forEach((key, corner) => {
+      if (key === removedVertexKey || corners.has(key)) return;
+      corners.set(key, { point: triangle.points[corner].clone(), sourceIndex: triangle.sourceIndices[corner] });
+    });
+  }
+  const normal = incident.reduce((sum, triangle) => sum.add(triangle.normal), new THREE.Vector3()).normalize();
+  const boundaryPoints = boundaryKeys.map(key => corners.get(key).point);
+  const uAxis = boundaryPoints[1].clone().sub(boundaryPoints[0]).normalize();
+  const vAxis = normal.clone().cross(uAxis).normalize();
+  if (vAxis.lengthSq() < 1e-10) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: the surrounding surface cannot be projected safely.");
+    return [];
+  }
+  const center = boundaryPoints.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / boundaryPoints.length);
+  const contour = boundaryPoints.map(point => new THREE.Vector2(
+    point.clone().sub(center).dot(uAxis),
+    point.clone().sub(center).dot(vAxis)
+  ));
+  const fillIndices = THREE.ShapeUtils.triangulateShape(contour, []);
+  if (!fillIndices.length) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: the surrounding boundary cannot be re-triangulated safely.");
+    return [];
+  }
+  const template = {
+    materialIndex: incident[0].materialIndex,
+    flatRegionId: -1,
+    flatRegionSize: fillIndices.length,
+    flatRegionNormal: normal
+  };
+  const fillTriangles = fillIndices.map(indices => alignedWeldTriangle(indices.map(index => boundaryKeys[index]), corners, template));
+  const incidentSet = new Set(incidentIndexes);
+  const nextTriangles = triangles.filter((triangle, index) => !incidentSet.has(index));
+  nextTriangles.push(...fillTriangles);
+  const beforeTopology = triangles.map(triangle => triangle.topologyKeys);
+  const afterTopology = nextTriangles.map(triangle => triangle.topologyKeys);
+  const beforeClosed = topologyIsClosedTriangleMesh(beforeTopology);
+  const afterCounts = topologyEdgeCounts(afterTopology);
+  const afterClosed = topologyIsClosedTriangleMesh(afterTopology);
+  const nonManifoldEdgeCount = [...afterCounts.values()].filter(count => count > 2).length;
+  if (nonManifoldEdgeCount || (beforeClosed && !afterClosed)) {
+    source.dispose();
+    reportDissolveResult("Dissolve blocked: the result would be open or non-manifold.", {
+      beforeClosed,
+      afterClosed,
+      nonManifoldEdgeCount
+    });
+    return [];
+  }
+  const sourceTopology = edgeSlideTopology(source);
+  const protectedEdges = metadataEdgesWithoutVertex(mesh.userData.edgeBevelProtectedEdges, sourceTopology, removedVertexKey);
+  const dissolvedEdges = metadataEdgesWithoutVertex(mesh.userData.dissolvedSurfaceEdges, sourceTopology, removedVertexKey);
+  const geometry = geometryFromWeldedTriangles(source, nextTriangles);
+  source.dispose();
+  recordHistory("dissolve selected vertex");
+  replaceEditableMeshGeometry(mesh, geometry);
+  mesh.userData.edgeBevelProtectedEdges = protectedEdges;
+  mesh.userData.dissolvedSurfaceEdges = dissolvedEdges;
+  selectedSurfaceVertices.length = 0;
+  selectedSurfaceEdges.length = 0;
+  selectedFaces.length = 0;
+  selectedFace = null;
+  updateFaceMarker();
+  updateSurfaceComponentMarker();
+  updateAll();
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  reportDissolveResult("DISSOLVE COMPLETE: 1 vertex removed and its surface re-triangulated. Undo is ready.", {
+    removedTriangles: incident.length,
+    createdTriangles: fillTriangles.length,
+    beforeTriangles: triangles.length,
+    afterTriangles: nextTriangles.length,
+    closedMeshPreserved: beforeClosed ? afterClosed : "source mesh was open",
+    uvPreservedPerBoundaryCorner: !!geometry.getAttribute("uv")
+  });
+  return [mesh];
+}
+
+function dissolveSelectedSurfaceComponent() {
+  if (surfaceComponentMode === "edge") return dissolveSelectedEdge();
+  if (surfaceComponentMode === "vertex") return dissolveSelectedVertex();
+  reportDissolveResult("Dissolve blocked: choose Edge or Vertex and select one component.");
+  return [];
+}
+
+function weldSelectedVertices() {
+  if (surfaceComponentMode !== "vertex" || selectedSurfaceVertices.length < 2) {
+    log("Choose Vertex and select at least two vertices with Shift or Ctrl before using Weld Vertices.");
+    return [];
+  }
+  const meshes = [...new Set(selectedSurfaceVertices.map(vertex => vertex.mesh).filter(Boolean))];
+  if (meshes.length !== 1) {
+    log("Weld Vertices works on vertices from one mesh at a time.");
+    return [];
+  }
+  const mesh = meshes[0];
+  const vertices = selectedSurfaceVertices.filter(vertex => vertex.mesh === mesh);
+  const uniqueVertices = [...new Map(vertices.map(vertex => [vertex.key, vertex])).values()];
+  if (uniqueVertices.length < 2) {
+    log("Select two different vertices before using Weld Vertices.");
+    return [];
+  }
+
+  const targetMode = weldVertexTargetMode();
+  const target = targetMode === "first"
+    ? uniqueVertices[0].localPoint.clone()
+    : targetMode === "last"
+      ? uniqueVertices.at(-1).localPoint.clone()
+      : uniqueVertices.reduce((sum, vertex) => sum.add(vertex.localPoint), new THREE.Vector3())
+        .multiplyScalar(1 / uniqueVertices.length);
+  const selectedPointKeys = new Set(uniqueVertices.map(vertex => vertexKey(vertex.localPoint)));
+  const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const position = source.getAttribute("position");
+  if (!position || position.count < 3) {
+    source.dispose();
+    log("The selected mesh has no editable triangle geometry.");
+    return [];
+  }
+
+  const beforeTopologyTriangles = [];
+  const nextTriangles = [];
+  const topologyTriangleSignatures = new Set();
+  const weldedTopologyKey = "__boltworks_welded_vertex__";
+  let removedDegenerate = 0;
+  let removedDuplicate = 0;
+  const sourceTriangles = [];
+  for (let index = 0; index < position.count; index += 3) {
+    const originalPoints = [0, 1, 2].map(offset => new THREE.Vector3(
+      position.getX(index + offset),
+      position.getY(index + offset),
+      position.getZ(index + offset)
+    ));
+    const originalTopologyKeys = originalPoints.map(point => vertexKey(point));
+    sourceTriangles.push({
+      originalPoints,
+      originalTopologyKeys,
+      sourceIndices: [index, index + 1, index + 2],
+      sourceNormal: weldTriangleNormal(originalPoints),
+      materialIndex: materialIndexForTriangle(source, index / 3)
+    });
+  }
+  assignWeldFlatRegions(sourceTriangles);
+  for (const sourceTriangle of sourceTriangles) {
+    const { originalPoints, originalTopologyKeys } = sourceTriangle;
+    beforeTopologyTriangles.push(originalTopologyKeys);
+    const topologyKeys = originalTopologyKeys.map(key => selectedPointKeys.has(key) ? weldedTopologyKey : key);
+    const points = originalPoints.map(point => selectedPointKeys.has(vertexKey(point)) ? target.clone() : point.clone());
+    if (new Set(topologyKeys).size < 3) {
+      removedDegenerate++;
+      continue;
+    }
+    const area = new THREE.Vector3().crossVectors(
+      points[1].clone().sub(points[0]),
+      points[2].clone().sub(points[0])
+    ).lengthSq();
+    if (area <= 1e-12) {
+      removedDegenerate++;
+      continue;
+    }
+    const topologySignature = JSON.stringify([...topologyKeys].sort());
+    if (topologyTriangleSignatures.has(topologySignature)) {
+      removedDuplicate++;
+      continue;
+    }
+    topologyTriangleSignatures.add(topologySignature);
+    nextTriangles.push({
+      points,
+      topologyKeys,
+      sourceIndices: sourceTriangle.sourceIndices,
+      materialIndex: sourceTriangle.materialIndex,
+      flatRegionId: sourceTriangle.flatRegionId,
+      flatRegionSize: sourceTriangle.flatRegionSize,
+      flatRegionNormal: sourceTriangle.flatRegionNormal
+    });
+  }
+
+  if (!nextTriangles.length) {
+    source.dispose();
+    log("Weld Vertices would remove every triangle, so the mesh was left unchanged.");
+    return [];
+  }
+  const retriangulatedQuads = retriangulateWeldedFlatQuads(nextTriangles, weldedTopologyKey);
+  const nextTopologyTriangles = nextTriangles.map(triangle => triangle.topologyKeys);
+  const beforeClosed = topologyIsClosedTriangleMesh(beforeTopologyTriangles);
+  const afterEdgeCounts = topologyEdgeCounts(nextTopologyTriangles);
+  const afterClosed = topologyIsClosedTriangleMesh(nextTopologyTriangles);
+  const nonManifoldEdgeCount = [...afterEdgeCounts.values()].filter(count => count > 2).length;
+  const createsNonManifoldEdge = nonManifoldEdgeCount > 0;
+  if (createsNonManifoldEdge || (beforeClosed && !afterClosed)) {
+    source.dispose();
+    log("Weld Vertices would open the closed mesh or create a non-manifold edge, so the mesh was left unchanged.", {
+      placement: targetMode,
+      beforeClosed,
+      afterClosed,
+      nonManifoldEdgeCount
+    });
+    return [];
+  }
+
+  const sourceTopology = edgeSlideTopology(source);
+  const protectedEdges = new Set();
+  for (const signature of mesh.userData.edgeBevelProtectedEdges || []) {
+    const endpoints = sourceTopology.edgePairs.get(signature);
+    if (!endpoints) continue;
+    const a = selectedPointKeys.has(vertexKey(endpoints[0])) ? target : endpoints[0];
+    const b = selectedPointKeys.has(vertexKey(endpoints[1])) ? target : endpoints[1];
+    if (a.distanceToSquared(b) > 1e-12) protectedEdges.add(localEdgeSignature(a, b));
+  }
+
+  const geometry = geometryFromWeldedTriangles(source, nextTriangles);
+  source.dispose();
+  recordHistory("weld selected vertices");
+  replaceEditableMeshGeometry(mesh, geometry);
+  mesh.userData.edgeBevelProtectedEdges = [...protectedEdges];
+  mesh.updateMatrixWorld(true);
+  selectedSurfaceVertices.length = 0;
+  selectedSurfaceEdges.length = 0;
+  selectedFaces.length = 0;
+  selectedFace = null;
+  selectedSurfaceVertices.push({
+    mesh,
+    localPoint: target.clone(),
+    key: surfaceVertexKey(mesh, target)
+  });
+  updateFaceMarker();
+  updateSurfaceComponentMarker();
+  updateAll();
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  const placementLabel = targetMode === "first" ? "the first selected position" : targetMode === "last" ? "the last selected position" : "the center";
+  log(`Welded ${uniqueVertices.length} vertices at ${placementLabel}. The new vertex remains selected.`, {
+    beforeTriangles: beforeTopologyTriangles.length,
+    afterTriangles: nextTriangles.length,
+    removedDegenerate,
+    removedDuplicate,
+    retriangulatedQuads,
+    closedMeshPreserved: beforeClosed ? afterClosed : "source mesh was open",
+    uvPreservedPerTriangleCorner: !!geometry.getAttribute("uv")
+  });
+  return [mesh];
 }
 
 function extendSelectedFaces() {

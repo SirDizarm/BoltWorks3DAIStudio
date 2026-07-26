@@ -28,7 +28,13 @@ function serializeObject(mesh) {
     textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0),
     playerAvatar: !!mesh.userData.playerAvatar,
     playerHeadOffset: Array.isArray(mesh.userData.playerHeadOffset) ? [...mesh.userData.playerHeadOffset] : null,
-    edgeBevelProtectedEdges: Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? [...mesh.userData.edgeBevelProtectedEdges] : []
+    liveMirror: mesh.userData.liveMirror?.enabled ? {
+      enabled: true,
+      axis: ["x", "y", "z"].includes(mesh.userData.liveMirror.axis) ? mesh.userData.liveMirror.axis : "x",
+      plane: Number(mesh.userData.liveMirror.plane) || 0
+    } : null,
+    edgeBevelProtectedEdges: Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? [...mesh.userData.edgeBevelProtectedEdges] : [],
+    dissolvedSurfaceEdges: Array.isArray(mesh.userData.dissolvedSurfaceEdges) ? [...mesh.userData.dissolvedSurfaceEdges] : []
   };
 }
 
@@ -80,7 +86,7 @@ function projectCapabilities() {
   return {
     shapes: Object.keys(shapeFactories),
     transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
-    faceTools: ["triangleSelect", "coplanarFaceSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "cutTopBottom"],
+    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "cutTopBottom"],
     textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
     sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
@@ -187,6 +193,13 @@ function projectState() {
         loopCutCount: Math.max(1, Math.min(8, Math.round(Number(els.loopCutCountInput?.value) || 1))),
         edgeSlideAxis: ["auto", "x", "y", "z"].includes(els.edgeSlideAxisSelect?.value) ? els.edgeSlideAxisSelect.value : "auto",
         edgeSlideAmount: Math.max(-95, Math.min(95, Number.isFinite(Number(els.edgeSlideAmountInput?.value)) ? Number(els.edgeSlideAmountInput.value) : 10)),
+        surfaceScaleAxis: ["uniform", "x", "y", "z"].includes(els.surfaceScaleAxisSelect?.value) ? els.surfaceScaleAxisSelect.value : "uniform",
+        surfaceScaleAmount: Math.max(1, Math.min(1000, Number(els.surfaceScaleAmountInput?.value) || 80)),
+        relaxMode: els.relaxModeSelect?.value === "smooth" ? "smooth" : "relax",
+        relaxStrength: Math.max(1, Math.min(100, Number(els.relaxStrengthInput?.value) || 50)),
+        relaxIterations: Math.max(1, Math.min(20, Math.round(Number(els.relaxIterationsInput?.value) || 1))),
+        relaxPreserveBoundary: !!els.relaxPreserveBoundaryInput?.checked,
+        weldVertexTarget: ["center", "first", "last"].includes(els.weldVertexTargetSelect?.value) ? els.weldVertexTargetSelect.value : "center",
         dragPushAxis: els.dragPushAxisSelect.value || "free",
         dragPushStep: Number(els.dragPushStepInput.value) || 0.01,
         insetAmount: Number(els.insetAmountInput?.value) || 0.10,
@@ -196,6 +209,7 @@ function projectState() {
         surfaceSelectionSource,
         surfaceMouseFalloff: els.surfaceMouseFalloffSelect?.value === "hard" ? "hard" : "soft",
         autoSurfaceDrag: !!els.autoSurfaceDragInput?.checked,
+        showModelingEdges: !!els.showModelingEdgesInput?.checked,
         surfaceEditorOpen: !els.surfaceEditorWindow?.classList.contains("collapsed"),
         connectFace: !!els.connectFaceInput.checked,
         coplanarFaceSelection: !!coplanarFacePickMode,
@@ -453,12 +467,26 @@ function applyProjectEditorState(editor = {}) {
     const edgeSlideAmount = Number(tools.edgeSlideAmount);
     els.edgeSlideAmountInput.value = String(Math.max(-95, Math.min(95, Number.isFinite(edgeSlideAmount) ? edgeSlideAmount : 10)));
   }
+  if (els.surfaceScaleAxisSelect) {
+    els.surfaceScaleAxisSelect.value = ["uniform", "x", "y", "z"].includes(tools.surfaceScaleAxis) ? tools.surfaceScaleAxis : "uniform";
+  }
+  if (els.surfaceScaleAmountInput) {
+    els.surfaceScaleAmountInput.value = String(Math.max(1, Math.min(1000, Number(tools.surfaceScaleAmount) || 80)));
+  }
+  if (els.relaxModeSelect) els.relaxModeSelect.value = tools.relaxMode === "smooth" ? "smooth" : "relax";
+  if (els.relaxStrengthInput) els.relaxStrengthInput.value = String(Math.max(1, Math.min(100, Number(tools.relaxStrength) || 50)));
+  if (els.relaxIterationsInput) els.relaxIterationsInput.value = String(Math.max(1, Math.min(20, Math.round(Number(tools.relaxIterations) || 1))));
+  if (els.relaxPreserveBoundaryInput) els.relaxPreserveBoundaryInput.checked = tools.relaxPreserveBoundary ?? true;
+  if (els.weldVertexTargetSelect) {
+    els.weldVertexTargetSelect.value = ["center", "first", "last"].includes(tools.weldVertexTarget) ? tools.weldVertexTarget : "center";
+  }
   els.dragPushAxisSelect.value = ["x", "y", "z"].includes(tools.dragPushAxis) ? tools.dragPushAxis : "free";
   els.dragPushStepInput.value = String(tools.dragPushStep ?? 0.01);
   if (els.insetAmountInput) els.insetAmountInput.value = String(tools.insetAmount ?? 0.10);
   if (els.softRadiusInput) els.softRadiusInput.value = String(tools.softRadius ?? 0.25);
   if (els.surfaceMouseFalloffSelect) els.surfaceMouseFalloffSelect.value = tools.surfaceMouseFalloff === "hard" ? "hard" : "soft";
   if (els.autoSurfaceDragInput) els.autoSurfaceDragInput.checked = tools.autoSurfaceDrag ?? true;
+  if (els.showModelingEdgesInput) els.showModelingEdgesInput.checked = tools.showModelingEdges ?? true;
   surfaceComponentMode = ["none", "vertex", "edge", "triangle", "face"].includes(tools.surfaceComponentMode)
     ? tools.surfaceComponentMode
     : (tools.coplanarFaceSelection ? "face" : "triangle");
@@ -1017,9 +1045,12 @@ function updateState() {
 
 function updateAll() {
   syncSpotLightRig();
+  syncLiveMirrorPreview();
+  syncLiveMirrorUi();
   updateTriangleHelpers();
   updateSelectionOutline();
   updateOpeningPickGuide();
+  updateModelingEdgesOverlay();
   renderTree();
   syncInspectorSoft();
   updateState();
@@ -4559,7 +4590,9 @@ function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = n
   camera.position.copy(center).add(direction.multiplyScalar(distance));
   camera.near = Math.max(.01, distance / 2000);
   camera.far = Math.max(1000000, distance * 60);
-  camera.up.set(0, viewName === "top" ? 0 : 1, viewName === "top" ? -1 : 0);
+  // OrbitControls must keep one stable world-up axis after every preset view.
+  // The slight Z component in the Top direction already defines its screen-up orientation.
+  camera.up.set(0, 1, 0);
   orbit.target.copy(center);
   camera.lookAt(center);
   camera.updateProjectionMatrix();

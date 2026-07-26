@@ -74,12 +74,30 @@ const surfaceTransform = new TransformControls(camera, renderer.domElement);
 surfaceTransform.visible = false;
 surfaceTransform.setMode("translate");
 surfaceTransform.setSpace("world");
-surfaceTransform.setSize(.95);
+surfaceTransform.setSize(1.2);
 surfaceTransform.addEventListener("dragging-changed", event => orbit.enabled = !event.value);
 surfaceTransform.addEventListener("mouseDown", beginSurfaceGizmoDrag);
 surfaceTransform.addEventListener("mouseUp", finishSurfaceGizmoDrag);
 surfaceTransform.addEventListener("objectChange", applySurfaceGizmoDelta);
 scene.add(surfaceTransform);
+
+function createReferenceSurfaceTransform(referenceCamera, referenceCanvas) {
+  const control = new TransformControls(referenceCamera, referenceCanvas);
+  control.visible = false;
+  control.setMode("translate");
+  control.setSpace("world");
+  control.setSize(1.0);
+  control.addEventListener("dragging-changed", event => orbit.enabled = !event.value);
+  control.addEventListener("mouseDown", beginSurfaceGizmoDrag);
+  control.addEventListener("mouseUp", finishSurfaceGizmoDrag);
+  control.addEventListener("objectChange", applySurfaceGizmoDelta);
+  scene.add(control);
+  return control;
+}
+
+const surfaceFrontTransform = createReferenceSurfaceTransform(frontBoneCamera, frontBoneCanvas);
+const surfaceSideTransform = createReferenceSurfaceTransform(sideBoneCamera, sideBoneCanvas);
+const surfaceTransforms = [surfaceTransform, surfaceFrontTransform, surfaceSideTransform];
 
 const grid = new THREE.GridHelper(18, 18, 0x7f929c, 0x34424a);
 grid.visible = true;
@@ -275,6 +293,11 @@ const raycaster = new THREE.Raycaster();
 const pointer = new THREE.Vector2();
 const lastCanvasPointer = new THREE.Vector2();
 const objects = [];
+const liveMirrorPreviewGroup = new THREE.Group();
+liveMirrorPreviewGroup.name = "live mirror previews";
+liveMirrorPreviewGroup.userData.editorHelper = true;
+scene.add(liveMirrorPreviewGroup);
+const liveMirrorPreviewBySourceId = new Map();
 let selected = null;
 let facePickMode = false;
 let coplanarFacePickMode = false;
@@ -304,6 +327,7 @@ let dragPushSession = null;
 let surfaceGizmoDragging = false;
 let surfaceGizmoSyncing = false;
 let surfaceGizmoMovedDistance = 0;
+let activeSurfaceTransform = surfaceTransform;
 const surfaceGizmoLastPosition = new THREE.Vector3();
 let checkedIds = new Set();
 let activeGroupIds = [];
@@ -331,6 +355,10 @@ const surfaceComponentMarker = new THREE.Group();
 surfaceComponentMarker.name = "selected vertex and edge markers";
 surfaceComponentMarker.visible = false;
 scene.add(surfaceComponentMarker);
+const modelingEdgesOverlay = new THREE.Group();
+modelingEdgesOverlay.name = "visible modeling edges";
+modelingEdgesOverlay.visible = false;
+scene.add(modelingEdgesOverlay);
 const selectionOutlineGroup = new THREE.Group();
 selectionOutlineGroup.name = "selected object silhouette";
 scene.add(selectionOutlineGroup);
@@ -410,6 +438,7 @@ const els = {
   utilitiesToggle: document.querySelector("#utilitiesToggle"),
   cameraViewsSection: document.querySelector("#cameraViewsSection"),
   cameraViewsToggle: document.querySelector("#cameraViewsToggle"),
+  cameraControlsOpenBtn: document.querySelector("#cameraControlsOpenBtn"),
   referenceImageSection: document.querySelector("#referenceImageSection"),
   referenceImageToggle: document.querySelector("#referenceImageToggle"),
   loadReferenceImageBtn: document.querySelector("#loadReferenceImageBtn"),
@@ -518,6 +547,8 @@ const els = {
   loftCheckedBtn: document.querySelector("#loftCheckedBtn"),
   symmetryAxisSelect: document.querySelector("#symmetryAxisSelect"),
   symmetryPlaneInput: document.querySelector("#symmetryPlaneInput"),
+  liveMirrorBtn: document.querySelector("#liveMirrorBtn"),
+  applyLiveMirrorBtn: document.querySelector("#applyLiveMirrorBtn"),
   mirrorCopyBtn: document.querySelector("#mirrorCopyBtn"),
   digIntoBtn: document.querySelector("#digIntoBtn"),
   removeMarksBtn: document.querySelector("#removeMarksBtn"),
@@ -537,6 +568,7 @@ const els = {
   surfaceMouseModeBtn: document.querySelector("#surfaceMouseModeBtn"),
   surfaceValueModeBtn: document.querySelector("#surfaceValueModeBtn"),
   autoSurfaceDragInput: document.querySelector("#autoSurfaceDragInput"),
+  showModelingEdgesInput: document.querySelector("#showModelingEdgesInput"),
   surfaceMouseFalloffSelect: document.querySelector("#surfaceMouseFalloffSelect"),
   insetAmountInput: document.querySelector("#insetAmountInput"),
   insetFaceBtn: document.querySelector("#insetFaceBtn"),
@@ -564,6 +596,17 @@ const els = {
   edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
   edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
   edgeSlideBtn: document.querySelector("#edgeSlideBtn"),
+  surfaceScaleAxisSelect: document.querySelector("#surfaceScaleAxisSelect"),
+  surfaceScaleAmountInput: document.querySelector("#surfaceScaleAmountInput"),
+  surfaceScaleBtn: document.querySelector("#surfaceScaleBtn"),
+  relaxModeSelect: document.querySelector("#relaxModeSelect"),
+  relaxStrengthInput: document.querySelector("#relaxStrengthInput"),
+  relaxIterationsInput: document.querySelector("#relaxIterationsInput"),
+  relaxPreserveBoundaryInput: document.querySelector("#relaxPreserveBoundaryInput"),
+  relaxVerticesBtn: document.querySelector("#relaxVerticesBtn"),
+  weldVertexTargetSelect: document.querySelector("#weldVertexTargetSelect"),
+  weldVerticesBtn: document.querySelector("#weldVerticesBtn"),
+  dissolveSelectedBtn: document.querySelector("#dissolveSelectedBtn"),
   dragPushAxisSelect: document.querySelector("#dragPushAxisSelect"),
   dragPushStepInput: document.querySelector("#dragPushStepInput"),
   softRadiusInput: document.querySelector("#softRadiusInput"),

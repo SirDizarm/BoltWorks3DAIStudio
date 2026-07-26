@@ -3,23 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoltWorks 3D AI Studio v49.2.5 Experimental</title>
-  <meta name="application-version" content="v49.2.5 modular studio" />
+  <title>BoltWorks 3D AI Studio v49.8.3 Experimental</title>
+  <meta name="application-version" content="v49.8.3 modular studio" />
   <link rel="icon" type="image/png" href="./app/assets/branding/boltworks-logo.png" />
-  <link rel="stylesheet" href="./app/styles/studio.css?v=49.2.5" />
+  <link rel="stylesheet" href="./app/styles/studio.css?v=49.8.3" />
 
 </head>
 <body>
-  <script defer src="./app/panels/panel-collapse.js?v=49.2.5"></script>
-  <script defer src="./app/panels/tool-docking.js?v=49.2.5"></script>
+  <script defer src="./app/panels/panel-collapse.js?v=49.8.3"></script>
+  <script defer src="./app/panels/tool-docking.js?v=49.8.3"></script>
 
   <div class="persistent-notices" aria-label="Version and copyright notices">
-    <div class="persistent-notice experimental-notice" role="status"><strong>v49.2.5 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+    <div class="persistent-notice experimental-notice" role="status"><strong>v49.8.3 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
     <div class="persistent-notice copyright-notice" role="note"><strong>© 2026 Daniel Rydin</strong><span>BoltWorks branding and visual assets. All rights reserved.</span></div>
   </div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.2.5 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.8.3 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -53,6 +53,8 @@
         <button id="loftCheckedBtn" title="Create a smooth closed mesh through two or more checked profile objects">Loft Checked</button>
         <label title="World axis mirrored copies cross">Sym <select id="symmetryAxisSelect"><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label>
         <label title="World coordinate of the symmetry plane">Plane <input id="symmetryPlaneInput" type="number" step="0.01" value="0" /></label>
+        <button id="liveMirrorBtn" title="Toggle a non-selectable live mirrored preview for the selected or checked parts">Live Mirror</button>
+        <button id="applyLiveMirrorBtn" title="Turn the active live mirror preview into independent editable mirrored parts">Apply Live Mirror</button>
         <button id="mirrorCopyBtn" title="Create mirrored editable copies of selected or checked parts">Mirror Copy</button>
       </div>
       <div class="toolbar-group" id="toolbarSelectionToolsGroup" aria-label="Selection tools">
@@ -90,6 +92,9 @@
       </div>
       <div class="toolbar-group" id="toolbarFaceEditGroup" aria-label="Face edit tools">
         <button id="surfaceEditorOpenBtn" title="Open contextual mouse-drag and exact-value surface editing">Surface Edit</button>
+      </div>
+      <div class="toolbar-group" id="toolbarCameraControlsLauncherGroup" aria-label="Camera controls">
+        <button id="cameraControlsOpenBtn" title="Open Camera Views and jump directly to the standard and custom camera controls">Camera Controls</button>
       </div>
       <div class="toolbar-group" id="toolbarSceneGroup" aria-label="Scene actions">
         <button id="undoBtn" title="Undo last edit (Ctrl+Z)" disabled>Undo</button>
@@ -203,12 +208,12 @@
         <div class="reference-viewport">
           <canvas id="frontBoneCanvas"></canvas>
           <span class="reference-view-label">FRONT: X / Y</span>
-          <span class="reference-view-hint">Drag a bone joint | Hold Shift: lock axis</span>
+          <span class="reference-view-hint">Surface: drag X/Y | Bone: drag joint</span>
         </div>
         <div class="reference-viewport">
           <canvas id="sideBoneCanvas"></canvas>
           <span class="reference-view-label">SIDE: Z / Y</span>
-          <span class="reference-view-hint">Drag a bone joint | Hold Shift: lock axis</span>
+          <span class="reference-view-hint">Surface: drag Z/Y | Bone: drag joint</span>
         </div>
       </div>
     </section>
@@ -545,6 +550,7 @@
         <button id="surfaceSelectTriangleBtn" type="button" title="Select one triangle at a time">Triangle</button>
         <button id="surfaceSelectFaceBtn" type="button" title="Select the whole connected flat face">Whole Face</button>
       </div>
+      <label class="toggle-chip"><input id="showModelingEdgesInput" type="checkbox" checked /> <span>Show Modeling Edges</span></label>
       <div class="surface-editor-tabs" role="group" aria-label="Surface edit input mode">
         <button id="surfaceMouseModeBtn" type="button" title="Enable or release viewport surface dragging">Mouse Drag</button>
         <button id="surfaceValueModeBtn" type="button">Exact Value</button>
@@ -614,6 +620,63 @@
         </div>
         <button id="edgeSlideBtn" type="button" title="Slide selected edges along their surrounding topology without changing the mesh vertex count">Slide Selected Edge(s)</button>
         <p class="api-note">Choose Edge or create a Loop Cut. Positive and negative values slide in opposite directions. Auto remembers the Loop Cut direction and otherwise follows the strongest neighboring rail.</p>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Scale Selected Surface</summary>
+        <div class="field-grid">
+          <label title="Uniform scales every direction; X, Y, or Z scales only that world-space direction">Axis
+            <select id="surfaceScaleAxisSelect">
+              <option value="uniform" selected>Uniform</option>
+              <option value="x">X</option>
+              <option value="y">Y</option>
+              <option value="z">Z</option>
+            </select>
+          </label>
+          <label title="100 keeps the current size; values below 100 shrink and values above 100 enlarge">Size %
+            <input id="surfaceScaleAmountInput" type="number" min="1" max="1000" step="1" value="80" />
+          </label>
+        </div>
+        <button id="surfaceScaleBtn" type="button" title="Scale the selected vertices, edges, triangles, or whole face around its own center">Scale Selected</button>
+        <p class="api-note">Scales only the selected surface around its own center. Uniform keeps a flat face in its plane; X, Y, or Z changes one world-space dimension. Texture coordinates and selection are retained.</p>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Smooth / Relax Vertices</summary>
+        <div class="field-grid">
+          <label title="Relax moves displaced vertices toward their connected neighboring surface; Smooth also softens the silhouette">Mode
+            <select id="relaxModeSelect">
+              <option value="relax" selected>Relax Surface</option>
+              <option value="smooth">Smooth Shape</option>
+            </select>
+          </label>
+          <label title="How far selected vertices move toward their neighboring average per iteration">Strength %
+            <input id="relaxStrengthInput" type="number" min="1" max="100" step="1" value="50" />
+          </label>
+          <label title="Number of smoothing passes">Iterations
+            <input id="relaxIterationsInput" type="number" min="1" max="20" step="1" value="1" />
+          </label>
+        </div>
+        <label class="toggle-chip"><input id="relaxPreserveBoundaryInput" type="checkbox" checked /> <span>Preserve open boundaries</span></label>
+        <button id="relaxVerticesBtn" type="button" title="Relax the selected vertices using their connected topology">Relax Selected Vertices</button>
+        <p class="api-note">Choose Vertex and select the points to edit. Relax Surface moves displaced points toward their connected neighboring surface and keeps the center of multi-point selections stable. Smooth Shape can also round the silhouette. UV coordinates and closed topology are retained.</p>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Weld Vertices</summary>
+        <div class="field-grid">
+          <label title="Controls where the welded vertex is placed">Placement
+            <select id="weldVertexTargetSelect">
+              <option value="center" selected>Center</option>
+              <option value="first">First Selected</option>
+              <option value="last">Last Selected</option>
+            </select>
+          </label>
+        </div>
+        <button id="weldVerticesBtn" type="button" title="Weld two or more selected vertices in the same mesh">Weld Selected Vertices</button>
+        <p class="api-note">Choose Vertex and select at least two vertices with Shift/Ctrl. UVs and materials are preserved, redundant triangles are removed, and the result stays selected.</p>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Dissolve Edge or Vertex</summary>
+        <button id="dissolveSelectedBtn" type="button" title="Dissolve the selected flat edge or internal vertex">Dissolve Selected</button>
+        <p class="api-note">Edge: select a flat internal modeling edge. Vertex: select an internal manifold vertex on one continuous material surface. Boundary edges, UV seams, and invalid topology are protected. The viewport reports whether Dissolve completed or why it was blocked.</p>
       </details>
       <p class="api-note">Mouse Drag: select a surface, then drag it left/right in the viewport. Exact Value: use Distance with the action buttons.</p>
     </div>
@@ -748,7 +811,7 @@
     </div>
   </div>
 
-  <script defer src="./app/studio-v49.2.5.js?v=49.2.5"></script>
+  <script defer src="./app/studio-v49.8.3.js?v=49.8.3"></script>
 <script src="./app/selection/runtime-bridge.js"></script>
 </body>
 </html>

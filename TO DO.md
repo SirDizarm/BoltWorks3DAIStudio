@@ -9,11 +9,11 @@ Den här listan är den låsta verktygsplanen för BoltWorks 3D AI Studio.
 - [x] Loop Cut / Ring Cut
 - [x] Edge Slide
 - [x] Riktig Extrude Region i samma mesh
-- [ ] Weld / Merge Vertices
-- [ ] Dissolve Edge / Vertex
-- [ ] Live Mirror / Symmetry
-- [ ] Scale Selected Surface
-- [ ] Smooth / Relax Vertices
+- [x] Weld / Merge Vertices
+- [x] Dissolve Edge / Vertex
+- [x] Live Mirror / Symmetry
+- [x] Scale Selected Surface
+- [x] Smooth / Relax Vertices (M12R2 confirmed in v49.8.2; repeated Relax tests softened the selected surface correctly)
 - [ ] Knife / Plane Cut
 - [ ] Bridge Edge Loops
 

@@ -10,6 +10,7 @@ function resize() {
 function animate() {
   requestAnimationFrame(animate);
   resize();
+  syncLiveMirrorPreview();
   boneGridAxisGroup.visible = !!els.showGridInput?.checked;
   syncActiveJointCamera();
   orbit.update();
@@ -20,6 +21,8 @@ function animate() {
     const radius = Math.max(.025, Math.min(.12, camera.position.distanceTo(lineSketchHover.point) * .012));
     lineSketchCursor.scale.setScalar(radius);
   }
+  surfaceFrontTransform.visible = false;
+  surfaceSideTransform.visible = false;
   renderer.render(scene, camera);
   const mainBackground = scene.background;
   const mainFog = scene.fog;
@@ -27,8 +30,13 @@ function animate() {
   scene.fog = null;
   const surfaceTransformWasVisible = surfaceTransform.visible;
   surfaceTransform.visible = false;
+  surfaceFrontTransform.visible = surfaceTransformWasVisible;
   frontBoneRenderer.render(scene, frontBoneCamera);
+  surfaceFrontTransform.visible = false;
+  surfaceSideTransform.visible = surfaceTransformWasVisible;
   sideBoneRenderer.render(scene, sideBoneCamera);
+  surfaceFrontTransform.visible = surfaceTransformWasVisible;
+  surfaceSideTransform.visible = surfaceTransformWasVisible;
   surfaceTransform.visible = surfaceTransformWasVisible;
   scene.background = mainBackground;
   scene.fog = mainFog;
@@ -218,6 +226,13 @@ frontBoneCanvas.addEventListener("pointerup", endBoneDrag);
 sideBoneCanvas.addEventListener("pointerup", endBoneDrag);
 frontBoneCanvas.addEventListener("pointercancel", endBoneDrag);
 sideBoneCanvas.addEventListener("pointercancel", endBoneDrag);
+function finishReferenceSurfaceDrag(event) {
+  if (!surfaceGizmoDragging) return;
+  const draggingControl = [surfaceFrontTransform, surfaceSideTransform].find(control => control.dragging);
+  if (draggingControl) draggingControl.pointerUp(event);
+}
+window.addEventListener("pointerup", finishReferenceSurfaceDrag);
+window.addEventListener("pointercancel", finishReferenceSurfaceDrag);
 restoreBoneRig({ bones: [], showGuides: true });
 document.querySelector("#groupBtn").addEventListener("click", groupCheckedParts);
 document.querySelector("#ungroupBtn").addEventListener("click", ungroupParts);
@@ -241,6 +256,10 @@ document.querySelector("#fillHoleBtn").addEventListener("click", fillSelectedHol
 document.querySelector("#bridgeMeshesBtn").addEventListener("click", bridgeCheckedMeshes);
 els.loftCheckedBtn?.addEventListener("click", loftCheckedProfiles);
 els.mirrorCopyBtn?.addEventListener("click", mirrorCopySelection);
+els.liveMirrorBtn?.addEventListener("click", toggleLiveMirror);
+els.applyLiveMirrorBtn?.addEventListener("click", applyLiveMirrorSelection);
+els.symmetryAxisSelect?.addEventListener("change", updateLiveMirrorSettings);
+els.symmetryPlaneInput?.addEventListener("change", updateLiveMirrorSettings);
 
 const modelToolGroupIds = [
   "toolbarShapeBuilderGroup",
@@ -280,6 +299,16 @@ function setOutputToolsOpen(open = true) {
   if (open) requestAnimationFrame(() => els.outputToolsWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
+function setCameraControlsOpen(open = true) {
+  if (!els.cameraViewsSection) return;
+  if (open) {
+    setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, false);
+    setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, false);
+  }
+  els.cameraControlsOpenBtn?.classList.toggle("active", open && !els.cameraViewsSection.classList.contains("collapsed"));
+  if (open) requestAnimationFrame(() => els.cameraViewsSection.scrollIntoView({ behavior: "smooth", block: "start" }));
+}
+
 els.modelToolsOpenBtn?.addEventListener("click", () => setModelToolsOpen(true));
 els.modelToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
   els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
@@ -288,8 +317,13 @@ els.outputToolsOpenBtn?.addEventListener("click", () => setOutputToolsOpen(true)
 els.outputToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
   els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
 }));
+els.cameraControlsOpenBtn?.addEventListener("click", () => setCameraControlsOpen(true));
+els.cameraViewsToggle?.addEventListener("click", () => requestAnimationFrame(() => {
+  els.cameraControlsOpenBtn?.classList.toggle("active", !els.cameraViewsSection?.classList.contains("collapsed"));
+}));
 els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
 els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
+els.cameraControlsOpenBtn?.classList.toggle("active", !els.cameraViewsSection?.classList.contains("collapsed"));
 document.querySelector("#digIntoBtn").addEventListener("click", digIntoSelectedFace);
 document.querySelector("#removeMarksBtn").addEventListener("click", removeMarkersForSelection);
 document.querySelector("#copyTriBtn").addEventListener("click", copySelectedTriangles);
@@ -323,6 +357,7 @@ els.surfaceEditorOpenBtn?.addEventListener("click", () => setSurfaceEditorOpen(t
 els.surfaceEditorCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
   syncSurfaceEditorUi();
   updateSurfaceGizmoAttachment();
+  updateModelingEdgesOverlay();
 }));
 els.surfaceSelectTriangleBtn?.addEventListener("click", () => setSurfaceSelectionMode("triangle"));
 els.surfaceSelectFaceBtn?.addEventListener("click", () => setSurfaceSelectionMode("face"));
@@ -334,6 +369,10 @@ els.autoSurfaceDragInput?.addEventListener("change", () => {
   if (els.autoSurfaceDragInput.checked) armContextualSurfaceDrag();
   else if (dragPushMode) setDragPushMode(false, { silent: true });
   syncSurfaceEditorUi();
+});
+els.showModelingEdgesInput?.addEventListener("change", () => {
+  updateModelingEdgesOverlay();
+  log(`Modeling edge overlay ${els.showModelingEdgesInput.checked ? "enabled" : "disabled"}.`);
 });
 [els.dragPushAxisSelect, els.dragPushStepInput, els.softRadiusInput, els.surfaceMouseFalloffSelect].forEach(input => input?.addEventListener("input", () => {
   updateSurfaceGizmoAttachment();
@@ -349,6 +388,10 @@ els.edgeBevelBtn?.addEventListener("click", bevelSelectedEdge);
 els.subdivideSelectedBtn?.addEventListener("click", subdivideSelectedSurface);
 els.loopCutBtn?.addEventListener("click", applyLoopCut);
 els.edgeSlideBtn?.addEventListener("click", slideSelectedEdges);
+els.surfaceScaleBtn?.addEventListener("click", scaleSelectedSurface);
+els.relaxVerticesBtn?.addEventListener("click", relaxSelectedVertices);
+els.weldVerticesBtn?.addEventListener("click", weldSelectedVertices);
+els.dissolveSelectedBtn?.addEventListener("click", dissolveSelectedSurfaceComponent);
 els.cutMeshBtn.addEventListener("click", cutSelectedMesh);
 document.querySelector("#clearBtn").addEventListener("click", clearObjects);
 document.querySelector("#frameBtn").addEventListener("click", frameSelected);
@@ -784,6 +827,15 @@ function prioritizeUnselectedSurfaceTriangle(event) {
   if (!surfaceTransform.visible || surfaceTransform.dragging || !facePickMode) {
     surfaceTransform.enabled = true;
     return;
+  }
+  surfaceTransform.enabled = true;
+  if (typeof surfaceTransform.pointerHover === "function" && typeof surfaceTransform._getPointer === "function") {
+    surfaceTransform.pointerHover(surfaceTransform._getPointer(event));
+    const hoveredAxis = String(surfaceTransform.axis || "").toUpperCase();
+    const hoveredVisibleArrow = (hoveredAxis === "X" && surfaceTransform.showX)
+      || (hoveredAxis === "Y" && surfaceTransform.showY)
+      || (hoveredAxis === "Z" && surfaceTransform.showZ);
+    if (hoveredVisibleArrow) return;
   }
   const hit = hitFromPointerEvent(event);
   const overMeshTriangle = !!hit?.face;

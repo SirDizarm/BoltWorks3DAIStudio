@@ -1031,6 +1031,11 @@ label {
   color: #f1c65b;
 }
 
+#cameraControlsOpenBtn.active {
+  border-color: #d1a53d;
+  color: #f1c65b;
+}
+
 .output-tools-body {
   grid-template-columns: 1fr;
 }

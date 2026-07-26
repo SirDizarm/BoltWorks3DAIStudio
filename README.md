@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.2.5**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.8.3**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
 ## Local development source
 
@@ -23,7 +23,7 @@ The primary document is `index.html`; canonical application logic lives under
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.2.5.js`, so direct file opening does not depend on module CORS or a
+`app/studio-v49.8.3.js`, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
@@ -42,6 +42,7 @@ Manual mesh tests use the permanent shorthand documented in `docs/MESH_TEST_CODE
 
 - **Loft Checked** builds one closed editable mesh through two or more checked profile objects. Place the profiles along X, Y, or Z, choose the axis (or Auto), and set the perimeter sample count.
 - **Mirror Copy** creates independent editable copies across a world-space X, Y, or Z symmetry plane.
+- **Live Mirror** adds a non-selectable mirrored preview across the chosen world-space axis and plane. It follows geometry, texture, and object transforms immediately; **Apply Live Mirror** turns the preview into an independent editable part and supports Undo.
 - **Surface Edit** is a collapsible right-side section. Mouse Drag automatically arms after a face is selected and supports either a smooth falloff radius or a hard-face move; Exact Value provides numerical Inset Face, Extend, Pull, Push, Soft Pull, Soft Push, and Bevel actions.
 - Surface selection is always explicit: **Triangle** selects one mesh triangle and **Whole Face** selects the connected coplanar region. In Mouse Drag mode, Axis is color-coded: Free restores all three arrows, while a lock shows only X (red), Y (green), or Z (blue). Surface-normal axis guessing is intentionally not used.
 - The classic **Select Tri** and **Select Face** tools are independent from Surface Edit. Activating either one releases Mouse Drag and its axis lock, then restores ordinary triangle or coplanar-face picking.
@@ -51,11 +52,17 @@ Manual mesh tests use the permanent shorthand documented in `docs/MESH_TEST_CODE
 - **Subdivide Surface** adds local topology without changing the model silhouette. Triangle or Whole Face selections can be split one or two levels (4x or 16x selected triangles), interpolated texture coordinates are retained, and protected bevel boundaries remain protected. Adjacent unselected triangles receive matching boundary splits, preventing T-junction cracks when the new detail is moved; only the requested surface remains selected for immediate shaping.
 - **Loop Cut / Ring Cut** inserts one or more local-axis cutting planes through the selected mesh without changing its silhouette. A single cut uses an exact percentage of the mesh bounds; multiple cuts are evenly spaced. UVs and protected bevel edges are retained, and every newly inserted ring segment stays selected for immediate movement.
 - **Edge Slide** moves selected edges along their neighboring topology rails without adding triangles. Signed percentage values choose either direction, Loop Cut rings remember their cutting axis, and Auto can infer a rail for manually selected edges.
+- **Scale Selected Surface** scales selected vertices, edges, triangles, or a Whole Face around its own center. Uniform scaling keeps flat faces in their plane, world X/Y/Z can change one dimension, UV coordinates remain attached, the active selection is retained, and Undo restores the previous surface.
+- **Smooth / Relax Vertices** edits selected vertices through connected one-ring topology. Relax Surface moves displaced vertices toward their neighboring surface while stabilizing the center of multi-vertex selections; Smooth Shape also rounds the silhouette. Strength, iterations, open-boundary protection, retained UVs, and Undo are supported. v49.8.1 settles completed pointer drags and prioritizes visible surface arrows; v49.8.2 also exposes the same selected-surface gizmo in the FRONT and SIDE reference views, so a camera-aligned world axis remains draggable.
+- **Weld Vertices** merges two or more ordered Vertex selections inside one mesh. The result can be placed at the center, first selected vertex, or last selected vertex; per-corner UVs and materials stay intact, degenerate and duplicate triangles are removed, closed meshes are protected from accidental holes, and the welded result remains selected.
+- **Dissolve Edge or Vertex** hides a flat internal renderer diagonal as a modeling edge, or removes one internal manifold vertex and re-triangulates its closed one-ring boundary. Boundary edges, material seams, UV seams, and non-manifold results are protected. **Show Modeling Edges** draws the active topology on the selected mesh so the removed edge visibly disappears.
 - **Extrude Region** replaces one connected planar selection inside its original mesh with a translated cap and one continuous set of boundary walls. Internal triangle edges do not create duplicate walls, UVs are retained, and the new cap remains selected for repeated shaping.
 - Mouse Drag only captures pointer-down events that begin on an already selected triangle. Unselected triangles remain clickable, double-click releases the current surface selection, and clicking the active Mouse Drag tab releases the drag mode and hides its arrows.
-- On small surfaces, mesh triangles take pointer priority over the gizmo's larger invisible hit areas. An unselected triangle is selected in the earliest pointer phase, while clicking an already selected triangle can still start Mouse Drag. Arrow portions extending outside the model remain directly draggable.
+- On small surfaces, the visible X/Y/Z arrow pickers take priority where they overlap the mesh. Elsewhere an unselected mesh triangle remains directly selectable, while clicking an already selected face can still start Mouse Drag.
 - **Model Tools** moves profile/loft, selection, sketch, marker, triangle, hole, bridge, cut, and Duplicate operations into a collapsible right-side section so the main toolbar stays focused on frequent scene actions.
 - **Files & Output** groups saved-view PNGs, game exports, and model imports in another right-side section instead of occupying multiple toolbar rows.
+- **Camera Controls** in the main toolbar expands Utilities and Camera Views, then scrolls directly to Front, Back, Left, Right, Top, Iso, and custom camera controls.
+- Standard camera presets keep a consistent Y-up orbit system. Moving away from **Top** therefore uses the same mouse axes as Front, Back, Left, Right, and Iso without requiring an extra reset click.
 - **Go to Selected Mesh** scrolls the scene tree to the mesh currently selected in the viewport and briefly highlights its row, which is useful in large grouped models.
 - **Soft Pull / Soft Push** deform selected triangles and nearby vertices with a smooth world-space falloff radius. Axis, distance, radius, and mouse snap are configured in the floating Surface Edit window and saved with the project.
 
