@@ -3,23 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoltWorks 3D AI Studio v49.20.5 Experimental</title>
-  <meta name="application-version" content="v49.20.5 modular studio" />
+  <title>BoltWorks 3D AI Studio v49.23.0 Experimental</title>
+  <meta name="application-version" content="v49.23.0 modular studio" />
   <link rel="icon" type="image/png" href="./app/assets/branding/boltworks-logo.png" />
-  <link rel="stylesheet" href="./app/styles/studio.css?v=49.20.5" />
+  <link rel="stylesheet" href="./app/styles/studio.css?v=49.23.0" />
 
 </head>
 <body>
-  <script defer src="./app/panels/panel-collapse.js?v=49.20.5"></script>
-  <script defer src="./app/panels/tool-docking.js?v=49.20.5"></script>
+  <script defer src="./app/panels/panel-collapse.js?v=49.23.0"></script>
+  <script defer src="./app/panels/tool-docking.js?v=49.23.0"></script>
 
   <div class="persistent-notices" aria-label="Version and copyright notices">
-    <div class="persistent-notice experimental-notice" role="status"><strong>v49.20.5 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+    <div class="persistent-notice experimental-notice" role="status"><strong>v49.23.0 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
     <div class="persistent-notice copyright-notice" role="note"><strong>© 2026 Daniel Rydin</strong><span>BoltWorks branding and visual assets. All rights reserved.</span></div>
   </div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.20.5 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.23.0 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -902,18 +902,36 @@
         </div>
         <button id="textureEditorCloseBtn" type="button">Close</button>
       </div>
+      <div class="texture-editor-channel-picker" role="group" aria-label="What painting affects">
+        <span class="api-note texture-editor-channel-label">Paint affects:</span>
+        <button type="button" data-texture-channel="baseColor" class="active" title="Paint the visible surface color">Base Color</button>
+        <button type="button" data-texture-channel="roughness" title="White is rough, black is glossy">Roughness</button>
+        <button type="button" data-texture-channel="metalness" title="White is metallic, black is non-metallic">Metalness</button>
+        <button type="button" data-texture-channel="emissive" title="Paint areas that emit light">Emissive</button>
+        <span id="textureEditorChannelInfo" class="api-note">Color and artwork you see on the model.</span>
+      </div>
       <div class="texture-editor-toolbar">
         <div class="texture-editor-tool-picker" role="group" aria-label="Texture paint tool">
-          <button type="button" data-texture-tool="pen" title="Draw a crisp solid line">Pen</button>
-          <button type="button" data-texture-tool="brush" class="active" title="Paint with a soft brush">Brush</button>
-          <button type="button" data-texture-tool="spray" title="Spray scattered paint dots">Spray</button>
-          <button type="button" data-texture-tool="eraser" title="Erase texture pixels">Eraser</button>
-          <button type="button" data-texture-tool="eyedropper" title="Sample a color from the texture">Eyedropper</button>
-          <button type="button" data-texture-tool="fill" title="Fill one connected UV island">Fill UV Island</button>
-          <button type="button" data-texture-tool="pan" title="Drag the zoomed texture">Pan</button>
-          <button type="button" data-texture-tool="hammer" title="Add a broken-glass effect">Glass Hammer</button>
+          <button type="button" data-texture-tool="pen" aria-label="Pen" title="Pen - draw a crisp solid line"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 19 3.5-1 9.8-9.8-2.5-2.5L6 15.5 5 19Z"/><path d="m14.8 6.8 2.5 2.5"/></svg></button>
+          <button type="button" data-texture-tool="brush" class="active" aria-label="Brush" title="Brush - paint with a soft edge"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 4 6 6-8.5 8.5H5.5v-6L14 4Z"/><path d="M5.5 18.5C4 19 3.5 20 3 21c2.5 0 4-.4 5-2.5"/></svg></button>
+          <button type="button" data-texture-tool="spray" aria-label="Spray" title="Spray - scatter paint dots"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 8h7v4H5zM8 12v8M5 20h6"/><circle cx="16" cy="7" r="1"/><circle cx="19.5" cy="10.5" r="1"/><circle cx="16" cy="14" r="1"/><circle cx="20" cy="16.5" r=".7"/></svg></button>
+          <button type="button" data-texture-tool="eraser" aria-label="Eraser" title="Eraser - remove painted pixels"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m8 18-4-4 8-9 7 7-6 6H8Z"/><path d="m9 8 7 7M8 18h12"/></svg></button>
+          <button type="button" data-texture-tool="eyedropper" aria-label="Eyedropper" title="Eyedropper - sample a color"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m14 5 5 5M12.5 6.5l5 5-8.8 8.8H4v-4.7l8.5-9.1Z"/><path d="M7 17h3"/></svg></button>
+          <button type="button" data-texture-tool="fill" aria-label="Fill UV Island" title="Fill UV Island - fill one connected texture area"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 4 9 9-6 6-7-7 6-6"/><path d="M3 21h18M15 5l3-3M18 14c2 2 2 4 0 5-2-1-2-3 0-5Z"/></svg></button>
+          <button type="button" data-texture-tool="pan" aria-label="Pan" title="Pan - move around the zoomed texture"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 12V7a1.5 1.5 0 0 1 3 0v4-6a1.5 1.5 0 0 1 3 0v6-4a1.5 1.5 0 0 1 3 0v5-2a1.5 1.5 0 0 1 3 0v5c0 4-3 6-7 6h-1c-3 0-5-2-7-5l-2-3a1.6 1.6 0 0 1 2.5-2l2.5 1Z"/></svg></button>
+          <button type="button" data-texture-tool="shape" aria-label="Shape" title="Shape - drag a ready-made symbol or geometric form"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8" cy="8" r="4"/><path d="M14 4h6v6h-6zM12 13l5 8H7l5-8Z"/></svg></button>
+          <button type="button" data-texture-tool="hammer" aria-label="Glass Hammer" title="Glass Hammer - add a broken-glass impact"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10v5H4zM9 12v9M6 21h6"/><path d="m18 4-1 2m4 1-2 1m1 4-2-1m-2 5 1-2"/></svg></button>
         </div>
-        <select id="textureEditorTool" class="visually-hidden" aria-hidden="true" tabindex="-1">
+        <div class="texture-editor-selection-picker" role="group" aria-label="Texture selection tools">
+          <span class="api-note">Select:</span>
+          <button type="button" data-texture-tool="selectRect" aria-label="Rectangle Selection" title="Rectangle Selection - drag a rectangular paint mask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4h16v16H4z" stroke-dasharray="3 2"/></svg></button>
+          <button type="button" data-texture-tool="selectEllipse" aria-label="Ellipse Selection" title="Ellipse Selection - drag a circular or elliptical paint mask"><svg viewBox="0 0 24 24" aria-hidden="true"><ellipse cx="12" cy="12" rx="8" ry="6" stroke-dasharray="3 2"/></svg></button>
+          <button type="button" data-texture-tool="selectLasso" aria-label="Lasso Selection" title="Lasso Selection - draw a freehand paint mask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 6c3 3 1 8-4 9-5 1-9-1-8-5 1-4 8-6 12-4Z" stroke-dasharray="3 2"/><path d="M14 15c0 4-2 6-5 5"/></svg></button>
+          <button id="textureEditorClearSelectionBtn" type="button" aria-label="Clear Selection" title="Clear Selection - remove the current paint mask"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5l14 14M19 5 5 19"/></svg></button>
+          <span id="textureEditorSelectionStatus" class="api-note">No paint selection</span>
+        </div>
+        <select id="textureEditorTool" hidden aria-hidden="true" tabindex="-1">
+          <option value="none">No paint tool</option>
           <option value="pen">Pen</option>
           <option value="brush" selected>Brush</option>
           <option value="spray">Spray</option>
@@ -921,34 +939,62 @@
           <option value="eyedropper">Eyedropper</option>
           <option value="fill">Fill UV Island</option>
           <option value="pan">Pan</option>
+          <option value="shape">Shape</option>
+          <option value="selectRect">Rectangle Selection</option>
+          <option value="selectEllipse">Ellipse Selection</option>
+          <option value="selectLasso">Lasso Selection</option>
           <option value="hammer">Glass Hammer</option>
         </select>
-        <label>Brush Color <input id="textureEditorColor" type="color" value="#ff7f50" /></label>
-        <label class="texture-editor-size-control">
+        <span id="textureEditorIdleHint" class="api-note texture-editor-idle-hint" hidden>Choose a paint tool to edit this material channel.</span>
+        <label data-texture-setting="color"><span id="textureEditorColorLabel">Brush Color</span> <input id="textureEditorColor" type="color" value="#ff7f50" /></label>
+        <label class="texture-editor-channel-value" data-texture-setting="channelValue" hidden>
+          <span id="textureEditorChannelValueLabel">Channel Value</span>
+          <input id="textureEditorChannelValue" type="range" min="0" max="100" step="1" value="100" />
+          <output id="textureEditorChannelValueOutput" for="textureEditorChannelValue">100%</output>
+        </label>
+        <label class="texture-editor-size-control" data-texture-setting="size">
           <span>Tool Preview</span>
           <canvas id="textureEditorBrushPreview" width="128" height="54" aria-label="Brush size and shape preview"></canvas>
           <span>Size <input id="textureEditorBrushSize" type="number" min="1" max="256" step="1" value="12" /></span>
         </label>
-        <label>Hardness <input id="textureEditorHardness" type="range" min="0" max="100" step="1" value="80" /></label>
-        <label>Opacity <input id="textureEditorOpacity" type="range" min="1" max="100" step="1" value="100" /></label>
-        <label>Hammer Radius <input id="textureEditorHammerRadius" type="number" min="4" max="512" step="1" value="48" /></label>
+        <label data-texture-setting="hardness">Hardness <input id="textureEditorHardness" type="range" min="0" max="100" step="1" value="80" /></label>
+        <label data-texture-setting="opacity">Opacity <input id="textureEditorOpacity" type="range" min="1" max="100" step="1" value="100" /></label>
+        <label data-texture-setting="hammer">Hammer Radius <input id="textureEditorHammerRadius" type="number" min="4" max="512" step="1" value="48" /></label>
+        <div class="texture-editor-shape-picker" data-texture-setting="shape" hidden role="group" aria-label="Shape to draw">
+          <span class="api-note">Shape:</span>
+          <button type="button" data-texture-shape="rectangle" class="active" title="Rectangle" aria-label="Rectangle"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="4" y="6" width="16" height="12"/></svg></button>
+          <button type="button" data-texture-shape="ellipse" title="Ellipse" aria-label="Ellipse"><ellipse cx="12" cy="12" rx="8" ry="6"/></svg></button>
+          <button type="button" data-texture-shape="triangle" title="Triangle" aria-label="Triangle"><path d="m12 4 9 16H3L12 4Z"/></svg></button>
+          <button type="button" data-texture-shape="diamond" title="Diamond" aria-label="Diamond"><path d="m12 3 9 9-9 9-9-9 9-9Z"/></svg></button>
+          <button type="button" data-texture-shape="star" title="Star" aria-label="Star"><path d="m12 2.5 2.8 6 6.5.7-4.8 4.4 1.3 6.4-5.8-3.2L6.2 20l1.3-6.4-4.8-4.4 6.5-.7 2.8-6Z"/></svg></button>
+          <button type="button" data-texture-shape="heart" title="Heart" aria-label="Heart"><path d="M12 21S3 15.5 3 9a5 5 0 0 1 9-3 5 5 0 0 1 9 3c0 6.5-9 12-9 12Z"/></svg></button>
+          <label><input id="textureEditorShapeFilled" type="checkbox" checked /> Filled</label>
+        </div>
         <div class="texture-editor-zoom-controls" role="group" aria-label="Texture zoom controls">
           <button id="textureEditorZoomOutBtn" type="button" title="Zoom out">-</button>
           <button id="textureEditorZoomResetBtn" type="button" title="Reset zoom and pan"><span id="textureEditorZoomValue">100%</span></button>
           <button id="textureEditorZoomInBtn" type="button" title="Zoom in">+</button>
+        </div>
+        <div class="texture-editor-symmetry-picker" role="group" aria-label="Paint symmetry">
+          <span class="api-note">Symmetry:</span>
+          <button type="button" data-texture-symmetry="none" class="active" aria-pressed="true" title="Symmetry Off - paint only beneath the pointer">Off</button>
+          <button type="button" data-texture-symmetry="u" aria-pressed="false" title="Mirror U - paint across the vertical center line">U</button>
+          <button type="button" data-texture-symmetry="v" aria-pressed="false" title="Mirror V - paint across the horizontal center line">V</button>
+          <button type="button" data-texture-symmetry="uv" aria-pressed="false" title="Mirror U + V - paint in all four quadrants">U+V</button>
         </div>
         <label><input id="textureEditorShowUv" type="checkbox" checked /> Show UV</label>
         <label><input id="textureEditorSelectedOnly" type="checkbox" /> Mask to selected faces</label>
       </div>
       <div class="texture-editor-stage">
         <canvas id="textureEditorCanvas"></canvas>
+        <div id="textureEditorPointerPreview" class="texture-editor-pointer-preview" aria-hidden="true"></div>
       </div>
       <div class="texture-editor-foot">
-        <span class="api-note">Paint, erase, sample colors, or fill one connected UV island. Painting is constrained to UV faces; Mask to selected faces restricts edits to the current surface selection.</span>
+        <span class="api-note">Paint, erase, sample colors, fill UV islands, or drag ready-made shapes. Selections constrain paint actions; U/V symmetry mirrors strokes and shapes across the texture center.</span>
         <div class="compact-row">
           <button id="textureEditorUndoBtn" type="button" disabled>Undo Paint</button>
           <button id="textureEditorResetBtn" type="button">Restore Original</button>
-          <button id="textureEditorApplyBtn" class="primary" type="button">Apply Texture</button>
+          <button id="textureEditorApplyBtn" class="primary" type="button">Apply Channel</button>
         </div>
       </div>
     </div>
@@ -1031,7 +1077,7 @@
     </div>
   </div>
 
-  <script defer src="./app/studio-v49.20.5.js?v=49.20.5"></script>
+  <script defer src="./app/studio-v49.23.0.js?v=49.23.0"></script>
 <script src="./app/selection/runtime-bridge.js"></script>
 </body>
 </html>

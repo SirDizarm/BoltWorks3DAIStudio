@@ -780,16 +780,37 @@ els.textureEditorApplyBtn.addEventListener("click", applyTextureEditorChanges);
 els.textureEditorResetBtn.addEventListener("click", resetTextureEditorCanvas);
 els.textureEditorUndoBtn.addEventListener("click", undoTextureEditorPaint);
 [els.textureEditorShowUv, els.textureEditorSelectedOnly].forEach(input => input.addEventListener("change", renderTextureEditor));
-[els.textureEditorColor, els.textureEditorBrushSize, els.textureEditorHardness, els.textureEditorOpacity, els.textureEditorHammerRadius].forEach(input => input.addEventListener("input", () => {
+[els.textureEditorColor, els.textureEditorChannelValue, els.textureEditorBrushSize, els.textureEditorHardness, els.textureEditorOpacity, els.textureEditorHammerRadius].forEach(input => input.addEventListener("input", () => {
+  syncTextureEditorChannelValueUi();
   renderTextureEditorBrushPreview();
   renderTextureEditor();
 }));
 els.textureEditorTool.addEventListener("change", event => {
-  setTextureEditorTool(event.target.value || "brush");
+  setTextureEditorTool(event.target.value || "none");
 });
 for (const button of els.textureEditorToolButtons || []) {
-  button.addEventListener("click", () => setTextureEditorTool(button.dataset.textureTool || "brush"));
+  button.addEventListener("click", () => {
+    const requestedTool = button.dataset.textureTool || "none";
+    setTextureEditorTool(textureEditorState.tool === requestedTool ? "none" : requestedTool);
+  });
 }
+for (const button of els.textureEditorChannelButtons || []) {
+  button.addEventListener("click", () => switchTextureEditorChannel(button.dataset.textureChannel || "baseColor"));
+}
+for (const button of els.textureEditorShapeButtons || []) {
+  button.addEventListener("click", () => {
+    textureEditorState.shape = button.dataset.textureShape || "rectangle";
+    for (const candidate of els.textureEditorShapeButtons || []) {
+      candidate.classList.toggle("active", candidate === button);
+    }
+    renderTextureEditor();
+  });
+}
+els.textureEditorShapeFilled?.addEventListener("change", renderTextureEditor);
+for (const button of els.textureEditorSymmetryButtons || []) {
+  button.addEventListener("click", () => setTextureEditorSymmetry(button.dataset.textureSymmetry || "none"));
+}
+els.textureEditorClearSelectionBtn?.addEventListener("click", clearTextureEditorSelection);
 els.textureEditorZoomOutBtn?.addEventListener("click", () => setTextureEditorZoom((textureEditorState.zoom || 1) / 1.25));
 els.textureEditorZoomInBtn?.addEventListener("click", () => setTextureEditorZoom((textureEditorState.zoom || 1) * 1.25));
 els.textureEditorZoomResetBtn?.addEventListener("click", () => {
@@ -818,9 +839,11 @@ els.meshDetailsModal.addEventListener("click", event => {
 });
 els.textureEditorCanvas.addEventListener("pointerdown", event => {
   if (!textureEditorState.open) return;
-  textureEditorState.tool = els.textureEditorTool?.value || textureEditorState.tool || "brush";
+  textureEditorState.tool = els.textureEditorTool?.value || textureEditorState.tool || "none";
+  if (textureEditorState.tool === "none" && event.button !== 1) return;
   if (textureEditorState.tool === "pan" || event.button === 1) {
     event.preventDefault();
+    hideTextureEditorPointerPreview();
     textureEditorState.isPanning = true;
     textureEditorState.panStart = textureEditorCanvasPointFromEvent(event);
     els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
@@ -829,6 +852,26 @@ els.textureEditorCanvas.addEventListener("pointerdown", event => {
   }
   const point = textureEditorPointFromEvent(event);
   if (!point) return;
+  if (textureEditorState.tool === "selectRect" || textureEditorState.tool === "selectEllipse" || textureEditorState.tool === "selectLasso") {
+    textureEditorState.selectionDraft = {
+      type: textureEditorState.tool === "selectEllipse" ? "ellipse" : textureEditorState.tool === "selectLasso" ? "lasso" : "rectangle",
+      points: [point, point]
+    };
+    textureEditorState.isSelecting = true;
+    els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
+    renderTextureEditor();
+    return;
+  }
+  if (textureEditorState.tool === "shape") {
+    snapshotTextureEditor();
+    textureEditorState.strokeSnapshotTaken = true;
+    textureEditorState.shapeStart = point;
+    textureEditorState.shapeEnd = point;
+    textureEditorState.isDrawingShape = true;
+    els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
+    renderTextureEditor();
+    return;
+  }
   if (textureEditorState.tool === "hammer") {
     applyGlassBreakEffect(point);
     return;
@@ -850,6 +893,7 @@ els.textureEditorCanvas.addEventListener("pointerdown", event => {
 });
 els.textureEditorCanvas.addEventListener("pointermove", event => {
   if (textureEditorState.isPanning) {
+    hideTextureEditorPointerPreview();
     const current = textureEditorCanvasPointFromEvent(event);
     const previous = textureEditorState.panStart || current;
     textureEditorState.panX += current.x - previous.x;
@@ -860,15 +904,49 @@ els.textureEditorCanvas.addEventListener("pointermove", event => {
   }
   const point = textureEditorPointFromEvent(event);
   textureEditorState.hoverPoint = point;
+  syncTextureEditorPointerPreview(event);
+  if (textureEditorState.isSelecting && point) {
+    const draft = textureEditorState.selectionDraft;
+    if (draft?.type === "lasso") {
+      const previous = draft.points[draft.points.length - 1];
+      if (!previous || Math.hypot(point.x - previous.x, point.y - previous.y) >= 2) draft.points.push(point);
+    } else if (draft) {
+      draft.points[1] = point;
+    }
+    renderTextureEditor();
+    return;
+  }
+  if (textureEditorState.isDrawingShape && point) {
+    textureEditorState.shapeEnd = point;
+    renderTextureEditor();
+    return;
+  }
   if (!textureEditorState.isPainting) return;
   if (!point) return;
   textureEditorStrokeTo(point);
   return;
 });
-els.textureEditorCanvas.addEventListener("pointermove", () => {
-  if (!textureEditorState.isPainting) renderTextureEditor();
-});
 const finishTextureEditorStroke = pointerId => {
+  if (textureEditorState.isSelecting) {
+    const draft = textureEditorState.selectionDraft;
+    const first = draft?.points?.[0];
+    const last = draft?.points?.[draft.points.length - 1];
+    const largeEnough = draft?.type === "lasso"
+      ? draft.points.length >= 3
+      : first && last && (Math.abs(last.x - first.x) >= 1 || Math.abs(last.y - first.y) >= 1);
+    textureEditorState.selection = largeEnough ? draft : null;
+    textureEditorState.selectionDraft = null;
+    textureEditorState.isSelecting = false;
+    syncTextureEditorSelectionUi();
+    renderTextureEditor();
+  }
+  if (textureEditorState.isDrawingShape) {
+    drawTextureEditorShape(textureEditorState.shapeStart, textureEditorState.shapeEnd);
+    textureEditorState.shapeStart = null;
+    textureEditorState.shapeEnd = null;
+    textureEditorState.isDrawingShape = false;
+    updateTextureEditorUndoButton();
+  }
   textureEditorState.isPainting = false;
   textureEditorState.isPanning = false;
   textureEditorState.panStart = null;
@@ -884,14 +962,14 @@ const finishTextureEditorStroke = pointerId => {
 els.textureEditorCanvas.addEventListener("pointerup", event => finishTextureEditorStroke(event.pointerId));
 els.textureEditorCanvas.addEventListener("pointerleave", event => {
   textureEditorState.hoverPoint = null;
+  hideTextureEditorPointerPreview();
   finishTextureEditorStroke(event.pointerId);
-  renderTextureEditor();
 });
 els.textureEditorCanvas.addEventListener("wheel", event => {
   if (!textureEditorState.open) return;
   event.preventDefault();
   const anchor = textureEditorCanvasPointFromEvent(event);
-  setTextureEditorZoom((textureEditorState.zoom || 1) * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchor);
+  setTextureEditorZoom((textureEditorState.zoom || 1) * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchor, event);
 }, { passive: false });
 els.importProjectFile.addEventListener("change", async event => {
   const file = event.target.files?.[0];

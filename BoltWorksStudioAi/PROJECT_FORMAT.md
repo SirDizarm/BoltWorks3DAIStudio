@@ -102,6 +102,9 @@ Supported object fields:
 | `textureRotation` | Degrees normalized to 0–359. |
 | `textureRobloxAssetId` | Optional Roblox asset reference. |
 | `materialRule` | Material/export rule; use `"auto"` unless the workflow specifies another value. |
+| `roughnessTextureName`, `roughnessTextureUrl` | Optional grayscale roughness paint channel. White is rougher; black is smoother. |
+| `metalnessTextureName`, `metalnessTextureUrl` | Optional grayscale metalness paint channel. White is metallic; black is non-metallic. |
+| `emissiveTextureName`, `emissiveTextureUrl` | Optional colored emissive paint channel. Colored pixels emit light-independent surface color. |
 
 If `geometry` exists, it takes precedence over the built-in shape geometry.
 `positions` contains flat XYZ triples. `uvs` contains flat UV pairs. Indices are

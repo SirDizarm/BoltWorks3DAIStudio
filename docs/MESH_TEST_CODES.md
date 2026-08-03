@@ -473,6 +473,14 @@ Test project: `samples/showcases/uv-topology-test.modelerproj`
 - `M25R5#C` - Click **Restore Original** once. Expected: the paint disappears and the clean baked six-face atlas returns even though the painted texture was applied and the editor was closed.
 - `M25R5#D` - Click **Undo Paint** once. Expected: the applied painted atlas returns, proving Restore remains one reversible editor operation.
 
+### M26 - Material Paint Channels
+
+- `M26#A` - Select the large textured topology block, open **Edit Texture**, and confirm **Base Color**, **Roughness**, **Metalness**, and **Emissive** are visible at the top. Switching channels must retain each channel's separate draft.
+- `M26#B` - Choose **Roughness**, paint a black stripe on the white default channel, and click **Apply Roughness**. Expected: the stripe becomes glossier while the Base Color artwork remains unchanged.
+- `M26#C` - Choose **Metalness**, paint one white area on its black default channel, and click **Apply Metalness**. Expected: only the painted area becomes metallic; Base Color and Roughness remain unchanged.
+- `M26#D` - Choose **Emissive**, paint a colored mark, and click **Apply Emissive**. Expected: the mark stays visibly bright independently of ordinary scene lighting.
+- `M26#E` - Save and reload the project. Reopen **Edit Texture** and verify all four channels and their separate images return. Rotate or flip the mesh texture once and confirm every material channel remains aligned to the same UVs. Main Undo must restore the state from before the most recent channel apply.
+
 Expected result:
 
 - Paint and Eraser respect UV islands and never modify empty atlas space.

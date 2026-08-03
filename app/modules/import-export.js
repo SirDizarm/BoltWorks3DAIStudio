@@ -26,6 +26,12 @@ function serializeObject(mesh) {
     materialRule: normalizeMaterialRule(mesh.userData.materialRule || "auto"),
     textureFlipY: mesh.userData.textureFlipY ?? true,
     textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0),
+    roughnessTextureUrl: mesh.userData.roughnessTextureUrl || null,
+    roughnessTextureName: mesh.userData.roughnessTextureName || null,
+    metalnessTextureUrl: mesh.userData.metalnessTextureUrl || null,
+    metalnessTextureName: mesh.userData.metalnessTextureName || null,
+    emissiveTextureUrl: mesh.userData.emissiveTextureUrl || null,
+    emissiveTextureName: mesh.userData.emissiveTextureName || null,
     playerAvatar: !!mesh.userData.playerAvatar,
     playerHeadOffset: Array.isArray(mesh.userData.playerHeadOffset) ? [...mesh.userData.playerHeadOffset] : null,
     liveMirror: mesh.userData.liveMirror?.enabled ? {
@@ -88,7 +94,7 @@ function projectCapabilities() {
     shapes: Object.keys(shapeFactories),
     transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
     faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
-    textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary"],
+    textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary", "baseColorPaint", "roughnessPaint", "metalnessPaint", "emissivePaint"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
     sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
     lighting: ["mainLamp", "mirrorLamp", "lightGuides", "lampAim", "lampStrength", "coneAngle"],
@@ -112,10 +118,12 @@ function projectState() {
       .map(entry => [entry.dataUrl, entry.name])
   );
   for (const object of scene.objects || []) {
-    const libraryName = textureNameByUrl.get(object.textureUrl);
-    if (!libraryName) continue;
-    object.textureName = libraryName;
-    object.textureUrl = null;
+    for (const [urlKey, nameKey] of materialTextureReferenceFields()) {
+      const libraryName = textureNameByUrl.get(object[urlKey]);
+      if (!libraryName) continue;
+      object[nameKey] = libraryName;
+      object[urlKey] = null;
+    }
   }
   return {
     kind: "modeler-project",
@@ -253,9 +261,20 @@ function hydrateProjectTextureReferences(scene, entries = []) {
       .map(entry => [entry.name, entry.dataUrl])
   );
   for (const object of scene?.objects || []) {
-    if (object.textureUrl || !object.textureName) continue;
-    object.textureUrl = textureByName.get(object.textureName) || null;
+    for (const [urlKey, nameKey] of materialTextureReferenceFields()) {
+      if (object[urlKey] || !object[nameKey]) continue;
+      object[urlKey] = textureByName.get(object[nameKey]) || null;
+    }
   }
+}
+
+function materialTextureReferenceFields() {
+  return [
+    ["textureUrl", "textureName"],
+    ["roughnessTextureUrl", "roughnessTextureName"],
+    ["metalnessTextureUrl", "metalnessTextureName"],
+    ["emissiveTextureUrl", "emissiveTextureName"]
+  ];
 }
 
 function syncReferenceImageUi() {
@@ -344,10 +363,12 @@ function cloneSceneState() {
   // A textured imported project can otherwise turn a small inspector edit into
   // a several-hundred-megabyte synchronous JSON clone and stop before applying it.
   for (const object of scene.objects || []) {
-    const libraryName = textureNameByUrl.get(object.textureUrl);
-    if (!libraryName) continue;
-    object.textureName = libraryName;
-    object.textureUrl = null;
+    for (const [urlKey, nameKey] of materialTextureReferenceFields()) {
+      const libraryName = textureNameByUrl.get(object[urlKey]);
+      if (!libraryName) continue;
+      object[nameKey] = libraryName;
+      object[urlKey] = null;
+    }
   }
 
   return {

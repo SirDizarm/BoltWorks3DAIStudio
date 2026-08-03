@@ -30837,6 +30837,7 @@ void main() {
     importLibraryTextureBtn: document.querySelector("#importLibraryTextureBtn"),
     textureEditorModal: document.querySelector("#textureEditorModal"),
     textureEditorCanvas: document.querySelector("#textureEditorCanvas"),
+    textureEditorPointerPreview: document.querySelector("#textureEditorPointerPreview"),
     textureEditorMeshName: document.querySelector("#textureEditorMeshName"),
     textureEditorInfo: document.querySelector("#textureEditorInfo"),
     textureEditorCloseBtn: document.querySelector("#textureEditorCloseBtn"),
@@ -30844,7 +30845,20 @@ void main() {
     textureEditorResetBtn: document.querySelector("#textureEditorResetBtn"),
     textureEditorTool: document.querySelector("#textureEditorTool"),
     textureEditorToolButtons: [...document.querySelectorAll("[data-texture-tool]")],
+    textureEditorClearSelectionBtn: document.querySelector("#textureEditorClearSelectionBtn"),
+    textureEditorSelectionStatus: document.querySelector("#textureEditorSelectionStatus"),
+    textureEditorShapeButtons: [...document.querySelectorAll("[data-texture-shape]")],
+    textureEditorShapeFilled: document.querySelector("#textureEditorShapeFilled"),
+    textureEditorSymmetryButtons: [...document.querySelectorAll("[data-texture-symmetry]")],
+    textureEditorToolSettings: [...document.querySelectorAll("[data-texture-setting]")],
+    textureEditorIdleHint: document.querySelector("#textureEditorIdleHint"),
+    textureEditorChannelButtons: [...document.querySelectorAll("[data-texture-channel]")],
+    textureEditorChannelInfo: document.querySelector("#textureEditorChannelInfo"),
+    textureEditorColorLabel: document.querySelector("#textureEditorColorLabel"),
     textureEditorColor: document.querySelector("#textureEditorColor"),
+    textureEditorChannelValue: document.querySelector("#textureEditorChannelValue"),
+    textureEditorChannelValueLabel: document.querySelector("#textureEditorChannelValueLabel"),
+    textureEditorChannelValueOutput: document.querySelector("#textureEditorChannelValueOutput"),
     textureEditorBrushSize: document.querySelector("#textureEditorBrushSize"),
     textureEditorBrushPreview: document.querySelector("#textureEditorBrushPreview"),
     textureEditorHardness: document.querySelector("#textureEditorHardness"),
@@ -30936,6 +30950,7 @@ void main() {
     originalPixels: null,
     originalDataUrl: null,
     textureName: "Texture",
+    channel: "baseColor",
     drawingRect: null,
     isPainting: false,
     lastPoint: null,
@@ -30947,7 +30962,16 @@ void main() {
     panX: 0,
     panY: 0,
     isPanning: false,
-    panStart: null
+    panStart: null,
+    renderFrame: 0,
+    selection: null,
+    selectionDraft: null,
+    isSelecting: false,
+    shape: "rectangle",
+    symmetry: "none",
+    shapeStart: null,
+    shapeEnd: null,
+    isDrawingShape: false
   };
   var textureLibrary = /* @__PURE__ */ new Map();
   var textureEditorDrafts = /* @__PURE__ */ new Map();
@@ -31921,6 +31945,93 @@ void main() {
     mesh.userData.textureRobloxAssetId = textureUrl ? normalizeRobloxAssetId(libraryEntry?.robloxAssetId || mesh.userData.textureRobloxAssetId || "") : "";
     mesh.userData.textureFlipY = textureUrl ? textureFlipY : true;
     mesh.userData.textureRotation = textureUrl ? normalizeTextureRotation(textureRotation) : 0;
+    for (const channel of ["roughness", "metalness", "emissive"]) {
+      const config = materialTextureChannels[channel];
+      const channelTexture = mesh.material[config.mapKey];
+      if (channelTexture) configureMaterialChannelTexture(channelTexture, channel, mesh);
+    }
+  }
+  var materialTextureChannels = {
+    baseColor: {
+      label: "Base Color",
+      urlKey: "textureUrl",
+      nameKey: "textureName",
+      mapKey: "map",
+      info: "Choose a paint tool and color. This channel controls the visible color and artwork of the material."
+    },
+    roughness: {
+      label: "Roughness",
+      urlKey: "roughnessTextureUrl",
+      nameKey: "roughnessTextureName",
+      mapKey: "roughnessMap",
+      info: "Choose a paint tool, then paint a value: 0% is black, smooth and glossy; 100% is white, rough and matte. Color is not used."
+    },
+    metalness: {
+      label: "Metalness",
+      urlKey: "metalnessTextureUrl",
+      nameKey: "metalnessTextureName",
+      mapKey: "metalnessMap",
+      info: "Choose a paint tool, then paint a value: 0% is non-metal and 100% is metal. Use intermediate values only when the material needs a transition."
+    },
+    emissive: {
+      label: "Emissive",
+      urlKey: "emissiveTextureUrl",
+      nameKey: "emissiveTextureName",
+      mapKey: "emissiveMap",
+      info: "Choose a paint tool, glow color and strength. Painted areas emit that color independently of the scene lighting."
+    }
+  };
+  function normalizedMaterialTextureChannel(channel) {
+    return materialTextureChannels[channel] ? channel : "baseColor";
+  }
+  function materialTextureChannelData(mesh, channel = "baseColor") {
+    const normalized = normalizedMaterialTextureChannel(channel);
+    const config = materialTextureChannels[normalized];
+    return {
+      channel: normalized,
+      config,
+      url: mesh?.userData?.[config.urlKey] || null,
+      name: mesh?.userData?.[config.nameKey] || `${mesh?.name || "Mesh"} ${config.label}`
+    };
+  }
+  function configureMaterialChannelTexture(texture, channel, mesh) {
+    applyTextureTransform(texture, {
+      textureFlipY: mesh.userData.textureFlipY ?? true,
+      textureRotation: mesh.userData.textureRotation || 0
+    });
+    if ("colorSpace" in texture) {
+      texture.colorSpace = channel === "roughness" || channel === "metalness" ? NoColorSpace || "" : SRGBColorSpace || texture.colorSpace;
+    }
+  }
+  function applyMaterialTextureChannel(mesh, channel, textureUrl, textureName) {
+    if (!mesh) return;
+    const { channel: normalized, config } = materialTextureChannelData(mesh, channel);
+    if (normalized === "baseColor") {
+      applyTextureToMesh(
+        mesh,
+        textureUrl,
+        textureName || "Texture",
+        mesh.userData.textureFlipY ?? true,
+        mesh.userData.textureRotation || 0
+      );
+      return;
+    }
+    const previous = mesh.material[config.mapKey];
+    if (previous) previous.dispose();
+    mesh.material[config.mapKey] = null;
+    if (textureUrl) {
+      const texture = loadTextureInstance(textureUrl, () => scheduleTextureUiRefresh());
+      configureMaterialChannelTexture(texture, normalized, mesh);
+      mesh.material[config.mapKey] = texture;
+    }
+    mesh.userData[config.urlKey] = textureUrl || null;
+    mesh.userData[config.nameKey] = textureUrl ? textureName || `${mesh.name} ${config.label}` : null;
+    if (normalized === "metalness") mesh.material.metalness = textureUrl ? 1 : normalizeMaterialRule(mesh.userData.materialRule) === "metal" ? 0.52 : 0.05;
+    if (normalized === "emissive") {
+      mesh.material.emissive.set(textureUrl ? 16777215 : 0);
+      mesh.material.emissiveIntensity = textureUrl ? 1 : 0;
+    }
+    mesh.material.needsUpdate = true;
   }
   function textureEditorMesh() {
     return textureEditorState.meshId ? findObject(textureEditorState.meshId) : null;
@@ -32011,12 +32122,38 @@ void main() {
     const selectedTriangles = selectedUvTrianglesForMesh(mesh);
     return els.textureEditorSelectedOnly?.checked && selectedTriangles.length ? selectedTriangles : uvTrianglesForMesh(mesh);
   }
-  function textureEditorCursor(tool = "brush") {
+  function textureEditorCursor(tool = "none") {
+    if (!tool || tool === "none") return "default";
     if (tool === "pan") return textureEditorState.isPanning ? "grabbing" : "grab";
+    if (tool === "shape" || tool.startsWith("select")) return "crosshair";
     const svg = tool === "hammer" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#f4f7fb" stroke="#11181d" stroke-width="1.8" d="M8 7h9l3 3-3 3H13l6 10-3 2-7-11z"/><rect x="5.5" y="5.5" width="11" height="5" rx="1.5" fill="#ffb84d" stroke="#11181d" stroke-width="1.5"/></svg>` : tool === "eyedropper" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#7dd3fc" stroke="#11181d" stroke-width="2" d="m20 4 8 8-4 4-2-2-9 9-5 1 1-5 9-9-2-2z"/></svg>` : tool === "fill" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#f4f7fb" stroke="#11181d" stroke-width="2" d="m7 5 13 13-8 8-9-9z"/><path fill="#ff7f50" d="m6 16 7 7 5-5-7-7z"/><path fill="#7dd3fc" stroke="#11181d" stroke-width="1.5" d="M23 19s4 5 4 7a4 4 0 0 1-8 0c0-2 4-7 4-7z"/></svg>` : tool === "eraser" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#f4a8b8" stroke="#11181d" stroke-width="2" d="m5 20 12-14 10 9-10 12H9z"/><path fill="#f4f7fb" d="m9 20 5 5h3l4-5-7-6z"/></svg>` : tool === "pen" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#7dd3fc" stroke="#11181d" stroke-width="2" d="m22 4 6 6L12 26 4 28l2-8z"/><path fill="#11181d" d="m4 28 2-8 6 6z"/></svg>` : tool === "spray" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#7dd3fc" stroke="#11181d" stroke-width="2" d="M9 11h13v17H9z"/><path fill="#f4f7fb" stroke="#11181d" stroke-width="2" d="M12 6h8v5h-8z"/><circle cx="6" cy="8" r="1.4" fill="#7dd3fc"/><circle cx="3" cy="5" r="1" fill="#7dd3fc"/><circle cx="7" cy="3" r="1" fill="#7dd3fc"/></svg>` : `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#7dd3fc" stroke="#11181d" stroke-width="2" d="m20 3 7 7-12 12-7-7z"/><path fill="#ffb84d" stroke="#11181d" stroke-width="2" d="M8 15c-5 4-5 9-3 14 6-1 10-4 10-8z"/><path fill="#f4f7fb" d="m18 5 7 7-3 3-7-7z"/></svg>`;
-    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 6 6, ${tool === "hammer" ? "cell" : "crosshair"}`;
+    const hotspot = tool === "pen" ? [4, 28] : tool === "brush" ? [5, 29] : tool === "spray" ? [5, 8] : tool === "eraser" ? [9, 26] : tool === "eyedropper" ? [8, 24] : tool === "fill" ? [23, 26] : tool === "hammer" ? [6, 8] : [6, 6];
+    return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") ${hotspot[0]} ${hotspot[1]}, crosshair`;
   }
-  function setTextureEditorTool(tool = "brush") {
+  function syncTextureEditorToolSettings(tool = "none") {
+    const visibleSettings = {
+      pen: ["color", "channelValue", "size", "opacity"],
+      brush: ["color", "channelValue", "size", "hardness", "opacity"],
+      spray: ["color", "channelValue", "size", "opacity"],
+      eraser: ["size", "hardness", "opacity"],
+      eyedropper: [],
+      fill: ["color", "channelValue", "opacity"],
+      shape: ["color", "channelValue", "size", "opacity", "shape"],
+      selectRect: [],
+      selectEllipse: [],
+      selectLasso: [],
+      pan: [],
+      hammer: ["hammer"]
+    }[tool] || [];
+    const channel = normalizedMaterialTextureChannel(textureEditorState.channel);
+    for (const control of els.textureEditorToolSettings || []) {
+      const setting = control.dataset.textureSetting;
+      const channelAllowsSetting = setting === "color" ? channel === "baseColor" || channel === "emissive" : setting === "channelValue" ? channel !== "baseColor" : true;
+      control.hidden = !visibleSettings.includes(setting) || !channelAllowsSetting;
+    }
+    if (els.textureEditorIdleHint) els.textureEditorIdleHint.hidden = tool !== "none";
+  }
+  function setTextureEditorTool(tool = "none") {
     textureEditorState.tool = tool;
     if (els.textureEditorTool) els.textureEditorTool.value = tool;
     for (const button of els.textureEditorToolButtons || []) {
@@ -32024,13 +32161,15 @@ void main() {
       button.classList.toggle("active", active);
       button.setAttribute("aria-pressed", String(active));
     }
+    syncTextureEditorToolSettings(tool);
     syncTextureEditorCursor();
+    hideTextureEditorPointerPreview();
     renderTextureEditorBrushPreview();
     renderTextureEditor();
   }
   function syncTextureEditorCursor() {
     if (!els.textureEditorCanvas) return;
-    const tool = textureEditorState.tool || els.textureEditorTool?.value || "brush";
+    const tool = textureEditorState.tool || els.textureEditorTool?.value || "none";
     els.textureEditorCanvas.style.cursor = textureEditorCursor(tool);
   }
   function textureEditorTrianglesPath(context, triangles, width, height, offsetX = 0, offsetY = 0) {
@@ -32114,12 +32253,193 @@ void main() {
     textureEditorTrianglesPath(context, triangles, source.width, source.height);
     context.clip();
   }
+  function textureEditorSelectionPath(context, selection, widthScale = 1, heightScale = 1, offsetX = 0, offsetY = 0) {
+    if (!selection) return false;
+    const points = selection.points || [];
+    if (points.length < 2) return false;
+    const point = (value) => ({ x: offsetX + value.x * widthScale, y: offsetY + value.y * heightScale });
+    const first = point(points[0]);
+    const last = point(points[points.length - 1]);
+    context.beginPath();
+    if (selection.type === "ellipse") {
+      const centerX = (first.x + last.x) * 0.5;
+      const centerY = (first.y + last.y) * 0.5;
+      context.ellipse(centerX, centerY, Math.max(0.5, Math.abs(last.x - first.x) * 0.5), Math.max(0.5, Math.abs(last.y - first.y) * 0.5), 0, 0, Math.PI * 2);
+    } else if (selection.type === "lasso") {
+      context.moveTo(first.x, first.y);
+      for (let index = 1; index < points.length; index += 1) {
+        const current = point(points[index]);
+        context.lineTo(current.x, current.y);
+      }
+      context.closePath();
+    } else {
+      context.rect(Math.min(first.x, last.x), Math.min(first.y, last.y), Math.max(1, Math.abs(last.x - first.x)), Math.max(1, Math.abs(last.y - first.y)));
+    }
+    return true;
+  }
+  function textureEditorClipToSelection(context, source) {
+    if (!textureEditorState.selection) return;
+    if (textureEditorSelectionPath(context, textureEditorState.selection)) context.clip();
+  }
+  function textureEditorClipToActiveMask(context, mesh, source, triangles = null) {
+    textureEditorClipToTriangles(context, triangles || textureEditorMaskTriangles(mesh), source);
+    textureEditorClipToSelection(context, source);
+  }
+  function syncTextureEditorSelectionUi() {
+    const selection = textureEditorState.selection;
+    if (els.textureEditorSelectionStatus) {
+      els.textureEditorSelectionStatus.textContent = selection ? `${selection.type === "ellipse" ? "Ellipse" : selection.type === "lasso" ? "Lasso" : "Rectangle"} paint selection active` : "No paint selection";
+    }
+    if (els.textureEditorClearSelectionBtn) els.textureEditorClearSelectionBtn.disabled = !selection;
+  }
+  function clearTextureEditorSelection() {
+    textureEditorState.selection = null;
+    textureEditorState.selectionDraft = null;
+    textureEditorState.isSelecting = false;
+    syncTextureEditorSelectionUi();
+    renderTextureEditor();
+  }
+  function textureEditorShapePath(context, shape, start, end) {
+    const left = Math.min(start.x, end.x);
+    const top = Math.min(start.y, end.y);
+    const right = Math.max(start.x, end.x);
+    const bottom = Math.max(start.y, end.y);
+    const width = Math.max(1, right - left);
+    const height = Math.max(1, bottom - top);
+    const centerX = left + width * 0.5;
+    const centerY = top + height * 0.5;
+    context.beginPath();
+    if (shape === "ellipse") {
+      context.ellipse(centerX, centerY, width * 0.5, height * 0.5, 0, 0, Math.PI * 2);
+    } else if (shape === "triangle") {
+      context.moveTo(centerX, top);
+      context.lineTo(right, bottom);
+      context.lineTo(left, bottom);
+      context.closePath();
+    } else if (shape === "diamond") {
+      context.moveTo(centerX, top);
+      context.lineTo(right, centerY);
+      context.lineTo(centerX, bottom);
+      context.lineTo(left, centerY);
+      context.closePath();
+    } else if (shape === "star") {
+      const outer = Math.min(width, height) * 0.5;
+      const inner = outer * 0.45;
+      for (let index = 0; index < 10; index += 1) {
+        const angle = -Math.PI / 2 + index * Math.PI / 5;
+        const radius = index % 2 === 0 ? outer : inner;
+        const x = centerX + Math.cos(angle) * radius;
+        const y = centerY + Math.sin(angle) * radius;
+        if (index === 0) context.moveTo(x, y);
+        else context.lineTo(x, y);
+      }
+      context.closePath();
+    } else if (shape === "heart") {
+      context.moveTo(centerX, bottom);
+      context.bezierCurveTo(left - width * 0.1, centerY + height * 0.15, left, top, centerX, top + height * 0.28);
+      context.bezierCurveTo(right, top, right + width * 0.1, centerY + height * 0.15, centerX, bottom);
+      context.closePath();
+    } else {
+      context.rect(left, top, width, height);
+    }
+  }
+  function normalizedTextureEditorSymmetry(mode) {
+    return ["u", "v", "uv"].includes(mode) ? mode : "none";
+  }
+  function textureEditorSymmetryTransforms() {
+    const mode = normalizedTextureEditorSymmetry(textureEditorState.symmetry);
+    const transforms = [{ flipU: false, flipV: false }];
+    if (mode === "u" || mode === "uv") transforms.push({ flipU: true, flipV: false });
+    if (mode === "v" || mode === "uv") transforms.push({ flipU: false, flipV: true });
+    if (mode === "uv") transforms.push({ flipU: true, flipV: true });
+    return transforms;
+  }
+  function transformedTextureEditorPoint(point, source, transform2) {
+    return {
+      x: transform2.flipU ? source.width - point.x : point.x,
+      y: transform2.flipV ? source.height - point.y : point.y
+    };
+  }
+  function textureEditorSymmetryPoints(point, source) {
+    const points = textureEditorSymmetryTransforms().map((transform2) => transformedTextureEditorPoint(point, source, transform2));
+    return points.filter((candidate, index) => points.findIndex((point2) => Math.abs(point2.x - candidate.x) < 1e-3 && Math.abs(point2.y - candidate.y) < 1e-3) === index);
+  }
+  function withTextureEditorSymmetry(context, source, draw) {
+    for (const transform2 of textureEditorSymmetryTransforms()) {
+      context.save();
+      context.translate(transform2.flipU ? source.width : 0, transform2.flipV ? source.height : 0);
+      context.scale(transform2.flipU ? -1 : 1, transform2.flipV ? -1 : 1);
+      draw(transform2);
+      context.restore();
+    }
+  }
+  function setTextureEditorSymmetry(mode) {
+    textureEditorState.symmetry = normalizedTextureEditorSymmetry(mode);
+    for (const button of els.textureEditorSymmetryButtons || []) {
+      const active = button.dataset.textureSymmetry === textureEditorState.symmetry;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    }
+    renderTextureEditor();
+  }
+  function drawTextureEditorShape(start, end) {
+    const mesh = textureEditorMesh();
+    const source = currentTextureEditorCanvas();
+    if (!mesh || !source || !start || !end) return false;
+    const settings = textureEditorBrushSettings();
+    const context = source.getContext("2d");
+    context.save();
+    textureEditorClipToActiveMask(context, mesh, source);
+    context.globalAlpha = settings.opacity;
+    context.fillStyle = settings.color;
+    context.strokeStyle = settings.color;
+    context.lineWidth = Math.max(1, settings.size);
+    context.lineJoin = "round";
+    withTextureEditorSymmetry(context, source, () => {
+      textureEditorShapePath(context, textureEditorState.shape || "rectangle", start, end);
+      if (els.textureEditorShapeFilled?.checked) context.fill();
+      else context.stroke();
+    });
+    context.restore();
+    requestTextureEditorRender();
+    return true;
+  }
+  function textureEditorChannelValue() {
+    return Math.max(0, Math.min(100, Number(els.textureEditorChannelValue?.value) || 0));
+  }
+  function textureEditorChannelPaintColor() {
+    const channel = normalizedMaterialTextureChannel(textureEditorState.channel);
+    const color = els.textureEditorColor?.value || "#ff7f50";
+    const value = textureEditorChannelValue();
+    if (channel === "roughness" || channel === "metalness") {
+      const component2 = Math.round(value / 100 * 255).toString(16).padStart(2, "0");
+      return `#${component2}${component2}${component2}`;
+    }
+    if (channel !== "emissive") return color;
+    const match = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color);
+    if (!match) return color;
+    const strength = value / 100;
+    return `#${match.slice(1).map((component2) => Math.round(parseInt(component2, 16) * strength).toString(16).padStart(2, "0")).join("")}`;
+  }
+  function syncTextureEditorChannelValueUi() {
+    const channel = normalizedMaterialTextureChannel(textureEditorState.channel);
+    const value = textureEditorChannelValue();
+    if (els.textureEditorColorLabel) {
+      els.textureEditorColorLabel.textContent = channel === "emissive" ? "Glow Color" : "Brush Color";
+    }
+    if (els.textureEditorChannelValueLabel) {
+      els.textureEditorChannelValueLabel.textContent = channel === "roughness" ? "Roughness" : channel === "metalness" ? "Metalness" : "Glow Strength";
+    }
+    if (els.textureEditorChannelValueOutput) {
+      els.textureEditorChannelValueOutput.textContent = channel === "roughness" ? `${value}% rough` : channel === "metalness" ? value === 0 ? "Non-metal" : value === 100 ? "Metal" : `${value}% metal` : `${value}%`;
+    }
+  }
   function textureEditorBrushSettings() {
     return {
       size: Math.max(1, Math.min(256, Number(els.textureEditorBrushSize.value) || 12)),
       hardness: Math.max(0, Math.min(1, (Number(els.textureEditorHardness.value) || 0) / 100)),
       opacity: Math.max(0.01, Math.min(1, (Number(els.textureEditorOpacity.value) || 100) / 100)),
-      color: els.textureEditorColor.value || "#ff7f50"
+      color: textureEditorChannelPaintColor()
     };
   }
   function stampTextureEditorBrush(context, point, settings, erasing = false) {
@@ -32149,18 +32469,26 @@ void main() {
     context.fill();
     context.restore();
   }
-  function stampTextureEditorSpray(context, point, settings) {
+  function textureEditorSprayDots(settings) {
     const radius = settings.size * 0.5;
     const dots = Math.max(8, Math.round(settings.size * 0.8));
+    return Array.from({ length: dots }, () => {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.sqrt(Math.random()) * radius;
+      return {
+        x: Math.cos(angle) * distance,
+        y: Math.sin(angle) * distance,
+        radius: Math.max(0.55, settings.size * (0.012 + Math.random() * 0.018))
+      };
+    });
+  }
+  function stampTextureEditorSpray(context, point, settings, sprayDots = null) {
     context.save();
     context.fillStyle = settings.color;
     context.globalAlpha = Math.min(1, settings.opacity * 0.42);
-    for (let index = 0; index < dots; index += 1) {
-      const angle = Math.random() * Math.PI * 2;
-      const distance = Math.sqrt(Math.random()) * radius;
-      const dotRadius = Math.max(0.55, settings.size * (0.012 + Math.random() * 0.018));
+    for (const dot of sprayDots || textureEditorSprayDots(settings)) {
       context.beginPath();
-      context.arc(point.x + Math.cos(angle) * distance, point.y + Math.sin(angle) * distance, dotRadius, 0, Math.PI * 2);
+      context.arc(point.x + dot.x, point.y + dot.y, dot.radius, 0, Math.PI * 2);
       context.fill();
     }
     context.restore();
@@ -32170,7 +32498,7 @@ void main() {
     if (!canvas2) return;
     const context = canvas2.getContext("2d");
     const settings = textureEditorBrushSettings();
-    const tool = textureEditorState.tool || "brush";
+    const tool = textureEditorState.tool || "none";
     context.clearRect(0, 0, canvas2.width, canvas2.height);
     context.fillStyle = "#10171c";
     context.fillRect(0, 0, canvas2.width, canvas2.height);
@@ -32235,7 +32563,56 @@ void main() {
       y: (event.clientY - rect.top) * (canvas2.height / Math.max(1, rect.height))
     };
   }
-  function setTextureEditorZoom(nextZoom, anchor = null) {
+  function hideTextureEditorPointerPreview() {
+    const preview = els.textureEditorPointerPreview;
+    if (!preview) return;
+    preview.style.display = "none";
+  }
+  function syncTextureEditorPointerPreview(event) {
+    const preview = els.textureEditorPointerPreview;
+    const canvas2 = els.textureEditorCanvas;
+    const source = currentTextureEditorCanvas();
+    const drawRect = textureEditorState.drawingRect;
+    const tool = textureEditorState.tool || "brush";
+    if (!preview || !canvas2 || !source || !drawRect || !["pen", "brush", "spray", "eraser", "hammer"].includes(tool)) {
+      hideTextureEditorPointerPreview();
+      return;
+    }
+    const sourcePoint = textureEditorPointFromEvent(event);
+    if (!sourcePoint) {
+      hideTextureEditorPointerPreview();
+      return;
+    }
+    const rect = canvas2.getBoundingClientRect();
+    const cssX = event.clientX - rect.left;
+    const cssY = event.clientY - rect.top;
+    const sourceDiameter = tool === "hammer" ? Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48)) * 2 : Math.max(1, Number(els.textureEditorBrushSize.value) || 12);
+    const internalDiameter = sourceDiameter / Math.max(1, source.width) * drawRect.width;
+    const cssDiameter = Math.max(4, internalDiameter * (rect.width / Math.max(1, canvas2.width)));
+    preview.className = `texture-editor-pointer-preview ${tool}`;
+    preview.style.display = "block";
+    preview.style.width = `${cssDiameter}px`;
+    preview.style.height = `${cssDiameter}px`;
+    preview.style.transform = `translate3d(${cssX - cssDiameter / 2}px, ${cssY - cssDiameter / 2}px, 0)`;
+  }
+  function requestTextureEditorRender() {
+    if (textureEditorState.renderFrame) return;
+    textureEditorState.renderFrame = requestAnimationFrame(() => {
+      textureEditorState.renderFrame = 0;
+      renderTextureEditor();
+    });
+  }
+  var textureEditorResizeObserver = null;
+  function observeTextureEditorStage() {
+    const stage = els.textureEditorCanvas?.parentElement;
+    if (!stage || textureEditorResizeObserver || typeof ResizeObserver === "undefined") return;
+    textureEditorResizeObserver = new ResizeObserver(() => {
+      if (!textureEditorState.open || !els.textureEditorModal?.classList.contains("open")) return;
+      requestTextureEditorRender();
+    });
+    textureEditorResizeObserver.observe(stage);
+  }
+  function setTextureEditorZoom(nextZoom, anchor = null, pointerEvent = null) {
     const canvas2 = els.textureEditorCanvas;
     const source = currentTextureEditorCanvas();
     if (!canvas2 || !source) return;
@@ -32252,6 +32629,7 @@ void main() {
     }
     textureEditorState.zoom = zoom;
     renderTextureEditor();
+    if (pointerEvent) syncTextureEditorPointerPreview(pointerEvent);
   }
   function drawUvTriangleOverlay(context, triangle, drawRect, color, lineWidth = 1.6) {
     context.beginPath();
@@ -32272,9 +32650,9 @@ void main() {
     const source = currentTextureEditorCanvas();
     const canvas2 = els.textureEditorCanvas;
     if (!mesh || !source || !canvas2) return;
-    const stage = canvas2.parentElement.getBoundingClientRect();
-    canvas2.width = Math.max(320, Math.floor(stage.width));
-    canvas2.height = Math.max(240, Math.floor(stage.height));
+    const displayRect = canvas2.getBoundingClientRect();
+    canvas2.width = Math.max(1, Math.round(displayRect.width));
+    canvas2.height = Math.max(1, Math.round(displayRect.height));
     const context = canvas2.getContext("2d");
     context.clearRect(0, 0, canvas2.width, canvas2.height);
     const baseRect = fitTextureRect(source.width, source.height, canvas2.width, canvas2.height);
@@ -32305,36 +32683,90 @@ void main() {
       }
       for (const triangle of selectedTriangles) drawUvTriangleOverlay(context, triangle, drawRect, "rgba(255, 191, 71, 1)", 2.3);
     }
-    if (textureEditorState.hoverPoint) {
-      const hoverX = drawRect.left + textureEditorState.hoverPoint.x / source.width * drawRect.width;
-      const hoverY = drawRect.top + textureEditorState.hoverPoint.y / source.height * drawRect.height;
-      const activeTool = textureEditorState.tool || "brush";
-      if (activeTool === "hammer") {
-        const radius = Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48));
-        const previewRadius = radius / source.width * drawRect.width;
-        context.save();
-        context.strokeStyle = "rgba(255, 184, 77, 0.95)";
-        context.lineWidth = 2;
-        context.setLineDash([6, 5]);
+    const symmetry = normalizedTextureEditorSymmetry(textureEditorState.symmetry);
+    if (symmetry !== "none") {
+      context.save();
+      context.setLineDash([8, 6]);
+      context.lineWidth = 1.5;
+      context.strokeStyle = "rgba(45, 212, 191, .95)";
+      if (symmetry === "u" || symmetry === "uv") {
+        const centerX = drawRect.left + drawRect.width * 0.5;
         context.beginPath();
-        context.arc(hoverX, hoverY, previewRadius, 0, Math.PI * 2);
+        context.moveTo(centerX, drawRect.top);
+        context.lineTo(centerX, drawRect.top + drawRect.height);
         context.stroke();
-        context.restore();
-      } else if (["pen", "brush", "spray", "eraser"].includes(activeTool)) {
-        const size = Math.max(1, Number(els.textureEditorBrushSize.value) || 12);
-        const previewRadius = Math.max(2, size / source.width * drawRect.width * 0.5);
-        context.save();
-        context.strokeStyle = activeTool === "eraser" ? "rgba(255, 150, 175, 0.95)" : activeTool === "spray" ? "rgba(255, 184, 77, 0.95)" : "rgba(125, 211, 252, 0.95)";
-        context.lineWidth = 1.6;
-        if (activeTool === "spray") context.setLineDash([3, 3]);
-        context.beginPath();
-        context.arc(hoverX, hoverY, previewRadius, 0, Math.PI * 2);
-        context.stroke();
-        context.restore();
       }
+      if (symmetry === "v" || symmetry === "uv") {
+        const centerY = drawRect.top + drawRect.height * 0.5;
+        context.beginPath();
+        context.moveTo(drawRect.left, centerY);
+        context.lineTo(drawRect.left + drawRect.width, centerY);
+        context.stroke();
+      }
+      context.restore();
+    }
+    const paintSelection = textureEditorState.selectionDraft || textureEditorState.selection;
+    if (paintSelection) {
+      context.save();
+      const hasPath = textureEditorSelectionPath(
+        context,
+        paintSelection,
+        drawRect.width / Math.max(1, source.width),
+        drawRect.height / Math.max(1, source.height),
+        drawRect.left,
+        drawRect.top
+      );
+      if (hasPath) {
+        context.fillStyle = "rgba(45, 212, 191, 0.12)";
+        context.fill();
+        context.setLineDash([7, 5]);
+        context.lineWidth = 2;
+        context.strokeStyle = "rgba(94, 234, 212, 1)";
+        context.stroke();
+      }
+      context.restore();
+    }
+    if (textureEditorState.isDrawingShape && textureEditorState.shapeStart && textureEditorState.shapeEnd) {
+      const mapPoint = (point) => ({
+        x: drawRect.left + point.x / Math.max(1, source.width) * drawRect.width,
+        y: drawRect.top + point.y / Math.max(1, source.height) * drawRect.height
+      });
+      context.save();
+      for (const transform2 of textureEditorSymmetryTransforms()) {
+        const previewStart = mapPoint(transformedTextureEditorPoint(textureEditorState.shapeStart, source, transform2));
+        const previewEnd = mapPoint(transformedTextureEditorPoint(textureEditorState.shapeEnd, source, transform2));
+        textureEditorShapePath(context, textureEditorState.shape || "rectangle", previewStart, previewEnd);
+        context.setLineDash([6, 4]);
+        context.lineWidth = 2;
+        context.strokeStyle = "rgba(255, 191, 71, 1)";
+        context.stroke();
+      }
+      context.restore();
+    }
+    const mirroredPointerTools = /* @__PURE__ */ new Set(["pen", "brush", "spray", "eraser", "hammer"]);
+    if (symmetry !== "none" && textureEditorState.hoverPoint && mirroredPointerTools.has(textureEditorState.tool)) {
+      const settings = textureEditorBrushSettings();
+      const sourceRadius = textureEditorState.tool === "hammer" ? Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius?.value) || 48)) : Math.max(1, settings.size * 0.5);
+      const displayRadius = sourceRadius * (drawRect.width / Math.max(1, source.width));
+      const mirroredPoints = textureEditorSymmetryPoints(textureEditorState.hoverPoint, source).slice(1);
+      context.save();
+      context.setLineDash([5, 4]);
+      context.lineWidth = 1.5;
+      context.strokeStyle = "rgba(94, 234, 212, .95)";
+      context.fillStyle = "rgba(45, 212, 191, .08)";
+      for (const mirroredPoint of mirroredPoints) {
+        const x = drawRect.left + mirroredPoint.x / Math.max(1, source.width) * drawRect.width;
+        const y = drawRect.top + mirroredPoint.y / Math.max(1, source.height) * drawRect.height;
+        context.beginPath();
+        context.arc(x, y, Math.max(2, displayRadius), 0, Math.PI * 2);
+        context.fill();
+        context.stroke();
+      }
+      context.restore();
     }
     els.textureEditorInfo.textContent = selectedTriangles.length ? `${onlySelected ? "Isolating" : "Showing"} ${selectedTriangles.length} selected triangle${selectedTriangles.length === 1 ? "" : "s"} on ${mesh.name}.` : `No triangles selected on ${mesh.name} yet, so tools affect the visible UV area.`;
     if (els.textureEditorZoomValue) els.textureEditorZoomValue.textContent = `${Math.round(zoom * 100)}%`;
+    syncTextureEditorSelectionUi();
     renderTextureEditorBrushPreview();
   }
   function textureEditorStrokeTo(point) {
@@ -32348,20 +32780,23 @@ void main() {
     const distance = Math.hypot(point.x - from.x, point.y - from.y);
     const steps = Math.max(1, Math.ceil(distance / Math.max(1, settings.size * 0.18)));
     context.save();
-    textureEditorClipToTriangles(context, textureEditorMaskTriangles(mesh), source);
+    textureEditorClipToActiveMask(context, mesh, source);
     for (let step = 0; step <= steps; step += 1) {
       const amount = step / steps;
       const stampPoint = {
         x: from.x + (point.x - from.x) * amount,
         y: from.y + (point.y - from.y) * amount
       };
-      if (textureEditorState.tool === "spray") stampTextureEditorSpray(context, stampPoint, settings);
-      else if (textureEditorState.tool === "pen") stampTextureEditorPen(context, stampPoint, settings);
-      else stampTextureEditorBrush(context, stampPoint, settings, erasing);
+      const sprayDots = textureEditorState.tool === "spray" ? textureEditorSprayDots(settings) : null;
+      withTextureEditorSymmetry(context, source, () => {
+        if (textureEditorState.tool === "spray") stampTextureEditorSpray(context, stampPoint, settings, sprayDots);
+        else if (textureEditorState.tool === "pen") stampTextureEditorPen(context, stampPoint, settings);
+        else stampTextureEditorBrush(context, stampPoint, settings, erasing);
+      });
     }
     context.restore();
     textureEditorState.lastPoint = point;
-    renderTextureEditor();
+    requestTextureEditorRender();
   }
   function sampleTextureEditorColor(point) {
     const source = currentTextureEditorCanvas();
@@ -32372,28 +32807,46 @@ void main() {
       1,
       1
     ).data;
-    els.textureEditorColor.value = `#${[pixel[0], pixel[1], pixel[2]].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+    const channel = normalizedMaterialTextureChannel(textureEditorState.channel);
+    if (channel === "roughness" || channel === "metalness") {
+      const component2 = channel === "roughness" ? pixel[1] : pixel[2];
+      els.textureEditorChannelValue.value = String(Math.round(component2 / 255 * 100));
+    } else {
+      els.textureEditorColor.value = `#${[pixel[0], pixel[1], pixel[2]].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+      if (channel === "emissive") els.textureEditorChannelValue.value = "100";
+    }
     els.textureEditorOpacity.value = String(Math.max(1, Math.round(pixel[3] / 255 * 100)));
+    syncTextureEditorChannelValueUi();
     renderTextureEditor();
   }
   function fillTextureEditorIsland(point) {
     const mesh = textureEditorMesh();
     const source = currentTextureEditorCanvas();
     if (!mesh || !source || !point) return false;
-    const island = textureEditorIslandAtPoint(mesh, point);
-    if (!island.length) {
+    const islands = textureEditorSymmetryPoints(point, source).map((symmetryPoint) => textureEditorIslandAtPoint(mesh, symmetryPoint)).filter((island) => island.length);
+    const uniqueIslands = [];
+    const islandKeys = /* @__PURE__ */ new Set();
+    for (const island of islands) {
+      const key2 = island.map((triangle) => triangle.map((vertex2) => `${vertex2.u.toFixed(6)},${vertex2.v.toFixed(6)}`).join(";")).sort().join("|");
+      if (islandKeys.has(key2)) continue;
+      islandKeys.add(key2);
+      uniqueIslands.push(island);
+    }
+    if (!uniqueIslands.length) {
       log("Texture Fill needs a click inside one visible UV island.");
       return false;
     }
     snapshotTextureEditor();
     const settings = textureEditorBrushSettings();
     const context = source.getContext("2d");
-    context.save();
-    textureEditorClipToTriangles(context, island, source);
-    context.globalAlpha = settings.opacity;
-    context.fillStyle = settings.color;
-    context.fillRect(0, 0, source.width, source.height);
-    context.restore();
+    for (const island of uniqueIslands) {
+      context.save();
+      textureEditorClipToActiveMask(context, mesh, source, island);
+      context.globalAlpha = settings.opacity;
+      context.fillStyle = settings.color;
+      context.fillRect(0, 0, source.width, source.height);
+      context.restore();
+    }
     renderTextureEditor();
     return true;
   }
@@ -32405,78 +32858,189 @@ void main() {
     const maskTriangles = textureEditorMaskTriangles(mesh);
     const context = source.getContext("2d", { willReadFrequently: true });
     const radius = Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48));
-    const hitCount = 1 + Math.floor(Math.random() * 2);
     context.save();
     textureEditorTrianglesPath(context, maskTriangles, source.width, source.height);
     context.clip();
-    for (let hit = 0; hit < hitCount; hit++) {
-      const centerX = point.x + (Math.random() - 0.5) * radius * 0.18;
-      const centerY = point.y + (Math.random() - 0.5) * radius * 0.18;
-      const currentRadius = radius * (0.9 + Math.random() * 0.2);
-      const rayCount = 14 + Math.floor(Math.random() * 8);
-      context.save();
-      context.beginPath();
-      context.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
-      context.clip();
-      const frost = context.createRadialGradient(centerX, centerY, currentRadius * 0.04, centerX, centerY, currentRadius);
-      frost.addColorStop(0, "rgba(255,255,255,0.92)");
-      frost.addColorStop(0.12, "rgba(235,245,255,0.82)");
-      frost.addColorStop(0.45, "rgba(210,225,245,0.34)");
-      frost.addColorStop(1, "rgba(210,225,245,0)");
-      context.fillStyle = frost;
-      context.beginPath();
-      context.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
-      context.fill();
-      context.globalCompositeOperation = "multiply";
-      const darkCore = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, currentRadius * 0.24);
-      darkCore.addColorStop(0, "rgba(24, 28, 36, 0.92)");
-      darkCore.addColorStop(0.55, "rgba(70, 82, 100, 0.32)");
-      darkCore.addColorStop(1, "rgba(70, 82, 100, 0)");
-      context.fillStyle = darkCore;
-      context.beginPath();
-      context.arc(centerX, centerY, currentRadius * 0.24, 0, Math.PI * 2);
-      context.fill();
-      context.globalCompositeOperation = "screen";
-      context.strokeStyle = "rgba(255, 255, 255, 0.98)";
-      context.lineWidth = Math.max(1.1, currentRadius / 26);
-      context.lineCap = "round";
-      for (let i = 0; i < rayCount; i++) {
-        const baseAngle = Math.PI * 2 * i / rayCount + (Math.random() - 0.5) * 0.24;
-        const segments = 4 + Math.floor(Math.random() * 3);
-        const length = currentRadius * (0.52 + Math.random() * 0.5);
-        let lastX = centerX;
-        let lastY = centerY;
+    textureEditorClipToSelection(context, source);
+    for (const effectPoint of textureEditorSymmetryPoints(point, source)) {
+      const hitCount = 1 + Math.floor(Math.random() * 2);
+      for (let hit = 0; hit < hitCount; hit++) {
+        const centerX = effectPoint.x + (Math.random() - 0.5) * radius * 0.18;
+        const centerY = effectPoint.y + (Math.random() - 0.5) * radius * 0.18;
+        const currentRadius = radius * (0.9 + Math.random() * 0.2);
+        const rayCount = 14 + Math.floor(Math.random() * 8);
+        context.save();
         context.beginPath();
-        context.moveTo(lastX, lastY);
-        for (let step = 1; step <= segments; step++) {
-          const distance = length * (step / segments);
-          const jitter = (Math.random() - 0.5) * currentRadius * 0.16;
-          const angle = baseAngle + (Math.random() - 0.5) * 0.22;
-          const nextX = centerX + Math.cos(angle) * distance - Math.sin(angle) * jitter;
-          const nextY = centerY + Math.sin(angle) * distance + Math.cos(angle) * jitter;
-          context.lineTo(nextX, nextY);
-          lastX = nextX;
-          lastY = nextY;
-          if (step >= 2 && Math.random() > 0.48) {
-            const branchAngle = angle + (Math.random() > 0.5 ? 1 : -1) * (0.28 + Math.random() * 0.42);
-            const branchLength = currentRadius * (0.12 + Math.random() * 0.26);
-            context.moveTo(lastX, lastY);
-            context.lineTo(lastX + Math.cos(branchAngle) * branchLength, lastY + Math.sin(branchAngle) * branchLength);
-            context.moveTo(lastX, lastY);
+        context.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+        context.clip();
+        const frost = context.createRadialGradient(centerX, centerY, currentRadius * 0.04, centerX, centerY, currentRadius);
+        frost.addColorStop(0, "rgba(255,255,255,0.92)");
+        frost.addColorStop(0.12, "rgba(235,245,255,0.82)");
+        frost.addColorStop(0.45, "rgba(210,225,245,0.34)");
+        frost.addColorStop(1, "rgba(210,225,245,0)");
+        context.fillStyle = frost;
+        context.beginPath();
+        context.arc(centerX, centerY, currentRadius, 0, Math.PI * 2);
+        context.fill();
+        context.globalCompositeOperation = "multiply";
+        const darkCore = context.createRadialGradient(centerX, centerY, 0, centerX, centerY, currentRadius * 0.24);
+        darkCore.addColorStop(0, "rgba(24, 28, 36, 0.92)");
+        darkCore.addColorStop(0.55, "rgba(70, 82, 100, 0.32)");
+        darkCore.addColorStop(1, "rgba(70, 82, 100, 0)");
+        context.fillStyle = darkCore;
+        context.beginPath();
+        context.arc(centerX, centerY, currentRadius * 0.24, 0, Math.PI * 2);
+        context.fill();
+        context.globalCompositeOperation = "screen";
+        context.strokeStyle = "rgba(255, 255, 255, 0.98)";
+        context.lineWidth = Math.max(1.1, currentRadius / 26);
+        context.lineCap = "round";
+        for (let i = 0; i < rayCount; i++) {
+          const baseAngle = Math.PI * 2 * i / rayCount + (Math.random() - 0.5) * 0.24;
+          const segments = 4 + Math.floor(Math.random() * 3);
+          const length = currentRadius * (0.52 + Math.random() * 0.5);
+          let lastX = centerX;
+          let lastY = centerY;
+          context.beginPath();
+          context.moveTo(lastX, lastY);
+          for (let step = 1; step <= segments; step++) {
+            const distance = length * (step / segments);
+            const jitter = (Math.random() - 0.5) * currentRadius * 0.16;
+            const angle = baseAngle + (Math.random() - 0.5) * 0.22;
+            const nextX = centerX + Math.cos(angle) * distance - Math.sin(angle) * jitter;
+            const nextY = centerY + Math.sin(angle) * distance + Math.cos(angle) * jitter;
+            context.lineTo(nextX, nextY);
+            lastX = nextX;
+            lastY = nextY;
+            if (step >= 2 && Math.random() > 0.48) {
+              const branchAngle = angle + (Math.random() > 0.5 ? 1 : -1) * (0.28 + Math.random() * 0.42);
+              const branchLength = currentRadius * (0.12 + Math.random() * 0.26);
+              context.moveTo(lastX, lastY);
+              context.lineTo(lastX + Math.cos(branchAngle) * branchLength, lastY + Math.sin(branchAngle) * branchLength);
+              context.moveTo(lastX, lastY);
+            }
           }
+          context.stroke();
         }
+        context.globalCompositeOperation = "source-over";
+        context.strokeStyle = "rgba(255,255,255,0.75)";
+        context.lineWidth = Math.max(0.8, currentRadius / 40);
+        context.beginPath();
+        context.arc(centerX, centerY, currentRadius * 0.18, 0, Math.PI * 2);
         context.stroke();
+        context.restore();
       }
-      context.globalCompositeOperation = "source-over";
-      context.strokeStyle = "rgba(255,255,255,0.75)";
-      context.lineWidth = Math.max(0.8, currentRadius / 40);
-      context.beginPath();
-      context.arc(centerX, centerY, currentRadius * 0.18, 0, Math.PI * 2);
-      context.stroke();
-      context.restore();
     }
     context.restore();
     renderTextureEditor();
+  }
+  function textureEditorDraftKey(meshId, channel = "baseColor") {
+    return `${meshId}:${normalizedMaterialTextureChannel(channel)}`;
+  }
+  function defaultMaterialChannelCanvas(mesh, channel, width, height) {
+    const canvas2 = document.createElement("canvas");
+    canvas2.width = Math.max(1, width || 1024);
+    canvas2.height = Math.max(1, height || 1024);
+    const context = canvas2.getContext("2d", { willReadFrequently: true });
+    context.fillStyle = channel === "roughness" ? "#ffffff" : "#000000";
+    context.fillRect(0, 0, canvas2.width, canvas2.height);
+    return canvas2;
+  }
+  function persistTextureEditorDraft() {
+    if (!textureEditorState.meshId || !textureEditorState.sourceCanvas) return;
+    const mesh = textureEditorMesh();
+    const channelData = materialTextureChannelData(mesh, textureEditorState.channel);
+    textureEditorDrafts.set(textureEditorDraftKey(textureEditorState.meshId, channelData.channel), {
+      sourceCanvas: textureEditorState.sourceCanvas,
+      sourceDataUrl: textureEditorState.sourceCanvas.toDataURL("image/png"),
+      originalCanvas: textureEditorState.originalCanvas,
+      originalPixels: cloneTextureEditorPixels(textureEditorState.originalPixels),
+      originalDataUrl: textureEditorState.originalDataUrl,
+      textureUrl: channelData.url,
+      undoStack: textureEditorState.undoStack,
+      textureName: textureEditorState.textureName,
+      tool: textureEditorState.tool,
+      symmetry: textureEditorState.symmetry,
+      color: els.textureEditorColor?.value || "#ff7f50",
+      channelValue: textureEditorChannelValue(),
+      zoom: textureEditorState.zoom,
+      panX: textureEditorState.panX,
+      panY: textureEditorState.panY
+    });
+  }
+  function syncTextureEditorChannelUi(channel) {
+    const normalized = normalizedMaterialTextureChannel(channel);
+    const config = materialTextureChannels[normalized];
+    for (const button of els.textureEditorChannelButtons || []) {
+      button.classList.toggle("active", button.dataset.textureChannel === normalized);
+    }
+    if (els.textureEditorChannelInfo) els.textureEditorChannelInfo.textContent = config.info;
+    if (els.textureEditorApplyBtn) els.textureEditorApplyBtn.textContent = `Apply ${config.label}`;
+    syncTextureEditorChannelValueUi();
+    syncTextureEditorToolSettings(textureEditorState.tool);
+  }
+  async function loadTextureEditorChannel(mesh, channel = "baseColor") {
+    const channelData = materialTextureChannelData(mesh, channel);
+    const baseImage = mesh.material.map?.image || await loadImage(mesh.userData.textureUrl);
+    const channelMap = mesh.material[channelData.config.mapKey];
+    const channelImage = channelData.url ? channelMap?.image || await loadImage(channelData.url) : null;
+    const liveTextureCanvas = channelImage ? readImageToCanvas(channelImage) : defaultMaterialChannelCanvas(
+      mesh,
+      channelData.channel,
+      baseImage?.naturalWidth || baseImage?.width,
+      baseImage?.naturalHeight || baseImage?.height
+    );
+    const draft = textureEditorDrafts.get(textureEditorDraftKey(mesh.userData.id, channelData.channel));
+    const draftMatchesTexture = !!draft && draft.textureUrl === channelData.url;
+    const draftSourceCanvas = draftMatchesTexture && draft.sourceDataUrl ? readImageToCanvas(await loadImage(draft.sourceDataUrl)) : null;
+    const originalDataUrl = draftMatchesTexture && draft.originalDataUrl ? draft.originalDataUrl : liveTextureCanvas.toDataURL("image/png");
+    const originalCanvas = readImageToCanvas(await loadImage(originalDataUrl));
+    textureEditorState.meshId = mesh.userData.id;
+    textureEditorState.channel = channelData.channel;
+    textureEditorState.textureName = channelData.name;
+    textureEditorState.sourceCanvas = draftSourceCanvas || (draftMatchesTexture ? draft?.sourceCanvas : null) || liveTextureCanvas;
+    textureEditorState.originalCanvas = originalCanvas;
+    textureEditorState.originalPixels = draftMatchesTexture && draft?.originalPixels ? cloneTextureEditorPixels(draft.originalPixels) : captureTextureEditorPixels(originalCanvas);
+    textureEditorState.originalDataUrl = originalDataUrl;
+    textureEditorState.isPainting = false;
+    textureEditorState.lastPoint = null;
+    textureEditorState.hoverPoint = null;
+    textureEditorState.tool = draftMatchesTexture ? draft?.tool || "brush" : "brush";
+    textureEditorState.symmetry = draftMatchesTexture ? normalizedTextureEditorSymmetry(draft?.symmetry) : "none";
+    textureEditorState.undoStack = draftMatchesTexture ? draft?.undoStack || [] : [];
+    textureEditorState.zoom = draftMatchesTexture ? draft?.zoom || 1 : 1;
+    textureEditorState.panX = draftMatchesTexture ? draft?.panX || 0 : 0;
+    textureEditorState.panY = draftMatchesTexture ? draft?.panY || 0 : 0;
+    textureEditorState.strokeSnapshotTaken = false;
+    textureEditorState.open = true;
+    if (els.textureEditorColor) {
+      els.textureEditorColor.value = draftMatchesTexture && draft?.color ? draft.color : channelData.channel === "emissive" ? "#ffffff" : "#ff7f50";
+    }
+    if (els.textureEditorChannelValue) {
+      els.textureEditorChannelValue.value = String(draftMatchesTexture && Number.isFinite(Number(draft?.channelValue)) ? Number(draft.channelValue) : 100);
+    }
+    els.textureEditorMeshName.textContent = `${mesh.name} - ${channelData.config.label}`;
+    syncTextureEditorChannelUi(channelData.channel);
+    setTextureEditorTool(textureEditorState.tool);
+    setTextureEditorSymmetry(textureEditorState.symmetry);
+    updateTextureEditorUndoButton();
+    updateTextureEditorResetButton();
+    renderTextureEditor();
+  }
+  async function switchTextureEditorChannel(channel) {
+    if (!textureEditorState.open) return;
+    const mesh = textureEditorMesh();
+    if (!mesh || normalizedMaterialTextureChannel(channel) === textureEditorState.channel) return;
+    const activeTool = textureEditorState.tool || "brush";
+    const activeSymmetry = textureEditorState.symmetry || "none";
+    persistTextureEditorDraft();
+    try {
+      await loadTextureEditorChannel(mesh, channel);
+      setTextureEditorTool(activeTool);
+      setTextureEditorSymmetry(activeSymmetry);
+    } catch (error) {
+      log(`Could not open the material channel: ${error.message}`);
+    }
   }
   async function openTextureEditor() {
     const mesh = selectedTextureEditorMesh();
@@ -32485,64 +33049,28 @@ void main() {
       return;
     }
     try {
-      const image = mesh.material.map?.image || await loadImage(mesh.userData.textureUrl);
-      const draft = textureEditorDrafts.get(mesh.userData.id);
-      const draftMatchesTexture = !!draft && draft.textureUrl === mesh.userData.textureUrl;
-      const liveTextureCanvas = readImageToCanvas(image);
-      const draftSourceCanvas = draftMatchesTexture && draft.sourceDataUrl ? readImageToCanvas(await loadImage(draft.sourceDataUrl)) : null;
-      const originalDataUrl = draftMatchesTexture && draft.originalDataUrl ? draft.originalDataUrl : liveTextureCanvas.toDataURL("image/png");
-      const originalCanvas = readImageToCanvas(await loadImage(originalDataUrl));
-      textureEditorState.meshId = mesh.userData.id;
-      textureEditorState.textureName = mesh.userData.textureName || "Texture";
-      textureEditorState.sourceCanvas = draftSourceCanvas || (draftMatchesTexture ? draft?.sourceCanvas : null) || liveTextureCanvas;
-      textureEditorState.originalCanvas = originalCanvas;
-      textureEditorState.originalPixels = draftMatchesTexture && draft?.originalPixels ? cloneTextureEditorPixels(draft.originalPixels) : captureTextureEditorPixels(originalCanvas);
-      textureEditorState.originalDataUrl = originalDataUrl;
-      textureEditorState.isPainting = false;
-      textureEditorState.lastPoint = null;
-      textureEditorState.hoverPoint = null;
-      textureEditorState.tool = draftMatchesTexture ? draft?.tool || textureEditorState.tool || "brush" : textureEditorState.tool || "brush";
-      textureEditorState.undoStack = draftMatchesTexture ? draft?.undoStack || [] : [];
-      textureEditorState.zoom = draftMatchesTexture ? draft?.zoom || 1 : 1;
-      textureEditorState.panX = draftMatchesTexture ? draft?.panX || 0 : 0;
-      textureEditorState.panY = draftMatchesTexture ? draft?.panY || 0 : 0;
-      textureEditorState.strokeSnapshotTaken = false;
-      textureEditorState.open = true;
-      els.textureEditorMeshName.textContent = `${mesh.name} - ${textureEditorState.textureName}`;
+      await loadTextureEditorChannel(mesh, "baseColor");
       els.textureEditorModal.classList.add("open");
       els.textureEditorModal.setAttribute("aria-hidden", "false");
-      setTextureEditorTool(textureEditorState.tool);
-      updateTextureEditorUndoButton();
-      updateTextureEditorResetButton();
+      observeTextureEditorStage();
       renderTextureEditor();
+      requestTextureEditorRender();
     } catch (error) {
       log(`Texture editor failed to open: ${error.message}`);
     }
   }
   function closeTextureEditor() {
-    if (textureEditorState.meshId && textureEditorState.sourceCanvas) {
-      const mesh = textureEditorMesh();
-      textureEditorDrafts.set(textureEditorState.meshId, {
-        sourceCanvas: textureEditorState.sourceCanvas,
-        sourceDataUrl: textureEditorState.sourceCanvas.toDataURL("image/png"),
-        originalCanvas: textureEditorState.originalCanvas,
-        originalPixels: cloneTextureEditorPixels(textureEditorState.originalPixels),
-        originalDataUrl: textureEditorState.originalDataUrl,
-        textureUrl: mesh?.userData.textureUrl || null,
-        undoStack: textureEditorState.undoStack,
-        textureName: textureEditorState.textureName,
-        tool: textureEditorState.tool,
-        zoom: textureEditorState.zoom,
-        panX: textureEditorState.panX,
-        panY: textureEditorState.panY
-      });
-    }
+    persistTextureEditorDraft();
+    if (textureEditorState.renderFrame) cancelAnimationFrame(textureEditorState.renderFrame);
+    textureEditorState.renderFrame = 0;
+    hideTextureEditorPointerPreview();
     textureEditorState.open = false;
     textureEditorState.meshId = null;
     textureEditorState.sourceCanvas = null;
     textureEditorState.originalCanvas = null;
     textureEditorState.originalPixels = null;
     textureEditorState.originalDataUrl = null;
+    textureEditorState.channel = "baseColor";
     textureEditorState.drawingRect = null;
     textureEditorState.isPainting = false;
     textureEditorState.lastPoint = null;
@@ -32551,6 +33079,19 @@ void main() {
     textureEditorState.isPanning = false;
     textureEditorState.panStart = null;
     textureEditorState.strokeSnapshotTaken = false;
+    textureEditorState.selection = null;
+    textureEditorState.selectionDraft = null;
+    textureEditorState.isSelecting = false;
+    textureEditorState.shapeStart = null;
+    textureEditorState.shapeEnd = null;
+    textureEditorState.isDrawingShape = false;
+    textureEditorState.symmetry = "none";
+    for (const button of els.textureEditorSymmetryButtons || []) {
+      const active = button.dataset.textureSymmetry === "none";
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", active ? "true" : "false");
+    }
+    syncTextureEditorSelectionUi();
     updateTextureEditorUndoButton();
     updateTextureEditorResetButton();
     els.textureEditorModal.classList.remove("open");
@@ -32563,7 +33104,7 @@ void main() {
     }
     snapshotTextureEditor();
     textureEditorState.sourceCanvas = canvasFromTextureEditorPixels(textureEditorState.originalPixels);
-    const draft = textureEditorDrafts.get(textureEditorState.meshId);
+    const draft = textureEditorDrafts.get(textureEditorDraftKey(textureEditorState.meshId, textureEditorState.channel));
     if (draft) {
       draft.sourceCanvas = textureEditorState.sourceCanvas;
       draft.sourceDataUrl = textureEditorState.sourceCanvas.toDataURL("image/png");
@@ -32578,20 +33119,15 @@ void main() {
     if (!mesh || !source) return;
     recordHistory("edit texture");
     const dataUrl = source.toDataURL("image/png");
-    const textureName = mesh.userData.textureName || textureEditorState.textureName || "Texture";
+    const channelData = materialTextureChannelData(mesh, textureEditorState.channel);
+    const textureName = channelData.name || textureEditorState.textureName || `${mesh.name} ${channelData.config.label}`;
     registerTextureAsset(textureName, dataUrl, { replace: true });
-    applyTextureToMesh(
-      mesh,
-      dataUrl,
-      textureName,
-      mesh.userData.textureFlipY ?? true,
-      mesh.userData.textureRotation || 0
-    );
+    applyMaterialTextureChannel(mesh, channelData.channel, dataUrl, textureName);
     refreshTextureLibraryUi();
     syncInspector();
     updateAll();
-    closeTextureEditor();
-    log(`Applied edited texture to ${mesh.name}.`);
+    persistTextureEditorDraft();
+    log(`Applied ${channelData.config.label} channel to ${mesh.name}.`);
   }
   function geometryFromData(data) {
     const geometry = new BufferGeometry();
@@ -33050,7 +33586,7 @@ void main() {
     };
   }
   function createMesh(spec = {}) {
-    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
     shape = normalizeShapeName(shape);
     const defaultOrdinal = idCounter;
     const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -33082,6 +33618,12 @@ void main() {
       textureRobloxAssetId: normalizeRobloxAssetId(textureRobloxAssetId || ""),
       textureFlipY,
       textureRotation: normalizeTextureRotation(textureRotation),
+      roughnessTextureUrl,
+      roughnessTextureName,
+      metalnessTextureUrl,
+      metalnessTextureName,
+      emissiveTextureUrl,
+      emissiveTextureName,
       materialRule: normalizedMaterialRule,
       pivot: Array.isArray(pivot) ? pivot.map(Number) : null,
       hidden: !!hidden,
@@ -33124,6 +33666,9 @@ void main() {
     if (textureUrl) {
       applyTextureToMesh(mesh, textureUrl, textureName || "Texture", textureFlipY, textureRotation);
     }
+    if (roughnessTextureUrl) applyMaterialTextureChannel(mesh, "roughness", roughnessTextureUrl, roughnessTextureName);
+    if (metalnessTextureUrl) applyMaterialTextureChannel(mesh, "metalness", metalnessTextureUrl, metalnessTextureName);
+    if (emissiveTextureUrl) applyMaterialTextureChannel(mesh, "emissive", emissiveTextureUrl, emissiveTextureName);
     return mesh;
   }
   function addObject(spec = {}, { record = true, select = false, update = true } = {}) {
@@ -44214,6 +44759,12 @@ void main() {
       materialRule: normalizeMaterialRule(mesh.userData.materialRule || "auto"),
       textureFlipY: mesh.userData.textureFlipY ?? true,
       textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0),
+      roughnessTextureUrl: mesh.userData.roughnessTextureUrl || null,
+      roughnessTextureName: mesh.userData.roughnessTextureName || null,
+      metalnessTextureUrl: mesh.userData.metalnessTextureUrl || null,
+      metalnessTextureName: mesh.userData.metalnessTextureName || null,
+      emissiveTextureUrl: mesh.userData.emissiveTextureUrl || null,
+      emissiveTextureName: mesh.userData.emissiveTextureName || null,
       playerAvatar: !!mesh.userData.playerAvatar,
       playerHeadOffset: Array.isArray(mesh.userData.playerHeadOffset) ? [...mesh.userData.playerHeadOffset] : null,
       liveMirror: mesh.userData.liveMirror?.enabled ? {
@@ -44273,7 +44824,7 @@ void main() {
       shapes: Object.keys(shapeFactories),
       transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
       faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
-      textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary"],
+      textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary", "baseColorPaint", "roughnessPaint", "metalnessPaint", "emissivePaint"],
       exports: ["project", "json", "obj", "robloxPack", "dae"],
       sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
       lighting: ["mainLamp", "mirrorLamp", "lightGuides", "lampAim", "lampStrength", "coneAngle"],
@@ -44294,10 +44845,12 @@ void main() {
       textureLibraryEntries.filter((entry) => entry?.name && entry?.dataUrl).map((entry) => [entry.dataUrl, entry.name])
     );
     for (const object of scene2.objects || []) {
-      const libraryName = textureNameByUrl.get(object.textureUrl);
-      if (!libraryName) continue;
-      object.textureName = libraryName;
-      object.textureUrl = null;
+      for (const [urlKey, nameKey] of materialTextureReferenceFields()) {
+        const libraryName = textureNameByUrl.get(object[urlKey]);
+        if (!libraryName) continue;
+        object[nameKey] = libraryName;
+        object[urlKey] = null;
+      }
     }
     return {
       kind: "modeler-project",
@@ -44432,9 +44985,19 @@ void main() {
       (entries || []).filter((entry) => entry?.name && entry?.dataUrl).map((entry) => [entry.name, entry.dataUrl])
     );
     for (const object of scene2?.objects || []) {
-      if (object.textureUrl || !object.textureName) continue;
-      object.textureUrl = textureByName.get(object.textureName) || null;
+      for (const [urlKey, nameKey] of materialTextureReferenceFields()) {
+        if (object[urlKey] || !object[nameKey]) continue;
+        object[urlKey] = textureByName.get(object[nameKey]) || null;
+      }
     }
+  }
+  function materialTextureReferenceFields() {
+    return [
+      ["textureUrl", "textureName"],
+      ["roughnessTextureUrl", "roughnessTextureName"],
+      ["metalnessTextureUrl", "metalnessTextureName"],
+      ["emissiveTextureUrl", "emissiveTextureName"]
+    ];
   }
   function syncReferenceImageUi() {
     const hasImage = typeof referenceImageState.dataUrl === "string" && referenceImageState.dataUrl.startsWith("data:image/");
@@ -44510,10 +45073,12 @@ void main() {
       textureEntries.filter((entry) => entry?.name && entry?.dataUrl).map((entry) => [entry.dataUrl, entry.name])
     );
     for (const object of scene2.objects || []) {
-      const libraryName = textureNameByUrl.get(object.textureUrl);
-      if (!libraryName) continue;
-      object.textureName = libraryName;
-      object.textureUrl = null;
+      for (const [urlKey, nameKey] of materialTextureReferenceFields()) {
+        const libraryName = textureNameByUrl.get(object[urlKey]);
+        if (!libraryName) continue;
+        object[nameKey] = libraryName;
+        object[urlKey] = null;
+      }
     }
     return {
       scene: JSON.parse(JSON.stringify(scene2)),
@@ -50194,16 +50759,37 @@ end
   els.textureEditorResetBtn.addEventListener("click", resetTextureEditorCanvas);
   els.textureEditorUndoBtn.addEventListener("click", undoTextureEditorPaint);
   [els.textureEditorShowUv, els.textureEditorSelectedOnly].forEach((input) => input.addEventListener("change", renderTextureEditor));
-  [els.textureEditorColor, els.textureEditorBrushSize, els.textureEditorHardness, els.textureEditorOpacity, els.textureEditorHammerRadius].forEach((input) => input.addEventListener("input", () => {
+  [els.textureEditorColor, els.textureEditorChannelValue, els.textureEditorBrushSize, els.textureEditorHardness, els.textureEditorOpacity, els.textureEditorHammerRadius].forEach((input) => input.addEventListener("input", () => {
+    syncTextureEditorChannelValueUi();
     renderTextureEditorBrushPreview();
     renderTextureEditor();
   }));
   els.textureEditorTool.addEventListener("change", (event) => {
-    setTextureEditorTool(event.target.value || "brush");
+    setTextureEditorTool(event.target.value || "none");
   });
   for (const button of els.textureEditorToolButtons || []) {
-    button.addEventListener("click", () => setTextureEditorTool(button.dataset.textureTool || "brush"));
+    button.addEventListener("click", () => {
+      const requestedTool = button.dataset.textureTool || "none";
+      setTextureEditorTool(textureEditorState.tool === requestedTool ? "none" : requestedTool);
+    });
   }
+  for (const button of els.textureEditorChannelButtons || []) {
+    button.addEventListener("click", () => switchTextureEditorChannel(button.dataset.textureChannel || "baseColor"));
+  }
+  for (const button of els.textureEditorShapeButtons || []) {
+    button.addEventListener("click", () => {
+      textureEditorState.shape = button.dataset.textureShape || "rectangle";
+      for (const candidate of els.textureEditorShapeButtons || []) {
+        candidate.classList.toggle("active", candidate === button);
+      }
+      renderTextureEditor();
+    });
+  }
+  els.textureEditorShapeFilled?.addEventListener("change", renderTextureEditor);
+  for (const button of els.textureEditorSymmetryButtons || []) {
+    button.addEventListener("click", () => setTextureEditorSymmetry(button.dataset.textureSymmetry || "none"));
+  }
+  els.textureEditorClearSelectionBtn?.addEventListener("click", clearTextureEditorSelection);
   els.textureEditorZoomOutBtn?.addEventListener("click", () => setTextureEditorZoom((textureEditorState.zoom || 1) / 1.25));
   els.textureEditorZoomInBtn?.addEventListener("click", () => setTextureEditorZoom((textureEditorState.zoom || 1) * 1.25));
   els.textureEditorZoomResetBtn?.addEventListener("click", () => {
@@ -50232,9 +50818,11 @@ end
   });
   els.textureEditorCanvas.addEventListener("pointerdown", (event) => {
     if (!textureEditorState.open) return;
-    textureEditorState.tool = els.textureEditorTool?.value || textureEditorState.tool || "brush";
+    textureEditorState.tool = els.textureEditorTool?.value || textureEditorState.tool || "none";
+    if (textureEditorState.tool === "none" && event.button !== 1) return;
     if (textureEditorState.tool === "pan" || event.button === 1) {
       event.preventDefault();
+      hideTextureEditorPointerPreview();
       textureEditorState.isPanning = true;
       textureEditorState.panStart = textureEditorCanvasPointFromEvent(event);
       els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
@@ -50243,6 +50831,26 @@ end
     }
     const point = textureEditorPointFromEvent(event);
     if (!point) return;
+    if (textureEditorState.tool === "selectRect" || textureEditorState.tool === "selectEllipse" || textureEditorState.tool === "selectLasso") {
+      textureEditorState.selectionDraft = {
+        type: textureEditorState.tool === "selectEllipse" ? "ellipse" : textureEditorState.tool === "selectLasso" ? "lasso" : "rectangle",
+        points: [point, point]
+      };
+      textureEditorState.isSelecting = true;
+      els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
+      renderTextureEditor();
+      return;
+    }
+    if (textureEditorState.tool === "shape") {
+      snapshotTextureEditor();
+      textureEditorState.strokeSnapshotTaken = true;
+      textureEditorState.shapeStart = point;
+      textureEditorState.shapeEnd = point;
+      textureEditorState.isDrawingShape = true;
+      els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
+      renderTextureEditor();
+      return;
+    }
     if (textureEditorState.tool === "hammer") {
       applyGlassBreakEffect(point);
       return;
@@ -50264,6 +50872,7 @@ end
   });
   els.textureEditorCanvas.addEventListener("pointermove", (event) => {
     if (textureEditorState.isPanning) {
+      hideTextureEditorPointerPreview();
       const current = textureEditorCanvasPointFromEvent(event);
       const previous = textureEditorState.panStart || current;
       textureEditorState.panX += current.x - previous.x;
@@ -50274,15 +50883,47 @@ end
     }
     const point = textureEditorPointFromEvent(event);
     textureEditorState.hoverPoint = point;
+    syncTextureEditorPointerPreview(event);
+    if (textureEditorState.isSelecting && point) {
+      const draft = textureEditorState.selectionDraft;
+      if (draft?.type === "lasso") {
+        const previous = draft.points[draft.points.length - 1];
+        if (!previous || Math.hypot(point.x - previous.x, point.y - previous.y) >= 2) draft.points.push(point);
+      } else if (draft) {
+        draft.points[1] = point;
+      }
+      renderTextureEditor();
+      return;
+    }
+    if (textureEditorState.isDrawingShape && point) {
+      textureEditorState.shapeEnd = point;
+      renderTextureEditor();
+      return;
+    }
     if (!textureEditorState.isPainting) return;
     if (!point) return;
     textureEditorStrokeTo(point);
     return;
   });
-  els.textureEditorCanvas.addEventListener("pointermove", () => {
-    if (!textureEditorState.isPainting) renderTextureEditor();
-  });
   var finishTextureEditorStroke = (pointerId) => {
+    if (textureEditorState.isSelecting) {
+      const draft = textureEditorState.selectionDraft;
+      const first = draft?.points?.[0];
+      const last = draft?.points?.[draft.points.length - 1];
+      const largeEnough = draft?.type === "lasso" ? draft.points.length >= 3 : first && last && (Math.abs(last.x - first.x) >= 1 || Math.abs(last.y - first.y) >= 1);
+      textureEditorState.selection = largeEnough ? draft : null;
+      textureEditorState.selectionDraft = null;
+      textureEditorState.isSelecting = false;
+      syncTextureEditorSelectionUi();
+      renderTextureEditor();
+    }
+    if (textureEditorState.isDrawingShape) {
+      drawTextureEditorShape(textureEditorState.shapeStart, textureEditorState.shapeEnd);
+      textureEditorState.shapeStart = null;
+      textureEditorState.shapeEnd = null;
+      textureEditorState.isDrawingShape = false;
+      updateTextureEditorUndoButton();
+    }
     textureEditorState.isPainting = false;
     textureEditorState.isPanning = false;
     textureEditorState.panStart = null;
@@ -50299,14 +50940,14 @@ end
   els.textureEditorCanvas.addEventListener("pointerup", (event) => finishTextureEditorStroke(event.pointerId));
   els.textureEditorCanvas.addEventListener("pointerleave", (event) => {
     textureEditorState.hoverPoint = null;
+    hideTextureEditorPointerPreview();
     finishTextureEditorStroke(event.pointerId);
-    renderTextureEditor();
   });
   els.textureEditorCanvas.addEventListener("wheel", (event) => {
     if (!textureEditorState.open) return;
     event.preventDefault();
     const anchor = textureEditorCanvasPointFromEvent(event);
-    setTextureEditorZoom((textureEditorState.zoom || 1) * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchor);
+    setTextureEditorZoom((textureEditorState.zoom || 1) * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchor, event);
   }, { passive: false });
   els.importProjectFile.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];

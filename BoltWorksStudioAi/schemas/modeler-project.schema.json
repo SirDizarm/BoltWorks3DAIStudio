@@ -139,6 +139,42 @@
             { "type": "null" }
           ]
         },
+        "roughnessTextureName": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "roughnessTextureUrl": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "metalnessTextureName": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "metalnessTextureUrl": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "emissiveTextureName": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "emissiveTextureUrl": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
         "textureFlipY": { "type": "boolean" },
         "textureRotation": { "type": "number" },
         "textureRobloxAssetId": { "type": "string" },
