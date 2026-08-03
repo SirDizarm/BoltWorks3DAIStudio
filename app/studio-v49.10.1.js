@@ -30308,6 +30308,10 @@ void main() {
   var lineSketchPlaneNormal = null;
   var lineSketchHover = null;
   var lineSketchPoints = [];
+  var knifeCutMode = false;
+  var knifeCutMesh = null;
+  var knifeCutHover = null;
+  var knifeCutPoints = [];
   var selectedFace = null;
   var selectedFaces = [];
   var surfaceComponentMode = "none";
@@ -30358,6 +30362,10 @@ void main() {
   modelingEdgesOverlay.name = "visible modeling edges";
   modelingEdgesOverlay.visible = false;
   scene.add(modelingEdgesOverlay);
+  var knifeCutGuideGroup = new Group();
+  knifeCutGuideGroup.name = "knife cut guides";
+  knifeCutGuideGroup.visible = false;
+  scene.add(knifeCutGuideGroup);
   var selectionOutlineGroup = new Group();
   selectionOutlineGroup.name = "selected object silhouette";
   scene.add(selectionOutlineGroup);
@@ -30591,6 +30599,15 @@ void main() {
     loopCutPositionInput: document.querySelector("#loopCutPositionInput"),
     loopCutCountInput: document.querySelector("#loopCutCountInput"),
     loopCutBtn: document.querySelector("#loopCutBtn"),
+    knifeCutModeBtn: document.querySelector("#knifeCutModeBtn"),
+    knifeCutCancelBtn: document.querySelector("#knifeCutCancelBtn"),
+    knifeCutThroughInput: document.querySelector("#knifeCutThroughInput"),
+    planeCutAxisSelect: document.querySelector("#planeCutAxisSelect"),
+    planeCutPositionInput: document.querySelector("#planeCutPositionInput"),
+    planeCutResultSelect: document.querySelector("#planeCutResultSelect"),
+    planeCutCapInput: document.querySelector("#planeCutCapInput"),
+    planeCutBtn: document.querySelector("#planeCutBtn"),
+    bridgeEdgeLoopsBtn: document.querySelector("#bridgeEdgeLoopsBtn"),
     edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
     edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
     edgeSlideBtn: document.querySelector("#edgeSlideBtn"),
@@ -33211,8 +33228,14 @@ void main() {
     els.surfaceSelectTriangleBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "triangle");
     els.surfaceSelectFaceBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "face");
     els.surfaceEditorOpenBtn?.classList.toggle("active", !els.surfaceEditorWindow?.classList.contains("collapsed"));
+    els.knifeCutModeBtn?.classList.toggle("active", knifeCutMode);
+    if (els.knifeCutCancelBtn) els.knifeCutCancelBtn.disabled = knifeCutPoints.length === 0;
+    if (els.planeCutCapInput) els.planeCutCapInput.disabled = els.planeCutResultSelect?.value === "both";
     if (els.dissolveSelectedBtn) {
       els.dissolveSelectedBtn.disabled = !(surfaceComponentMode === "edge" && selectedSurfaceEdges.length === 1 || surfaceComponentMode === "vertex" && selectedSurfaceVertices.length === 1);
+    }
+    if (els.bridgeEdgeLoopsBtn) {
+      els.bridgeEdgeLoopsBtn.disabled = !(surfaceComponentMode === "edge" && selectedSurfaceEdges.length >= 2);
     }
     syncSurfaceAxisUi();
     if (els.surfaceEditorSelection) {
@@ -33270,6 +33293,7 @@ void main() {
     return true;
   }
   function setSurfaceSelectionMode(mode = "face") {
+    if (knifeCutMode) setKnifeCutMode(false);
     const normalized = ["vertex", "edge", "triangle", "face"].includes(mode) ? mode : "face";
     const releasingActiveMode = surfaceSelectionSource === "surface" && surfaceComponentMode === normalized;
     if (releasingActiveMode) {
@@ -33306,6 +33330,7 @@ void main() {
     updateSurfaceGizmoAttachment();
   }
   function toggleClassicTriangleSelection() {
+    if (knifeCutMode) setKnifeCutMode(false);
     const releasing = surfaceSelectionSource === "classic" && facePickMode && surfaceComponentMode === "triangle" && !coplanarFacePickMode;
     releaseSurfaceInteractionForClassicSelection();
     if (releasing) {
@@ -33326,6 +33351,7 @@ void main() {
     return true;
   }
   function toggleClassicFaceSelection() {
+    if (knifeCutMode) setKnifeCutMode(false);
     const releasing = surfaceSelectionSource === "classic" && facePickMode && surfaceComponentMode === "face" && coplanarFacePickMode;
     releaseSurfaceInteractionForClassicSelection();
     if (releasing) {
@@ -35808,6 +35834,291 @@ void main() {
     const boundaryEdges = [...edgeData.entries()].filter(([, entry]) => entry.count === 1);
     return loopDetailsFromEdgeEntries(boundaryEdges, vertexPoints, edgeData, edgeKey);
   }
+  function bridgeBoundaryTopology(source) {
+    const position = source.getAttribute("position");
+    const uv = source.getAttribute("uv");
+    const color = source.getAttribute("color");
+    const vertices = /* @__PURE__ */ new Map();
+    const edgeData = /* @__PURE__ */ new Map();
+    const registerVertex = (index) => {
+      const point = new Vector3(position.getX(index), position.getY(index), position.getZ(index));
+      const key2 = vertexKey(point);
+      if (!vertices.has(key2)) {
+        vertices.set(key2, {
+          point,
+          uv: uv ? new Vector2(uv.getX(index), uv.getY(index)) : null,
+          color: color ? new Color(color.getX(index), color.getY(index), color.getZ(index)) : null
+        });
+      }
+      return { key: key2, point, uv: uv ? new Vector2(uv.getX(index), uv.getY(index)) : null };
+    };
+    const registerEdge = (from, to) => {
+      const signature = [from.key, to.key].sort().join("|");
+      const entry = edgeData.get(signature) || {
+        signature,
+        a: [from.key, to.key].sort()[0],
+        b: [from.key, to.key].sort()[1],
+        count: 0,
+        direction: null
+      };
+      entry.count++;
+      if (entry.count === 1) {
+        entry.direction = { from: from.key, to: to.key, fromUv: from.uv?.clone() || null, toUv: to.uv?.clone() || null };
+      }
+      edgeData.set(signature, entry);
+    };
+    for (let index = 0; index + 2 < position.count; index += 3) {
+      const triangle = [registerVertex(index), registerVertex(index + 1), registerVertex(index + 2)];
+      registerEdge(triangle[0], triangle[1]);
+      registerEdge(triangle[1], triangle[2]);
+      registerEdge(triangle[2], triangle[0]);
+    }
+    const boundaryEntries = [...edgeData.values()].filter((entry) => entry.count === 1);
+    const adjacency = /* @__PURE__ */ new Map();
+    const boundaryUvs = /* @__PURE__ */ new Map();
+    for (const entry of boundaryEntries) {
+      if (!adjacency.has(entry.a)) adjacency.set(entry.a, /* @__PURE__ */ new Set());
+      if (!adjacency.has(entry.b)) adjacency.set(entry.b, /* @__PURE__ */ new Set());
+      adjacency.get(entry.a).add(entry.b);
+      adjacency.get(entry.b).add(entry.a);
+      if (entry.direction?.fromUv && !boundaryUvs.has(entry.direction.from)) boundaryUvs.set(entry.direction.from, entry.direction.fromUv.clone());
+      if (entry.direction?.toUv && !boundaryUvs.has(entry.direction.to)) boundaryUvs.set(entry.direction.to, entry.direction.toUv.clone());
+    }
+    const usableEntries = boundaryEntries.filter(
+      (entry) => adjacency.get(entry.a)?.size === 2 && adjacency.get(entry.b)?.size === 2
+    );
+    const unused = new Set(usableEntries.map((entry) => entry.signature));
+    const loops = [];
+    while (unused.size) {
+      const firstSignature = unused.values().next().value;
+      const first = edgeData.get(firstSignature);
+      if (!first) {
+        unused.delete(firstSignature);
+        continue;
+      }
+      const keys = [first.a];
+      const edgeSignatures = [];
+      let previous = first.a;
+      let current = first.b;
+      let closed = false;
+      let guard = 0;
+      while (guard++ < 1e4) {
+        keys.push(current);
+        const signature = [previous, current].sort().join("|");
+        unused.delete(signature);
+        edgeSignatures.push(signature);
+        if (current === keys[0]) {
+          closed = true;
+          break;
+        }
+        const next = [...adjacency.get(current) || []].filter((key2) => key2 !== previous).find((key2) => unused.has([current, key2].sort().join("|")));
+        if (!next) break;
+        previous = current;
+        current = next;
+      }
+      if (!closed) continue;
+      let orderedKeys = keys.slice(0, -1);
+      const directionMatches = orderedKeys.reduce((count, key2, index) => {
+        const nextKey = orderedKeys[(index + 1) % orderedKeys.length];
+        const entry = edgeData.get([key2, nextKey].sort().join("|"));
+        return count + (entry?.direction?.from === key2 && entry.direction.to === nextKey ? 1 : 0);
+      }, 0);
+      if (directionMatches < orderedKeys.length / 2) orderedKeys = orderedKeys.slice().reverse();
+      loops.push({
+        keys: orderedKeys,
+        points: orderedKeys.map((key2) => vertices.get(key2).point.clone()),
+        uvs: orderedKeys.map((key2) => boundaryUvs.get(key2)?.clone() || vertices.get(key2).uv?.clone() || null),
+        colors: orderedKeys.map((key2) => vertices.get(key2).color?.clone() || null),
+        edgeSignatures: new Set(edgeSignatures)
+      });
+    }
+    return { loops, edgeData, boundaryEdgeCount: boundaryEntries.length };
+  }
+  function alignBridgeBoundaryLoops(loopA, loopB) {
+    const reversedB = {
+      ...loopB,
+      keys: loopB.keys.slice().reverse(),
+      points: loopB.points.slice().reverse(),
+      uvs: loopB.uvs.slice().reverse(),
+      colors: loopB.colors.slice().reverse()
+    };
+    let bestOffset = 0;
+    let bestDistance = Infinity;
+    for (let offset = 0; offset < loopA.points.length; offset++) {
+      let distance = 0;
+      for (let index = 0; index < loopA.points.length; index++) {
+        distance += loopA.points[index].distanceToSquared(reversedB.points[(index + offset) % reversedB.points.length]);
+      }
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestOffset = offset;
+      }
+    }
+    const rotate = (values) => values.map((_, index) => values[(index + bestOffset) % values.length]);
+    return {
+      loopA,
+      loopB: {
+        ...reversedB,
+        keys: rotate(reversedB.keys),
+        points: rotate(reversedB.points),
+        uvs: rotate(reversedB.uvs),
+        colors: rotate(reversedB.colors)
+      },
+      offset: bestOffset,
+      distance: bestDistance
+    };
+  }
+  function bridgeSelectedEdgeLoops() {
+    if (selectedSurfaceEdges.length < 2) {
+      log("Bridge Edge Loops needs one selected boundary edge on each of two open loops. Hold Shift or Ctrl for the second edge.");
+      return null;
+    }
+    const meshes = [...new Set(selectedSurfaceEdges.map((edge) => edge.mesh).filter(Boolean))];
+    if (meshes.length !== 1) {
+      log("Bridge Edge Loops works inside one mesh. Select both boundary edges on the same mesh.");
+      return null;
+    }
+    const mesh = meshes[0];
+    if (!mesh?.geometry) {
+      log("The selected boundary edges do not belong to an editable mesh.");
+      return null;
+    }
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const topology = bridgeBoundaryTopology(source);
+    const matchedLoops = [];
+    for (const selectedEdge of selectedSurfaceEdges) {
+      const signature = localEdgeSignature(selectedEdge.localA, selectedEdge.localB);
+      const loop = topology.loops.find((candidate) => candidate.edgeSignatures.has(signature));
+      if (loop && !matchedLoops.includes(loop)) matchedLoops.push(loop);
+    }
+    if (matchedLoops.length !== 2) {
+      source.dispose();
+      log(matchedLoops.length < 2 ? "Select one outer edge from each of two complete open boundary loops. Internal yellow lines cannot be bridged." : "The current selection touches more than two open loops. Leave one boundary edge selected on each loop.", {
+        selectedEdges: selectedSurfaceEdges.length,
+        matchedOpenLoops: matchedLoops.length
+      });
+      return null;
+    }
+    if (matchedLoops[0].points.length !== matchedLoops[1].points.length) {
+      const counts = matchedLoops.map((loop) => loop.points.length);
+      source.dispose();
+      log(`Bridge Edge Loops currently needs equal vertex counts. These loops have ${counts[0]} and ${counts[1]} vertices.`, { loopVertices: counts });
+      return null;
+    }
+    const aligned = alignBridgeBoundaryLoops(matchedLoops[0], matchedLoops[1]);
+    const position = source.getAttribute("position");
+    const uv = source.getAttribute("uv");
+    const color = source.getAttribute("color");
+    const positions = [];
+    const uvs = [];
+    const colors = [];
+    for (let index = 0; index < position.count; index++) {
+      positions.push(position.getX(index), position.getY(index), position.getZ(index));
+      if (uv) uvs.push(uv.getX(index), uv.getY(index));
+      if (color) colors.push(color.getX(index), color.getY(index), color.getZ(index));
+    }
+    const bridgeTriangles = [];
+    const appendBridgeTriangle = (pointEntries, fallbackUvs) => {
+      const trianglePoints = pointEntries.map((entry) => entry.point);
+      const area2 = new Vector3().crossVectors(
+        trianglePoints[1].clone().sub(trianglePoints[0]),
+        trianglePoints[2].clone().sub(trianglePoints[0])
+      ).lengthSq();
+      if (area2 <= 1e-12) return false;
+      positions.push(...trianglePoints.flatMap((point) => point.toArray()));
+      if (uv) {
+        pointEntries.forEach((entry, index) => {
+          const nextUv = entry.uv || fallbackUvs[index];
+          uvs.push(nextUv.x, nextUv.y);
+        });
+      }
+      if (color) {
+        pointEntries.forEach((entry) => {
+          const nextColor = entry.color || new Color(1, 1, 1);
+          colors.push(nextColor.r, nextColor.g, nextColor.b);
+        });
+      }
+      bridgeTriangles.push(trianglePoints.map(vertexKey));
+      return true;
+    };
+    const loopA = aligned.loopA;
+    const loopB = aligned.loopB;
+    const bridgeCount = loopA.points.length;
+    let createdTriangles = 0;
+    for (let index = 0; index < bridgeCount; index++) {
+      const next = (index + 1) % bridgeCount;
+      const a = { point: loopA.points[index], uv: loopA.uvs[index], color: loopA.colors[index] };
+      const aNext = { point: loopA.points[next], uv: loopA.uvs[next], color: loopA.colors[next] };
+      const b = { point: loopB.points[index], uv: loopB.uvs[index], color: loopB.colors[index] };
+      const bNext = { point: loopB.points[next], uv: loopB.uvs[next], color: loopB.colors[next] };
+      const u0 = index / bridgeCount;
+      const u1 = next === 0 ? 1 : next / bridgeCount;
+      createdTriangles += appendBridgeTriangle([a, b, aNext], [
+        new Vector2(u0, 0),
+        new Vector2(u0, 1),
+        new Vector2(u1, 0)
+      ]) ? 1 : 0;
+      createdTriangles += appendBridgeTriangle([aNext, b, bNext], [
+        new Vector2(u1, 0),
+        new Vector2(u0, 1),
+        new Vector2(u1, 1)
+      ]) ? 1 : 0;
+    }
+    if (createdTriangles !== bridgeCount * 2) {
+      source.dispose();
+      log("Bridge Edge Loops found overlapping or zero-length loop segments, so the mesh was left unchanged.");
+      return null;
+    }
+    const sourceTriangles = [];
+    for (let index = 0; index + 2 < position.count; index += 3) {
+      sourceTriangles.push([0, 1, 2].map((offset) => vertexKey(new Vector3(
+        position.getX(index + offset),
+        position.getY(index + offset),
+        position.getZ(index + offset)
+      ))));
+    }
+    const resultEdgeCounts = topologyEdgeCounts([...sourceTriangles, ...bridgeTriangles]);
+    const nonManifoldEdges = [...resultEdgeCounts.values()].filter((count) => count > 2).length;
+    if (nonManifoldEdges) {
+      source.dispose();
+      log("Bridge Edge Loops would create non-manifold topology, so the mesh was left unchanged.", { nonManifoldEdges });
+      return null;
+    }
+    const geometry = geometryFromPositions(positions);
+    if (uv) geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    if (color) geometry.setAttribute("color", new Float32BufferAttribute(colors, 3));
+    geometry.computeBoundingBox();
+    source.dispose();
+    recordHistory("bridge edge loops");
+    replaceEditableMeshGeometry(mesh, geometry);
+    selectedFaces.length = 0;
+    selectedFace = null;
+    selectedSurfaceVertices.length = 0;
+    selectedSurfaceEdges.length = 0;
+    for (let index = 0; index < bridgeCount; index++) {
+      selectedSurfaceEdges.push({
+        mesh,
+        localA: loopA.points[index].clone(),
+        localB: loopB.points[index].clone(),
+        key: surfaceEdgeKey(mesh, loopA.points[index], loopB.points[index]),
+        protectedBevelEdge: false
+      });
+    }
+    updateFaceMarker();
+    updateSurfaceComponentMarker();
+    updateAll();
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+    const remainingBoundaryEdges = [...resultEdgeCounts.values()].filter((count) => count === 1).length;
+    log(`Bridged two ${bridgeCount}-vertex edge loops with ${bridgeCount} quads inside ${mesh.name}. New bridge edges remain selected.`, {
+      createdTriangles,
+      beforeBoundaryEdges: topology.boundaryEdgeCount,
+      remainingBoundaryEdges,
+      uvExtended: !!uv,
+      undoReady: true
+    });
+    return mesh;
+  }
   function openingLoopDetailsForMesh(mesh) {
     const { triangleNormals, vertexPoints, edgeData, edgeKey } = meshEdgeTopology(mesh);
     const creaseDotThreshold = Math.cos(MathUtils.degToRad(35));
@@ -38268,6 +38579,437 @@ void main() {
     if (uv && output.uvs.length) geometry.setAttribute("uv", new Float32BufferAttribute(output.uvs, 2));
     return { geometry, segments, splitTriangles };
   }
+  function clipCutPolygon(vertices, plane, keepPositive, epsilon) {
+    const clipped = [];
+    for (let index = 0; index < vertices.length; index++) {
+      const current = vertices[index];
+      const next = vertices[(index + 1) % vertices.length];
+      const currentDistance = plane.distanceToPoint(current.point);
+      const nextDistance = plane.distanceToPoint(next.point);
+      const currentInside = keepPositive ? currentDistance >= -epsilon : currentDistance <= epsilon;
+      const nextInside = keepPositive ? nextDistance >= -epsilon : nextDistance <= epsilon;
+      if (currentInside) clipped.push(loopCutVertex(current.point, current.uv));
+      if (currentInside === nextInside) continue;
+      const denominator = currentDistance - nextDistance;
+      if (Math.abs(denominator) <= epsilon) continue;
+      clipped.push(interpolateLoopCutVertex(current, next, currentDistance / denominator));
+    }
+    return clipped.filter((vertex2, index) => {
+      const previous = clipped[(index - 1 + clipped.length) % clipped.length];
+      return !previous || vertex2.point.distanceToSquared(previous.point) > epsilon * epsilon;
+    });
+  }
+  function cutSegmentWithinStroke(points, stroke, epsilon) {
+    if (!stroke || points.length !== 2) return true;
+    const parameters = points.map((point) => point.clone().sub(stroke.origin).dot(stroke.direction));
+    const tolerance = Math.max(epsilon * 10, stroke.tolerance || 0);
+    if (Math.max(...parameters) < -tolerance || Math.min(...parameters) > stroke.length + tolerance) return false;
+    if (!stroke.depthDirection) return true;
+    const midpoint = points[0].clone().add(points[1]).multiplyScalar(0.5);
+    const along = MathUtils.clamp(
+      midpoint.clone().sub(stroke.origin).dot(stroke.direction),
+      0,
+      stroke.length
+    );
+    const nearestStrokePoint = stroke.origin.clone().addScaledVector(stroke.direction, along);
+    const depth = Math.abs(midpoint.clone().sub(nearestStrokePoint).dot(stroke.depthDirection));
+    return depth <= tolerance;
+  }
+  function cutLoopPointKey(point, epsilon = 1e-5) {
+    return [point.x, point.y, point.z].map((value) => Math.round(value / epsilon)).join(":");
+  }
+  function stitchCutSegments(segments, epsilon = 1e-5) {
+    const points = /* @__PURE__ */ new Map();
+    const adjacency = /* @__PURE__ */ new Map();
+    const unusedEdges = /* @__PURE__ */ new Set();
+    const addNeighbor = (from, to) => {
+      if (!adjacency.has(from)) adjacency.set(from, /* @__PURE__ */ new Set());
+      adjacency.get(from).add(to);
+    };
+    for (const segment of segments) {
+      const aKey = cutLoopPointKey(segment.localA, epsilon);
+      const bKey = cutLoopPointKey(segment.localB, epsilon);
+      if (aKey === bKey) continue;
+      points.set(aKey, segment.localA.clone());
+      points.set(bKey, segment.localB.clone());
+      addNeighbor(aKey, bKey);
+      addNeighbor(bKey, aKey);
+      unusedEdges.add([aKey, bKey].sort().join("|"));
+    }
+    const loops = [];
+    while (unusedEdges.size) {
+      const firstEdge = [...unusedEdges][0];
+      const [start, next] = firstEdge.split("|");
+      const keys = [start];
+      let previous = start;
+      let current = next;
+      unusedEdges.delete(firstEdge);
+      let guard = 0;
+      while (current !== start && guard++ < points.size + 4) {
+        keys.push(current);
+        const candidates = [...adjacency.get(current) || []].filter((candidate2) => unusedEdges.has([current, candidate2].sort().join("|")));
+        const candidate = candidates.find((value) => value !== previous) || candidates[0];
+        if (!candidate) break;
+        unusedEdges.delete([current, candidate].sort().join("|"));
+        previous = current;
+        current = candidate;
+      }
+      if (current === start && keys.length >= 3) loops.push(keys.map((key2) => points.get(key2).clone()));
+    }
+    return loops;
+  }
+  function appendPlaneCutCaps(output, segments, plane, keepMode, hadUv, epsilon) {
+    const desiredNormal = plane.normal.clone().multiplyScalar(keepMode === "positive" ? -1 : 1).normalize();
+    const helperAxis = Math.abs(desiredNormal.y) < 0.9 ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0);
+    const uAxis = helperAxis.clone().cross(desiredNormal).normalize();
+    const vAxis = desiredNormal.clone().cross(uAxis).normalize();
+    let capTriangles = 0;
+    for (const sourceLoop of stitchCutSegments(segments, Math.max(epsilon * 10, 1e-5))) {
+      let loop = sourceLoop;
+      let projected = loop.map((point) => new Vector2(point.dot(uAxis), point.dot(vAxis)));
+      const signedArea2 = projected.reduce((sum, point, index) => {
+        const next = projected[(index + 1) % projected.length];
+        return sum + point.x * next.y - next.x * point.y;
+      }, 0);
+      if (signedArea2 < 0) {
+        loop = [...loop].reverse();
+        projected = [...projected].reverse();
+      }
+      const triangles = ShapeUtils.triangulateShape(projected, []);
+      if (!triangles.length) continue;
+      const min = projected.reduce((value, point) => value.min(point), new Vector2(Infinity, Infinity));
+      const max = projected.reduce((value, point) => value.max(point), new Vector2(-Infinity, -Infinity));
+      const span = max.clone().sub(min);
+      for (const triangleIndices of triangles) {
+        const vertices = triangleIndices.map((index) => loop[index].clone());
+        const normal = new Vector3().crossVectors(
+          vertices[1].clone().sub(vertices[0]),
+          vertices[2].clone().sub(vertices[0])
+        );
+        if (normal.dot(desiredNormal) < 0) [vertices[1], vertices[2]] = [vertices[2], vertices[1]];
+        for (const point of vertices) {
+          output.positions.push(point.x, point.y, point.z);
+          if (hadUv) {
+            const x = point.dot(uAxis);
+            const y = point.dot(vAxis);
+            output.uvs.push(
+              span.x > epsilon ? (x - min.x) / span.x : 0.5,
+              span.y > epsilon ? (y - min.y) / span.y : 0.5
+            );
+          }
+        }
+        capTriangles++;
+      }
+    }
+    return capTriangles;
+  }
+  function splitGeometryAtCutPlane(source, plane, protectedEdges, { keepMode = "both", cap = false, stroke = null } = {}) {
+    const position = source.getAttribute("position");
+    const uv = source.getAttribute("uv");
+    const epsilon = 1e-6;
+    const output = { positions: [], uvs: [] };
+    const segments = [];
+    let splitTriangles = 0;
+    for (let index = 0; index < position.count; index += 3) {
+      const vertices = [0, 1, 2].map((offset) => loopCutVertex(
+        new Vector3(position.getX(index + offset), position.getY(index + offset), position.getZ(index + offset)),
+        uv ? new Vector2(uv.getX(index + offset), uv.getY(index + offset)) : null
+      ));
+      const distances = vertices.map((vertex2) => plane.distanceToPoint(vertex2.point));
+      const crossesPlane = Math.min(...distances) < -epsilon && Math.max(...distances) > epsilon;
+      if (!crossesPlane) {
+        const keepTriangle = keepMode === "both" || keepMode === "positive" && Math.min(...distances) >= -epsilon || keepMode === "negative" && Math.max(...distances) <= epsilon;
+        if (keepTriangle) appendLoopCutPolygon(output, vertices, Boolean(uv), epsilon);
+        continue;
+      }
+      const intersections = [];
+      for (let edgeIndex = 0; edgeIndex < 3; edgeIndex++) {
+        const a = vertices[edgeIndex];
+        const b = vertices[(edgeIndex + 1) % 3];
+        const aDistance = plane.distanceToPoint(a.point);
+        const bDistance = plane.distanceToPoint(b.point);
+        if (Math.abs(aDistance) <= epsilon) intersections.push(a.point);
+        if (aDistance * bDistance >= -epsilon * epsilon) continue;
+        const intersection = interpolateLoopCutVertex(a, b, aDistance / (aDistance - bDistance));
+        intersections.push(intersection.point);
+        const originalSignature = localEdgeSignature(a.point, b.point);
+        if (protectedEdges.has(originalSignature)) {
+          protectedEdges.add(localEdgeSignature(a.point, intersection.point));
+          protectedEdges.add(localEdgeSignature(intersection.point, b.point));
+        }
+      }
+      const segmentPoints = uniqueLoopCutPoints(intersections, epsilon);
+      if (segmentPoints.length !== 2 || !cutSegmentWithinStroke(segmentPoints, stroke, epsilon)) {
+        appendLoopCutPolygon(output, vertices, Boolean(uv), epsilon);
+        continue;
+      }
+      const negative = clipCutPolygon(vertices, plane, false, epsilon);
+      const positive = clipCutPolygon(vertices, plane, true, epsilon);
+      let created = 0;
+      if (keepMode === "both" || keepMode === "negative") created += appendLoopCutPolygon(output, negative, Boolean(uv), epsilon);
+      if (keepMode === "both" || keepMode === "positive") created += appendLoopCutPolygon(output, positive, Boolean(uv), epsilon);
+      if (created) {
+        segments.push({ localA: segmentPoints[0], localB: segmentPoints[1] });
+        splitTriangles++;
+      }
+    }
+    const capTriangles = keepMode !== "both" && cap && segments.length ? appendPlaneCutCaps(output, segments, plane, keepMode, Boolean(uv), epsilon) : 0;
+    const geometry = geometryFromPositions(output.positions);
+    if (uv && output.uvs.length) geometry.setAttribute("uv", new Float32BufferAttribute(output.uvs, 2));
+    return { geometry, segments, splitTriangles, capTriangles };
+  }
+  function selectNewCutEdges(mesh, segments, { slideAxis = null } = {}) {
+    surfaceComponentMode = "edge";
+    surfaceSelectionSource = "surface";
+    coplanarFacePickMode = false;
+    setFacePickMode(!knifeCutMode);
+    const seen = /* @__PURE__ */ new Set();
+    for (const segment of segments) {
+      const key2 = surfaceEdgeKey(mesh, segment.localA, segment.localB);
+      if (seen.has(key2)) continue;
+      seen.add(key2);
+      selectedSurfaceEdges.push({
+        mesh,
+        localA: segment.localA.clone(),
+        localB: segment.localB.clone(),
+        key: key2,
+        slideAxis,
+        protectedBevelEdge: false
+      });
+    }
+  }
+  function commitCutResult(mesh, source, result, protectedEdges, { historyLabel, message, slideAxis = null, details = {} }) {
+    if (!result.splitTriangles || !result.segments.length) {
+      result.geometry.dispose();
+      source.dispose();
+      log(`${message} did not cross usable mesh triangles.`);
+      return null;
+    }
+    const beforeTriangles = source.getAttribute("position").count / 3;
+    source.dispose();
+    recordHistory(historyLabel);
+    clearMarkers(mesh.userData.id);
+    clearSelectedTriangles();
+    clearSelectedSurfaceComponents();
+    if (selected !== mesh) selectObject(mesh);
+    replaceEditableMeshGeometry(mesh, result.geometry);
+    mesh.userData.edgeBevelProtectedEdges = [...protectedEdges];
+    mesh.userData.dissolvedSurfaceEdges = [];
+    mesh.updateMatrixWorld(true);
+    selectNewCutEdges(mesh, result.segments, { slideAxis });
+    updateSurfaceComponentMarker();
+    updateAll();
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+    log(`${message} on ${mesh.name}. New cut edges stay selected.`, {
+      beforeTriangles,
+      afterTriangles: result.geometry.getAttribute("position").count / 3,
+      splitTriangles: result.splitTriangles,
+      capTriangles: result.capTriangles,
+      selectedCutEdges: selectedSurfaceEdges.length,
+      textureCoordinatesPreserved: true,
+      ...details
+    });
+    return mesh;
+  }
+  function planeCutSettings() {
+    const axis = ["x", "y", "z"].includes(els.planeCutAxisSelect?.value) ? els.planeCutAxisSelect.value : "y";
+    const position = Math.max(1, Math.min(99, Number(els.planeCutPositionInput?.value) || 50));
+    const keepMode = ["both", "positive", "negative"].includes(els.planeCutResultSelect?.value) ? els.planeCutResultSelect.value : "both";
+    const cap = keepMode !== "both" && !!els.planeCutCapInput?.checked;
+    if (els.planeCutAxisSelect) els.planeCutAxisSelect.value = axis;
+    if (els.planeCutPositionInput) els.planeCutPositionInput.value = String(position);
+    if (els.planeCutResultSelect) els.planeCutResultSelect.value = keepMode;
+    return { axis, position, keepMode, cap };
+  }
+  function applyPlaneCut() {
+    const mesh = loopCutTargetMesh();
+    if (!mesh?.geometry || !objects.includes(mesh)) {
+      log("Select one mesh before using Plane Cut.");
+      return null;
+    }
+    const settings = planeCutSettings();
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    source.computeBoundingBox();
+    const minimum = source.boundingBox.min[settings.axis];
+    const maximum = source.boundingBox.max[settings.axis];
+    const span = maximum - minimum;
+    if (!Number.isFinite(span) || span <= 1e-5) {
+      source.dispose();
+      log(`The selected mesh has no usable ${settings.axis.toUpperCase()} thickness for Plane Cut.`);
+      return null;
+    }
+    const planePosition = minimum + span * settings.position / 100;
+    const normal = new Vector3(
+      settings.axis === "x" ? 1 : 0,
+      settings.axis === "y" ? 1 : 0,
+      settings.axis === "z" ? 1 : 0
+    );
+    const plane = new Plane(normal, -planePosition);
+    const protectedEdges = new Set(mesh.userData.edgeBevelProtectedEdges || []);
+    const result = splitGeometryAtCutPlane(source, plane, protectedEdges, {
+      keepMode: settings.keepMode,
+      cap: settings.cap
+    });
+    return commitCutResult(mesh, source, result, protectedEdges, {
+      historyLabel: "apply plane cut",
+      message: "Applied Plane Cut",
+      slideAxis: settings.axis,
+      details: {
+        axis: settings.axis.toUpperCase(),
+        positionPercent: settings.position,
+        result: settings.keepMode,
+        capped: settings.cap
+      }
+    });
+  }
+  function clearKnifeCutGuide({ keepMode = true } = {}) {
+    while (knifeCutGuideGroup.children.length) {
+      const child = knifeCutGuideGroup.children.pop();
+      disposeObject3D(child);
+    }
+    knifeCutGuideGroup.visible = false;
+    knifeCutPoints.length = 0;
+    knifeCutMesh = null;
+    knifeCutHover = null;
+    if (!keepMode) knifeCutMode = false;
+    els.knifeCutModeBtn?.classList.toggle("active", knifeCutMode);
+    if (els.knifeCutCancelBtn) els.knifeCutCancelBtn.disabled = knifeCutPoints.length === 0;
+  }
+  function updateKnifeCutGuide(hoverPoint = knifeCutHover) {
+    while (knifeCutGuideGroup.children.length) {
+      const child = knifeCutGuideGroup.children.pop();
+      disposeObject3D(child);
+    }
+    const displayPoints = [...knifeCutPoints];
+    if (displayPoints.length === 1 && hoverPoint) displayPoints.push(hoverPoint.clone());
+    for (const point of knifeCutPoints) {
+      const marker = new Mesh(
+        new SphereGeometry(Math.max(0.025, camera.position.distanceTo(point) * 6e-3), 14, 10),
+        new MeshBasicMaterial({ color: "#ffd36a", depthTest: false })
+      );
+      marker.position.copy(point);
+      marker.renderOrder = 1010;
+      knifeCutGuideGroup.add(marker);
+    }
+    if (displayPoints.length === 2) {
+      const geometry = new BufferGeometry().setFromPoints(displayPoints);
+      const line = new Line(
+        geometry,
+        new LineBasicMaterial({ color: "#ff5a5f", depthTest: false })
+      );
+      line.renderOrder = 1009;
+      knifeCutGuideGroup.add(line);
+    }
+    knifeCutGuideGroup.visible = knifeCutMode && knifeCutGuideGroup.children.length > 0;
+    if (els.knifeCutCancelBtn) els.knifeCutCancelBtn.disabled = knifeCutPoints.length === 0;
+  }
+  function setKnifeCutMode(enabled) {
+    finishDragPushSession();
+    clearKnifeCutGuide({ keepMode: false });
+    knifeCutMode = !!enabled;
+    if (knifeCutMode) {
+      if (lineSketchMode) clearLineSketch({ silent: true, keepMode: false });
+      if (dragPushMode) setDragPushMode(false, { silent: true });
+      if (activeTransformMode) setTransformMode(activeTransformMode);
+      if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "off";
+      surfaceComponentMode = "none";
+      surfaceSelectionSource = "none";
+      coplanarFacePickMode = false;
+      setFacePickMode(false);
+      clearSelectedTriangles();
+      els.hudText.textContent = "Knife ready: click a start point and an end point on the same mesh | Esc cancels the current stroke";
+      log("Knife mode enabled. Click two points on the same mesh; click Knife again to release it.");
+    } else {
+      if (selectedSurfaceEdges.length || selectedSurfaceVertices.length || selectedFaces.length) setFacePickMode(true);
+      els.hudText.textContent = "Knife released. Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click";
+      log("Knife mode disabled.");
+    }
+    els.knifeCutModeBtn?.classList.toggle("active", knifeCutMode);
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+    return knifeCutMode;
+  }
+  function cancelKnifeCutStroke({ silent = false } = {}) {
+    clearKnifeCutGuide({ keepMode: true });
+    if (knifeCutMode) els.hudText.textContent = "Knife ready: click a new start point on a visible mesh";
+    if (!silent) log("Cleared the current Knife stroke. Knife mode remains enabled.");
+  }
+  function applyKnifeCutStroke(mesh, worldStart, worldEnd) {
+    mesh.updateMatrixWorld(true);
+    const inverse = mesh.matrixWorld.clone().invert();
+    const localStart = worldStart.clone().applyMatrix4(inverse);
+    const localEnd = worldEnd.clone().applyMatrix4(inverse);
+    const worldViewDirection = camera.getWorldDirection(new Vector3()).normalize();
+    let localThird = worldStart.clone().add(worldViewDirection).applyMatrix4(inverse);
+    const localLine = localEnd.clone().sub(localStart);
+    if (localLine.lengthSq() <= 1e-8) {
+      log("Knife stroke is too short. Click two points farther apart.");
+      return null;
+    }
+    let plane = new Plane().setFromCoplanarPoints(localStart, localEnd, localThird);
+    if (plane.normal.lengthSq() <= 1e-8) {
+      localThird = worldStart.clone().add(camera.up.clone().transformDirection(camera.matrixWorld)).applyMatrix4(inverse);
+      plane = new Plane().setFromCoplanarPoints(localStart, localEnd, localThird);
+    }
+    if (plane.normal.lengthSq() <= 1e-8) {
+      log("Knife could not derive a cutting plane from this view. Rotate the camera slightly and try again.");
+      return null;
+    }
+    plane.normalize();
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    source.computeBoundingSphere();
+    const through = !!els.knifeCutThroughInput?.checked;
+    const strokeDirection = localLine.clone().normalize();
+    const localDepthDirection = localThird.clone().sub(localStart).addScaledVector(strokeDirection, -localThird.clone().sub(localStart).dot(strokeDirection));
+    const stroke = through ? null : {
+      origin: localStart,
+      direction: strokeDirection,
+      depthDirection: localDepthDirection.lengthSq() > 1e-8 ? localDepthDirection.normalize() : null,
+      length: localLine.length(),
+      tolerance: Math.max(5e-3, (source.boundingSphere?.radius || 1) * 0.02)
+    };
+    const protectedEdges = new Set(mesh.userData.edgeBevelProtectedEdges || []);
+    const result = splitGeometryAtCutPlane(source, plane, protectedEdges, { keepMode: "both", stroke });
+    return commitCutResult(mesh, source, result, protectedEdges, {
+      historyLabel: "apply knife cut",
+      message: "Applied Knife cut",
+      details: { throughMesh: through, strokeLength: round2(localLine.length()) }
+    });
+  }
+  function addKnifeCutPointFromHit(hit) {
+    if (!knifeCutMode) return false;
+    if (!hit?.object || !hit.face) {
+      log("Knife needs a point on a visible mesh.");
+      return true;
+    }
+    if (!knifeCutPoints.length) {
+      knifeCutMesh = hit.object;
+      knifeCutPoints.push(hit.point.clone());
+      knifeCutHover = null;
+      if (selected !== hit.object) selectObject(hit.object);
+      updateKnifeCutGuide();
+      els.hudText.textContent = `Knife start placed on ${hit.object.name}. Click the end point on the same mesh.`;
+      log(`Placed Knife start point on ${hit.object.name}.`);
+      return true;
+    }
+    if (hit.object !== knifeCutMesh) {
+      log("Knife start and end must be on the same mesh. Press Cancel Stroke to restart.");
+      return true;
+    }
+    const start = knifeCutPoints[0].clone();
+    const end = hit.point.clone();
+    if (start.distanceToSquared(end) <= 1e-8) {
+      log("Knife end point is too close to the start point.");
+      return true;
+    }
+    knifeCutPoints.push(end);
+    updateKnifeCutGuide();
+    const result = applyKnifeCutStroke(knifeCutMesh, start, end);
+    cancelKnifeCutStroke({ silent: true });
+    els.hudText.textContent = result ? "Knife cut complete. Click two new points, or click Knife again to release the tool." : "Knife did not cross usable triangles. Click a new start point and try another stroke.";
+    return true;
+  }
   function loopCutTargetMesh() {
     return selectedFace?.mesh || selectedSurfaceEdges.at(-1)?.mesh || selectedSurfaceVertices.at(-1)?.mesh || selected;
   }
@@ -40421,6 +41163,7 @@ void main() {
   }
   function clearObjects({ record = true } = {}) {
     if (record && objects.length) recordHistory("clear");
+    clearKnifeCutGuide({ keepMode: false });
     [...objects].forEach((mesh) => removeObject(mesh, { record: false }));
     sceneGroupRegistry.clear();
     checkedIds.clear();
@@ -40524,7 +41267,7 @@ void main() {
     return {
       shapes: Object.keys(shapeFactories),
       transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
-      faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "cutTopBottom"],
+      faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom"],
       textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary"],
       exports: ["project", "json", "obj", "robloxPack", "dae"],
       sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
@@ -40626,6 +41369,11 @@ void main() {
           loopCutAxis: ["x", "y", "z"].includes(els.loopCutAxisSelect?.value) ? els.loopCutAxisSelect.value : "y",
           loopCutPosition: Math.max(1, Math.min(99, Number(els.loopCutPositionInput?.value) || 50)),
           loopCutCount: Math.max(1, Math.min(8, Math.round(Number(els.loopCutCountInput?.value) || 1))),
+          knifeCutThrough: !!els.knifeCutThroughInput?.checked,
+          planeCutAxis: ["x", "y", "z"].includes(els.planeCutAxisSelect?.value) ? els.planeCutAxisSelect.value : "y",
+          planeCutPosition: Math.max(1, Math.min(99, Number(els.planeCutPositionInput?.value) || 50)),
+          planeCutResult: ["both", "positive", "negative"].includes(els.planeCutResultSelect?.value) ? els.planeCutResultSelect.value : "both",
+          planeCutCap: !!els.planeCutCapInput?.checked,
           edgeSlideAxis: ["auto", "x", "y", "z"].includes(els.edgeSlideAxisSelect?.value) ? els.edgeSlideAxisSelect.value : "auto",
           edgeSlideAmount: Math.max(-95, Math.min(95, Number.isFinite(Number(els.edgeSlideAmountInput?.value)) ? Number(els.edgeSlideAmountInput.value) : 10)),
           surfaceScaleAxis: ["uniform", "x", "y", "z"].includes(els.surfaceScaleAxisSelect?.value) ? els.surfaceScaleAxisSelect.value : "uniform",
@@ -40867,6 +41615,16 @@ void main() {
     if (els.loopCutAxisSelect) els.loopCutAxisSelect.value = ["x", "y", "z"].includes(tools.loopCutAxis) ? tools.loopCutAxis : "y";
     if (els.loopCutPositionInput) els.loopCutPositionInput.value = String(Math.max(1, Math.min(99, Number(tools.loopCutPosition) || 50)));
     if (els.loopCutCountInput) els.loopCutCountInput.value = String(Math.max(1, Math.min(8, Math.round(Number(tools.loopCutCount) || 1))));
+    if (els.knifeCutThroughInput) els.knifeCutThroughInput.checked = !!tools.knifeCutThrough;
+    if (els.planeCutAxisSelect) els.planeCutAxisSelect.value = ["x", "y", "z"].includes(tools.planeCutAxis) ? tools.planeCutAxis : "y";
+    if (els.planeCutPositionInput) els.planeCutPositionInput.value = String(Math.max(1, Math.min(99, Number(tools.planeCutPosition) || 50)));
+    if (els.planeCutResultSelect) {
+      els.planeCutResultSelect.value = ["both", "positive", "negative"].includes(tools.planeCutResult) ? tools.planeCutResult : "both";
+    }
+    if (els.planeCutCapInput) {
+      els.planeCutCapInput.checked = tools.planeCutCap ?? true;
+      els.planeCutCapInput.disabled = els.planeCutResultSelect?.value === "both";
+    }
     if (els.edgeSlideAxisSelect) els.edgeSlideAxisSelect.value = ["auto", "x", "y", "z"].includes(tools.edgeSlideAxis) ? tools.edgeSlideAxis : "auto";
     if (els.edgeSlideAmountInput) {
       const edgeSlideAmount = Number(tools.edgeSlideAmount);
@@ -45958,7 +46716,7 @@ end
       setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, false);
       setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, false);
     }
-    els.cameraControlsOpenBtn?.classList.toggle("active", open && !els.cameraViewsSection.classList.contains("collapsed"));
+    els.cameraControlsOpenBtn?.classList.remove("active");
     if (open) requestAnimationFrame(() => els.cameraViewsSection.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
   els.modelToolsOpenBtn?.addEventListener("click", () => setModelToolsOpen(true));
@@ -45970,12 +46728,9 @@ end
     els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
   }));
   els.cameraControlsOpenBtn?.addEventListener("click", () => setCameraControlsOpen(true));
-  els.cameraViewsToggle?.addEventListener("click", () => requestAnimationFrame(() => {
-    els.cameraControlsOpenBtn?.classList.toggle("active", !els.cameraViewsSection?.classList.contains("collapsed"));
-  }));
   els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
   els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
-  els.cameraControlsOpenBtn?.classList.toggle("active", !els.cameraViewsSection?.classList.contains("collapsed"));
+  els.cameraControlsOpenBtn?.classList.remove("active");
   document.querySelector("#digIntoBtn").addEventListener("click", digIntoSelectedFace);
   document.querySelector("#removeMarksBtn").addEventListener("click", removeMarkersForSelection);
   document.querySelector("#copyTriBtn").addEventListener("click", copySelectedTriangles);
@@ -46037,6 +46792,13 @@ end
   els.edgeBevelBtn?.addEventListener("click", bevelSelectedEdge);
   els.subdivideSelectedBtn?.addEventListener("click", subdivideSelectedSurface);
   els.loopCutBtn?.addEventListener("click", applyLoopCut);
+  els.knifeCutModeBtn?.addEventListener("click", () => setKnifeCutMode(!knifeCutMode));
+  els.knifeCutCancelBtn?.addEventListener("click", () => cancelKnifeCutStroke());
+  els.planeCutBtn?.addEventListener("click", applyPlaneCut);
+  els.bridgeEdgeLoopsBtn?.addEventListener("click", bridgeSelectedEdgeLoops);
+  els.planeCutResultSelect?.addEventListener("change", () => {
+    if (els.planeCutCapInput) els.planeCutCapInput.disabled = els.planeCutResultSelect.value === "both";
+  });
   els.edgeSlideBtn?.addEventListener("click", slideSelectedEdges);
   els.surfaceScaleBtn?.addEventListener("click", scaleSelectedSurface);
   els.relaxVerticesBtn?.addEventListener("click", relaxSelectedVertices);
@@ -46510,6 +47272,10 @@ end
     }
     if (spaceCameraMode) return;
     pendingScenePick = null;
+    if (knifeCutMode) {
+      addKnifeCutPointFromHit(hitFromPointerEvent(event));
+      return;
+    }
     if (lineSketchMode) {
       addLineSketchPointFromEvent(event);
       return;
@@ -46570,6 +47336,11 @@ end
     const rect = renderer.domElement.getBoundingClientRect();
     lastCanvasPointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
     lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+    if (knifeCutMode && knifeCutPoints.length === 1 && !spaceCameraMode) {
+      const knifeHit = hitFromPointerEvent(event);
+      knifeCutHover = knifeHit?.object === knifeCutMesh ? knifeHit.point.clone() : null;
+      updateKnifeCutGuide(knifeCutHover);
+    }
     if (lineSketchMode && !spaceCameraMode) {
       const hit = lineSketchPickFromEvent(event);
       setLineSketchCursor(hit?.point || null, hit?.normal || null);
@@ -46601,6 +47372,11 @@ end
     }
   });
   canvas.addEventListener("dblclick", (event) => {
+    if (knifeCutMode) {
+      event.preventDefault();
+      pendingScenePick = null;
+      return;
+    }
     if (lineSketchMode) {
       event.preventDefault();
       closeLineSketch();
@@ -46630,6 +47406,12 @@ end
   });
   window.addEventListener("keydown", (event) => {
     if (event.key === "Shift") isShiftHeld = true;
+    if (knifeCutMode && event.key === "Escape") {
+      event.preventDefault();
+      if (knifeCutPoints.length) cancelKnifeCutStroke();
+      else setKnifeCutMode(false);
+      return;
+    }
     if (textureEditorState.open && event.key === "Escape") {
       event.preventDefault();
       closeTextureEditor();

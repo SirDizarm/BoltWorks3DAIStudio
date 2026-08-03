@@ -305,7 +305,7 @@ function setCameraControlsOpen(open = true) {
     setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, false);
     setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, false);
   }
-  els.cameraControlsOpenBtn?.classList.toggle("active", open && !els.cameraViewsSection.classList.contains("collapsed"));
+  els.cameraControlsOpenBtn?.classList.remove("active");
   if (open) requestAnimationFrame(() => els.cameraViewsSection.scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
@@ -318,12 +318,9 @@ els.outputToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame((
   els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
 }));
 els.cameraControlsOpenBtn?.addEventListener("click", () => setCameraControlsOpen(true));
-els.cameraViewsToggle?.addEventListener("click", () => requestAnimationFrame(() => {
-  els.cameraControlsOpenBtn?.classList.toggle("active", !els.cameraViewsSection?.classList.contains("collapsed"));
-}));
 els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
 els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
-els.cameraControlsOpenBtn?.classList.toggle("active", !els.cameraViewsSection?.classList.contains("collapsed"));
+els.cameraControlsOpenBtn?.classList.remove("active");
 document.querySelector("#digIntoBtn").addEventListener("click", digIntoSelectedFace);
 document.querySelector("#removeMarksBtn").addEventListener("click", removeMarkersForSelection);
 document.querySelector("#copyTriBtn").addEventListener("click", copySelectedTriangles);
@@ -387,6 +384,13 @@ document.querySelector("#bevelFaceBtn").addEventListener("click", bevelSelectedF
 els.edgeBevelBtn?.addEventListener("click", bevelSelectedEdge);
 els.subdivideSelectedBtn?.addEventListener("click", subdivideSelectedSurface);
 els.loopCutBtn?.addEventListener("click", applyLoopCut);
+els.knifeCutModeBtn?.addEventListener("click", () => setKnifeCutMode(!knifeCutMode));
+els.knifeCutCancelBtn?.addEventListener("click", () => cancelKnifeCutStroke());
+els.planeCutBtn?.addEventListener("click", applyPlaneCut);
+els.bridgeEdgeLoopsBtn?.addEventListener("click", bridgeSelectedEdgeLoops);
+els.planeCutResultSelect?.addEventListener("change", () => {
+  if (els.planeCutCapInput) els.planeCutCapInput.disabled = els.planeCutResultSelect.value === "both";
+});
 els.edgeSlideBtn?.addEventListener("click", slideSelectedEdges);
 els.surfaceScaleBtn?.addEventListener("click", scaleSelectedSurface);
 els.relaxVerticesBtn?.addEventListener("click", relaxSelectedVertices);
@@ -865,6 +869,10 @@ canvas.addEventListener("pointerdown", event => {
   }
   if (spaceCameraMode) return;
   pendingScenePick = null;
+  if (knifeCutMode) {
+    addKnifeCutPointFromHit(hitFromPointerEvent(event));
+    return;
+  }
   if (lineSketchMode) {
     addLineSketchPointFromEvent(event);
     return;
@@ -927,6 +935,11 @@ canvas.addEventListener("pointermove", event => {
   const rect = renderer.domElement.getBoundingClientRect();
   lastCanvasPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  if (knifeCutMode && knifeCutPoints.length === 1 && !spaceCameraMode) {
+    const knifeHit = hitFromPointerEvent(event);
+    knifeCutHover = knifeHit?.object === knifeCutMesh ? knifeHit.point.clone() : null;
+    updateKnifeCutGuide(knifeCutHover);
+  }
   if (lineSketchMode && !spaceCameraMode) {
     const hit = lineSketchPickFromEvent(event);
     setLineSketchCursor(hit?.point || null, hit?.normal || null);
@@ -960,6 +973,11 @@ window.addEventListener("pointerup", event => {
 });
 
 canvas.addEventListener("dblclick", event => {
+  if (knifeCutMode) {
+    event.preventDefault();
+    pendingScenePick = null;
+    return;
+  }
   if (lineSketchMode) {
     event.preventDefault();
     closeLineSketch();
@@ -990,6 +1008,12 @@ canvas.addEventListener("dblclick", event => {
 
 window.addEventListener("keydown", event => {
   if (event.key === "Shift") isShiftHeld = true;
+  if (knifeCutMode && event.key === "Escape") {
+    event.preventDefault();
+    if (knifeCutPoints.length) cancelKnifeCutStroke();
+    else setKnifeCutMode(false);
+    return;
+  }
   if (textureEditorState.open && event.key === "Escape") {
     event.preventDefault();
     closeTextureEditor();

@@ -86,7 +86,7 @@ function projectCapabilities() {
   return {
     shapes: Object.keys(shapeFactories),
     transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
-    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "cutTopBottom"],
+    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom"],
     textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
     sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
@@ -191,6 +191,11 @@ function projectState() {
         loopCutAxis: ["x", "y", "z"].includes(els.loopCutAxisSelect?.value) ? els.loopCutAxisSelect.value : "y",
         loopCutPosition: Math.max(1, Math.min(99, Number(els.loopCutPositionInput?.value) || 50)),
         loopCutCount: Math.max(1, Math.min(8, Math.round(Number(els.loopCutCountInput?.value) || 1))),
+        knifeCutThrough: !!els.knifeCutThroughInput?.checked,
+        planeCutAxis: ["x", "y", "z"].includes(els.planeCutAxisSelect?.value) ? els.planeCutAxisSelect.value : "y",
+        planeCutPosition: Math.max(1, Math.min(99, Number(els.planeCutPositionInput?.value) || 50)),
+        planeCutResult: ["both", "positive", "negative"].includes(els.planeCutResultSelect?.value) ? els.planeCutResultSelect.value : "both",
+        planeCutCap: !!els.planeCutCapInput?.checked,
         edgeSlideAxis: ["auto", "x", "y", "z"].includes(els.edgeSlideAxisSelect?.value) ? els.edgeSlideAxisSelect.value : "auto",
         edgeSlideAmount: Math.max(-95, Math.min(95, Number.isFinite(Number(els.edgeSlideAmountInput?.value)) ? Number(els.edgeSlideAmountInput.value) : 10)),
         surfaceScaleAxis: ["uniform", "x", "y", "z"].includes(els.surfaceScaleAxisSelect?.value) ? els.surfaceScaleAxisSelect.value : "uniform",
@@ -462,6 +467,16 @@ function applyProjectEditorState(editor = {}) {
   if (els.loopCutAxisSelect) els.loopCutAxisSelect.value = ["x", "y", "z"].includes(tools.loopCutAxis) ? tools.loopCutAxis : "y";
   if (els.loopCutPositionInput) els.loopCutPositionInput.value = String(Math.max(1, Math.min(99, Number(tools.loopCutPosition) || 50)));
   if (els.loopCutCountInput) els.loopCutCountInput.value = String(Math.max(1, Math.min(8, Math.round(Number(tools.loopCutCount) || 1))));
+  if (els.knifeCutThroughInput) els.knifeCutThroughInput.checked = !!tools.knifeCutThrough;
+  if (els.planeCutAxisSelect) els.planeCutAxisSelect.value = ["x", "y", "z"].includes(tools.planeCutAxis) ? tools.planeCutAxis : "y";
+  if (els.planeCutPositionInput) els.planeCutPositionInput.value = String(Math.max(1, Math.min(99, Number(tools.planeCutPosition) || 50)));
+  if (els.planeCutResultSelect) {
+    els.planeCutResultSelect.value = ["both", "positive", "negative"].includes(tools.planeCutResult) ? tools.planeCutResult : "both";
+  }
+  if (els.planeCutCapInput) {
+    els.planeCutCapInput.checked = tools.planeCutCap ?? true;
+    els.planeCutCapInput.disabled = els.planeCutResultSelect?.value === "both";
+  }
   if (els.edgeSlideAxisSelect) els.edgeSlideAxisSelect.value = ["auto", "x", "y", "z"].includes(tools.edgeSlideAxis) ? tools.edgeSlideAxis : "auto";
   if (els.edgeSlideAmountInput) {
     const edgeSlideAmount = Number(tools.edgeSlideAmount);

@@ -309,6 +309,10 @@ let lineSketchPlane = null;
 let lineSketchPlaneNormal = null;
 let lineSketchHover = null;
 const lineSketchPoints = [];
+let knifeCutMode = false;
+let knifeCutMesh = null;
+let knifeCutHover = null;
+const knifeCutPoints = [];
 let selectedFace = null;
 const selectedFaces = [];
 let surfaceComponentMode = "none";
@@ -359,6 +363,10 @@ const modelingEdgesOverlay = new THREE.Group();
 modelingEdgesOverlay.name = "visible modeling edges";
 modelingEdgesOverlay.visible = false;
 scene.add(modelingEdgesOverlay);
+const knifeCutGuideGroup = new THREE.Group();
+knifeCutGuideGroup.name = "knife cut guides";
+knifeCutGuideGroup.visible = false;
+scene.add(knifeCutGuideGroup);
 const selectionOutlineGroup = new THREE.Group();
 selectionOutlineGroup.name = "selected object silhouette";
 scene.add(selectionOutlineGroup);
@@ -593,6 +601,15 @@ const els = {
   loopCutPositionInput: document.querySelector("#loopCutPositionInput"),
   loopCutCountInput: document.querySelector("#loopCutCountInput"),
   loopCutBtn: document.querySelector("#loopCutBtn"),
+  knifeCutModeBtn: document.querySelector("#knifeCutModeBtn"),
+  knifeCutCancelBtn: document.querySelector("#knifeCutCancelBtn"),
+  knifeCutThroughInput: document.querySelector("#knifeCutThroughInput"),
+  planeCutAxisSelect: document.querySelector("#planeCutAxisSelect"),
+  planeCutPositionInput: document.querySelector("#planeCutPositionInput"),
+  planeCutResultSelect: document.querySelector("#planeCutResultSelect"),
+  planeCutCapInput: document.querySelector("#planeCutCapInput"),
+  planeCutBtn: document.querySelector("#planeCutBtn"),
+  bridgeEdgeLoopsBtn: document.querySelector("#bridgeEdgeLoopsBtn"),
   edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
   edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
   edgeSlideBtn: document.querySelector("#edgeSlideBtn"),

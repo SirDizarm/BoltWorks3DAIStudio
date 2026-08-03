@@ -72,6 +72,8 @@ Observed 2026-07-23: `M01#D OK GEO`, `OK UV`, `NOTE UV-DENSITY`.
 - `M10` — Live Mirror / Symmetry with a non-selectable preview, live plane updates, editable Apply result and Undo restoration. Manually confirmed on 2026-07-24: `M10 OK GEO SEL`.
 - `M11` — Scale Selected Surface with retained UVs, active surface selection, one-axis scaling and Undo. Manually confirmed on 2026-07-25: `M11 OK GEO UV SEL UNDO`.
 - `M12` — Smooth / Relax Vertices with neighboring-surface relaxation, silhouette smoothing, retained UVs, active vertex selection, open-boundary protection and Undo. Original result: `M12#C FEL GEO/AXIS`; a vertex moved along Y was not relaxed and gizmo arrows overlapping the mesh were hard to pick. `M12R1` exposed that Y is end-on and therefore not draggable in Top view. `M12R2` passed in v49.8.2 using the synchronized FRONT/SIDE arrows; repeated Relax operations softened the selected surface correctly.
+- `M13` — Knife / Plane Cut with a two-click viewport stroke, exact local-axis plane placement, optional side removal and planar capping. Manually confirmed in v49.9.0 on 2026-07-26: `M13#B OK GEO UV SEL`, `M13#D OK GEO UV DEPTH`, and `M13#F OK GEO UV CAP`.
+- `M14` — Bridge Edge Loops between two equal-count open boundary loops inside one textured mesh, with automatic loop tracing, minimum-twist pairing, retained UVs, selected bridge edges and Undo. Pending manual confirmation in v49.10.0.
 
 ### M09 — Dissolve Edge or Vertex
 
@@ -197,3 +199,42 @@ Expected result:
 - Dragging that SIDE arrow moves the selected vertex only along world Y in every viewport; it does not move a bone or orbit the camera.
 - Releasing the pointer ends the drag. Relax then moves the raised vertex visibly back toward the surrounding top surface.
 - The selected vertex and diagnostic texture remain intact, Undo works, and no white, missing, or detached face appears.
+
+### M13 — Knife / Plane Cut
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M13#A` — Reload the untouched test project. Select the large **EDIT ME - Textured topology block** with an ordinary object click or its scene-tree row. Open **Surface Edit > Knife / Plane Cut**.
+- `M13#B` — Under **Plane Cut**, choose axis `Y`, position `50%`, and **Keep Both Sides**. Click **Apply Plane Cut** once.
+- `M13#C` — Confirm the new yellow selected cut edges form one continuous horizontal ring halfway through the large block. Click **Undo** once and verify the untouched block returns.
+- `M13#D` — Choose **Camera Controls > Front**. In **Knife / Plane Cut**, leave **Cut through the whole mesh** unchecked and click **Knife: Two Clicks**. On the large block's visible front face, click once near the upper-left inside corner and once near the lower-right inside corner. Do not click the black outer border.
+- `M13#E` — Confirm a diagonal cut follows only the drawn segment, the new cut edges stay selected, and the button remains active for another stroke. Click **Knife: Two Clicks** again to release the tool completely, then click **Undo** once.
+- `M13#F` — Select the large block again. Set Plane axis `X`, position `50%`, result **Keep Positive Side**, and enable **Cap removed side**. Click **Apply Plane Cut** once.
+
+Expected result:
+
+- At `M13#B`, the mesh silhouette does not change. A real connected edge ring is inserted at local Y 50%, and only those new edges are selected.
+- The diagnostic texture remains attached on both sides of every cut. No white, blank, missing, flipped, detached, or newly collapsed texture patch may appear.
+- At `M13#D`, the red guide runs between the two clicks and becomes a real diagonal topology cut when the second point is placed. With **Cut through** disabled, the cut must not continue beyond the chosen segment or appear on the hidden rear surface.
+- Releasing the Knife button removes its guide and prevents later clicks from creating another cut until the button is activated again.
+- At `M13#F`, only the positive-X half remains. The exposed cut is closed by a planar textured cap rather than a hole or white surface.
+- Every operation supports one-step Undo, leaves the smaller reference cube and display stage unchanged, and does not create detached pieces or non-manifold openings.
+
+### M14 — Bridge Edge Loops
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M14#A` — Reload the untouched test project. Choose **Camera Controls > Front**, activate **Whole Face**, and select the large block's front face. Press the keyboard `Delete` once to remove that face and create the first square opening.
+- `M14#B` — Choose **Camera Controls > Back**, activate **Whole Face** again if needed, select the large block's back face, and press `Delete` once. The large block now has two opposite square openings.
+- `M14#C` — Activate **Edge**. In Back view, click one yellow outer edge of the back opening. Choose **Camera Controls > Front**, hold Shift or Ctrl, and click one yellow outer edge of the front opening. Exactly two boundary edges should be yellow, one from each opening.
+- `M14#D` — Open **Bridge Edge Loops** and click **Bridge Selected Loops** once.
+- `M14#E` — Look through the former front opening and then click **Undo** once.
+
+Expected result:
+
+- At `M14#D`, the two square openings are connected inside the same mesh by four new walls, forming a hollow square tunnel through the block. No separate object is created.
+- The tool automatically traces both complete boundary loops even though only one edge per loop was selected.
+- The new tunnel walls show the diagnostic texture rather than white or blank material. Existing outer faces keep their previous texture orientation.
+- Four new longitudinal bridge edges remain selected in yellow. The viewport status reports four quads and eight new triangles.
+- The result has no crack, missing triangle, twisted crossing wall, detached panel, or non-manifold overlap.
+- At `M14#E`, one Undo removes the tunnel walls and restores the two open square holes. The smaller reference cube and display stage never change.

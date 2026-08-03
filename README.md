@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.8.3**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.10.1**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
 ## Local development source
 
@@ -23,7 +23,7 @@ The primary document is `index.html`; canonical application logic lives under
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.8.3.js`, so direct file opening does not depend on module CORS or a
+`app/studio-v49.10.1.js`, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
@@ -51,6 +51,8 @@ Manual mesh tests use the permanent shorthand documented in `docs/MESH_TEST_CODE
 - **Edge Bevel** chamfers one selected non-coplanar crease with a closed planar solid cut. Consecutive bevel planes trim earlier bevels cleanly at shared corners instead of bending their strips inward. Its saved width is clamped safely, flat triangulation diagonals are rejected, and newly created bevel boundaries are shown red and protected from accidental re-beveling.
 - **Subdivide Surface** adds local topology without changing the model silhouette. Triangle or Whole Face selections can be split one or two levels (4x or 16x selected triangles), interpolated texture coordinates are retained, and protected bevel boundaries remain protected. Adjacent unselected triangles receive matching boundary splits, preventing T-junction cracks when the new detail is moved; only the requested surface remains selected for immediate shaping.
 - **Loop Cut / Ring Cut** inserts one or more local-axis cutting planes through the selected mesh without changing its silhouette. A single cut uses an exact percentage of the mesh bounds; multiple cuts are evenly spaced. UVs and protected bevel edges are retained, and every newly inserted ring segment stays selected for immediate movement.
+- **Knife / Plane Cut** adds either a two-click viewport stroke or an exact local X/Y/Z cutting plane. Plane Cut can retain both halves or remove one side with a closed planar cap. Interpolated texture coordinates stay attached, newly created cut edges remain selected, and Knife can be limited to the drawn segment or pass through the whole mesh.
+- **Bridge Edge Loops** joins two complete open boundary loops inside the same mesh with a real quad strip. Select one boundary edge on each opening; the full loops are traced automatically, paired with minimum twist, and connected while existing and new UVs remain available. Equal loop vertex counts are required in this first safe version.
 - **Edge Slide** moves selected edges along their neighboring topology rails without adding triangles. Signed percentage values choose either direction, Loop Cut rings remember their cutting axis, and Auto can infer a rail for manually selected edges.
 - **Scale Selected Surface** scales selected vertices, edges, triangles, or a Whole Face around its own center. Uniform scaling keeps flat faces in their plane, world X/Y/Z can change one dimension, UV coordinates remain attached, the active selection is retained, and Undo restores the previous surface.
 - **Smooth / Relax Vertices** edits selected vertices through connected one-ring topology. Relax Surface moves displaced vertices toward their neighboring surface while stabilizing the center of multi-vertex selections; Smooth Shape also rounds the silhouette. Strength, iterations, open-boundary protection, retained UVs, and Undo are supported. v49.8.1 settles completed pointer drags and prioritizes visible surface arrows; v49.8.2 also exposes the same selected-surface gizmo in the FRONT and SIDE reference views, so a camera-aligned world axis remains draggable.

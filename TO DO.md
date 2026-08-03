@@ -14,7 +14,7 @@ Den här listan är den låsta verktygsplanen för BoltWorks 3D AI Studio.
 - [x] Live Mirror / Symmetry
 - [x] Scale Selected Surface
 - [x] Smooth / Relax Vertices (M12R2 confirmed in v49.8.2; repeated Relax tests softened the selected surface correctly)
-- [ ] Knife / Plane Cut
+- [x] Knife / Plane Cut
 - [ ] Bridge Edge Loops
 
 ## Kvalitet och reparation – därefter
