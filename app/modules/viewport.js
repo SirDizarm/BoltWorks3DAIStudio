@@ -374,7 +374,19 @@ const openingPickGuideGroup = new THREE.Group();
 openingPickGuideGroup.name = "opening pick preview";
 openingPickGuideGroup.visible = false;
 scene.add(openingPickGuideGroup);
+const meshIntegrityGuideGroup = new THREE.Group();
+meshIntegrityGuideGroup.name = "mesh integrity issue guide";
+meshIntegrityGuideGroup.visible = false;
+scene.add(meshIntegrityGuideGroup);
 let selectedHoleLoopInfo = null;
+let holeRepairState = { meshId: null, loops: [], index: -1 };
+let meshIntegrityState = { meshId: null, issues: [], index: -1, report: null };
+let removeDoublesState = { meshId: null, tolerance: null, plan: null };
+let meshStatisticsState = { meshId: null, stats: null, text: "" };
+let decimateState = { meshId: null, settingsKey: "", plan: null };
+let lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+let uvUnwrapState = { meshId: null, settingsKey: "", plan: null };
+let lastBakedTextureAtlas = { meshId: null, dataUrl: null, fileName: null, atlasSize: 0, sourceTextureUrl: null, sourceTextureName: null };
 let hoveredHoleLoopInfo = null;
 const lineSketchGroup = new THREE.Group();
 lineSketchGroup.name = "line sketch guides";
@@ -573,6 +585,7 @@ const els = {
   surfaceSelectEdgeBtn: document.querySelector("#surfaceSelectEdgeBtn"),
   surfaceSelectTriangleBtn: document.querySelector("#surfaceSelectTriangleBtn"),
   surfaceSelectFaceBtn: document.querySelector("#surfaceSelectFaceBtn"),
+  deleteSelectedSurfaceBtn: document.querySelector("#deleteSelectedSurfaceBtn"),
   surfaceMouseModeBtn: document.querySelector("#surfaceMouseModeBtn"),
   surfaceValueModeBtn: document.querySelector("#surfaceValueModeBtn"),
   autoSurfaceDragInput: document.querySelector("#autoSurfaceDragInput"),
@@ -610,6 +623,63 @@ const els = {
   planeCutCapInput: document.querySelector("#planeCutCapInput"),
   planeCutBtn: document.querySelector("#planeCutBtn"),
   bridgeEdgeLoopsBtn: document.querySelector("#bridgeEdgeLoopsBtn"),
+  recalculateNormalsBtn: document.querySelector("#recalculateNormalsBtn"),
+  flipNormalsBtn: document.querySelector("#flipNormalsBtn"),
+  holeRepairStatus: document.querySelector("#holeRepairStatus"),
+  holeRepairUvProjectionSelect: document.querySelector("#holeRepairUvProjectionSelect"),
+  rotateSelectedUvLeftBtn: document.querySelector("#rotateSelectedUvLeftBtn"),
+  rotateSelectedUvRightBtn: document.querySelector("#rotateSelectedUvRightBtn"),
+  flipSelectedUvUBtn: document.querySelector("#flipSelectedUvUBtn"),
+  flipSelectedUvVBtn: document.querySelector("#flipSelectedUvVBtn"),
+  findHolesBtn: document.querySelector("#findHolesBtn"),
+  previousHoleBtn: document.querySelector("#previousHoleBtn"),
+  nextHoleBtn: document.querySelector("#nextHoleBtn"),
+  frameHoleBtn: document.querySelector("#frameHoleBtn"),
+  repairSelectedHoleBtn: document.querySelector("#repairSelectedHoleBtn"),
+  repairAllHolesBtn: document.querySelector("#repairAllHolesBtn"),
+  meshIntegrityStatus: document.querySelector("#meshIntegrityStatus"),
+  checkNonManifoldBtn: document.querySelector("#checkNonManifoldBtn"),
+  previousMeshIssueBtn: document.querySelector("#previousMeshIssueBtn"),
+  nextMeshIssueBtn: document.querySelector("#nextMeshIssueBtn"),
+  frameMeshIssueBtn: document.querySelector("#frameMeshIssueBtn"),
+  clearMeshIssuesBtn: document.querySelector("#clearMeshIssuesBtn"),
+  removeDoublesStatus: document.querySelector("#removeDoublesStatus"),
+  removeDoublesToleranceInput: document.querySelector("#removeDoublesToleranceInput"),
+  analyzeDoublesBtn: document.querySelector("#analyzeDoublesBtn"),
+  removeDoublesBtn: document.querySelector("#removeDoublesBtn"),
+  meshStatisticsStatus: document.querySelector("#meshStatisticsStatus"),
+  meshStatisticsReport: document.querySelector("#meshStatisticsReport"),
+  calculateMeshStatisticsBtn: document.querySelector("#calculateMeshStatisticsBtn"),
+  copyMeshStatisticsBtn: document.querySelector("#copyMeshStatisticsBtn"),
+  decimateStatus: document.querySelector("#decimateStatus"),
+  decimateReductionInput: document.querySelector("#decimateReductionInput"),
+  decimateFeatureAngleInput: document.querySelector("#decimateFeatureAngleInput"),
+  decimatePreserveBoundariesInput: document.querySelector("#decimatePreserveBoundariesInput"),
+  decimatePreserveUvSeamsInput: document.querySelector("#decimatePreserveUvSeamsInput"),
+  decimatePreserveMaterialsInput: document.querySelector("#decimatePreserveMaterialsInput"),
+  analyzeDecimateBtn: document.querySelector("#analyzeDecimateBtn"),
+  applyDecimateBtn: document.querySelector("#applyDecimateBtn"),
+  lodGeneratorStatus: document.querySelector("#lodGeneratorStatus"),
+  lod1ReductionInput: document.querySelector("#lod1ReductionInput"),
+  lod2ReductionInput: document.querySelector("#lod2ReductionInput"),
+  lod3ReductionInput: document.querySelector("#lod3ReductionInput"),
+  lodFeatureAngleInput: document.querySelector("#lodFeatureAngleInput"),
+  lodPreserveBoundariesInput: document.querySelector("#lodPreserveBoundariesInput"),
+  lodPreserveUvSeamsInput: document.querySelector("#lodPreserveUvSeamsInput"),
+  lodPreserveMaterialsInput: document.querySelector("#lodPreserveMaterialsInput"),
+  lodHideGeneratedInput: document.querySelector("#lodHideGeneratedInput"),
+  analyzeLodGeneratorBtn: document.querySelector("#analyzeLodGeneratorBtn"),
+  generateLodGeneratorBtn: document.querySelector("#generateLodGeneratorBtn"),
+  uvUnwrapStatus: document.querySelector("#uvUnwrapStatus"),
+  uvUnwrapSeamAngleInput: document.querySelector("#uvUnwrapSeamAngleInput"),
+  uvUnwrapPaddingInput: document.querySelector("#uvUnwrapPaddingInput"),
+  uvAtlasSizeSelect: document.querySelector("#uvAtlasSizeSelect"),
+  analyzeUvUnwrapBtn: document.querySelector("#analyzeUvUnwrapBtn"),
+  applyUvUnwrapBtn: document.querySelector("#applyUvUnwrapBtn"),
+  bakeTextureAtlasBtn: document.querySelector("#bakeTextureAtlasBtn"),
+  uvPngExportSelect: document.querySelector("#uvPngExportSelect"),
+  uvPngExportCount: document.querySelector("#uvPngExportCount"),
+  exportUvPngBtn: document.querySelector("#exportUvPngBtn"),
   edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
   edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
   edgeSlideBtn: document.querySelector("#edgeSlideBtn"),
@@ -672,11 +742,20 @@ const els = {
   textureEditorApplyBtn: document.querySelector("#textureEditorApplyBtn"),
   textureEditorResetBtn: document.querySelector("#textureEditorResetBtn"),
   textureEditorTool: document.querySelector("#textureEditorTool"),
+  textureEditorToolButtons: [...document.querySelectorAll("[data-texture-tool]")],
   textureEditorColor: document.querySelector("#textureEditorColor"),
   textureEditorBrushSize: document.querySelector("#textureEditorBrushSize"),
+  textureEditorBrushPreview: document.querySelector("#textureEditorBrushPreview"),
+  textureEditorHardness: document.querySelector("#textureEditorHardness"),
+  textureEditorOpacity: document.querySelector("#textureEditorOpacity"),
   textureEditorHammerRadius: document.querySelector("#textureEditorHammerRadius"),
   textureEditorShowUv: document.querySelector("#textureEditorShowUv"),
   textureEditorSelectedOnly: document.querySelector("#textureEditorSelectedOnly"),
+  textureEditorUndoBtn: document.querySelector("#textureEditorUndoBtn"),
+  textureEditorZoomOutBtn: document.querySelector("#textureEditorZoomOutBtn"),
+  textureEditorZoomResetBtn: document.querySelector("#textureEditorZoomResetBtn"),
+  textureEditorZoomInBtn: document.querySelector("#textureEditorZoomInBtn"),
+  textureEditorZoomValue: document.querySelector("#textureEditorZoomValue"),
   groupEditorModal: document.querySelector("#groupEditorModal"),
   groupEditorTitle: document.querySelector("#groupEditorTitle"),
   groupEditorInfo: document.querySelector("#groupEditorInfo"),
@@ -696,6 +775,7 @@ const els = {
   meshMaterialRuleInfo: document.querySelector("#meshMaterialRuleInfo"),
   meshDetailsFacts: document.querySelector("#meshDetailsFacts"),
   meshDetailsTexturePreview: document.querySelector("#meshDetailsTexturePreview"),
+  meshDetailsShowUvInput: document.querySelector("#meshDetailsShowUvInput"),
   meshDetailsFutureNotes: document.querySelector("#meshDetailsFutureNotes"),
   meshDetailsCloseBtn: document.querySelector("#meshDetailsCloseBtn"),
   meshDetailsCancelBtn: document.querySelector("#meshDetailsCancelBtn"),
@@ -752,16 +832,26 @@ const textureEditorState = {
   open: false,
   meshId: null,
   sourceCanvas: null,
+  originalCanvas: null,
+  originalPixels: null,
   originalDataUrl: null,
   textureName: "Texture",
   drawingRect: null,
   isPainting: false,
   lastPoint: null,
   tool: "brush",
-  hoverPoint: null
+  hoverPoint: null,
+  undoStack: [],
+  strokeSnapshotTaken: false,
+  zoom: 1,
+  panX: 0,
+  panY: 0,
+  isPanning: false,
+  panStart: null
 };
 
 const textureLibrary = new Map();
+const textureEditorDrafts = new Map();
 const textureSourceCache = new Map();
 const reliefImageState = {
   dataUrl: "",

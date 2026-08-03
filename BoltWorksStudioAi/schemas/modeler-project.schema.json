@@ -144,6 +144,24 @@
         "textureRobloxAssetId": { "type": "string" },
         "materialRule": { "type": "string" },
         "playerAvatar": { "type": "boolean" },
+        "lod": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": ["setId", "level", "sourceId", "reduction", "triangleCount", "screenCoverage"],
+              "properties": {
+                "setId": { "type": "string" },
+                "level": { "type": "integer", "minimum": 0 },
+                "sourceId": { "type": "string" },
+                "reduction": { "type": "number", "minimum": 0, "maximum": 100 },
+                "triangleCount": { "type": "integer", "minimum": 0 },
+                "screenCoverage": { "type": "number", "minimum": 0, "maximum": 1 }
+              },
+              "additionalProperties": true
+            },
+            { "type": "null" }
+          ]
+        },
         "playerHeadOffset": {
           "anyOf": [
             { "$ref": "#/$defs/vec3" },

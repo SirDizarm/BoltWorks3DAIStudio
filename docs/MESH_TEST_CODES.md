@@ -73,7 +73,11 @@ Observed 2026-07-23: `M01#D OK GEO`, `OK UV`, `NOTE UV-DENSITY`.
 - `M11` — Scale Selected Surface with retained UVs, active surface selection, one-axis scaling and Undo. Manually confirmed on 2026-07-25: `M11 OK GEO UV SEL UNDO`.
 - `M12` — Smooth / Relax Vertices with neighboring-surface relaxation, silhouette smoothing, retained UVs, active vertex selection, open-boundary protection and Undo. Original result: `M12#C FEL GEO/AXIS`; a vertex moved along Y was not relaxed and gizmo arrows overlapping the mesh were hard to pick. `M12R1` exposed that Y is end-on and therefore not draggable in Top view. `M12R2` passed in v49.8.2 using the synchronized FRONT/SIDE arrows; repeated Relax operations softened the selected surface correctly.
 - `M13` — Knife / Plane Cut with a two-click viewport stroke, exact local-axis plane placement, optional side removal and planar capping. Manually confirmed in v49.9.0 on 2026-07-26: `M13#B OK GEO UV SEL`, `M13#D OK GEO UV DEPTH`, and `M13#F OK GEO UV CAP`.
-- `M14` — Bridge Edge Loops between two equal-count open boundary loops inside one textured mesh, with automatic loop tracing, minimum-twist pairing, retained UVs, selected bridge edges and Undo. Pending manual confirmation in v49.10.0.
+- `M14` — Bridge Edge Loops between two equal-count open boundary loops inside one textured mesh, with automatic loop tracing, minimum-twist pairing, retained UVs, selected bridge edges and Undo. Deterministic manifold and UV regression confirmed in v49.10.2.
+- `M15` — Recalculate Outside and Flip Selected Faces repair or deliberately reverse triangle winding while retaining per-corner UV data. Deterministic closed-mesh, outward-volume and UV regression confirmed in v49.10.2.
+- `M16` — Find and Repair Holes detects true boundary loops, highlights each opening, frames it, and closes selected or all safe holes inside the same mesh with retained surrounding material. Auto UV inherits a coplanar neighbor's texture scale and alignment when possible, otherwise uses a stable world-plane fallback. Projection supplies an explicit new orientation. Deterministic manifold, UV-continuity, material and safety regression confirmed in v49.13.1.
+- `M17` — Delete intent separation between complete scene models and selected Triangle or Whole Face topology.
+- `M18` — Selected Face UV rotates or flips repaired and existing textured surfaces after the geometry edit.
 
 ### M09 — Dissolve Edge or Vertex
 
@@ -222,19 +226,256 @@ Expected result:
 
 ### M14 — Bridge Edge Loops
 
-Test project: `samples/showcases/uv-topology-test.modelerproj`
+Automated fixture: two separate UV-mapped cube shells inside one mesh, facing each other across a gap. Each shell has one four-corner boundary opening.
 
-- `M14#A` — Reload the untouched test project. Choose **Camera Controls > Front**, activate **Whole Face**, and select the large block's front face. Press the keyboard `Delete` once to remove that face and create the first square opening.
-- `M14#B` — Choose **Camera Controls > Back**, activate **Whole Face** again if needed, select the large block's back face, and press `Delete` once. The large block now has two opposite square openings.
-- `M14#C` — Activate **Edge**. In Back view, click one yellow outer edge of the back opening. Choose **Camera Controls > Front**, hold Shift or Ctrl, and click one yellow outer edge of the front opening. Exactly two boundary edges should be yellow, one from each opening.
-- `M14#D` — Open **Bridge Edge Loops** and click **Bridge Selected Loops** once.
-- `M14#E` — Look through the former front opening and then click **Undo** once.
+- `M14#A` — The regression locates exactly two separate four-vertex boundary loops and chooses one edge from each loop.
+- `M14#B` — Run **Bridge Selected Loops** once.
+- `M14#C` — Inspect the resulting topology and UV attributes, then run one Undo.
 
 Expected result:
 
-- At `M14#D`, the two square openings are connected inside the same mesh by four new walls, forming a hollow square tunnel through the block. No separate object is created.
+- At `M14#B`, the two square openings are connected by four new walls. No separate object is created.
 - The tool automatically traces both complete boundary loops even though only one edge per loop was selected.
-- The new tunnel walls show the diagnostic texture rather than white or blank material. Existing outer faces keep their previous texture orientation.
+- The new bridge walls retain usable UV coordinates rather than becoming white or blank. Existing faces keep their previous UV coordinates.
 - Four new longitudinal bridge edges remain selected in yellow. The viewport status reports four quads and eight new triangles.
 - The result has no crack, missing triangle, twisted crossing wall, detached panel, or non-manifold overlap.
-- At `M14#E`, one Undo removes the tunnel walls and restores the two open square holes. The smaller reference cube and display stage never change.
+- Every resulting topology edge is shared by exactly two triangles, proving that the joined result is closed and manifold.
+- At `M14#C`, one Undo removes the bridge walls and restores both separate open shells.
+
+Important: deleting the front and back faces of one closed cube does not create a valid Bridge test. Its remaining side walls already connect the two loops, so another bridge would duplicate those walls and correctly be rejected as non-manifold.
+
+### M15 — Recalculate / Flip Normals
+
+Automated fixture: a closed UV-mapped cube with one deliberately reversed triangle.
+
+- `M15#A` — Run **Recalculate Outside** on the damaged cube.
+- `M15#B` — Confirm every shared edge now has opposite traversal on its two triangles and the closed component has positive signed volume.
+- `M15#C` — On a fresh UV-mapped cube, select one triangle or whole face and run **Flip Selected Faces**.
+- `M15#D` — Inspect the selected triangle winding and its UV corners, then run Undo.
+
+Expected result:
+
+- At `M15#A`, inconsistent neighboring winding is repaired and the closed component points outward. Open components are made internally consistent without inventing an unsupported outside direction.
+- UV count and per-corner UV association remain intact; no face becomes white because of the repair.
+- At `M15#C`, only the selected triangle winding is reversed. Its second and third position corners and UV corners swap together.
+- Both operations are one-step undoable and reject non-manifold or non-orientable input rather than silently damaging it.
+
+### M16 — Find and Repair Holes
+
+Automated fixture: one UV-mapped cube with its top face removed, leaving one four-vertex boundary loop.
+
+- `M16#A` — Select the open mesh and click **Find Holes**.
+- `M16#B` — Confirm the blue guide traces the complete opening and the panel reports `Hole 1 of 1 — 4 boundary vertices`.
+- `M16#C` — Leave **UV projection** at Auto, click **Frame Selected**, then **Repair Selected**.
+- `M16#D` — Run **Find Holes** again, inspect the repaired surface and click Undo once.
+
+Expected result:
+
+- Exactly one true hole is found. Internal triangulation lines and ordinary sharp creases are not reported as holes.
+- Frame Selected centers the camera on the blue boundary without moving the mesh.
+- Repair Selected adds two cap triangles to the original mesh; it does not create a separate patch object.
+- The repaired cube has no remaining boundary edges and every topology edge is shared by exactly two triangles.
+- Every new triangle has usable UV coordinates and uses the most common material touching the repaired boundary. When a coplanar textured triangle remains beside the hole, Auto extends its affine UV mapping across the cap, preserving the same texture scale, direction, and seam alignment. When the complete top face is missing and no coplanar reference remains, Auto maps world X/Z rather than an arbitrary diagonal, so the texture is not rotated 45°. Projection X/Y/Z may be chosen before repairing to force a new mapping; final orientation is adjusted afterward with Selected Face UV. Existing UV corners and materials remain unchanged.
+- Strongly twisted, self-intersecting, degenerate, or non-manifold candidates are refused without changing geometry or consuming Undo.
+- One Undo restores the original open cube and its hole.
+
+### M16R1 — Triangulated face UV continuity
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M16R1#A` — Reload the untouched project. Choose **Triangle**, select exactly one triangle on a textured square face of the large block, and click **Delete Selected Face**.
+- `M16R1#B` — Select the large block as an object, expand **Find and Repair Holes**, leave **UV projection** at **Auto**, click **Find Holes**, then **Repair Selected**.
+- `M16R1#C` — Deselect the result and inspect the repaired square from a straight and angled camera view.
+
+Expected result:
+
+- The missing triangle is restored inside the same mesh and the opening is closed.
+- The repaired triangle continues the neighboring triangle's exact UV scale, direction, and alignment. Grid cells and lines cross the internal diagonal without changing size, rotating, jumping, or forming a separate normalized UV island.
+- Existing triangles and UV corners remain unchanged. The repaired triangle uses the surrounding material and does not become white or blank.
+- Choosing explicit X, Y, or Z instead of Auto deliberately creates a new planar mapping and therefore bypasses neighboring UV inheritance.
+- One Undo restores the single-triangle opening.
+
+### M17 — Delete Selected Model / Face
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M17#A` — Select the small textured reference cube as an ordinary scene model and click **Delete Selected Model** beside Undo.
+- `M17#B` — Click Undo, open **Surface Edit**, choose **Whole Face**, select one flat face on the small cube, and click **Delete Selected Face**.
+- `M17#C` — Click Undo once.
+
+Expected result:
+
+- At `M17#A`, the complete small cube is removed. The larger topology block and display stage remain unchanged.
+- **Delete Selected Face** stays disabled in Vertex and Edge modes and whenever no Triangle or Whole Face is selected.
+- At `M17#B`, only the selected surface triangles are removed, intentionally creating an opening while the rest of the cube remains in the scene.
+- At `M17#C`, the deleted face, its texture coordinates, and its material return in one Undo.
+
+### M18 — Selected Face UV
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`, preferably after completing M16 repair.
+
+- `M18#A` — Open **Surface Edit**, choose **Whole Face**, and select the repaired textured surface.
+- `M18#B` — Expand **Selected Face UV** and click **Rotate UV Right 90°**.
+- `M18#C` — Click **Flip UV Horizontal**, inspect adjacent faces, then click Undo twice.
+
+Expected result:
+
+- Rotation and flipping happen after the hole has already been repaired, so the visible result can guide the choice.
+- Only UV corners belonging to the selected Triangle or Whole Face change. Geometry, material, and neighboring surface UVs remain unchanged.
+- The selection remains active after each UV action, allowing repeated 90-degree turns without reselecting the surface.
+- Two Undo actions restore the original repaired UV orientation in reverse order.
+
+### M19 — Non-manifold Check
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M19#A` — Reload the untouched project. Select the small textured reference cube as an ordinary model. Expand **Surface Edit > Non-manifold Check** and click **Check Selected Mesh**.
+- `M19#B` — Confirm the panel reports a closed manifold mesh with 0 issues and that neither the model nor its texture changes.
+- `M19#C` — Choose **Triangle**, select exactly one triangle on the small cube, and click **Delete Selected Face**. Select the cube again as a model and click **Check Selected Mesh**.
+- `M19#D` — Confirm the report finds 3 open boundary edges. Use **Next**, **Previous**, and **Frame Issue** and verify the orange guide moves between the three sides of the triangular opening.
+- `M19#E` — Click **Clear Report**, then Undo once and run **Check Selected Mesh** again.
+
+Expected result:
+
+- The untouched cube reports 12 triangles, 8 welded vertices, 0 open edges, and 0 topology issues.
+- Removing one triangle reports exactly 3 open boundary edges; ordinary triangulation diagonals are not reported.
+- Next and Previous cycle only through real reported issues. Frame Issue centers the camera without moving the mesh.
+- Clear Report removes the viewport guide without changing geometry or consuming Undo.
+- After Undo restores the triangle, the same cube reports closed and manifold again.
+- The automated regression also verifies detection of an edge shared by three triangles and a vertex joining two disconnected surface fans.
+- The diagnostic is read-only: positions, UVs, materials, object count, selection, and Undo history remain unchanged.
+
+### M20 — Remove Doubles
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M20#A` — Reload the untouched project, select the small textured reference cube as an ordinary model, expand **Surface Edit > Remove Doubles**, keep Tolerance at `0.001`, and click **Analyze Doubles**.
+- `M20#B` — Confirm the report says no separate nearby vertices were found and **Remove Analyzed Doubles** remains disabled.
+- `M20#C` — On any edited mesh with two accidentally overlapping or nearly overlapping vertices, select the model, set a tolerance just large enough to include the gap, and click **Analyze Doubles**.
+- `M20#D` — Read the candidate, cluster, and triangle counts in Status. If the analysis says the result is safe, click **Remove Analyzed Doubles** once and then Undo once.
+
+Expected result:
+
+- The untouched textured cube reports 0 doubles. Its repeated non-indexed corners are intentional UV/material seams and are not falsely merged.
+- Analyze Doubles never changes geometry or consumes Undo.
+- A safe result snaps each nearby cluster to its average position, removes only triangles that become degenerate or exact duplicates, and preserves UVs, colors, skin data, and materials per triangle corner.
+- A merge that would open a previously closed mesh or create an edge shared by more than two triangles is refused.
+- Changing Tolerance invalidates the old analysis and requires Analyze Doubles again.
+- Undo restores the exact pre-merge geometry.
+- The automated regression covers a textured two-triangle seam, verifies two logical vertex merges with UV/material preservation, verifies no result below tolerance, and rejects a three-triangle non-manifold merge.
+
+### M21 — Mesh Statistics
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M21#A` — Reload the untouched project, select the small textured reference cube as an ordinary model, expand **Surface Edit > Mesh Statistics**, and click **Calculate Statistics**.
+- `M21#B` — Confirm the report lists 12 triangles, 8 welded positions, 18 unique triangulated edges, 0 boundary edges, a closed manifold result, at least one UV channel, and non-zero geometry memory.
+- `M21#C` — Click **Copy Report**, paste it into a text field, and confirm the complete human/AI-readable report was copied.
+- `M21#D` — Choose **Triangle**, delete one triangle from the cube, select the cube as a model again, and recalculate.
+- `M21#E` — Confirm the new report has 11 triangles, 3 boundary edges, topology marked for inspection, and closed volume reported as unavailable. Undo once.
+
+Expected result:
+
+- Calculate Statistics is read-only: geometry, UVs, materials, selection, object count, and Undo history remain unchanged.
+- Local and transformed world dimensions are shown in studs; world dimensions are also converted using `1 stud = 0.28 meters`.
+- Surface area is measured after the object transform. Volume is shown only for closed manifold geometry with consistent winding.
+- GPU position vertices, triangle corners, welded positions, material slots, textures, estimated draw calls, UV channels, skin attributes, and approximate geometry-buffer memory are distinguished rather than combined into one misleading vertex count.
+- Copy Report creates plain text suitable for a person or AI without changing the scene.
+- The automated regression verifies an indexed scaled cube and an open textured cube independently.
+
+### M22 — Protected Decimate
+
+Use a dense textured mesh rather than the 12-triangle reference cube. A subdivided curved object makes the reduction easiest to see.
+
+- `M22#A` — Select one dense editable model. Expand **Surface Edit > Protected Decimate**, keep Reduction at `35`, Feature angle at `35`, and leave all three protection options checked.
+- `M22#B` — Click **Analyze Decimation**. Read the exact before, target, achievable, protected-edge, and protected-vertex result in Status. Confirm the model has not changed.
+- `M22#C` — If **Apply Safe Decimation** is enabled, click it once. Inspect the silhouette, open borders, texture seams, and material borders, then click Undo once.
+- `M22#D` — If analysis says every edge is protected, test a denser smooth mesh or deliberately disable only the protection you are willing to relax and analyze again.
+
+### M23 — LOD Generator
+
+Use **Faceted Ball 320** or another dense textured model. The 12-triangle reference cube is intentionally too small and too protected for a useful three-level LOD set.
+
+- `M23#A` — Select one dense editable model. Expand **Surface Edit > LOD Generator** and keep the safe defaults: LOD1 `10%`, LOD2 `25%`, LOD3 `65%`, Feature angle `35`, all protection options checked, and **Hide generated levels** checked.
+- `M23#B` — Click **Analyze LOD Set**. Expected: Status says `4 models total`, identifies LOD0 as `Original` and LOD1–LOD3 as `Preview`, and lists four strictly descending triangle counts. The scene tree and visible model must not change.
+- `M23#C` — Click **Generate LOD Set** once. Expected: one named `LOD Set` group contains the unchanged visible source renamed `LOD0` plus separate `LOD1`, `LOD2`, and `LOD3` models. Generated levels are hidden, their triangle counts descend, and their texture/material appearance is retained.
+- `M23#D` — In the scene tree, hide LOD0 and show one generated level at a time. Expected: each is a complete lighter version in exactly the same transform, without duplicated visible levels or z-fighting. Click Undo once; the complete generated set must disappear and the source name/group/metadata must return to its pre-generation state.
+- `M23#E` — Generate the set again, select LOD3 in the scene tree, and click **Files & Output > Export Selected OBJ**. Expected: one OBJ named from the project and selected LOD downloads, the status log identifies LOD3 and its triangle count, and no other LOD level is included.
+
+Expected result:
+
+- Analyze is read-only and consumes no Undo entry.
+- Apply reduces the triangle count inside the original mesh; it does not create a replacement scene object.
+- Open boundaries, sharp features above Feature angle, UV seams, and material borders remain fixed when their protections are enabled.
+- UV, color, skin, and material attributes remain attached per triangle corner on all surviving triangles.
+- Closed meshes remain closed, non-manifold results and flipped triangles are rejected, and Undo restores the exact source geometry.
+- The requested reduction is a goal rather than a promise: BWS reports the safely achievable amount under the active protections.
+
+### M24 â€” UV Unwrap / Texture Atlas
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M24#A` â€” Reload the untouched project, select the large textured topology block as an ordinary model, expand **Surface Edit > UV Unwrap / Texture Atlas**, keep Seam angle `45`, Island padding `2`, Atlas size `1024`, and click **Analyze UV Layout**.
+- `M24#B` â€” Confirm Status reports 12 triangles packed into 6 non-overlapping islands. The visible model and scene tree must remain unchanged.
+- `M24#C` â€” Keep the default **Original Texture (Mesh Details)**. Confirm the panel says `1 PNG will be saved`, click **Export 1 Selected PNG**, and verify the downloaded PNG exactly matches the single unchanged A1â€“D4 image in Mesh Details, with no six-island UV packing. Then select **UV Guide Only** and verify a transparent 1024 x 1024 painting guide downloads with six separated, brightly color-coded rectangular face islands and visible triangle lines.
+- `M24#D` â€” Click **Bake Texture Atlas**. Confirm the block keeps its six correctly oriented A1â€“D4 textures while receiving a new atlas texture and UV layout. Select **Baked UV Atlas Only** and verify its exported PNG contains the six deliberately packed texture faces. **Original Texture (Mesh Details)** must still export the unchanged single source image after baking. The optional **All 3 PNG Files** choice must explicitly report and save 3 PNG files. Click Undo once.
+- `M24#E` â€” Analyze again and click **Apply UV Unwrap** instead. Confirm geometry and triangle count stay unchanged while only the UV layout changes; the old texture is allowed to look rearranged because no pixels were baked. Click Undo once.
+
+Expected result:
+
+- Analyze and all PNG exports are read-only and consume no Undo entry. Original Texture matches Mesh Details without UV packing; UV Guide exports topology lines; Baked UV Atlas exports deliberately repacked surface pixels.
+- Sharp edges above Seam angle and material borders create separate UV islands; connected flatter triangles remain together.
+- Every generated UV coordinate is finite, inside 0â€“1, and packed into a non-overlapping island cell with the requested padding.
+- Bake moves the source texture pixels into the new atlas before applying the new UVs, preserving visible texture placement on a single-material mesh.
+- Apply changes UV coordinates only. Model positions, triangle count, object transforms, and scene hierarchy remain unchanged.
+- Apply and Bake each use one Undo step. The automated regression verifies a 12-triangle cube becomes six separated islands without mutating its source geometry.
+
+### M25 - Texture / Material Paint Core
+
+Test project: `samples/showcases/uv-topology-test.modelerproj`
+
+- `M25#A` - Select the large textured topology block and click **Edit Texture**. Choose **Paint**, set a visible color, Brush Size `40`, Hardness `80`, and Opacity `100`. Draw one stroke inside a UV face.
+- `M25#B` - Choose **Eraser** and erase part of that stroke. Click **Undo Paint** once and confirm only the erasing is reverted; click it again and confirm the original texture returns.
+- `M25#C` - Choose **Eyedropper**, click a colored square, and confirm Brush Color changes to the sampled color. Eyedropper must not add an Undo step.
+- `M25#D` - Choose **Fill UV Island**, click one cube-face island, and confirm only that connected UV island receives the chosen color. Click Undo Paint once.
+- `M25#E` - Before reopening the editor, select one face in Surface Edit. In the editor enable **Mask to selected faces**, paint across the selected-face boundary, and confirm pixels change only inside the selected surface UVs.
+- `M25#F` - Click **Apply Texture**, save and reload the project, and confirm the edited PNG texture remains on the model. Use the main Undo button once to restore the texture from before Apply.
+
+### M25R1 - Texture Paint Workflow
+
+- `M25R1#A` - Open **Edit Texture** and confirm Pen, Brush, Spray, Eraser, Eyedropper, Fill UV Island, Pan, and Glass Hammer are visible buttons. Select each one and confirm only that button remains active.
+- `M25R1#B` - Change Size and confirm Tool Preview changes before painting. Brush must use a brush cursor rather than a magnifying-glass cursor.
+- `M25R1#C` - Zoom with the `-`, percentage, and `+` controls and the mouse wheel. Select Pan and drag the enlarged texture without painting it.
+- `M25R1#D` - Paint a stroke, close the editor without applying, reopen the same mesh, then use Undo Paint and Restore Original. Both must still reach the state from before the editor was first opened.
+
+### M25R2 - Persistent Original Texture
+
+- `M25R2#A` - Paint on a texture, close the editor without Apply, reopen the same mesh, and click **Restore Original**. The pristine texture must return immediately; no image reload or second click should be required.
+- `M25R2#B` - Click **Undo Paint** once after Restore Original. The painted draft from immediately before the restore must return.
+
+### M25R3 - Pen and Immutable Original
+
+- `M25R3#A` - Open **Edit Texture**, choose **Pen**, set a visible color, Size `20`, and Opacity `100`, then draw a line. Expected: a solid, hard-edged line follows the pointer immediately; it must not behave like a soft brush or leave the texture unchanged.
+- `M25R3#B` - Close the editor without Apply, reopen the same mesh, and click **Restore Original** once. Expected: the complete pristine texture returns immediately even though the editor window was closed between painting and restoring.
+- `M25R3#C` - Click **Undo Paint** once. Expected: the painted draft from immediately before Restore Original returns, proving Restore is one reversible editor operation.
+
+### M25R4 - Baked Atlas Restore
+
+- `M25R4#A` - Bake the six-face texture atlas on the large topology block, open **Edit Texture**, and make several obvious edits on different atlas islands.
+- `M25R4#B` - Close the editor without Apply, reopen the same mesh, and confirm the painted atlas draft is still visible.
+- `M25R4#C` - Click **Restore Original** once. Expected: every edit disappears and the freshly baked six-face atlas returns unchanged. A draft belonging to the pre-bake texture must never be reused for the atlas.
+- `M25R4#D` - Click **Undo Paint** once. Expected: the complete painted atlas draft from step A returns.
+
+### M25R5 - Applied Baked Atlas Restore
+
+- `M25R5#A` - Bake the six-face texture atlas, open **Edit Texture**, paint an obvious change, and click **Apply Texture**.
+- `M25R5#B` - Reopen **Edit Texture** and confirm the applied painted atlas is visible.
+- `M25R5#C` - Click **Restore Original** once. Expected: the paint disappears and the clean baked six-face atlas returns even though the painted texture was applied and the editor was closed.
+- `M25R5#D` - Click **Undo Paint** once. Expected: the applied painted atlas returns, proving Restore remains one reversible editor operation.
+
+Expected result:
+
+- Paint and Eraser respect UV islands and never modify empty atlas space.
+- Hardness controls edge falloff, Opacity controls paint strength, and Brush Size controls diameter.
+- Fill affects one connected UV island; selected-face masking can narrow every destructive tool to the active surface selection.
+- Undo Paint restores editor operations before Apply. Apply creates one normal project-level Undo snapshot and stores the resulting PNG in the project texture library.

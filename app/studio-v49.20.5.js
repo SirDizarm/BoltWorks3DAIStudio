@@ -23647,6 +23647,109 @@ void main() {
       return new this.constructor().copy(this);
     }
   };
+  var _vector$4 = /* @__PURE__ */ new Vector2();
+  var Box2 = class {
+    constructor(min = new Vector2(Infinity, Infinity), max = new Vector2(-Infinity, -Infinity)) {
+      this.isBox2 = true;
+      this.min = min;
+      this.max = max;
+    }
+    set(min, max) {
+      this.min.copy(min);
+      this.max.copy(max);
+      return this;
+    }
+    setFromPoints(points) {
+      this.makeEmpty();
+      for (let i = 0, il = points.length; i < il; i++) {
+        this.expandByPoint(points[i]);
+      }
+      return this;
+    }
+    setFromCenterAndSize(center, size) {
+      const halfSize = _vector$4.copy(size).multiplyScalar(0.5);
+      this.min.copy(center).sub(halfSize);
+      this.max.copy(center).add(halfSize);
+      return this;
+    }
+    clone() {
+      return new this.constructor().copy(this);
+    }
+    copy(box) {
+      this.min.copy(box.min);
+      this.max.copy(box.max);
+      return this;
+    }
+    makeEmpty() {
+      this.min.x = this.min.y = Infinity;
+      this.max.x = this.max.y = -Infinity;
+      return this;
+    }
+    isEmpty() {
+      return this.max.x < this.min.x || this.max.y < this.min.y;
+    }
+    getCenter(target) {
+      return this.isEmpty() ? target.set(0, 0) : target.addVectors(this.min, this.max).multiplyScalar(0.5);
+    }
+    getSize(target) {
+      return this.isEmpty() ? target.set(0, 0) : target.subVectors(this.max, this.min);
+    }
+    expandByPoint(point) {
+      this.min.min(point);
+      this.max.max(point);
+      return this;
+    }
+    expandByVector(vector) {
+      this.min.sub(vector);
+      this.max.add(vector);
+      return this;
+    }
+    expandByScalar(scalar) {
+      this.min.addScalar(-scalar);
+      this.max.addScalar(scalar);
+      return this;
+    }
+    containsPoint(point) {
+      return point.x < this.min.x || point.x > this.max.x || point.y < this.min.y || point.y > this.max.y ? false : true;
+    }
+    containsBox(box) {
+      return this.min.x <= box.min.x && box.max.x <= this.max.x && this.min.y <= box.min.y && box.max.y <= this.max.y;
+    }
+    getParameter(point, target) {
+      return target.set(
+        (point.x - this.min.x) / (this.max.x - this.min.x),
+        (point.y - this.min.y) / (this.max.y - this.min.y)
+      );
+    }
+    intersectsBox(box) {
+      return box.max.x < this.min.x || box.min.x > this.max.x || box.max.y < this.min.y || box.min.y > this.max.y ? false : true;
+    }
+    clampPoint(point, target) {
+      return target.copy(point).clamp(this.min, this.max);
+    }
+    distanceToPoint(point) {
+      return this.clampPoint(point, _vector$4).distanceTo(point);
+    }
+    intersect(box) {
+      this.min.max(box.min);
+      this.max.min(box.max);
+      if (this.isEmpty()) this.makeEmpty();
+      return this;
+    }
+    union(box) {
+      this.min.min(box.min);
+      this.max.max(box.max);
+      return this;
+    }
+    translate(offset) {
+      this.min.add(offset);
+      this.max.add(offset);
+      return this;
+    }
+    equals(box) {
+      return box.min.equals(this.min) && box.max.equals(this.max);
+    }
+  };
   var _startP = /* @__PURE__ */ new Vector3();
   var _startEnd = /* @__PURE__ */ new Vector3();
   var Line3 = class {
@@ -30373,7 +30476,19 @@ void main() {
   openingPickGuideGroup.name = "opening pick preview";
   openingPickGuideGroup.visible = false;
   scene.add(openingPickGuideGroup);
+  var meshIntegrityGuideGroup = new Group();
+  meshIntegrityGuideGroup.name = "mesh integrity issue guide";
+  meshIntegrityGuideGroup.visible = false;
+  scene.add(meshIntegrityGuideGroup);
   var selectedHoleLoopInfo = null;
+  var holeRepairState = { meshId: null, loops: [], index: -1 };
+  var meshIntegrityState = { meshId: null, issues: [], index: -1, report: null };
+  var removeDoublesState = { meshId: null, tolerance: null, plan: null };
+  var meshStatisticsState = { meshId: null, stats: null, text: "" };
+  var decimateState = { meshId: null, settingsKey: "", plan: null };
+  var lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+  var uvUnwrapState = { meshId: null, settingsKey: "", plan: null };
+  var lastBakedTextureAtlas = { meshId: null, dataUrl: null, fileName: null, atlasSize: 0, sourceTextureUrl: null, sourceTextureName: null };
   var hoveredHoleLoopInfo = null;
   var lineSketchGroup = new Group();
   lineSketchGroup.name = "line sketch guides";
@@ -30571,6 +30686,7 @@ void main() {
     surfaceSelectEdgeBtn: document.querySelector("#surfaceSelectEdgeBtn"),
     surfaceSelectTriangleBtn: document.querySelector("#surfaceSelectTriangleBtn"),
     surfaceSelectFaceBtn: document.querySelector("#surfaceSelectFaceBtn"),
+    deleteSelectedSurfaceBtn: document.querySelector("#deleteSelectedSurfaceBtn"),
     surfaceMouseModeBtn: document.querySelector("#surfaceMouseModeBtn"),
     surfaceValueModeBtn: document.querySelector("#surfaceValueModeBtn"),
     autoSurfaceDragInput: document.querySelector("#autoSurfaceDragInput"),
@@ -30608,6 +30724,63 @@ void main() {
     planeCutCapInput: document.querySelector("#planeCutCapInput"),
     planeCutBtn: document.querySelector("#planeCutBtn"),
     bridgeEdgeLoopsBtn: document.querySelector("#bridgeEdgeLoopsBtn"),
+    recalculateNormalsBtn: document.querySelector("#recalculateNormalsBtn"),
+    flipNormalsBtn: document.querySelector("#flipNormalsBtn"),
+    holeRepairStatus: document.querySelector("#holeRepairStatus"),
+    holeRepairUvProjectionSelect: document.querySelector("#holeRepairUvProjectionSelect"),
+    rotateSelectedUvLeftBtn: document.querySelector("#rotateSelectedUvLeftBtn"),
+    rotateSelectedUvRightBtn: document.querySelector("#rotateSelectedUvRightBtn"),
+    flipSelectedUvUBtn: document.querySelector("#flipSelectedUvUBtn"),
+    flipSelectedUvVBtn: document.querySelector("#flipSelectedUvVBtn"),
+    findHolesBtn: document.querySelector("#findHolesBtn"),
+    previousHoleBtn: document.querySelector("#previousHoleBtn"),
+    nextHoleBtn: document.querySelector("#nextHoleBtn"),
+    frameHoleBtn: document.querySelector("#frameHoleBtn"),
+    repairSelectedHoleBtn: document.querySelector("#repairSelectedHoleBtn"),
+    repairAllHolesBtn: document.querySelector("#repairAllHolesBtn"),
+    meshIntegrityStatus: document.querySelector("#meshIntegrityStatus"),
+    checkNonManifoldBtn: document.querySelector("#checkNonManifoldBtn"),
+    previousMeshIssueBtn: document.querySelector("#previousMeshIssueBtn"),
+    nextMeshIssueBtn: document.querySelector("#nextMeshIssueBtn"),
+    frameMeshIssueBtn: document.querySelector("#frameMeshIssueBtn"),
+    clearMeshIssuesBtn: document.querySelector("#clearMeshIssuesBtn"),
+    removeDoublesStatus: document.querySelector("#removeDoublesStatus"),
+    removeDoublesToleranceInput: document.querySelector("#removeDoublesToleranceInput"),
+    analyzeDoublesBtn: document.querySelector("#analyzeDoublesBtn"),
+    removeDoublesBtn: document.querySelector("#removeDoublesBtn"),
+    meshStatisticsStatus: document.querySelector("#meshStatisticsStatus"),
+    meshStatisticsReport: document.querySelector("#meshStatisticsReport"),
+    calculateMeshStatisticsBtn: document.querySelector("#calculateMeshStatisticsBtn"),
+    copyMeshStatisticsBtn: document.querySelector("#copyMeshStatisticsBtn"),
+    decimateStatus: document.querySelector("#decimateStatus"),
+    decimateReductionInput: document.querySelector("#decimateReductionInput"),
+    decimateFeatureAngleInput: document.querySelector("#decimateFeatureAngleInput"),
+    decimatePreserveBoundariesInput: document.querySelector("#decimatePreserveBoundariesInput"),
+    decimatePreserveUvSeamsInput: document.querySelector("#decimatePreserveUvSeamsInput"),
+    decimatePreserveMaterialsInput: document.querySelector("#decimatePreserveMaterialsInput"),
+    analyzeDecimateBtn: document.querySelector("#analyzeDecimateBtn"),
+    applyDecimateBtn: document.querySelector("#applyDecimateBtn"),
+    lodGeneratorStatus: document.querySelector("#lodGeneratorStatus"),
+    lod1ReductionInput: document.querySelector("#lod1ReductionInput"),
+    lod2ReductionInput: document.querySelector("#lod2ReductionInput"),
+    lod3ReductionInput: document.querySelector("#lod3ReductionInput"),
+    lodFeatureAngleInput: document.querySelector("#lodFeatureAngleInput"),
+    lodPreserveBoundariesInput: document.querySelector("#lodPreserveBoundariesInput"),
+    lodPreserveUvSeamsInput: document.querySelector("#lodPreserveUvSeamsInput"),
+    lodPreserveMaterialsInput: document.querySelector("#lodPreserveMaterialsInput"),
+    lodHideGeneratedInput: document.querySelector("#lodHideGeneratedInput"),
+    analyzeLodGeneratorBtn: document.querySelector("#analyzeLodGeneratorBtn"),
+    generateLodGeneratorBtn: document.querySelector("#generateLodGeneratorBtn"),
+    uvUnwrapStatus: document.querySelector("#uvUnwrapStatus"),
+    uvUnwrapSeamAngleInput: document.querySelector("#uvUnwrapSeamAngleInput"),
+    uvUnwrapPaddingInput: document.querySelector("#uvUnwrapPaddingInput"),
+    uvAtlasSizeSelect: document.querySelector("#uvAtlasSizeSelect"),
+    analyzeUvUnwrapBtn: document.querySelector("#analyzeUvUnwrapBtn"),
+    applyUvUnwrapBtn: document.querySelector("#applyUvUnwrapBtn"),
+    bakeTextureAtlasBtn: document.querySelector("#bakeTextureAtlasBtn"),
+    uvPngExportSelect: document.querySelector("#uvPngExportSelect"),
+    uvPngExportCount: document.querySelector("#uvPngExportCount"),
+    exportUvPngBtn: document.querySelector("#exportUvPngBtn"),
     edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
     edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
     edgeSlideBtn: document.querySelector("#edgeSlideBtn"),
@@ -30670,11 +30843,20 @@ void main() {
     textureEditorApplyBtn: document.querySelector("#textureEditorApplyBtn"),
     textureEditorResetBtn: document.querySelector("#textureEditorResetBtn"),
     textureEditorTool: document.querySelector("#textureEditorTool"),
+    textureEditorToolButtons: [...document.querySelectorAll("[data-texture-tool]")],
     textureEditorColor: document.querySelector("#textureEditorColor"),
     textureEditorBrushSize: document.querySelector("#textureEditorBrushSize"),
+    textureEditorBrushPreview: document.querySelector("#textureEditorBrushPreview"),
+    textureEditorHardness: document.querySelector("#textureEditorHardness"),
+    textureEditorOpacity: document.querySelector("#textureEditorOpacity"),
     textureEditorHammerRadius: document.querySelector("#textureEditorHammerRadius"),
     textureEditorShowUv: document.querySelector("#textureEditorShowUv"),
     textureEditorSelectedOnly: document.querySelector("#textureEditorSelectedOnly"),
+    textureEditorUndoBtn: document.querySelector("#textureEditorUndoBtn"),
+    textureEditorZoomOutBtn: document.querySelector("#textureEditorZoomOutBtn"),
+    textureEditorZoomResetBtn: document.querySelector("#textureEditorZoomResetBtn"),
+    textureEditorZoomInBtn: document.querySelector("#textureEditorZoomInBtn"),
+    textureEditorZoomValue: document.querySelector("#textureEditorZoomValue"),
     groupEditorModal: document.querySelector("#groupEditorModal"),
     groupEditorTitle: document.querySelector("#groupEditorTitle"),
     groupEditorInfo: document.querySelector("#groupEditorInfo"),
@@ -30694,6 +30876,7 @@ void main() {
     meshMaterialRuleInfo: document.querySelector("#meshMaterialRuleInfo"),
     meshDetailsFacts: document.querySelector("#meshDetailsFacts"),
     meshDetailsTexturePreview: document.querySelector("#meshDetailsTexturePreview"),
+    meshDetailsShowUvInput: document.querySelector("#meshDetailsShowUvInput"),
     meshDetailsFutureNotes: document.querySelector("#meshDetailsFutureNotes"),
     meshDetailsCloseBtn: document.querySelector("#meshDetailsCloseBtn"),
     meshDetailsCancelBtn: document.querySelector("#meshDetailsCancelBtn"),
@@ -30749,15 +30932,25 @@ void main() {
     open: false,
     meshId: null,
     sourceCanvas: null,
+    originalCanvas: null,
+    originalPixels: null,
     originalDataUrl: null,
     textureName: "Texture",
     drawingRect: null,
     isPainting: false,
     lastPoint: null,
     tool: "brush",
-    hoverPoint: null
+    hoverPoint: null,
+    undoStack: [],
+    strokeSnapshotTaken: false,
+    zoom: 1,
+    panX: 0,
+    panY: 0,
+    isPanning: false,
+    panStart: null
   };
   var textureLibrary = /* @__PURE__ */ new Map();
+  var textureEditorDrafts = /* @__PURE__ */ new Map();
   var textureSourceCache = /* @__PURE__ */ new Map();
   var reliefImageState = {
     dataUrl: "",
@@ -31221,7 +31414,15 @@ void main() {
   `;
     if (mesh.userData.textureUrl) {
       const safeName = mesh.userData.textureName || "Texture";
-      els.meshDetailsTexturePreview.innerHTML = `<img src="${mesh.userData.textureUrl}" alt="${safeName} preview" /><div class="api-note">${safeName}</div>`;
+      const showUvGuide = !!els.meshDetailsShowUvInput?.checked;
+      els.meshDetailsTexturePreview.innerHTML = `<div class="mesh-details-image-stage"><img src="${mesh.userData.textureUrl}" alt="${safeName} preview" />${showUvGuide ? '<canvas aria-hidden="true"></canvas>' : ""}</div><div class="api-note">${safeName}${showUvGuide ? " - UV Guide overlay" : ""}</div>`;
+      if (showUvGuide) {
+        const image = els.meshDetailsTexturePreview.querySelector("img");
+        const canvas2 = els.meshDetailsTexturePreview.querySelector("canvas");
+        const drawOverlay = () => drawMeshDetailsUvGuide(mesh, image, canvas2);
+        if (image.complete) drawOverlay();
+        else image.addEventListener("load", drawOverlay, { once: true });
+      }
     } else {
       els.meshDetailsTexturePreview.innerHTML = `<div class="api-note">No texture assigned to this mesh yet.</div>`;
     }
@@ -31230,11 +31431,52 @@ void main() {
     const mesh = findObject(meshId);
     if (!mesh) return;
     meshDetailsState.meshId = mesh.userData.id;
+    if (els.meshDetailsShowUvInput) els.meshDetailsShowUvInput.checked = false;
     refreshMeshDetails();
     els.meshDetailsModal.classList.add("open");
     els.meshDetailsModal.setAttribute("aria-hidden", "false");
     els.meshDetailsNameInput.focus();
     els.meshDetailsNameInput.select();
+  }
+  function drawMeshDetailsUvGuide(mesh, image, canvas2) {
+    const geometry = mesh?.geometry;
+    const uv = geometry?.getAttribute("uv");
+    const position = geometry?.getAttribute("position");
+    if (!canvas2 || !image || !uv || !position) return;
+    const width = Math.max(1, image.naturalWidth || 1024);
+    const height = Math.max(1, image.naturalHeight || 1024);
+    canvas2.width = width;
+    canvas2.height = height;
+    const context = canvas2.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, width, height);
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    const index = geometry.index;
+    const triangleCount = Math.floor((index ? index.count : position.count) / 3);
+    const surface = {
+      textureFlipY: mesh.userData.textureFlipY ?? true,
+      textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0)
+    };
+    for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+      const points = [0, 1, 2].map((corner) => {
+        const sourceIndex = triangleIndex * 3 + corner;
+        const vertexIndex = index ? index.getX(sourceIndex) : sourceIndex;
+        const [u, v] = transformedMergeUv([uv.getX(vertexIndex), uv.getY(vertexIndex)], surface);
+        return [u * width, (1 - v) * height];
+      });
+      context.beginPath();
+      context.moveTo(points[0][0], points[0][1]);
+      context.lineTo(points[1][0], points[1][1]);
+      context.lineTo(points[2][0], points[2][1]);
+      context.closePath();
+      context.strokeStyle = "rgba(0, 0, 0, 0.92)";
+      context.lineWidth = Math.max(3, width / 300);
+      context.stroke();
+      context.strokeStyle = "rgba(75, 220, 255, 0.96)";
+      context.lineWidth = Math.max(1.5, width / 600);
+      context.stroke();
+    }
   }
   function closeMeshDetails() {
     meshDetailsState.meshId = null;
@@ -31702,6 +31944,34 @@ void main() {
     context.drawImage(image, 0, 0, width, height);
     return canvas2;
   }
+  function captureTextureEditorPixels(source) {
+    if (!source?.width || !source?.height) return null;
+    const imageData = source.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, source.width, source.height);
+    return {
+      width: imageData.width,
+      height: imageData.height,
+      data: new Uint8ClampedArray(imageData.data)
+    };
+  }
+  function cloneTextureEditorPixels(source) {
+    if (!source?.width || !source?.height || !source?.data) return null;
+    return {
+      width: source.width,
+      height: source.height,
+      data: new Uint8ClampedArray(source.data)
+    };
+  }
+  function canvasFromTextureEditorPixels(source) {
+    if (!source?.width || !source?.height || !source?.data) return null;
+    const canvas2 = document.createElement("canvas");
+    canvas2.width = source.width;
+    canvas2.height = source.height;
+    const context = canvas2.getContext("2d", { willReadFrequently: true });
+    const imageData = context.createImageData(source.width, source.height);
+    imageData.data.set(source.data);
+    context.putImageData(imageData, 0, 0);
+    return canvas2;
+  }
   function loadImage(url) {
     return new Promise((resolve, reject) => {
       const image = new Image();
@@ -31739,11 +32009,24 @@ void main() {
   }
   function textureEditorMaskTriangles(mesh) {
     const selectedTriangles = selectedUvTrianglesForMesh(mesh);
-    return selectedTriangles.length ? selectedTriangles : uvTrianglesForMesh(mesh);
+    return els.textureEditorSelectedOnly?.checked && selectedTriangles.length ? selectedTriangles : uvTrianglesForMesh(mesh);
   }
   function textureEditorCursor(tool = "brush") {
-    const svg = tool === "hammer" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#f4f7fb" stroke="#11181d" stroke-width="1.8" d="M8 7h9l3 3-3 3H13l6 10-3 2-7-11z"/><rect x="5.5" y="5.5" width="11" height="5" rx="1.5" fill="#ffb84d" stroke="#11181d" stroke-width="1.5"/></svg>` : `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><circle cx="12" cy="12" r="5.5" fill="none" stroke="#f4f7fb" stroke-width="2"/><path d="M16.5 16.5L24 24" stroke="#11181d" stroke-width="4" stroke-linecap="round"/><path d="M16.5 16.5L24 24" stroke="#7dd3fc" stroke-width="2.2" stroke-linecap="round"/></svg>`;
+    if (tool === "pan") return textureEditorState.isPanning ? "grabbing" : "grab";
+    const svg = tool === "hammer" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#f4f7fb" stroke="#11181d" stroke-width="1.8" d="M8 7h9l3 3-3 3H13l6 10-3 2-7-11z"/><rect x="5.5" y="5.5" width="11" height="5" rx="1.5" fill="#ffb84d" stroke="#11181d" stroke-width="1.5"/></svg>` : tool === "eyedropper" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#7dd3fc" stroke="#11181d" stroke-width="2" d="m20 4 8 8-4 4-2-2-9 9-5 1 1-5 9-9-2-2z"/></svg>` : tool === "fill" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#f4f7fb" stroke="#11181d" stroke-width="2" d="m7 5 13 13-8 8-9-9z"/><path fill="#ff7f50" d="m6 16 7 7 5-5-7-7z"/><path fill="#7dd3fc" stroke="#11181d" stroke-width="1.5" d="M23 19s4 5 4 7a4 4 0 0 1-8 0c0-2 4-7 4-7z"/></svg>` : tool === "eraser" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#f4a8b8" stroke="#11181d" stroke-width="2" d="m5 20 12-14 10 9-10 12H9z"/><path fill="#f4f7fb" d="m9 20 5 5h3l4-5-7-6z"/></svg>` : tool === "pen" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#7dd3fc" stroke="#11181d" stroke-width="2" d="m22 4 6 6L12 26 4 28l2-8z"/><path fill="#11181d" d="m4 28 2-8 6 6z"/></svg>` : tool === "spray" ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#7dd3fc" stroke="#11181d" stroke-width="2" d="M9 11h13v17H9z"/><path fill="#f4f7fb" stroke="#11181d" stroke-width="2" d="M12 6h8v5h-8z"/><circle cx="6" cy="8" r="1.4" fill="#7dd3fc"/><circle cx="3" cy="5" r="1" fill="#7dd3fc"/><circle cx="7" cy="3" r="1" fill="#7dd3fc"/></svg>` : `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#7dd3fc" stroke="#11181d" stroke-width="2" d="m20 3 7 7-12 12-7-7z"/><path fill="#ffb84d" stroke="#11181d" stroke-width="2" d="M8 15c-5 4-5 9-3 14 6-1 10-4 10-8z"/><path fill="#f4f7fb" d="m18 5 7 7-3 3-7-7z"/></svg>`;
     return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}") 6 6, ${tool === "hammer" ? "cell" : "crosshair"}`;
+  }
+  function setTextureEditorTool(tool = "brush") {
+    textureEditorState.tool = tool;
+    if (els.textureEditorTool) els.textureEditorTool.value = tool;
+    for (const button of els.textureEditorToolButtons || []) {
+      const active = button.dataset.textureTool === tool;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-pressed", String(active));
+    }
+    syncTextureEditorCursor();
+    renderTextureEditorBrushPreview();
+    renderTextureEditor();
   }
   function syncTextureEditorCursor() {
     if (!els.textureEditorCanvas) return;
@@ -31765,6 +32048,160 @@ void main() {
   function currentTextureEditorCanvas() {
     return textureEditorState.sourceCanvas;
   }
+  function updateTextureEditorUndoButton() {
+    if (els.textureEditorUndoBtn) els.textureEditorUndoBtn.disabled = textureEditorState.undoStack.length === 0;
+  }
+  function updateTextureEditorResetButton() {
+    if (els.textureEditorResetBtn) {
+      els.textureEditorResetBtn.disabled = !textureEditorState.open || !textureEditorState.originalPixels;
+    }
+  }
+  function snapshotTextureEditor() {
+    const source = currentTextureEditorCanvas();
+    if (!source) return;
+    const context = source.getContext("2d", { willReadFrequently: true });
+    textureEditorState.undoStack.push(context.getImageData(0, 0, source.width, source.height));
+    if (textureEditorState.undoStack.length > 30) textureEditorState.undoStack.shift();
+    updateTextureEditorUndoButton();
+  }
+  function undoTextureEditorPaint() {
+    const source = currentTextureEditorCanvas();
+    const previous = textureEditorState.undoStack.pop();
+    if (!source || !previous) return;
+    source.getContext("2d").putImageData(previous, 0, 0);
+    updateTextureEditorUndoButton();
+    renderTextureEditor();
+  }
+  function uvPointInsideTriangle(point, triangle) {
+    const [a, b, c] = triangle;
+    const denominator = (b.v - c.v) * (a.u - c.u) + (c.u - b.u) * (a.v - c.v);
+    if (Math.abs(denominator) < 1e-10) return false;
+    const first = ((b.v - c.v) * (point.u - c.u) + (c.u - b.u) * (point.v - c.v)) / denominator;
+    const second = ((c.v - a.v) * (point.u - c.u) + (a.u - c.u) * (point.v - c.v)) / denominator;
+    const third = 1 - first - second;
+    return first >= -1e-6 && second >= -1e-6 && third >= -1e-6;
+  }
+  function uvPointsMatch(a, b) {
+    return Math.abs(a.u - b.u) < 1e-6 && Math.abs(a.v - b.v) < 1e-6;
+  }
+  function uvTrianglesShareEdge(first, second) {
+    let shared = 0;
+    for (const a of first) {
+      if (second.some((b) => uvPointsMatch(a, b))) shared += 1;
+    }
+    return shared >= 2;
+  }
+  function textureEditorIslandAtPoint(mesh, point) {
+    const triangles = textureEditorMaskTriangles(mesh);
+    const uvPoint = { u: point.x / Math.max(1, currentTextureEditorCanvas().width), v: point.y / Math.max(1, currentTextureEditorCanvas().height) };
+    const startIndex = triangles.findIndex((triangle) => uvPointInsideTriangle(uvPoint, triangle));
+    if (startIndex < 0) return [];
+    const island = [];
+    const visited = /* @__PURE__ */ new Set([startIndex]);
+    const queue = [startIndex];
+    while (queue.length) {
+      const index = queue.shift();
+      island.push(triangles[index]);
+      for (let candidate = 0; candidate < triangles.length; candidate += 1) {
+        if (visited.has(candidate) || !uvTrianglesShareEdge(triangles[index], triangles[candidate])) continue;
+        visited.add(candidate);
+        queue.push(candidate);
+      }
+    }
+    return island;
+  }
+  function textureEditorClipToTriangles(context, triangles, source) {
+    textureEditorTrianglesPath(context, triangles, source.width, source.height);
+    context.clip();
+  }
+  function textureEditorBrushSettings() {
+    return {
+      size: Math.max(1, Math.min(256, Number(els.textureEditorBrushSize.value) || 12)),
+      hardness: Math.max(0, Math.min(1, (Number(els.textureEditorHardness.value) || 0) / 100)),
+      opacity: Math.max(0.01, Math.min(1, (Number(els.textureEditorOpacity.value) || 100) / 100)),
+      color: els.textureEditorColor.value || "#ff7f50"
+    };
+  }
+  function stampTextureEditorBrush(context, point, settings, erasing = false) {
+    const radius = settings.size * 0.5;
+    const innerRadius = Math.max(0, radius * settings.hardness);
+    context.save();
+    if (erasing) context.globalCompositeOperation = "destination-out";
+    const gradient = context.createRadialGradient(point.x, point.y, innerRadius, point.x, point.y, radius);
+    const opaqueColor = erasing ? `rgba(0,0,0,${settings.opacity})` : settings.color;
+    const transparentColor = erasing ? "rgba(0,0,0,0)" : `${settings.color}00`;
+    gradient.addColorStop(0, opaqueColor);
+    gradient.addColorStop(Math.min(0.999, settings.hardness), opaqueColor);
+    gradient.addColorStop(1, transparentColor);
+    context.globalAlpha = erasing ? 1 : settings.opacity;
+    context.fillStyle = gradient;
+    context.beginPath();
+    context.arc(point.x, point.y, radius, 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  }
+  function stampTextureEditorPen(context, point, settings) {
+    context.save();
+    context.globalAlpha = settings.opacity;
+    context.fillStyle = settings.color;
+    context.beginPath();
+    context.arc(point.x, point.y, Math.max(0.5, settings.size * 0.5), 0, Math.PI * 2);
+    context.fill();
+    context.restore();
+  }
+  function stampTextureEditorSpray(context, point, settings) {
+    const radius = settings.size * 0.5;
+    const dots = Math.max(8, Math.round(settings.size * 0.8));
+    context.save();
+    context.fillStyle = settings.color;
+    context.globalAlpha = Math.min(1, settings.opacity * 0.42);
+    for (let index = 0; index < dots; index += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const distance = Math.sqrt(Math.random()) * radius;
+      const dotRadius = Math.max(0.55, settings.size * (0.012 + Math.random() * 0.018));
+      context.beginPath();
+      context.arc(point.x + Math.cos(angle) * distance, point.y + Math.sin(angle) * distance, dotRadius, 0, Math.PI * 2);
+      context.fill();
+    }
+    context.restore();
+  }
+  function renderTextureEditorBrushPreview() {
+    const canvas2 = els.textureEditorBrushPreview;
+    if (!canvas2) return;
+    const context = canvas2.getContext("2d");
+    const settings = textureEditorBrushSettings();
+    const tool = textureEditorState.tool || "brush";
+    context.clearRect(0, 0, canvas2.width, canvas2.height);
+    context.fillStyle = "#10171c";
+    context.fillRect(0, 0, canvas2.width, canvas2.height);
+    context.strokeStyle = "rgba(255,255,255,.08)";
+    for (let x = 0; x < canvas2.width; x += 9) {
+      context.beginPath();
+      context.moveTo(x, 0);
+      context.lineTo(x, canvas2.height);
+      context.stroke();
+    }
+    const previewSize = Math.max(3, Math.min(42, 3 + settings.size / 6));
+    const center = { x: canvas2.width / 2, y: canvas2.height / 2 };
+    if (tool === "spray") {
+      const previewSettings = { ...settings, size: previewSize * 2, opacity: 1 };
+      stampTextureEditorSpray(context, center, previewSettings);
+    } else if (["pen", "brush", "eraser"].includes(tool)) {
+      const previewSettings = { ...settings, size: previewSize * 2, hardness: tool === "pen" ? 1 : settings.hardness, opacity: 1 };
+      if (tool === "pen") stampTextureEditorPen(context, center, previewSettings);
+      else stampTextureEditorBrush(context, center, previewSettings, false);
+      context.strokeStyle = tool === "eraser" ? "#f4a8b8" : "rgba(255,255,255,.85)";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.arc(center.x, center.y, previewSize, 0, Math.PI * 2);
+      context.stroke();
+    } else {
+      context.fillStyle = "#aebbc4";
+      context.font = "12px sans-serif";
+      context.textAlign = "center";
+      context.fillText(tool === "fill" ? "UV island" : tool === "hammer" ? "Impact radius" : tool === "pan" ? "Drag canvas" : "Sample color", center.x, center.y + 4);
+    }
+  }
   function fitTextureRect(sourceWidth, sourceHeight, targetWidth, targetHeight) {
     const scale = Math.min(targetWidth / sourceWidth, targetHeight / sourceHeight);
     const width = sourceWidth * scale;
@@ -31778,9 +32215,7 @@ void main() {
   }
   function textureEditorPointFromEvent(event) {
     const canvas2 = els.textureEditorCanvas;
-    const rect = canvas2.getBoundingClientRect();
-    const localX = (event.clientX - rect.left) * (canvas2.width / Math.max(1, rect.width));
-    const localY = (event.clientY - rect.top) * (canvas2.height / Math.max(1, rect.height));
+    const { x: localX, y: localY } = textureEditorCanvasPointFromEvent(event);
     const drawRect = textureEditorState.drawingRect;
     if (!drawRect) return null;
     const inside = localX >= drawRect.left && localX <= drawRect.left + drawRect.width && localY >= drawRect.top && localY <= drawRect.top + drawRect.height;
@@ -31791,6 +32226,32 @@ void main() {
       x: (localX - drawRect.left) / drawRect.width * source.width,
       y: (localY - drawRect.top) / drawRect.height * source.height
     };
+  }
+  function textureEditorCanvasPointFromEvent(event) {
+    const canvas2 = els.textureEditorCanvas;
+    const rect = canvas2.getBoundingClientRect();
+    return {
+      x: (event.clientX - rect.left) * (canvas2.width / Math.max(1, rect.width)),
+      y: (event.clientY - rect.top) * (canvas2.height / Math.max(1, rect.height))
+    };
+  }
+  function setTextureEditorZoom(nextZoom, anchor = null) {
+    const canvas2 = els.textureEditorCanvas;
+    const source = currentTextureEditorCanvas();
+    if (!canvas2 || !source) return;
+    const oldRect = textureEditorState.drawingRect;
+    const zoom = Math.max(0.25, Math.min(8, nextZoom));
+    if (anchor && oldRect) {
+      const u = (anchor.x - oldRect.left) / oldRect.width;
+      const v = (anchor.y - oldRect.top) / oldRect.height;
+      const base = fitTextureRect(source.width, source.height, canvas2.width, canvas2.height);
+      const width = base.width * zoom;
+      const height = base.height * zoom;
+      textureEditorState.panX = anchor.x - (canvas2.width - width) / 2 - u * width;
+      textureEditorState.panY = anchor.y - (canvas2.height - height) / 2 - v * height;
+    }
+    textureEditorState.zoom = zoom;
+    renderTextureEditor();
   }
   function drawUvTriangleOverlay(context, triangle, drawRect, color, lineWidth = 1.6) {
     context.beginPath();
@@ -31816,7 +32277,14 @@ void main() {
     canvas2.height = Math.max(240, Math.floor(stage.height));
     const context = canvas2.getContext("2d");
     context.clearRect(0, 0, canvas2.width, canvas2.height);
-    const drawRect = fitTextureRect(source.width, source.height, canvas2.width, canvas2.height);
+    const baseRect = fitTextureRect(source.width, source.height, canvas2.width, canvas2.height);
+    const zoom = textureEditorState.zoom || 1;
+    const drawRect = {
+      width: baseRect.width * zoom,
+      height: baseRect.height * zoom,
+      left: (canvas2.width - baseRect.width * zoom) / 2 + (textureEditorState.panX || 0),
+      top: (canvas2.height - baseRect.height * zoom) / 2 + (textureEditorState.panY || 0)
+    };
     textureEditorState.drawingRect = drawRect;
     context.drawImage(source, drawRect.left, drawRect.top, drawRect.width, drawRect.height);
     const allTriangles = uvTrianglesForMesh(mesh);
@@ -31840,7 +32308,8 @@ void main() {
     if (textureEditorState.hoverPoint) {
       const hoverX = drawRect.left + textureEditorState.hoverPoint.x / source.width * drawRect.width;
       const hoverY = drawRect.top + textureEditorState.hoverPoint.y / source.height * drawRect.height;
-      if ((textureEditorState.tool || "brush") === "hammer") {
+      const activeTool = textureEditorState.tool || "brush";
+      if (activeTool === "hammer") {
         const radius = Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48));
         const previewRadius = radius / source.width * drawRect.width;
         context.save();
@@ -31851,12 +32320,13 @@ void main() {
         context.arc(hoverX, hoverY, previewRadius, 0, Math.PI * 2);
         context.stroke();
         context.restore();
-      } else {
+      } else if (["pen", "brush", "spray", "eraser"].includes(activeTool)) {
         const size = Math.max(1, Number(els.textureEditorBrushSize.value) || 12);
         const previewRadius = Math.max(2, size / source.width * drawRect.width * 0.5);
         context.save();
-        context.strokeStyle = "rgba(125, 211, 252, 0.95)";
+        context.strokeStyle = activeTool === "eraser" ? "rgba(255, 150, 175, 0.95)" : activeTool === "spray" ? "rgba(255, 184, 77, 0.95)" : "rgba(125, 211, 252, 0.95)";
         context.lineWidth = 1.6;
+        if (activeTool === "spray") context.setLineDash([3, 3]);
         context.beginPath();
         context.arc(hoverX, hoverY, previewRadius, 0, Math.PI * 2);
         context.stroke();
@@ -31864,27 +32334,74 @@ void main() {
       }
     }
     els.textureEditorInfo.textContent = selectedTriangles.length ? `${onlySelected ? "Isolating" : "Showing"} ${selectedTriangles.length} selected triangle${selectedTriangles.length === 1 ? "" : "s"} on ${mesh.name}.` : `No triangles selected on ${mesh.name} yet, so tools affect the visible UV area.`;
+    if (els.textureEditorZoomValue) els.textureEditorZoomValue.textContent = `${Math.round(zoom * 100)}%`;
+    renderTextureEditorBrushPreview();
   }
   function textureEditorStrokeTo(point) {
+    const mesh = textureEditorMesh();
     const source = currentTextureEditorCanvas();
-    if (!source || !point) return;
+    if (!mesh || !source || !point) return;
     const context = source.getContext("2d");
-    context.strokeStyle = els.textureEditorColor.value || "#ff7f50";
-    context.lineWidth = Math.max(1, Number(els.textureEditorBrushSize.value) || 12);
-    context.lineCap = "round";
-    context.lineJoin = "round";
+    const settings = textureEditorBrushSettings();
+    const erasing = textureEditorState.tool === "eraser";
     const from = textureEditorState.lastPoint || point;
-    context.beginPath();
-    context.moveTo(from.x, from.y);
-    context.lineTo(point.x, point.y);
-    context.stroke();
+    const distance = Math.hypot(point.x - from.x, point.y - from.y);
+    const steps = Math.max(1, Math.ceil(distance / Math.max(1, settings.size * 0.18)));
+    context.save();
+    textureEditorClipToTriangles(context, textureEditorMaskTriangles(mesh), source);
+    for (let step = 0; step <= steps; step += 1) {
+      const amount = step / steps;
+      const stampPoint = {
+        x: from.x + (point.x - from.x) * amount,
+        y: from.y + (point.y - from.y) * amount
+      };
+      if (textureEditorState.tool === "spray") stampTextureEditorSpray(context, stampPoint, settings);
+      else if (textureEditorState.tool === "pen") stampTextureEditorPen(context, stampPoint, settings);
+      else stampTextureEditorBrush(context, stampPoint, settings, erasing);
+    }
+    context.restore();
     textureEditorState.lastPoint = point;
     renderTextureEditor();
+  }
+  function sampleTextureEditorColor(point) {
+    const source = currentTextureEditorCanvas();
+    if (!source || !point) return;
+    const pixel = source.getContext("2d", { willReadFrequently: true }).getImageData(
+      Math.max(0, Math.min(source.width - 1, Math.floor(point.x))),
+      Math.max(0, Math.min(source.height - 1, Math.floor(point.y))),
+      1,
+      1
+    ).data;
+    els.textureEditorColor.value = `#${[pixel[0], pixel[1], pixel[2]].map((value) => value.toString(16).padStart(2, "0")).join("")}`;
+    els.textureEditorOpacity.value = String(Math.max(1, Math.round(pixel[3] / 255 * 100)));
+    renderTextureEditor();
+  }
+  function fillTextureEditorIsland(point) {
+    const mesh = textureEditorMesh();
+    const source = currentTextureEditorCanvas();
+    if (!mesh || !source || !point) return false;
+    const island = textureEditorIslandAtPoint(mesh, point);
+    if (!island.length) {
+      log("Texture Fill needs a click inside one visible UV island.");
+      return false;
+    }
+    snapshotTextureEditor();
+    const settings = textureEditorBrushSettings();
+    const context = source.getContext("2d");
+    context.save();
+    textureEditorClipToTriangles(context, island, source);
+    context.globalAlpha = settings.opacity;
+    context.fillStyle = settings.color;
+    context.fillRect(0, 0, source.width, source.height);
+    context.restore();
+    renderTextureEditor();
+    return true;
   }
   function applyGlassBreakEffect(point) {
     const mesh = textureEditorMesh();
     const source = currentTextureEditorCanvas();
     if (!mesh || !source || !point) return;
+    snapshotTextureEditor();
     const maskTriangles = textureEditorMaskTriangles(mesh);
     const context = source.getContext("2d", { willReadFrequently: true });
     const radius = Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48));
@@ -31969,42 +32486,91 @@ void main() {
     }
     try {
       const image = mesh.material.map?.image || await loadImage(mesh.userData.textureUrl);
+      const draft = textureEditorDrafts.get(mesh.userData.id);
+      const draftMatchesTexture = !!draft && draft.textureUrl === mesh.userData.textureUrl;
+      const liveTextureCanvas = readImageToCanvas(image);
+      const draftSourceCanvas = draftMatchesTexture && draft.sourceDataUrl ? readImageToCanvas(await loadImage(draft.sourceDataUrl)) : null;
+      const originalDataUrl = draftMatchesTexture && draft.originalDataUrl ? draft.originalDataUrl : liveTextureCanvas.toDataURL("image/png");
+      const originalCanvas = readImageToCanvas(await loadImage(originalDataUrl));
       textureEditorState.meshId = mesh.userData.id;
       textureEditorState.textureName = mesh.userData.textureName || "Texture";
-      textureEditorState.sourceCanvas = readImageToCanvas(image);
-      textureEditorState.originalDataUrl = textureEditorState.sourceCanvas.toDataURL("image/png");
+      textureEditorState.sourceCanvas = draftSourceCanvas || (draftMatchesTexture ? draft?.sourceCanvas : null) || liveTextureCanvas;
+      textureEditorState.originalCanvas = originalCanvas;
+      textureEditorState.originalPixels = draftMatchesTexture && draft?.originalPixels ? cloneTextureEditorPixels(draft.originalPixels) : captureTextureEditorPixels(originalCanvas);
+      textureEditorState.originalDataUrl = originalDataUrl;
       textureEditorState.isPainting = false;
       textureEditorState.lastPoint = null;
       textureEditorState.hoverPoint = null;
-      textureEditorState.tool = els.textureEditorTool?.value || "brush";
+      textureEditorState.tool = draftMatchesTexture ? draft?.tool || textureEditorState.tool || "brush" : textureEditorState.tool || "brush";
+      textureEditorState.undoStack = draftMatchesTexture ? draft?.undoStack || [] : [];
+      textureEditorState.zoom = draftMatchesTexture ? draft?.zoom || 1 : 1;
+      textureEditorState.panX = draftMatchesTexture ? draft?.panX || 0 : 0;
+      textureEditorState.panY = draftMatchesTexture ? draft?.panY || 0 : 0;
+      textureEditorState.strokeSnapshotTaken = false;
       textureEditorState.open = true;
       els.textureEditorMeshName.textContent = `${mesh.name} - ${textureEditorState.textureName}`;
       els.textureEditorModal.classList.add("open");
       els.textureEditorModal.setAttribute("aria-hidden", "false");
-      syncTextureEditorCursor();
+      setTextureEditorTool(textureEditorState.tool);
+      updateTextureEditorUndoButton();
+      updateTextureEditorResetButton();
       renderTextureEditor();
     } catch (error) {
       log(`Texture editor failed to open: ${error.message}`);
     }
   }
   function closeTextureEditor() {
+    if (textureEditorState.meshId && textureEditorState.sourceCanvas) {
+      const mesh = textureEditorMesh();
+      textureEditorDrafts.set(textureEditorState.meshId, {
+        sourceCanvas: textureEditorState.sourceCanvas,
+        sourceDataUrl: textureEditorState.sourceCanvas.toDataURL("image/png"),
+        originalCanvas: textureEditorState.originalCanvas,
+        originalPixels: cloneTextureEditorPixels(textureEditorState.originalPixels),
+        originalDataUrl: textureEditorState.originalDataUrl,
+        textureUrl: mesh?.userData.textureUrl || null,
+        undoStack: textureEditorState.undoStack,
+        textureName: textureEditorState.textureName,
+        tool: textureEditorState.tool,
+        zoom: textureEditorState.zoom,
+        panX: textureEditorState.panX,
+        panY: textureEditorState.panY
+      });
+    }
     textureEditorState.open = false;
     textureEditorState.meshId = null;
     textureEditorState.sourceCanvas = null;
+    textureEditorState.originalCanvas = null;
+    textureEditorState.originalPixels = null;
     textureEditorState.originalDataUrl = null;
     textureEditorState.drawingRect = null;
     textureEditorState.isPainting = false;
     textureEditorState.lastPoint = null;
     textureEditorState.hoverPoint = null;
+    textureEditorState.undoStack = [];
+    textureEditorState.isPanning = false;
+    textureEditorState.panStart = null;
+    textureEditorState.strokeSnapshotTaken = false;
+    updateTextureEditorUndoButton();
+    updateTextureEditorResetButton();
     els.textureEditorModal.classList.remove("open");
     els.textureEditorModal.setAttribute("aria-hidden", "true");
   }
   function resetTextureEditorCanvas() {
-    if (!textureEditorState.originalDataUrl) return;
-    loadImage(textureEditorState.originalDataUrl).then((image) => {
-      textureEditorState.sourceCanvas = readImageToCanvas(image);
-      renderTextureEditor();
-    }).catch((error) => log(`Texture editor reset failed: ${error.message}`));
+    if (!textureEditorState.originalPixels) {
+      log("Restore Original could not find the pristine texture snapshot for this editing session.");
+      return;
+    }
+    snapshotTextureEditor();
+    textureEditorState.sourceCanvas = canvasFromTextureEditorPixels(textureEditorState.originalPixels);
+    const draft = textureEditorDrafts.get(textureEditorState.meshId);
+    if (draft) {
+      draft.sourceCanvas = textureEditorState.sourceCanvas;
+      draft.sourceDataUrl = textureEditorState.sourceCanvas.toDataURL("image/png");
+    }
+    updateTextureEditorUndoButton();
+    renderTextureEditor();
+    log("Restored the texture editor to the original texture from before this editing session.");
   }
   function applyTextureEditorChanges() {
     const mesh = textureEditorMesh();
@@ -32484,7 +33050,7 @@ void main() {
     };
   }
   function createMesh(spec = {}) {
-    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
     shape = normalizeShapeName(shape);
     const defaultOrdinal = idCounter;
     const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -32533,6 +33099,14 @@ void main() {
         enabled: true,
         axis: ["x", "y", "z"].includes(liveMirror.axis) ? liveMirror.axis : "x",
         plane: Number(liveMirror.plane) || 0
+      } : null,
+      lod: lod && Number.isInteger(Number(lod.level)) ? {
+        setId: String(lod.setId || ""),
+        level: Math.max(0, Number(lod.level) || 0),
+        sourceId: String(lod.sourceId || objectId),
+        reduction: Math.max(0, Number(lod.reduction) || 0),
+        triangleCount: Math.max(0, Number(lod.triangleCount) || 0),
+        screenCoverage: Math.max(0, Math.min(1, Number(lod.screenCoverage) || 0))
       } : null,
       edgeBevelProtectedEdges: Array.isArray(edgeBevelProtectedEdges) ? edgeBevelProtectedEdges.filter((value) => typeof value === "string") : [],
       dissolvedSurfaceEdges: Array.isArray(dissolvedSurfaceEdges) ? dissolvedSurfaceEdges.filter((value) => typeof value === "string") : []
@@ -33227,7 +33801,16 @@ void main() {
     els.surfaceSelectEdgeBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "edge");
     els.surfaceSelectTriangleBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "triangle");
     els.surfaceSelectFaceBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "face");
-    els.surfaceEditorOpenBtn?.classList.toggle("active", !els.surfaceEditorWindow?.classList.contains("collapsed"));
+    if (els.deleteSelectedSurfaceBtn) {
+      const canDeleteSelectedFace = (surfaceComponentMode === "triangle" || surfaceComponentMode === "face") && selectedFaces.length > 0;
+      els.deleteSelectedSurfaceBtn.disabled = !canDeleteSelectedFace;
+      els.deleteSelectedSurfaceBtn.title = canDeleteSelectedFace ? `Delete ${selectedFaces.length} selected surface triangle${selectedFaces.length === 1 ? "" : "s"} without deleting the model` : "Select a Triangle or Whole Face to delete it without deleting the model";
+    }
+    const canEditSelectedUv = (surfaceComponentMode === "triangle" || surfaceComponentMode === "face") && selectedFaces.length > 0;
+    for (const button of [els.rotateSelectedUvLeftBtn, els.rotateSelectedUvRightBtn, els.flipSelectedUvUBtn, els.flipSelectedUvVBtn]) {
+      if (button) button.disabled = !canEditSelectedUv;
+    }
+    els.surfaceEditorOpenBtn?.classList.remove("active");
     els.knifeCutModeBtn?.classList.toggle("active", knifeCutMode);
     if (els.knifeCutCancelBtn) els.knifeCutCancelBtn.disabled = knifeCutPoints.length === 0;
     if (els.planeCutCapInput) els.planeCutCapInput.disabled = els.planeCutResultSelect?.value === "both";
@@ -33237,7 +33820,9 @@ void main() {
     if (els.bridgeEdgeLoopsBtn) {
       els.bridgeEdgeLoopsBtn.disabled = !(surfaceComponentMode === "edge" && selectedSurfaceEdges.length >= 2);
     }
+    syncHoleRepairUi();
     syncSurfaceAxisUi();
+    syncUvUnwrapUi();
     if (els.surfaceEditorSelection) {
       if (surfaceComponentMode === "none") {
         els.surfaceEditorSelection.textContent = "Choose a surface selection mode";
@@ -34952,6 +35537,155 @@ void main() {
   function triangleSignature(points) {
     return points.map(vertexKey).sort().join("|");
   }
+  function meshIntegrityReport(source) {
+    const position = source?.getAttribute?.("position");
+    const empty = {
+      triangleCount: 0,
+      vertexCount: 0,
+      boundaryEdges: 0,
+      nonManifoldEdges: 0,
+      nonManifoldVertices: 0,
+      degenerateTriangles: 0,
+      duplicateTriangles: 0,
+      windingConflicts: 0,
+      closed: false,
+      manifold: false,
+      issues: []
+    };
+    if (!position || position.count < 3) return empty;
+    const vertices = /* @__PURE__ */ new Map();
+    const edges = /* @__PURE__ */ new Map();
+    const triangleSignatures = /* @__PURE__ */ new Map();
+    const incidentTriangles = /* @__PURE__ */ new Map();
+    const validTriangles = [];
+    const issues = [];
+    const edgeSignature = (a, b) => [a, b].sort().join("|");
+    const registerIncident = (key2, triangleIndex) => {
+      if (!incidentTriangles.has(key2)) incidentTriangles.set(key2, /* @__PURE__ */ new Set());
+      incidentTriangles.get(key2).add(triangleIndex);
+    };
+    for (let offset = 0; offset + 2 < position.count; offset += 3) {
+      const triangleIndex = offset / 3;
+      const points = [0, 1, 2].map((index) => new Vector3(
+        position.getX(offset + index),
+        position.getY(offset + index),
+        position.getZ(offset + index)
+      ));
+      const keys = points.map(vertexKey);
+      keys.forEach((key2, index) => {
+        if (!vertices.has(key2)) vertices.set(key2, points[index].clone());
+      });
+      const areaVector = new Vector3().crossVectors(
+        points[1].clone().sub(points[0]),
+        points[2].clone().sub(points[0])
+      );
+      const degenerate = new Set(keys).size < 3 || areaVector.lengthSq() <= 1e-12;
+      if (degenerate) {
+        issues.push({
+          type: "degenerate-triangle",
+          severity: "error",
+          triangleIndex,
+          points,
+          label: `Degenerate triangle ${triangleIndex + 1}`
+        });
+        continue;
+      }
+      const signature = [...keys].sort().join("|");
+      const firstTriangle = triangleSignatures.get(signature);
+      if (Number.isInteger(firstTriangle)) {
+        issues.push({
+          type: "duplicate-triangle",
+          severity: "error",
+          triangleIndex,
+          points,
+          label: `Triangle ${triangleIndex + 1} duplicates triangle ${firstTriangle + 1}`
+        });
+      } else {
+        triangleSignatures.set(signature, triangleIndex);
+      }
+      validTriangles[triangleIndex] = { keys, points, signature };
+      keys.forEach((key2) => registerIncident(key2, triangleIndex));
+      for (const [fromIndex, toIndex] of [[0, 1], [1, 2], [2, 0]]) {
+        const from = keys[fromIndex];
+        const to = keys[toIndex];
+        const edgeKey = edgeSignature(from, to);
+        const entry = edges.get(edgeKey) || {
+          signature: edgeKey,
+          a: [from, to].sort()[0],
+          b: [from, to].sort()[1],
+          points: [vertices.get([from, to].sort()[0]).clone(), vertices.get([from, to].sort()[1]).clone()],
+          uses: []
+        };
+        entry.uses.push({ from, to, triangleIndex, triangleSignature: signature });
+        edges.set(edgeKey, entry);
+      }
+    }
+    for (const entry of edges.values()) {
+      if (entry.uses.length === 1) {
+        issues.push({ type: "boundary-edge", severity: "warning", points: entry.points, label: "Open boundary edge" });
+      } else if (entry.uses.length > 2) {
+        issues.push({
+          type: "non-manifold-edge",
+          severity: "error",
+          points: entry.points,
+          label: `Non-manifold edge shared by ${entry.uses.length} triangles`
+        });
+      } else if (entry.uses.length === 2 && entry.uses[0].from === entry.uses[1].from && entry.uses[0].triangleSignature !== entry.uses[1].triangleSignature) {
+        issues.push({ type: "winding-conflict", severity: "warning", points: entry.points, label: "Inconsistent triangle winding" });
+      }
+    }
+    for (const [key2, triangleSet] of incidentTriangles.entries()) {
+      const triangleIndices = [...triangleSet];
+      if (triangleIndices.length < 2) continue;
+      const adjacency = new Map(triangleIndices.map((index) => [index, /* @__PURE__ */ new Set()]));
+      for (const entry of edges.values()) {
+        if (entry.a !== key2 && entry.b !== key2) continue;
+        const edgeTriangles = entry.uses.map((use) => use.triangleIndex).filter((index) => triangleSet.has(index));
+        for (let a = 0; a < edgeTriangles.length; a++) {
+          for (let b = a + 1; b < edgeTriangles.length; b++) {
+            adjacency.get(edgeTriangles[a])?.add(edgeTriangles[b]);
+            adjacency.get(edgeTriangles[b])?.add(edgeTriangles[a]);
+          }
+        }
+      }
+      let components = 0;
+      const remaining = new Set(triangleIndices);
+      while (remaining.size) {
+        components++;
+        const stack = [remaining.values().next().value];
+        while (stack.length) {
+          const current = stack.pop();
+          if (!remaining.delete(current)) continue;
+          for (const neighbor of adjacency.get(current) || []) if (remaining.has(neighbor)) stack.push(neighbor);
+        }
+      }
+      if (components > 1) {
+        issues.push({
+          type: "non-manifold-vertex",
+          severity: "error",
+          points: [vertices.get(key2).clone()],
+          label: `Non-manifold vertex with ${components} disconnected surface fans`
+        });
+      }
+    }
+    const count = (type) => issues.filter((issue) => issue.type === type).length;
+    const report = {
+      triangleCount: Math.floor(position.count / 3),
+      vertexCount: vertices.size,
+      boundaryEdges: count("boundary-edge"),
+      nonManifoldEdges: count("non-manifold-edge"),
+      nonManifoldVertices: count("non-manifold-vertex"),
+      degenerateTriangles: count("degenerate-triangle"),
+      duplicateTriangles: count("duplicate-triangle"),
+      windingConflicts: count("winding-conflict"),
+      issues
+    };
+    report.closed = report.boundaryEdges === 0;
+    report.manifold = report.nonManifoldEdges === 0 && report.nonManifoldVertices === 0 && report.degenerateTriangles === 0 && report.duplicateTriangles === 0;
+    const priority = { "non-manifold-edge": 0, "non-manifold-vertex": 1, "degenerate-triangle": 2, "duplicate-triangle": 3, "winding-conflict": 4, "boundary-edge": 5 };
+    report.issues.sort((a, b) => (priority[a.type] ?? 99) - (priority[b.type] ?? 99));
+    return report;
+  }
   function faceFromLocalTriangle(mesh, localTrianglePoints, faceIndex = null, localUvs = null) {
     const edgeA = localTrianglePoints[1].clone().sub(localTrianglePoints[0]);
     const edgeB = localTrianglePoints[2].clone().sub(localTrianglePoints[0]);
@@ -35218,9 +35952,91 @@ void main() {
     }
     return removed;
   }
+  function transformUvPointAroundCenter(point, center, options = null) {
+    options || (options = {});
+    let u = point.x - center.x;
+    let v = point.y - center.y;
+    const rotation = ((Number(options.rotation) || 0) % 360 + 360) % 360;
+    if (rotation === 90) [u, v] = [-v, u];
+    else if (rotation === 180) [u, v] = [-u, -v];
+    else if (rotation === 270) [u, v] = [v, -u];
+    if (options.flipU) u = -u;
+    if (options.flipV) v = -v;
+    return new Vector2(center.x + u, center.y + v);
+  }
+  function transformSelectedSurfaceUvs(options = {}) {
+    if (!selectedFaces.length || !(surfaceComponentMode === "triangle" || surfaceComponentMode === "face")) {
+      log("Choose Triangle or Whole Face and select a textured surface before editing its UVs.");
+      return { editedMeshes: 0, editedTriangles: 0 };
+    }
+    const signaturesByMesh = /* @__PURE__ */ new Map();
+    for (const face of selectedFaces) {
+      if (!signaturesByMesh.has(face.mesh)) signaturesByMesh.set(face.mesh, /* @__PURE__ */ new Set());
+      signaturesByMesh.get(face.mesh).add(triangleSignature(face.localTrianglePoints));
+    }
+    const editable = [...signaturesByMesh.entries()].filter(([mesh]) => mesh.geometry?.getAttribute("uv"));
+    if (!editable.length) {
+      log("The selected surface has no UV coordinates to rotate or flip.");
+      return { editedMeshes: 0, editedTriangles: 0 };
+    }
+    recordHistory("transform selected surface UVs");
+    let editedTriangles = 0;
+    for (const [mesh, signatures] of editable) {
+      const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+      const position = geometry.getAttribute("position");
+      const uv = geometry.getAttribute("uv");
+      const selectedCorners = [];
+      const selectedTriangleStarts = [];
+      for (let index = 0; index + 2 < position.count; index += 3) {
+        const points = [0, 1, 2].map((offset) => new Vector3(
+          position.getX(index + offset),
+          position.getY(index + offset),
+          position.getZ(index + offset)
+        ));
+        if (!signatures.has(triangleSignature(points))) continue;
+        selectedTriangleStarts.push(index);
+        for (let offset = 0; offset < 3; offset++) {
+          selectedCorners.push(new Vector2(uv.getX(index + offset), uv.getY(index + offset)));
+        }
+      }
+      if (!selectedCorners.length) {
+        geometry.dispose();
+        continue;
+      }
+      const center = new Box2().setFromPoints(selectedCorners).getCenter(new Vector2());
+      for (const index of selectedTriangleStarts) {
+        for (let offset = 0; offset < 3; offset++) {
+          const transformed = transformUvPointAroundCenter(
+            new Vector2(uv.getX(index + offset), uv.getY(index + offset)),
+            center,
+            options
+          );
+          uv.setXY(index + offset, transformed.x, transformed.y);
+        }
+        editedTriangles++;
+      }
+      uv.needsUpdate = true;
+      replaceEditableMeshGeometry(mesh, geometry);
+    }
+    const refreshedFaces = [];
+    for (const [mesh, signatures] of signaturesByMesh) {
+      refreshedFaces.push(...meshTriangleFaces(mesh).filter((face) => signatures.has(triangleSignature(face.localTrianglePoints))));
+    }
+    selectedFaces.splice(0, selectedFaces.length, ...refreshedFaces);
+    selectedFace = selectedFaces.at(-1) || null;
+    updateFaceMarker();
+    updateAll();
+    const action = options.flipU ? "Flipped selected UVs horizontally" : options.flipV ? "Flipped selected UVs vertically" : `Rotated selected UVs ${Math.abs(Number(options.rotation) || 0)} degrees ${Number(options.rotation) >= 0 ? "left" : "right"}`;
+    log(`${action} on ${editedTriangles} triangle${editedTriangles === 1 ? "" : "s"}. Geometry and materials were unchanged.`, {
+      editedMeshes: editable.length,
+      editedTriangles,
+      uvOnly: true
+    });
+    return { editedMeshes: editable.length, editedTriangles };
+  }
   function deleteSelectedTriangles({ record = true, update = true, announce = true } = {}) {
     if (!selectedFaces.length) {
-      log("Select one or more mesh triangles first, then press Delete Tri.");
+      log("Select a Triangle or Whole Face first, then press Delete Selected Face.");
       setFacePickMode(true);
       return { deleted: 0, editedMeshes: 0 };
     }
@@ -36118,6 +36934,2194 @@ void main() {
       undoReady: true
     });
     return mesh;
+  }
+  function holeRepairLoopKey(loop) {
+    return [...loop?.edgeSignatures || []].sort().join("||");
+  }
+  function holeRepairWorldLoop(mesh, loop) {
+    mesh.updateMatrixWorld(true);
+    return {
+      points: loop.points.map((point) => point.clone().applyMatrix4(mesh.matrixWorld)),
+      loopKey: holeRepairLoopKey(loop)
+    };
+  }
+  function syncHoleRepairUi() {
+    if (!els?.holeRepairStatus) return;
+    const count = holeRepairState.loops.length;
+    const active = count > 0 && holeRepairState.index >= 0;
+    const current = active ? holeRepairState.loops[holeRepairState.index] : null;
+    if (active) {
+      els.holeRepairStatus.textContent = `Hole ${holeRepairState.index + 1} of ${count} \u2014 ${current.points.length} boundary vertices.`;
+    } else if (holeRepairState.meshId) {
+      els.holeRepairStatus.textContent = "Closed mesh \u2014 0 holes found.";
+    } else {
+      els.holeRepairStatus.textContent = "Select one editable mesh, then scan for true open boundary loops.";
+    }
+    if (els.previousHoleBtn) els.previousHoleBtn.disabled = count < 2;
+    if (els.nextHoleBtn) els.nextHoleBtn.disabled = count < 2;
+    if (els.frameHoleBtn) els.frameHoleBtn.disabled = !active;
+    if (els.repairSelectedHoleBtn) els.repairSelectedHoleBtn.disabled = !active;
+    if (els.repairAllHolesBtn) els.repairAllHolesBtn.disabled = !active;
+  }
+  function selectRepairHole(mesh, index, { announce = false } = {}) {
+    if (!mesh || !holeRepairState.loops.length) return null;
+    const count = holeRepairState.loops.length;
+    holeRepairState.index = (index % count + count) % count;
+    const loop = holeRepairState.loops[holeRepairState.index];
+    setSelectedHoleLoop(mesh, holeRepairWorldLoop(mesh, loop), null, { announce: false });
+    syncHoleRepairUi();
+    if (announce) {
+      log(`Highlighted hole ${holeRepairState.index + 1} of ${count} on ${mesh.name}.`, {
+        boundaryVertices: loop.points.length
+      });
+    }
+    return loop;
+  }
+  function findSelectedMeshHoles({ announce = true, preferredKey = "" } = {}) {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    if (!mesh?.geometry) {
+      holeRepairState = { meshId: null, loops: [], index: -1 };
+      clearSelectedHoleLoop();
+      syncHoleRepairUi();
+      if (announce) log("Find Holes needs one selected editable mesh.");
+      return [];
+    }
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const topology = bridgeBoundaryTopology(source);
+    source.dispose();
+    const previousKey = preferredKey || (holeRepairState.meshId === mesh.userData.id ? holeRepairLoopKey(holeRepairState.loops[holeRepairState.index]) : "");
+    holeRepairState = { meshId: mesh.userData.id, loops: topology.loops, index: -1 };
+    if (!topology.loops.length) {
+      clearSelectedHoleLoop();
+      syncHoleRepairUi();
+      if (announce) log(`${mesh.name} is closed. No true boundary holes were found.`, { holes: 0, boundaryEdges: 0 });
+      return [];
+    }
+    const retainedIndex = topology.loops.findIndex((loop) => holeRepairLoopKey(loop) === previousKey);
+    selectRepairHole(mesh, retainedIndex >= 0 ? retainedIndex : 0);
+    if (announce) {
+      log(`Found ${topology.loops.length} true open boundary loop${topology.loops.length === 1 ? "" : "s"} on ${mesh.name}.`, {
+        holes: topology.loops.length,
+        boundaryVertices: topology.loops.map((loop) => loop.points.length),
+        boundaryEdges: topology.boundaryEdgeCount
+      });
+    }
+    return topology.loops;
+  }
+  function cycleSelectedHole(direction) {
+    const mesh = objects.find((candidate) => candidate.userData?.id === holeRepairState.meshId);
+    if (!mesh || !holeRepairState.loops.length) return findSelectedMeshHoles();
+    return selectRepairHole(mesh, holeRepairState.index + direction, { announce: true });
+  }
+  function frameSelectedHole() {
+    const loop = holeRepairState.loops[holeRepairState.index];
+    const mesh = objects.find((candidate) => candidate.userData?.id === holeRepairState.meshId);
+    if (!mesh || !loop) {
+      log("Find and highlight a hole before framing it.");
+      return null;
+    }
+    mesh.updateMatrixWorld(true);
+    const points = loop.points.map((point) => point.clone().applyMatrix4(mesh.matrixWorld));
+    const box = new Box3().setFromPoints(points);
+    const center = box.getCenter(new Vector3());
+    const sizeVector = box.getSize(new Vector3());
+    const size = Math.max(sizeVector.x, sizeVector.y, sizeVector.z, 0.2);
+    const direction = camera.position.clone().sub(orbit.target);
+    if (direction.lengthSq() < 1e-8) direction.set(0.78, 0.52, 0.92);
+    direction.normalize();
+    orbit.target.copy(center);
+    camera.position.copy(center).addScaledVector(direction, Math.max(0.35, size * 2.4));
+    camera.near = Math.max(5e-3, size / 2e3);
+    camera.far = Math.max(1e6, size * 100);
+    camera.updateProjectionMatrix();
+    orbit.update();
+    log(`Framed hole ${holeRepairState.index + 1} on ${mesh.name}.`);
+    return loop;
+  }
+  function clearMeshIntegrityGuide() {
+    while (meshIntegrityGuideGroup.children.length) {
+      const child = meshIntegrityGuideGroup.children.pop();
+      disposeObject3D(child);
+    }
+    meshIntegrityGuideGroup.visible = false;
+  }
+  function meshIntegritySummary(report) {
+    if (!report) return "Select one editable mesh, then inspect its topology.";
+    if (!report.issues.length) {
+      return `Closed manifold mesh \u2014 ${report.triangleCount} triangles, ${report.vertexCount} welded vertices, 0 issues.`;
+    }
+    const parts = [];
+    if (report.nonManifoldEdges) parts.push(`${report.nonManifoldEdges} non-manifold edge${report.nonManifoldEdges === 1 ? "" : "s"}`);
+    if (report.nonManifoldVertices) parts.push(`${report.nonManifoldVertices} non-manifold vert${report.nonManifoldVertices === 1 ? "ex" : "ices"}`);
+    if (report.boundaryEdges) parts.push(`${report.boundaryEdges} open edge${report.boundaryEdges === 1 ? "" : "s"}`);
+    if (report.degenerateTriangles) parts.push(`${report.degenerateTriangles} degenerate triangle${report.degenerateTriangles === 1 ? "" : "s"}`);
+    if (report.duplicateTriangles) parts.push(`${report.duplicateTriangles} duplicate triangle${report.duplicateTriangles === 1 ? "" : "s"}`);
+    if (report.windingConflicts) parts.push(`${report.windingConflicts} winding conflict${report.windingConflicts === 1 ? "" : "s"}`);
+    return parts.join(", ");
+  }
+  function syncMeshIntegrityUi() {
+    const count = meshIntegrityState.issues.length;
+    const active = count > 0 && meshIntegrityState.index >= 0;
+    const issue = active ? meshIntegrityState.issues[meshIntegrityState.index] : null;
+    if (els.meshIntegrityStatus) {
+      els.meshIntegrityStatus.textContent = issue ? `Issue ${meshIntegrityState.index + 1} of ${count} \u2014 ${issue.label}.` : meshIntegritySummary(meshIntegrityState.report);
+    }
+    if (els.previousMeshIssueBtn) els.previousMeshIssueBtn.disabled = count < 2;
+    if (els.nextMeshIssueBtn) els.nextMeshIssueBtn.disabled = count < 2;
+    if (els.frameMeshIssueBtn) els.frameMeshIssueBtn.disabled = !active;
+    if (els.clearMeshIssuesBtn) els.clearMeshIssuesBtn.disabled = !meshIntegrityState.report;
+  }
+  function showMeshIntegrityIssue(mesh, issue) {
+    clearMeshIntegrityGuide();
+    if (!mesh || !issue?.points?.length) return;
+    mesh.updateMatrixWorld(true);
+    const points = issue.points.map((point) => point.clone().applyMatrix4(mesh.matrixWorld));
+    const box = new Box3().setFromPoints(points);
+    const size = Math.max(box.getSize(new Vector3()).length(), new Box3().setFromObject(mesh).getSize(new Vector3()).length() * 0.012, 0.02);
+    const color = issue.severity === "error" ? "#ff3b30" : "#ffbd3f";
+    const linePoints = points.length >= 3 ? [...points, points[0].clone()] : points;
+    if (linePoints.length >= 2) {
+      meshIntegrityGuideGroup.add(new Line(
+        new BufferGeometry().setFromPoints(linePoints),
+        new LineBasicMaterial({ color, transparent: true, opacity: 1, depthWrite: false })
+      ));
+    }
+    for (const point of points) {
+      const marker = new Mesh(
+        new SphereGeometry(Math.max(0.012, size * 0.035), 12, 8),
+        new MeshBasicMaterial({ color, depthWrite: false, transparent: true, opacity: 0.96 })
+      );
+      marker.position.copy(point);
+      meshIntegrityGuideGroup.add(marker);
+    }
+    meshIntegrityGuideGroup.visible = true;
+  }
+  function selectMeshIntegrityIssue(mesh, index, { announce = false } = {}) {
+    const count = meshIntegrityState.issues.length;
+    if (!mesh || !count) return null;
+    meshIntegrityState.index = (index % count + count) % count;
+    const issue = meshIntegrityState.issues[meshIntegrityState.index];
+    showMeshIntegrityIssue(mesh, issue);
+    syncMeshIntegrityUi();
+    if (announce) log(`Highlighted topology issue ${meshIntegrityState.index + 1} of ${count} on ${mesh.name}: ${issue.label}.`);
+    return issue;
+  }
+  function clearMeshIntegrityReport({ announce = false } = {}) {
+    const hadReport = !!meshIntegrityState.report;
+    meshIntegrityState = { meshId: null, issues: [], index: -1, report: null };
+    clearMeshIntegrityGuide();
+    syncMeshIntegrityUi();
+    if (announce && hadReport) log("Cleared the Non-manifold Check report.");
+    return hadReport;
+  }
+  function checkSelectedMeshIntegrity({ announce = true } = {}) {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    if (!mesh?.geometry) {
+      clearMeshIntegrityReport();
+      if (announce) log("Non-manifold Check needs one selected editable mesh.");
+      return null;
+    }
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const report = meshIntegrityReport(source);
+    source.dispose();
+    meshIntegrityState = { meshId: mesh.userData.id, issues: report.issues, index: -1, report };
+    if (report.issues.length) selectMeshIntegrityIssue(mesh, 0);
+    else {
+      clearMeshIntegrityGuide();
+      syncMeshIntegrityUi();
+    }
+    if (announce) {
+      log(
+        report.issues.length ? `Non-manifold Check found ${report.issues.length} topology issue${report.issues.length === 1 ? "" : "s"} on ${mesh.name}.` : `${mesh.name} is a closed manifold mesh with no topology issues.`,
+        {
+          triangles: report.triangleCount,
+          weldedVertices: report.vertexCount,
+          boundaryEdges: report.boundaryEdges,
+          nonManifoldEdges: report.nonManifoldEdges,
+          nonManifoldVertices: report.nonManifoldVertices,
+          degenerateTriangles: report.degenerateTriangles,
+          duplicateTriangles: report.duplicateTriangles,
+          windingConflicts: report.windingConflicts,
+          geometryChanged: false
+        }
+      );
+    }
+    return report;
+  }
+  function cycleMeshIntegrityIssue(direction) {
+    const mesh = objects.find((candidate) => candidate.userData?.id === meshIntegrityState.meshId);
+    if (!mesh || !meshIntegrityState.issues.length) return checkSelectedMeshIntegrity();
+    return selectMeshIntegrityIssue(mesh, meshIntegrityState.index + direction, { announce: true });
+  }
+  function frameMeshIntegrityIssue() {
+    const mesh = objects.find((candidate) => candidate.userData?.id === meshIntegrityState.meshId);
+    const issue = meshIntegrityState.issues[meshIntegrityState.index];
+    if (!mesh || !issue?.points?.length) {
+      log("Run Non-manifold Check and highlight an issue before framing it.");
+      return null;
+    }
+    mesh.updateMatrixWorld(true);
+    const points = issue.points.map((point) => point.clone().applyMatrix4(mesh.matrixWorld));
+    const box = new Box3().setFromPoints(points);
+    const center = box.getCenter(new Vector3());
+    const meshSize = new Box3().setFromObject(mesh).getSize(new Vector3()).length();
+    const issueSize = box.getSize(new Vector3()).length();
+    const size = Math.max(issueSize, meshSize * 0.08, 0.2);
+    const direction = camera.position.clone().sub(orbit.target);
+    if (direction.lengthSq() < 1e-8) direction.set(0.78, 0.52, 0.92);
+    direction.normalize();
+    orbit.target.copy(center);
+    camera.position.copy(center).addScaledVector(direction, size * 2.8);
+    camera.near = Math.max(5e-3, size / 2e3);
+    camera.far = Math.max(1e6, size * 100);
+    camera.updateProjectionMatrix();
+    orbit.update();
+    log(`Framed topology issue ${meshIntegrityState.index + 1} on ${mesh.name}.`);
+    return issue;
+  }
+  function removeDoublesPreciseKey(point) {
+    return `${point.x},${point.y},${point.z}`;
+  }
+  function removeDoublesTolerance() {
+    const value = Math.min(1, Math.max(1e-6, Number(els.removeDoublesToleranceInput?.value) || 1e-3));
+    if (els.removeDoublesToleranceInput) els.removeDoublesToleranceInput.value = String(value);
+    return value;
+  }
+  function removeDoublesPlan(source, tolerance = 1e-3) {
+    const position = source?.getAttribute?.("position");
+    const empty = {
+      tolerance,
+      candidatePairs: 0,
+      mergedVertices: 0,
+      clusters: 0,
+      beforeTriangles: 0,
+      afterTriangles: 0,
+      removedDegenerate: 0,
+      removedDuplicate: 0,
+      beforeClosed: false,
+      afterClosed: false,
+      nonManifoldEdgeCount: 0,
+      changed: false,
+      safe: false,
+      reason: "The mesh has no editable triangle geometry.",
+      triangles: []
+    };
+    if (!position || position.count < 3) return empty;
+    tolerance = Math.min(1, Math.max(1e-6, Number(tolerance) || 1e-3));
+    const uniquePositions = [];
+    const positionIndexByKey = /* @__PURE__ */ new Map();
+    for (let index = 0; index < position.count; index++) {
+      const point = new Vector3(position.getX(index), position.getY(index), position.getZ(index));
+      const key2 = removeDoublesPreciseKey(point);
+      if (positionIndexByKey.has(key2)) continue;
+      positionIndexByKey.set(key2, uniquePositions.length);
+      uniquePositions.push({ key: key2, point });
+    }
+    const parents = uniquePositions.map((_, index) => index);
+    const find = (index) => {
+      let root = index;
+      while (parents[root] !== root) root = parents[root];
+      while (parents[index] !== index) {
+        const next = parents[index];
+        parents[index] = root;
+        index = next;
+      }
+      return root;
+    };
+    const union = (a, b) => {
+      const rootA = find(a);
+      const rootB = find(b);
+      if (rootA !== rootB) parents[rootB] = rootA;
+    };
+    const grid2 = /* @__PURE__ */ new Map();
+    const cellKey = (x, y, z) => `${x},${y},${z}`;
+    let candidatePairs = 0;
+    const toleranceSquared = tolerance * tolerance;
+    uniquePositions.forEach((entry, index) => {
+      const cell = [
+        Math.floor(entry.point.x / tolerance),
+        Math.floor(entry.point.y / tolerance),
+        Math.floor(entry.point.z / tolerance)
+      ];
+      for (let x = -1; x <= 1; x++) {
+        for (let y = -1; y <= 1; y++) {
+          for (let z = -1; z <= 1; z++) {
+            for (const otherIndex of grid2.get(cellKey(cell[0] + x, cell[1] + y, cell[2] + z)) || []) {
+              if (entry.point.distanceToSquared(uniquePositions[otherIndex].point) > toleranceSquared) continue;
+              candidatePairs++;
+              union(index, otherIndex);
+            }
+          }
+        }
+      }
+      const ownCellKey = cellKey(...cell);
+      if (!grid2.has(ownCellKey)) grid2.set(ownCellKey, []);
+      grid2.get(ownCellKey).push(index);
+    });
+    const clusterMembers = /* @__PURE__ */ new Map();
+    uniquePositions.forEach((_, index) => {
+      const root = find(index);
+      if (!clusterMembers.has(root)) clusterMembers.set(root, []);
+      clusterMembers.get(root).push(index);
+    });
+    const mappedPointByKey = /* @__PURE__ */ new Map();
+    let clusters = 0;
+    let mergedVertices = 0;
+    for (const members of clusterMembers.values()) {
+      const center = members.reduce(
+        (sum, index) => sum.add(uniquePositions[index].point),
+        new Vector3()
+      ).multiplyScalar(1 / members.length);
+      if (members.length > 1) {
+        clusters++;
+        mergedVertices += members.length - 1;
+      }
+      for (const index of members) mappedPointByKey.set(uniquePositions[index].key, center);
+    }
+    const beforeTopology = [];
+    const triangles = [];
+    const triangleSignatures = /* @__PURE__ */ new Set();
+    let removedDegenerate = 0;
+    let removedDuplicate = 0;
+    for (let offset = 0; offset + 2 < position.count; offset += 3) {
+      const originalPoints = [0, 1, 2].map((corner) => new Vector3(
+        position.getX(offset + corner),
+        position.getY(offset + corner),
+        position.getZ(offset + corner)
+      ));
+      beforeTopology.push(originalPoints.map(removeDoublesPreciseKey));
+      const points = originalPoints.map((point) => mappedPointByKey.get(removeDoublesPreciseKey(point)).clone());
+      const topologyKeys = points.map(removeDoublesPreciseKey);
+      const areaSquared = new Vector3().crossVectors(
+        points[1].clone().sub(points[0]),
+        points[2].clone().sub(points[0])
+      ).lengthSq();
+      if (new Set(topologyKeys).size < 3 || areaSquared <= 1e-12) {
+        removedDegenerate++;
+        continue;
+      }
+      const signature = JSON.stringify([...topologyKeys].sort());
+      if (triangleSignatures.has(signature)) {
+        removedDuplicate++;
+        continue;
+      }
+      triangleSignatures.add(signature);
+      triangles.push({
+        points,
+        topologyKeys,
+        sourceIndices: [offset, offset + 1, offset + 2],
+        materialIndex: materialIndexForTriangle(source, offset / 3)
+      });
+    }
+    const nextTopology = triangles.map((triangle) => triangle.topologyKeys);
+    const beforeClosed = topologyIsClosedTriangleMesh(beforeTopology);
+    const afterEdgeCounts = topologyEdgeCounts(nextTopology);
+    const afterClosed = topologyIsClosedTriangleMesh(nextTopology);
+    const nonManifoldEdgeCount = [...afterEdgeCounts.values()].filter((count) => count > 2).length;
+    const changed = mergedVertices > 0 || removedDegenerate > 0 || removedDuplicate > 0;
+    let reason = "No separate nearby vertices were found. Exact shared corner positions were correctly ignored.";
+    let safe = changed && triangles.length > 0;
+    if (!triangles.length) {
+      reason = "The merge would remove every triangle.";
+      safe = false;
+    } else if (nonManifoldEdgeCount) {
+      reason = "The merge would create a non-manifold edge.";
+      safe = false;
+    } else if (beforeClosed && !afterClosed) {
+      reason = "The merge would open a closed mesh.";
+      safe = false;
+    } else if (changed) {
+      reason = `Safe to merge ${mergedVertices} nearby vert${mergedVertices === 1 ? "ex" : "ices"} in ${clusters} cluster${clusters === 1 ? "" : "s"}.`;
+    }
+    return {
+      tolerance,
+      candidatePairs,
+      mergedVertices,
+      clusters,
+      beforeTriangles: beforeTopology.length,
+      afterTriangles: triangles.length,
+      removedDegenerate,
+      removedDuplicate,
+      beforeClosed,
+      afterClosed,
+      nonManifoldEdgeCount,
+      changed,
+      safe,
+      reason,
+      triangles
+    };
+  }
+  function syncRemoveDoublesUi(message = null) {
+    if (els.removeDoublesStatus) {
+      els.removeDoublesStatus.textContent = message || removeDoublesState.plan?.reason || "Select one editable mesh, then analyze nearby overlapping vertices.";
+    }
+    if (els.removeDoublesBtn) els.removeDoublesBtn.disabled = !removeDoublesState.plan?.safe;
+  }
+  function invalidateRemoveDoublesAnalysis() {
+    removeDoublesState = { meshId: null, tolerance: null, plan: null };
+    syncRemoveDoublesUi("Tolerance changed. Analyze again before removing doubles.");
+  }
+  function analyzeSelectedMeshDoubles({ announce = true } = {}) {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    if (!mesh?.geometry) {
+      removeDoublesState = { meshId: null, tolerance: null, plan: null };
+      syncRemoveDoublesUi("Select one editable mesh, then analyze nearby overlapping vertices.");
+      if (announce) log("Remove Doubles needs one selected editable mesh.");
+      return null;
+    }
+    const tolerance = removeDoublesTolerance();
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const plan = removeDoublesPlan(source, tolerance);
+    source.dispose();
+    removeDoublesState = { meshId: mesh.userData.id, tolerance, plan };
+    syncRemoveDoublesUi();
+    if (announce) log(`Remove Doubles analysis on ${mesh.name}: ${plan.reason}`, {
+      tolerance,
+      candidatePairs: plan.candidatePairs,
+      mergedVertices: plan.mergedVertices,
+      clusters: plan.clusters,
+      beforeTriangles: plan.beforeTriangles,
+      afterTriangles: plan.afterTriangles,
+      removedDegenerate: plan.removedDegenerate,
+      removedDuplicate: plan.removedDuplicate,
+      closedMeshPreserved: plan.beforeClosed ? plan.afterClosed : "source mesh was open",
+      geometryChanged: false
+    });
+    return plan;
+  }
+  function removeAnalyzedDoubles() {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const tolerance = removeDoublesTolerance();
+    if (!mesh?.geometry || mesh.userData.id !== removeDoublesState.meshId || tolerance !== removeDoublesState.tolerance) {
+      analyzeSelectedMeshDoubles();
+      return [];
+    }
+    const plan = removeDoublesState.plan;
+    if (!plan?.safe) {
+      log(`Remove Doubles made no changes: ${plan?.reason || "analyze the selected mesh first."}`);
+      return [];
+    }
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const geometry = geometryFromWeldedTriangles(source, plan.triangles);
+    source.dispose();
+    recordHistory("remove doubles");
+    replaceEditableMeshGeometry(mesh, geometry);
+    mesh.userData.edgeBevelProtectedEdges = [];
+    mesh.userData.dissolvedSurfaceEdges = [];
+    selectedSurfaceVertices.length = 0;
+    selectedSurfaceEdges.length = 0;
+    selectedFaces.length = 0;
+    selectedFace = null;
+    updateFaceMarker();
+    updateSurfaceComponentMarker();
+    clearMeshIntegrityReport();
+    removeDoublesState = { meshId: null, tolerance: null, plan: null };
+    updateAll();
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+    syncRemoveDoublesUi(`Removed ${plan.mergedVertices} double${plan.mergedVertices === 1 ? "" : "s"}. Undo is ready.`);
+    log(`Removed ${plan.mergedVertices} double vert${plan.mergedVertices === 1 ? "ex" : "ices"} from ${mesh.name}.`, {
+      tolerance: plan.tolerance,
+      clusters: plan.clusters,
+      beforeTriangles: plan.beforeTriangles,
+      afterTriangles: plan.afterTriangles,
+      removedDegenerate: plan.removedDegenerate,
+      removedDuplicate: plan.removedDuplicate,
+      closedMeshPreserved: plan.beforeClosed ? plan.afterClosed : "source mesh was open",
+      uvAndMaterialAttributesPreservedPerTriangleCorner: true,
+      undoReady: true
+    });
+    return [mesh];
+  }
+  function meshStatisticsReport(source, matrixWorld = new Matrix4()) {
+    const position = source?.getAttribute?.("position");
+    if (!position || position.count < 3) return null;
+    const working = source.index ? source.toNonIndexed() : source.clone();
+    const workingPosition = working.getAttribute("position");
+    const topologyTriangles = [];
+    const localBounds = new Box3();
+    const worldBounds = new Box3();
+    let localSurfaceArea = 0;
+    let worldSurfaceArea = 0;
+    let localSignedVolume = 0;
+    let worldSignedVolume = 0;
+    for (let offset = 0; offset + 2 < workingPosition.count; offset += 3) {
+      const localPoints = [0, 1, 2].map((corner) => new Vector3(
+        workingPosition.getX(offset + corner),
+        workingPosition.getY(offset + corner),
+        workingPosition.getZ(offset + corner)
+      ));
+      const worldPoints = localPoints.map((point) => point.clone().applyMatrix4(matrixWorld));
+      localPoints.forEach((point) => localBounds.expandByPoint(point));
+      worldPoints.forEach((point) => worldBounds.expandByPoint(point));
+      topologyTriangles.push(localPoints.map(vertexKey));
+      localSurfaceArea += new Vector3().crossVectors(
+        localPoints[1].clone().sub(localPoints[0]),
+        localPoints[2].clone().sub(localPoints[0])
+      ).length() * 0.5;
+      worldSurfaceArea += new Vector3().crossVectors(
+        worldPoints[1].clone().sub(worldPoints[0]),
+        worldPoints[2].clone().sub(worldPoints[0])
+      ).length() * 0.5;
+      localSignedVolume += localPoints[0].dot(new Vector3().crossVectors(localPoints[1], localPoints[2])) / 6;
+      worldSignedVolume += worldPoints[0].dot(new Vector3().crossVectors(worldPoints[1], worldPoints[2])) / 6;
+    }
+    const integrity = meshIntegrityReport(working);
+    const edgeCounts = topologyEdgeCounts(topologyTriangles);
+    const volumeReliable = integrity.closed && integrity.manifold && integrity.windingConflicts === 0;
+    const attributeBytes = Object.values(source.attributes || {}).reduce(
+      (sum, attribute) => sum + (attribute?.array?.byteLength || 0),
+      0
+    );
+    const morphBytes = Object.values(source.morphAttributes || {}).flat().reduce(
+      (sum, attribute) => sum + (attribute?.array?.byteLength || 0),
+      0
+    );
+    const indexBytes = source.index?.array?.byteLength || 0;
+    const localSize = localBounds.getSize(new Vector3());
+    const worldSize = worldBounds.getSize(new Vector3());
+    const report = {
+      triangles: Math.floor(workingPosition.count / 3),
+      triangleCorners: workingPosition.count,
+      gpuPositionVertices: position.count,
+      weldedVertices: integrity.vertexCount,
+      uniqueEdges: edgeCounts.size,
+      boundaryEdges: integrity.boundaryEdges,
+      nonManifoldEdges: integrity.nonManifoldEdges,
+      nonManifoldVertices: integrity.nonManifoldVertices,
+      degenerateTriangles: integrity.degenerateTriangles,
+      duplicateTriangles: integrity.duplicateTriangles,
+      windingConflicts: integrity.windingConflicts,
+      closed: integrity.closed,
+      manifold: integrity.manifold,
+      localSize,
+      worldSize,
+      localSurfaceArea,
+      worldSurfaceArea,
+      localVolume: volumeReliable ? Math.abs(localSignedVolume) : null,
+      worldVolume: volumeReliable ? Math.abs(worldSignedVolume) : null,
+      volumeReliable,
+      indexed: !!source.index,
+      attributes: Object.keys(source.attributes || {}),
+      uvChannels: Object.keys(source.attributes || {}).filter((name) => /^uv\d*$/i.test(name)),
+      approximateGeometryBytes: attributeBytes + morphBytes + indexBytes
+    };
+    working.dispose();
+    return report;
+  }
+  function meshStatisticsForMesh(mesh) {
+    mesh.updateMatrixWorld(true);
+    const report = meshStatisticsReport(mesh.geometry, mesh.matrixWorld);
+    if (!report) return null;
+    const materials = Array.isArray(mesh.material) ? mesh.material.filter(Boolean) : [mesh.material].filter(Boolean);
+    const textures = /* @__PURE__ */ new Set();
+    for (const material of materials) {
+      for (const value of Object.values(material || {})) if (value?.isTexture) textures.add(value.uuid || value.id || value);
+    }
+    return {
+      ...report,
+      name: mesh.name || "Unnamed mesh",
+      materialSlots: materials.length,
+      textureCount: textures.size,
+      drawCalls: Math.max(1, mesh.geometry.groups?.length || 0),
+      skinned: !!mesh.isSkinnedMesh || report.attributes.includes("skinIndex") && report.attributes.includes("skinWeight")
+    };
+  }
+  function meshStatisticNumber(value, digits = 3) {
+    if (!Number.isFinite(value)) return "n/a";
+    return Number(value.toFixed(digits)).toLocaleString("en-US", { maximumFractionDigits: digits });
+  }
+  function meshStatisticBytes(bytes) {
+    if (!Number.isFinite(bytes) || bytes < 0) return "n/a";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 ** 2) return `${meshStatisticNumber(bytes / 1024, 2)} KiB`;
+    return `${meshStatisticNumber(bytes / 1024 ** 2, 2)} MiB`;
+  }
+  function meshStatisticDimensions(vector) {
+    return `${meshStatisticNumber(vector.x)} \xD7 ${meshStatisticNumber(vector.y)} \xD7 ${meshStatisticNumber(vector.z)}`;
+  }
+  function meshStatisticsText(stats) {
+    const topologyHealth = stats.closed && stats.manifold && stats.windingConflicts === 0 ? "Closed manifold" : "Needs inspection";
+    return [
+      `MESH: ${stats.name}`,
+      "",
+      "GEOMETRY",
+      `Triangles: ${meshStatisticNumber(stats.triangles, 0)}`,
+      `Triangle corners: ${meshStatisticNumber(stats.triangleCorners, 0)}`,
+      `GPU position vertices: ${meshStatisticNumber(stats.gpuPositionVertices, 0)}${stats.indexed ? " (indexed)" : " (non-indexed)"}`,
+      `Welded positions: ${meshStatisticNumber(stats.weldedVertices, 0)}`,
+      `Unique edges: ${meshStatisticNumber(stats.uniqueEdges, 0)}`,
+      `Approx. geometry memory: ${meshStatisticBytes(stats.approximateGeometryBytes)}`,
+      "",
+      "SIZE",
+      `Local dimensions (studs): ${meshStatisticDimensions(stats.localSize)}`,
+      `World dimensions (studs): ${meshStatisticDimensions(stats.worldSize)}`,
+      `World dimensions (meters): ${meshStatisticDimensions(stats.worldSize.clone().multiplyScalar(0.28))}`,
+      `World surface area: ${meshStatisticNumber(stats.worldSurfaceArea)} stud\xB2`,
+      `Closed world volume: ${stats.volumeReliable ? `${meshStatisticNumber(stats.worldVolume)} stud\xB3` : "n/a (mesh is open or topology is inconsistent)"}`,
+      "",
+      "TOPOLOGY",
+      `Health: ${topologyHealth}`,
+      `Boundary edges: ${meshStatisticNumber(stats.boundaryEdges, 0)}`,
+      `Non-manifold edges: ${meshStatisticNumber(stats.nonManifoldEdges, 0)}`,
+      `Non-manifold vertices: ${meshStatisticNumber(stats.nonManifoldVertices, 0)}`,
+      `Degenerate triangles: ${meshStatisticNumber(stats.degenerateTriangles, 0)}`,
+      `Duplicate triangles: ${meshStatisticNumber(stats.duplicateTriangles, 0)}`,
+      `Winding conflicts: ${meshStatisticNumber(stats.windingConflicts, 0)}`,
+      "",
+      "RENDER DATA",
+      `Material slots: ${meshStatisticNumber(stats.materialSlots, 0)}`,
+      `Textures: ${meshStatisticNumber(stats.textureCount, 0)}`,
+      `Estimated draw calls: ${meshStatisticNumber(stats.drawCalls, 0)}`,
+      `UV channels: ${stats.uvChannels.length ? stats.uvChannels.join(", ") : "none"}`,
+      `Attributes: ${stats.attributes.join(", ") || "none"}`,
+      `Skin data: ${stats.skinned ? "yes" : "no"}`
+    ].join("\n");
+  }
+  function syncMeshStatisticsUi() {
+    if (els.meshStatisticsReport) els.meshStatisticsReport.textContent = meshStatisticsState.text || "No report yet.";
+    if (els.copyMeshStatisticsBtn) els.copyMeshStatisticsBtn.disabled = !meshStatisticsState.text;
+  }
+  function calculateSelectedMeshStatistics({ announce = true } = {}) {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    if (!mesh?.geometry) {
+      meshStatisticsState = { meshId: null, stats: null, text: "" };
+      if (els.meshStatisticsStatus) els.meshStatisticsStatus.textContent = "Select one editable mesh, then calculate a read-only geometry report.";
+      syncMeshStatisticsUi();
+      if (announce) log("Mesh Statistics needs one selected editable mesh.");
+      return null;
+    }
+    const stats = meshStatisticsForMesh(mesh);
+    if (!stats) {
+      if (announce) log("The selected mesh has no triangle geometry to measure.");
+      return null;
+    }
+    const text = meshStatisticsText(stats);
+    meshStatisticsState = { meshId: mesh.userData.id, stats, text };
+    if (els.meshStatisticsStatus) {
+      els.meshStatisticsStatus.textContent = `${stats.triangles.toLocaleString("en-US")} triangles \u2014 ${stats.closed && stats.manifold && stats.windingConflicts === 0 ? "closed manifold" : "topology needs inspection"}.`;
+    }
+    syncMeshStatisticsUi();
+    if (announce) log(`Calculated read-only Mesh Statistics for ${mesh.name}.`, {
+      triangles: stats.triangles,
+      weldedVertices: stats.weldedVertices,
+      boundaryEdges: stats.boundaryEdges,
+      nonManifoldEdges: stats.nonManifoldEdges,
+      worldDimensionsStuds: stats.worldSize.toArray(),
+      worldDimensionsMeters: stats.worldSize.clone().multiplyScalar(0.28).toArray(),
+      approximateGeometryBytes: stats.approximateGeometryBytes,
+      geometryChanged: false,
+      undoConsumed: false
+    });
+    return stats;
+  }
+  async function copyMeshStatisticsReport() {
+    if (!meshStatisticsState.text) {
+      log("Calculate Mesh Statistics before copying the report.");
+      return false;
+    }
+    try {
+      await navigator.clipboard.writeText(meshStatisticsState.text);
+      log("Copied the Mesh Statistics report to the clipboard for human or AI review.");
+      return true;
+    } catch (error) {
+      log("The browser blocked clipboard access. The report remains selectable in the panel.", { error: error?.message || String(error) });
+      return false;
+    }
+  }
+  function decimateNormalizedSettings(options = {}) {
+    return {
+      reduction: Math.min(90, Math.max(1, Number(options.reduction) || 35)),
+      featureAngle: Math.min(179, Math.max(1, Number(options.featureAngle) || 35)),
+      preserveBoundaries: options.preserveBoundaries !== false,
+      preserveUvSeams: options.preserveUvSeams !== false,
+      preserveMaterials: options.preserveMaterials !== false
+    };
+  }
+  function decimateSettingsFromUi() {
+    const settings = decimateNormalizedSettings({
+      reduction: els.decimateReductionInput?.value,
+      featureAngle: els.decimateFeatureAngleInput?.value,
+      preserveBoundaries: els.decimatePreserveBoundariesInput?.checked,
+      preserveUvSeams: els.decimatePreserveUvSeamsInput?.checked,
+      preserveMaterials: els.decimatePreserveMaterialsInput?.checked
+    });
+    if (els.decimateReductionInput) els.decimateReductionInput.value = String(settings.reduction);
+    if (els.decimateFeatureAngleInput) els.decimateFeatureAngleInput.value = String(settings.featureAngle);
+    return settings;
+  }
+  function decimateSettingsKey(settings) {
+    return JSON.stringify(decimateNormalizedSettings(settings));
+  }
+  function decimateAttributeKey(attribute, index) {
+    if (!attribute) return "";
+    const values = [];
+    for (let component2 = 0; component2 < attribute.itemSize; component2++) {
+      values.push(Number(attribute.array[index * attribute.itemSize + component2]).toFixed(6));
+    }
+    return values.join(",");
+  }
+  function protectedDecimatePlan(source, options = {}) {
+    const settings = decimateNormalizedSettings(options);
+    const sourcePosition = source?.getAttribute?.("position");
+    const empty = {
+      settings,
+      beforeTriangles: 0,
+      targetTriangles: 0,
+      afterTriangles: 0,
+      removedTriangles: 0,
+      achievedReduction: 0,
+      protectedVertices: 0,
+      protectedEdges: 0,
+      candidateEdges: 0,
+      collapsedEdges: 0,
+      beforeClosed: false,
+      afterClosed: false,
+      boundaryEdgesBefore: 0,
+      boundaryEdgesAfter: 0,
+      nonManifoldEdges: 0,
+      safe: false,
+      reason: "The mesh has no editable triangle geometry.",
+      triangles: []
+    };
+    if (!sourcePosition || sourcePosition.count < 6) return empty;
+    const working = source.index ? source.toNonIndexed() : source;
+    const position = working.getAttribute("position");
+    const uv = working.getAttribute("uv");
+    const vertexIds = [];
+    const pointById = [];
+    const idByPosition = /* @__PURE__ */ new Map();
+    for (let index = 0; index < position.count; index++) {
+      const point = new Vector3(position.getX(index), position.getY(index), position.getZ(index));
+      const key2 = removeDoublesPreciseKey(point);
+      if (!idByPosition.has(key2)) {
+        idByPosition.set(key2, pointById.length);
+        pointById.push(point);
+      }
+      vertexIds[index] = idByPosition.get(key2);
+    }
+    const triangles = [];
+    const edgeMap = /* @__PURE__ */ new Map();
+    const edgeSignature = (a, b) => a < b ? `${a}|${b}` : `${b}|${a}`;
+    for (let offset = 0; offset + 2 < position.count; offset += 3) {
+      const ids = [vertexIds[offset], vertexIds[offset + 1], vertexIds[offset + 2]];
+      const points = ids.map((id) => pointById[id].clone());
+      const normal = new Vector3().crossVectors(
+        points[1].clone().sub(points[0]),
+        points[2].clone().sub(points[0])
+      );
+      if (new Set(ids).size < 3 || normal.lengthSq() <= 1e-12) continue;
+      normal.normalize();
+      const triangleIndex = triangles.length;
+      const record = {
+        ids,
+        points,
+        normal,
+        sourceIndices: [offset, offset + 1, offset + 2],
+        materialIndex: materialIndexForTriangle(working, offset / 3)
+      };
+      triangles.push(record);
+      for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+        const signature = edgeSignature(ids[a], ids[b]);
+        if (!edgeMap.has(signature)) edgeMap.set(signature, { ids: [ids[a], ids[b]], entries: [] });
+        edgeMap.get(signature).entries.push({
+          triangleIndex,
+          materialIndex: record.materialIndex,
+          uvById: /* @__PURE__ */ new Map([
+            [ids[a], decimateAttributeKey(uv, offset + a)],
+            [ids[b], decimateAttributeKey(uv, offset + b)]
+          ])
+        });
+      }
+    }
+    if (source.index) working.dispose();
+    if (triangles.length < 4) return { ...empty, beforeTriangles: triangles.length, reason: "At least four valid triangles are needed for protected decimation." };
+    const beforeTopology = triangles.map((triangle) => triangle.ids.map(String));
+    const beforeEdgeCounts = topologyEdgeCounts(beforeTopology);
+    const beforeClosed = topologyIsClosedTriangleMesh(beforeTopology);
+    const boundaryEdgesBefore = [...beforeEdgeCounts.values()].filter((count) => count === 1).length;
+    const protectedIds = /* @__PURE__ */ new Set();
+    const protectedEdgeKeys = /* @__PURE__ */ new Set();
+    const creaseDot = Math.cos(MathUtils.degToRad(settings.featureAngle));
+    for (const [signature, edge] of edgeMap) {
+      const isBoundary = edge.entries.length === 1;
+      const isNonManifold = edge.entries.length > 2;
+      const isSharp = edge.entries.length === 2 && triangles[edge.entries[0].triangleIndex].normal.dot(triangles[edge.entries[1].triangleIndex].normal) < creaseDot;
+      const isMaterialBorder = settings.preserveMaterials && new Set(edge.entries.map((entry) => entry.materialIndex)).size > 1;
+      let isUvSeam = false;
+      if (settings.preserveUvSeams && uv && edge.entries.length > 1) {
+        for (const id of edge.ids) {
+          if (new Set(edge.entries.map((entry) => entry.uvById.get(id) || "")).size > 1) isUvSeam = true;
+        }
+      }
+      if (isNonManifold || isSharp || isMaterialBorder || isUvSeam || settings.preserveBoundaries && isBoundary) {
+        protectedEdgeKeys.add(signature);
+        edge.ids.forEach((id) => protectedIds.add(id));
+      }
+    }
+    const candidates = [...edgeMap.entries()].filter(([signature, edge]) => edge.entries.length === 2 && !protectedEdgeKeys.has(signature) && !protectedIds.has(edge.ids[0]) && !protectedIds.has(edge.ids[1])).map(([, edge]) => ({
+      ids: edge.ids,
+      lengthSquared: pointById[edge.ids[0]].distanceToSquared(pointById[edge.ids[1]])
+    })).filter((candidate) => candidate.lengthSquared > 1e-12).sort((a, b) => a.lengthSquared - b.lengthSquared);
+    const targetTriangles = Math.max(4, Math.floor(triangles.length * (1 - settings.reduction / 100)));
+    const desiredRemoved = Math.max(0, triangles.length - targetTriangles);
+    const desiredCollapses = Math.ceil(desiredRemoved / 2);
+    const selectedCandidates = [];
+    const reservedIds = /* @__PURE__ */ new Set();
+    for (const candidate of candidates) {
+      if (selectedCandidates.length >= desiredCollapses) break;
+      if (reservedIds.has(candidate.ids[0]) || reservedIds.has(candidate.ids[1])) continue;
+      selectedCandidates.push(candidate);
+      reservedIds.add(candidate.ids[0]);
+      reservedIds.add(candidate.ids[1]);
+    }
+    const evaluate = (collapseCount) => {
+      const replacementId = /* @__PURE__ */ new Map();
+      const replacementPoint = /* @__PURE__ */ new Map();
+      for (let index = 0; index < collapseCount; index++) {
+        const candidate = selectedCandidates[index];
+        const id = `c${index}`;
+        const center = pointById[candidate.ids[0]].clone().add(pointById[candidate.ids[1]]).multiplyScalar(0.5);
+        candidate.ids.forEach((sourceId) => replacementId.set(sourceId, id));
+        replacementPoint.set(id, center);
+      }
+      const result = [];
+      const signatures = /* @__PURE__ */ new Set();
+      let flipped = false;
+      for (const triangle of triangles) {
+        const ids = triangle.ids.map((id) => replacementId.get(id) ?? `v${id}`);
+        if (new Set(ids).size < 3) continue;
+        const points = triangle.ids.map((id) => {
+          const replacement = replacementId.get(id);
+          return replacement ? replacementPoint.get(replacement).clone() : pointById[id].clone();
+        });
+        const cross = new Vector3().crossVectors(
+          points[1].clone().sub(points[0]),
+          points[2].clone().sub(points[0])
+        );
+        if (cross.lengthSq() <= 1e-12 || cross.normalize().dot(triangle.normal) <= 0.05) {
+          flipped = true;
+          break;
+        }
+        const signature = [...ids].sort().join("|");
+        if (signatures.has(signature)) continue;
+        signatures.add(signature);
+        result.push({
+          points,
+          topologyKeys: ids,
+          sourceIndices: triangle.sourceIndices,
+          materialIndex: triangle.materialIndex
+        });
+      }
+      const topology = result.map((triangle) => triangle.topologyKeys);
+      const edgeCounts = topologyEdgeCounts(topology);
+      const nonManifoldEdges = [...edgeCounts.values()].filter((count) => count > 2).length;
+      const boundaryEdges = [...edgeCounts.values()].filter((count) => count === 1).length;
+      const afterClosed = topologyIsClosedTriangleMesh(topology);
+      const safe = !flipped && result.length >= 4 && result.length < triangles.length && nonManifoldEdges === 0 && (!beforeClosed || afterClosed) && (!settings.preserveBoundaries || boundaryEdges <= boundaryEdgesBefore);
+      return { result, nonManifoldEdges, boundaryEdges, afterClosed, safe };
+    };
+    let attemptedCollapses = selectedCandidates.length;
+    let evaluated = attemptedCollapses ? evaluate(attemptedCollapses) : null;
+    while (attemptedCollapses > 0 && !evaluated?.safe) {
+      attemptedCollapses = Math.floor(attemptedCollapses / 2);
+      evaluated = attemptedCollapses ? evaluate(attemptedCollapses) : null;
+    }
+    const output = evaluated?.safe ? evaluated.result : [];
+    const removedTriangles = output.length ? triangles.length - output.length : 0;
+    const achievedReduction = output.length ? removedTriangles / triangles.length * 100 : 0;
+    let reason = "No safe collapsible edges remain with the current detail protections.";
+    if (!candidates.length) reason = "Every usable edge is protected by the current boundary, feature, UV, or material rules.";
+    else if (output.length) reason = `Safe preview: remove ${removedTriangles} triangles (${achievedReduction.toFixed(1)}%) with ${attemptedCollapses} protected edge collapses.`;
+    return {
+      settings,
+      beforeTriangles: triangles.length,
+      targetTriangles,
+      afterTriangles: output.length || triangles.length,
+      removedTriangles,
+      achievedReduction,
+      protectedVertices: protectedIds.size,
+      protectedEdges: protectedEdgeKeys.size,
+      candidateEdges: candidates.length,
+      collapsedEdges: output.length ? attemptedCollapses : 0,
+      beforeClosed,
+      afterClosed: output.length ? evaluated.afterClosed : beforeClosed,
+      boundaryEdgesBefore,
+      boundaryEdgesAfter: output.length ? evaluated.boundaryEdges : boundaryEdgesBefore,
+      nonManifoldEdges: output.length ? evaluated.nonManifoldEdges : 0,
+      safe: output.length > 0,
+      reason,
+      triangles: output
+    };
+  }
+  function syncDecimateUi(message = null) {
+    if (els.decimateStatus) {
+      els.decimateStatus.textContent = message || decimateState.plan?.reason || "Select one editable mesh, then analyze a protected triangle reduction.";
+    }
+    if (els.applyDecimateBtn) els.applyDecimateBtn.disabled = !decimateState.plan?.safe;
+  }
+  function invalidateDecimateAnalysis() {
+    decimateState = { meshId: null, settingsKey: "", plan: null };
+    syncDecimateUi("Settings changed. Analyze again before applying decimation.");
+  }
+  function analyzeSelectedMeshDecimation({ announce = true } = {}) {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    if (!mesh?.geometry) {
+      decimateState = { meshId: null, settingsKey: "", plan: null };
+      syncDecimateUi();
+      if (announce) log("Protected Decimate needs one selected editable mesh.");
+      return null;
+    }
+    const settings = decimateSettingsFromUi();
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const plan = protectedDecimatePlan(source, settings);
+    source.dispose();
+    decimateState = { meshId: mesh.userData.id, settingsKey: decimateSettingsKey(settings), plan };
+    syncDecimateUi();
+    if (announce) log(`Protected Decimate analysis on ${mesh.name}: ${plan.reason}`, {
+      requestedReductionPercent: settings.reduction,
+      achievedReductionPercent: Number(plan.achievedReduction.toFixed(2)),
+      beforeTriangles: plan.beforeTriangles,
+      afterTriangles: plan.afterTriangles,
+      protectedVertices: plan.protectedVertices,
+      protectedEdges: plan.protectedEdges,
+      candidateEdges: plan.candidateEdges,
+      geometryChanged: false
+    });
+    return plan;
+  }
+  function applyAnalyzedDecimation() {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const settings = decimateSettingsFromUi();
+    if (!mesh?.geometry || mesh.userData.id !== decimateState.meshId || decimateSettingsKey(settings) !== decimateState.settingsKey) {
+      analyzeSelectedMeshDecimation();
+      return [];
+    }
+    const plan = decimateState.plan;
+    if (!plan?.safe) {
+      log(`Protected Decimate made no changes: ${plan?.reason || "analyze the selected mesh first."}`);
+      return [];
+    }
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const geometry = geometryFromWeldedTriangles(source, plan.triangles);
+    source.dispose();
+    recordHistory("protected decimate");
+    replaceEditableMeshGeometry(mesh, geometry);
+    mesh.userData.edgeBevelProtectedEdges = [];
+    mesh.userData.dissolvedSurfaceEdges = [];
+    selectedSurfaceVertices.length = 0;
+    selectedSurfaceEdges.length = 0;
+    selectedFaces.length = 0;
+    selectedFace = null;
+    updateFaceMarker();
+    updateSurfaceComponentMarker();
+    clearMeshIntegrityReport();
+    decimateState = { meshId: null, settingsKey: "", plan: null };
+    updateAll();
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+    syncDecimateUi(`Removed ${plan.removedTriangles} triangles safely. Undo is ready.`);
+    log(`Protected Decimate reduced ${mesh.name} from ${plan.beforeTriangles} to ${plan.afterTriangles} triangles.`, {
+      requestedReductionPercent: plan.settings.reduction,
+      achievedReductionPercent: Number(plan.achievedReduction.toFixed(2)),
+      collapsedEdges: plan.collapsedEdges,
+      protectedVertices: plan.protectedVertices,
+      protectedEdges: plan.protectedEdges,
+      closedMeshPreserved: plan.beforeClosed ? plan.afterClosed : "source mesh was open",
+      uvAndMaterialAttributesPreservedPerTriangleCorner: true,
+      undoReady: true
+    });
+    return [mesh];
+  }
+  function lodNormalizedSettings(options = {}) {
+    const reductions = [options.lod1, options.lod2, options.lod3].map((value, index) => Math.min(index === 2 ? 98 : 95, Math.max(1, Number(value) || [10, 25, 65][index]))).sort((a, b) => a - b);
+    for (let index = 1; index < reductions.length; index++) {
+      reductions[index] = Math.min(index === 2 ? 98 : 95, Math.max(reductions[index], reductions[index - 1] + 1));
+    }
+    return {
+      reductions,
+      featureAngle: Math.min(179, Math.max(1, Number(options.featureAngle) || 35)),
+      preserveBoundaries: options.preserveBoundaries !== false,
+      preserveUvSeams: options.preserveUvSeams !== false,
+      preserveMaterials: options.preserveMaterials !== false,
+      hideGenerated: options.hideGenerated !== false
+    };
+  }
+  function lodSettingsFromUi() {
+    const settings = lodNormalizedSettings({
+      lod1: els.lod1ReductionInput?.value,
+      lod2: els.lod2ReductionInput?.value,
+      lod3: els.lod3ReductionInput?.value,
+      featureAngle: els.lodFeatureAngleInput?.value,
+      preserveBoundaries: els.lodPreserveBoundariesInput?.checked,
+      preserveUvSeams: els.lodPreserveUvSeamsInput?.checked,
+      preserveMaterials: els.lodPreserveMaterialsInput?.checked,
+      hideGenerated: els.lodHideGeneratedInput?.checked
+    });
+    [els.lod1ReductionInput, els.lod2ReductionInput, els.lod3ReductionInput].forEach((input, index) => {
+      if (input) input.value = String(settings.reductions[index]);
+    });
+    if (els.lodFeatureAngleInput) els.lodFeatureAngleInput.value = String(settings.featureAngle);
+    return settings;
+  }
+  function lodSettingsKey(settings) {
+    return JSON.stringify(lodNormalizedSettings({
+      lod1: settings?.reductions?.[0],
+      lod2: settings?.reductions?.[1],
+      lod3: settings?.reductions?.[2],
+      featureAngle: settings?.featureAngle,
+      preserveBoundaries: settings?.preserveBoundaries,
+      preserveUvSeams: settings?.preserveUvSeams,
+      preserveMaterials: settings?.preserveMaterials,
+      hideGenerated: settings?.hideGenerated
+    }));
+  }
+  function disposeLodPlan(plan) {
+    for (const level of plan?.levels || []) level.geometry?.dispose?.();
+  }
+  function buildProtectedLodPlan(source, options = {}) {
+    const settings = lodNormalizedSettings(options);
+    const sourcePosition = source?.getAttribute?.("position");
+    const originalTriangles = Math.floor((sourcePosition?.count || 0) / 3);
+    const levels = [];
+    if (originalTriangles < 8) {
+      return { settings, originalTriangles, levels, safe: false, reason: "At least eight triangles are needed to create a useful LOD set." };
+    }
+    for (let levelIndex = 0; levelIndex < settings.reductions.length; levelIndex++) {
+      const requestedReduction = settings.reductions[levelIndex];
+      const targetTriangles = Math.max(4, Math.floor(originalTriangles * (1 - requestedReduction / 100)));
+      let working = source.index ? source.toNonIndexed() : source.clone();
+      let workingTriangles = Math.floor(working.getAttribute("position").count / 3);
+      let attempts = 0;
+      while (workingTriangles > targetTriangles && attempts < 12) {
+        const relativeReduction = Math.min(90, Math.max(1, (workingTriangles - targetTriangles) / workingTriangles * 100));
+        const step = protectedDecimatePlan(working, {
+          reduction: relativeReduction,
+          featureAngle: settings.featureAngle,
+          preserveBoundaries: settings.preserveBoundaries,
+          preserveUvSeams: settings.preserveUvSeams,
+          preserveMaterials: settings.preserveMaterials
+        });
+        if (!step.safe || step.afterTriangles >= workingTriangles) break;
+        const next = geometryFromWeldedTriangles(working, step.triangles);
+        working.dispose();
+        working = next;
+        workingTriangles = step.afterTriangles;
+        attempts++;
+      }
+      const previousTriangles = levels.at(-1)?.triangleCount || originalTriangles;
+      if (workingTriangles >= previousTriangles) {
+        working.dispose();
+        break;
+      }
+      levels.push({
+        level: levelIndex + 1,
+        requestedReduction,
+        achievedReduction: (originalTriangles - workingTriangles) / originalTriangles * 100,
+        targetTriangles,
+        triangleCount: workingTriangles,
+        geometry: working.clone()
+      });
+      working.dispose();
+    }
+    const safe = levels.length === settings.reductions.length;
+    const counts = [originalTriangles, ...levels.map((level) => level.triangleCount)];
+    const previewSummary = counts.map((count, index) => `LOD${index} ${index === 0 ? "Original" : "Preview"}: ${count} triangles`).join("; ");
+    return {
+      settings,
+      originalTriangles,
+      levels,
+      safe,
+      reason: safe ? `Safe LOD preview: ${counts.length} models total \u2014 ${previewSummary}.` : `Only ${levels.length} of 3 LOD preview models could be created safely with the current detail protections.`
+    };
+  }
+  function syncLodGeneratorUi(message = null) {
+    if (els.lodGeneratorStatus) {
+      els.lodGeneratorStatus.textContent = message || lodGeneratorState.plan?.reason || "Select one editable mesh, then analyze a protected LOD set.";
+    }
+    if (els.generateLodGeneratorBtn) els.generateLodGeneratorBtn.disabled = !lodGeneratorState.plan?.safe;
+  }
+  function invalidateLodGeneratorAnalysis() {
+    disposeLodPlan(lodGeneratorState.plan);
+    lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+    syncLodGeneratorUi("Settings changed. Analyze the LOD set again before generating it.");
+  }
+  function analyzeSelectedMeshLodSet({ announce = true } = {}) {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    disposeLodPlan(lodGeneratorState.plan);
+    if (!mesh?.geometry) {
+      lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+      syncLodGeneratorUi();
+      if (announce) log("LOD Generator needs one selected editable mesh.");
+      return null;
+    }
+    const settings = lodSettingsFromUi();
+    const plan = buildProtectedLodPlan(mesh.geometry, settings);
+    lodGeneratorState = { meshId: mesh.userData.id, settingsKey: lodSettingsKey(settings), plan };
+    syncLodGeneratorUi();
+    if (announce) log(`LOD Generator analysis on ${mesh.name}: ${plan.reason}`, {
+      geometryChanged: false,
+      originalTriangles: plan.originalTriangles,
+      levels: plan.levels.map((level) => ({
+        level: level.level,
+        requestedReductionPercent: level.requestedReduction,
+        achievedReductionPercent: Number(level.achievedReduction.toFixed(2)),
+        triangles: level.triangleCount
+      }))
+    });
+    return plan;
+  }
+  function generateAnalyzedLodSet() {
+    const sourceMesh = normalEditTargetMesh() || singleMeshTarget();
+    const settings = lodSettingsFromUi();
+    if (!sourceMesh?.geometry || sourceMesh.userData.id !== lodGeneratorState.meshId || lodSettingsKey(settings) !== lodGeneratorState.settingsKey) {
+      analyzeSelectedMeshLodSet();
+      return [];
+    }
+    const plan = lodGeneratorState.plan;
+    if (!plan?.safe) {
+      log(`LOD Generator made no changes: ${plan?.reason || "analyze the selected mesh first."}`);
+      return [];
+    }
+    recordHistory("generate LOD set");
+    const existingLod = sourceMesh.userData.lod?.level === 0 ? sourceMesh.userData.lod : null;
+    const setId = existingLod?.setId || `lod-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const oldGroupId = sourceMesh.userData.groupId || null;
+    let lodGroup = existingLod ? groupRecord(oldGroupId) : null;
+    if (!lodGroup) {
+      const baseName2 = sourceMesh.name.replace(/\s+LOD\d+$/i, "");
+      lodGroup = createSceneGroupRecord({
+        name: uniqueSceneGroupName(`${baseName2} LOD Set`),
+        parentId: oldGroupId
+      });
+    }
+    const generatedBefore = objects.filter((object) => object !== sourceMesh && object.userData.lod?.setId === setId);
+    generatedBefore.forEach((object) => removeObject(object, { record: false, update: false }));
+    const baseName = sourceMesh.name.replace(/\s+LOD\d+$/i, "");
+    sourceMesh.name = `${baseName} LOD0`;
+    sourceMesh.userData.groupId = lodGroup.id;
+    sourceMesh.userData.groupName = lodGroup.name;
+    sourceMesh.userData.lod = {
+      setId,
+      level: 0,
+      sourceId: sourceMesh.userData.id,
+      reduction: 0,
+      triangleCount: plan.originalTriangles,
+      screenCoverage: 1
+    };
+    const coverage = [0.6, 0.3, 0.12];
+    const generated = plan.levels.map((level, index) => {
+      const spec = serializeObject(sourceMesh);
+      delete spec.id;
+      spec.shape = "custom";
+      spec.geometry = geometryToData(level.geometry);
+      spec.name = `${baseName} LOD${level.level}`;
+      spec.hidden = settings.hideGenerated;
+      spec.groupId = lodGroup.id;
+      spec.groupName = lodGroup.name;
+      spec.linkId = null;
+      spec.linkColor = null;
+      spec.liveMirror = null;
+      spec.lod = {
+        setId,
+        level: level.level,
+        sourceId: sourceMesh.userData.id,
+        reduction: Number(level.achievedReduction.toFixed(4)),
+        triangleCount: level.triangleCount,
+        screenCoverage: coverage[index]
+      };
+      return addObject(spec, { record: false, select: false, update: false });
+    });
+    checkedIds.clear();
+    activeGroupIds = [];
+    selectedGroupRecordId = null;
+    selectObject(sourceMesh);
+    ensureSceneGroups();
+    ensureModelGroups();
+    clearSelectedSurfaceComponents();
+    clearMeshIntegrityReport();
+    updateAll();
+    const counts = [plan.originalTriangles, ...plan.levels.map((level) => level.triangleCount)];
+    const generatedSummary = counts.map((count, index) => `LOD${index} ${index === 0 ? "Original" : "Preview"}: ${count} triangles`).join("; ");
+    disposeLodPlan(plan);
+    lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+    syncLodGeneratorUi(`Generated ${lodGroup.name}: ${counts.length} models total \u2014 ${generatedSummary}. Undo is ready.`);
+    log(`Generated protected LOD set ${lodGroup.name}.`, {
+      sourcePreservedAs: sourceMesh.name,
+      triangleCounts: counts,
+      modelCount: counts.length,
+      generatedLevelsHidden: settings.hideGenerated,
+      separateSceneObjects: true,
+      uvAndMaterialAttributesPreservedPerTriangleCorner: true,
+      undoReady: true
+    });
+    return [sourceMesh, ...generated];
+  }
+  function uvUnwrapNormalizedSettings(options = {}) {
+    return {
+      seamAngle: Math.min(179, Math.max(1, Number(options.seamAngle) || 45)),
+      padding: Math.min(20, Math.max(0, Number(options.padding) || 0)),
+      atlasSize: [512, 1024, 2048].includes(Number(options.atlasSize)) ? Number(options.atlasSize) : 1024
+    };
+  }
+  function uvUnwrapSettingsFromUi() {
+    return uvUnwrapNormalizedSettings({
+      seamAngle: els.uvUnwrapSeamAngleInput?.value,
+      padding: els.uvUnwrapPaddingInput?.value,
+      atlasSize: els.uvAtlasSizeSelect?.value
+    });
+  }
+  function uvUnwrapSettingsKey(settings) {
+    return JSON.stringify(uvUnwrapNormalizedSettings(settings));
+  }
+  function disposeUvUnwrapPlan(plan) {
+    plan?.sourceGeometry?.dispose?.();
+  }
+  function smartUvProjection(point, dominantAxis2) {
+    if (dominantAxis2 === "x") return new Vector2(point.z, point.y);
+    if (dominantAxis2 === "y") return new Vector2(point.x, point.z);
+    return new Vector2(point.x, point.y);
+  }
+  function buildSmartUvLayoutPlan(geometry, options = {}) {
+    const settings = uvUnwrapNormalizedSettings(options);
+    const sourceGeometry = geometry?.index ? geometry.toNonIndexed() : geometry?.clone?.();
+    const position = sourceGeometry?.getAttribute?.("position");
+    if (!position || position.count < 3 || position.count % 3) {
+      sourceGeometry?.dispose?.();
+      return { safe: false, settings, sourceGeometry: null, islands: [], uvs: null, reason: "The selected mesh has no complete triangle geometry." };
+    }
+    const triangleCount = position.count / 3;
+    const triangles = [];
+    const edgeTriangles = /* @__PURE__ */ new Map();
+    for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+      const points = [0, 1, 2].map((corner) => new Vector3(
+        position.getX(triangleIndex * 3 + corner),
+        position.getY(triangleIndex * 3 + corner),
+        position.getZ(triangleIndex * 3 + corner)
+      ));
+      const keys = points.map(vertexKey);
+      const normal = new Vector3().crossVectors(
+        points[1].clone().sub(points[0]),
+        points[2].clone().sub(points[0])
+      ).normalize();
+      triangles.push({ points, keys, normal, materialIndex: materialIndexForTriangle(sourceGeometry, triangleIndex) });
+      for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+        const edgeKey = [keys[a], keys[b]].sort().join("|");
+        if (!edgeTriangles.has(edgeKey)) edgeTriangles.set(edgeKey, []);
+        edgeTriangles.get(edgeKey).push(triangleIndex);
+      }
+    }
+    const adjacency = triangles.map(() => /* @__PURE__ */ new Set());
+    const minimumNormalDot = Math.cos(MathUtils.degToRad(settings.seamAngle));
+    for (const linked of edgeTriangles.values()) {
+      if (linked.length !== 2) continue;
+      const [a, b] = linked;
+      if (triangles[a].materialIndex !== triangles[b].materialIndex) continue;
+      if (triangles[a].normal.dot(triangles[b].normal) + 1e-8 < minimumNormalDot) continue;
+      adjacency[a].add(b);
+      adjacency[b].add(a);
+    }
+    const islands = [];
+    const visited = /* @__PURE__ */ new Set();
+    for (let start = 0; start < triangleCount; start++) {
+      if (visited.has(start)) continue;
+      const triangleIndices = [];
+      const queue = [start];
+      visited.add(start);
+      while (queue.length) {
+        const current = queue.shift();
+        triangleIndices.push(current);
+        for (const neighbor of adjacency[current]) {
+          if (visited.has(neighbor)) continue;
+          visited.add(neighbor);
+          queue.push(neighbor);
+        }
+      }
+      const averageNormal = triangleIndices.reduce((sum, index) => sum.add(triangles[index].normal), new Vector3()).normalize();
+      const absolute = new Vector3(Math.abs(averageNormal.x), Math.abs(averageNormal.y), Math.abs(averageNormal.z));
+      const dominantAxis2 = absolute.x >= absolute.y && absolute.x >= absolute.z ? "x" : absolute.y >= absolute.z ? "y" : "z";
+      const projected = [];
+      triangleIndices.forEach((index) => triangles[index].points.forEach((point) => projected.push(smartUvProjection(point, dominantAxis2))));
+      const bounds = new Box2().setFromPoints(projected);
+      const size = bounds.getSize(new Vector2());
+      islands.push({ triangleIndices, dominantAxis: dominantAxis2, bounds, size, packedBounds: null });
+    }
+    const columns = Math.ceil(Math.sqrt(islands.length));
+    const rows = Math.ceil(islands.length / columns);
+    const cellWidth = 1 / columns;
+    const cellHeight = 1 / rows;
+    const paddingFraction = Math.min(0.45, settings.padding / 100);
+    const uvs = new Float32Array(position.count * 2);
+    islands.forEach((island, islandIndex) => {
+      const column = islandIndex % columns;
+      const row = Math.floor(islandIndex / columns);
+      const innerWidth = cellWidth * (1 - paddingFraction * 2);
+      const innerHeight = cellHeight * (1 - paddingFraction * 2);
+      const sourceWidth = Math.max(island.size.x, 1e-8);
+      const sourceHeight = Math.max(island.size.y, 1e-8);
+      const scale = Math.min(innerWidth / sourceWidth, innerHeight / sourceHeight);
+      const packedWidth = sourceWidth * scale;
+      const packedHeight = sourceHeight * scale;
+      const originU = column * cellWidth + (cellWidth - packedWidth) / 2;
+      const originV = 1 - (row + 1) * cellHeight + (cellHeight - packedHeight) / 2;
+      island.packedBounds = { minU: originU, minV: originV, maxU: originU + packedWidth, maxV: originV + packedHeight };
+      island.triangleIndices.forEach((triangleIndex) => {
+        triangles[triangleIndex].points.forEach((point, corner) => {
+          const projected = smartUvProjection(point, island.dominantAxis);
+          const vertexIndex = triangleIndex * 3 + corner;
+          uvs[vertexIndex * 2] = originU + (projected.x - island.bounds.min.x) * scale;
+          uvs[vertexIndex * 2 + 1] = originV + (projected.y - island.bounds.min.y) * scale;
+        });
+      });
+    });
+    const safe = islands.length > 0 && uvs.every((value) => Number.isFinite(value) && value >= -1e-6 && value <= 1 + 1e-6);
+    return {
+      safe,
+      settings,
+      sourceGeometry,
+      triangles,
+      islands,
+      uvs,
+      triangleCount,
+      reason: safe ? `Smart UV preview: ${triangleCount} triangles packed into ${islands.length} non-overlapping island${islands.length === 1 ? "" : "s"} at ${settings.atlasSize} x ${settings.atlasSize}.` : "A safe finite UV layout could not be created for this mesh."
+    };
+  }
+  function syncUvUnwrapUi(message = null) {
+    const safe = !!uvUnwrapState.plan?.safe;
+    const exportMode = els.uvPngExportSelect?.value || "texture";
+    const wantsTexture = exportMode === "texture" || exportMode === "all";
+    const wantsGuide = exportMode === "guide" || exportMode === "all";
+    const wantsAtlas = exportMode === "atlas" || exportMode === "all";
+    const exportCount = exportMode === "all" ? 3 : 1;
+    const guideReady = safe;
+    const textureSource = currentUvSourceTexture();
+    const activeMesh = textureSource?.mesh || normalEditTargetMesh() || singleMeshTarget();
+    const atlasReady = !!lastBakedTextureAtlas.dataUrl && lastBakedTextureAtlas.meshId === activeMesh?.userData.id;
+    const textureReady = !!textureSource?.dataUrl;
+    const exportReady = (!wantsTexture || textureReady) && (!wantsGuide || guideReady) && (!wantsAtlas || atlasReady);
+    if (els.uvUnwrapStatus) els.uvUnwrapStatus.textContent = message || uvUnwrapState.plan?.reason || "Select one editable mesh, then analyze a smart UV layout.";
+    if (els.applyUvUnwrapBtn) els.applyUvUnwrapBtn.disabled = !safe;
+    if (els.bakeTextureAtlasBtn) els.bakeTextureAtlasBtn.disabled = !safe;
+    if (els.exportUvPngBtn) {
+      els.exportUvPngBtn.disabled = !exportReady;
+      els.exportUvPngBtn.textContent = `Export ${exportCount} Selected PNG${exportCount === 1 ? "" : "s"}`;
+    }
+    if (els.uvPngExportCount) {
+      const missing = [];
+      if (wantsTexture && !textureReady) missing.push("select one textured mesh");
+      if (wantsGuide && !guideReady) missing.push("analyze a UV layout");
+      if (wantsAtlas && !atlasReady) missing.push("bake an atlas");
+      const selection = exportMode === "guide" ? "UV guide" : exportMode === "atlas" ? "baked UV atlas" : exportMode === "all" ? "original texture, UV guide, and baked UV atlas" : "original texture from Mesh Details";
+      els.uvPngExportCount.textContent = exportReady ? `${exportCount} PNG${exportCount === 1 ? "" : "s"} will be saved: ${selection}.` : `${exportCount} PNG${exportCount === 1 ? "" : "s"} selected: ${missing.join(" and ")} to make ${exportCount === 1 ? "it" : "them"} ready.`;
+    }
+  }
+  function invalidateUvUnwrapAnalysis() {
+    disposeUvUnwrapPlan(uvUnwrapState.plan);
+    uvUnwrapState = { meshId: null, settingsKey: "", plan: null };
+    syncUvUnwrapUi("Settings changed. Analyze the UV layout again before applying it.");
+  }
+  function analyzeSelectedMeshUvLayout({ announce = true } = {}) {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    disposeUvUnwrapPlan(uvUnwrapState.plan);
+    if (!mesh?.geometry) {
+      uvUnwrapState = { meshId: null, settingsKey: "", plan: null };
+      syncUvUnwrapUi();
+      if (announce) log("UV Unwrap needs one selected editable mesh.");
+      return null;
+    }
+    const settings = uvUnwrapSettingsFromUi();
+    const plan = buildSmartUvLayoutPlan(mesh.geometry, settings);
+    uvUnwrapState = { meshId: mesh.userData.id, settingsKey: uvUnwrapSettingsKey(settings), plan };
+    syncUvUnwrapUi();
+    if (announce) log(`UV layout analysis on ${mesh.name}: ${plan.reason}`, { geometryChanged: false, triangles: plan.triangleCount || 0, islands: plan.islands.length });
+    return plan;
+  }
+  function currentUvUnwrapTarget() {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const settings = uvUnwrapSettingsFromUi();
+    if (!mesh?.geometry || mesh.userData.id !== uvUnwrapState.meshId || uvUnwrapSettingsKey(settings) !== uvUnwrapState.settingsKey) return null;
+    return { mesh, settings, plan: uvUnwrapState.plan };
+  }
+  function geometryWithUvPlan(plan) {
+    const geometry = plan.sourceGeometry.clone();
+    geometry.setAttribute("uv", new BufferAttribute(plan.uvs.slice(), 2));
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    return geometry;
+  }
+  function finishUvUnwrapChange(mesh, geometry, message, details = {}) {
+    replaceEditableMeshGeometry(mesh, geometry);
+    clearSelectedSurfaceComponents();
+    clearMeshIntegrityReport();
+    disposeUvUnwrapPlan(uvUnwrapState.plan);
+    uvUnwrapState = { meshId: null, settingsKey: "", plan: null };
+    updateAll();
+    syncUvUnwrapUi(message);
+    log(message, { mesh: mesh.name, undoReady: true, ...details });
+  }
+  function applyAnalyzedUvUnwrap() {
+    const target = currentUvUnwrapTarget();
+    if (!target?.plan?.safe) {
+      analyzeSelectedMeshUvLayout();
+      return false;
+    }
+    recordHistory("apply UV unwrap");
+    const geometry = geometryWithUvPlan(target.plan);
+    const islands = target.plan.islands.length;
+    finishUvUnwrapChange(target.mesh, geometry, `Applied smart UV unwrap to ${target.mesh.name}: ${islands} packed island${islands === 1 ? "" : "s"}. Undo is ready.`, { islands, texturePixelsChanged: false });
+    return true;
+  }
+  function affineTriangleTransform(source, destination) {
+    const [s0, s1, s2] = source;
+    const [d0, d1, d2] = destination;
+    const determinant = s0.x * (s1.y - s2.y) + s1.x * (s2.y - s0.y) + s2.x * (s0.y - s1.y);
+    if (Math.abs(determinant) < 1e-8) return null;
+    const coefficient = (values) => ({
+      first: (values[0] * (s1.y - s2.y) + values[1] * (s2.y - s0.y) + values[2] * (s0.y - s1.y)) / determinant,
+      second: (values[0] * (s2.x - s1.x) + values[1] * (s0.x - s2.x) + values[2] * (s1.x - s0.x)) / determinant,
+      offset: (values[0] * (s1.x * s2.y - s2.x * s1.y) + values[1] * (s2.x * s0.y - s0.x * s2.y) + values[2] * (s0.x * s1.y - s1.x * s0.y)) / determinant
+    });
+    const x = coefficient(destination.map((point) => point.x));
+    const y = coefficient(destination.map((point) => point.y));
+    return [x.first, y.first, x.second, y.second, x.offset, y.offset];
+  }
+  function drawAtlasImageTriangle(context, image, sourceUvs, destinationUvs, atlasSize, surface) {
+    const width = image.naturalWidth || image.width;
+    const height = image.naturalHeight || image.height;
+    const source = sourceUvs.map((uv) => {
+      const [u, v] = transformedMergeUv(uv, surface);
+      return new Vector2(u * width, (1 - v) * height);
+    });
+    const destination = destinationUvs.map((uv) => new Vector2(uv[0] * atlasSize, (1 - uv[1]) * atlasSize));
+    const transform2 = affineTriangleTransform(source, destination);
+    if (!transform2) return false;
+    context.save();
+    const center = destination.reduce((sum, point) => sum.add(point), new Vector2()).multiplyScalar(1 / 3);
+    const bleedPixels = Math.max(1.5, atlasSize / 1024);
+    const expandedDestination = destination.map((point) => {
+      const direction = point.clone().sub(center);
+      return direction.lengthSq() > 1e-8 ? point.clone().add(direction.setLength(bleedPixels)) : point.clone();
+    });
+    context.beginPath();
+    context.moveTo(expandedDestination[0].x, expandedDestination[0].y);
+    context.lineTo(expandedDestination[1].x, expandedDestination[1].y);
+    context.lineTo(expandedDestination[2].x, expandedDestination[2].y);
+    context.closePath();
+    context.clip();
+    context.transform(...transform2);
+    context.drawImage(image, 0, 0);
+    context.restore();
+    return true;
+  }
+  function drawAtlasImageIsland(context, image, mappings, surface) {
+    if (!mappings.length) return false;
+    const prepared = mappings.map(({ sourceUvs, destinationUvs }) => {
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      const source = sourceUvs.map((uv) => {
+        const [u, v] = transformedMergeUv(uv, surface);
+        return new Vector2(u * width, (1 - v) * height);
+      });
+      const destination = destinationUvs.map((uv) => new Vector2(uv[0], uv[1]));
+      return { destination, transform: affineTriangleTransform(source, destination) };
+    });
+    const reference = prepared[0]?.transform;
+    if (!reference || prepared.some((item) => !item.transform || item.transform.some((value, index) => Math.abs(value - reference[index]) > 1e-3))) return false;
+    context.save();
+    context.beginPath();
+    for (const { destination } of prepared) {
+      context.moveTo(destination[0].x, destination[0].y);
+      context.lineTo(destination[1].x, destination[1].y);
+      context.lineTo(destination[2].x, destination[2].y);
+      context.closePath();
+    }
+    context.clip();
+    context.transform(...reference);
+    context.drawImage(image, 0, 0);
+    context.restore();
+    return true;
+  }
+  async function bakeAnalyzedTextureAtlas() {
+    const target = currentUvUnwrapTarget();
+    if (!target?.plan?.safe) {
+      analyzeSelectedMeshUvLayout();
+      return false;
+    }
+    const { mesh, plan, settings } = target;
+    if (Array.isArray(mesh.material)) {
+      syncUvUnwrapUi("Texture Atlas currently needs a mesh with one material. Merge material slots first, or use Apply UV Unwrap only.");
+      log("Texture Atlas was not baked because the selected mesh uses multiple material slots.");
+      return false;
+    }
+    const canvas2 = document.createElement("canvas");
+    canvas2.width = settings.atlasSize;
+    canvas2.height = settings.atlasSize;
+    const context = canvas2.getContext("2d");
+    if (!context) return false;
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = "high";
+    const oldUv = plan.sourceGeometry.getAttribute("uv");
+    let image = null;
+    if (mesh.userData.textureUrl && oldUv) {
+      try {
+        image = await loadMergeTextureImage(mesh.userData.textureUrl);
+      } catch (error) {
+        syncUvUnwrapUi(`Texture Atlas could not load the current texture: ${error.message}`);
+        log(`Texture Atlas failed on ${mesh.name}: ${error.message}`);
+        return false;
+      }
+    }
+    const surface = {
+      textureFlipY: mesh.userData.textureFlipY ?? true,
+      textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0)
+    };
+    const color = `#${mesh.material.color.getHexString()}`;
+    for (const island of plan.islands) {
+      const mappings = island.triangleIndices.map((triangleIndex) => {
+        const destinationUvs = [0, 1, 2].map((corner) => {
+          const offset = (triangleIndex * 3 + corner) * 2;
+          return [plan.uvs[offset] * settings.atlasSize, (1 - plan.uvs[offset + 1]) * settings.atlasSize];
+        });
+        const sourceUvs = oldUv ? [0, 1, 2].map((corner) => [oldUv.getX(triangleIndex * 3 + corner), oldUv.getY(triangleIndex * 3 + corner)]) : null;
+        return { triangleIndex, destinationUvs, sourceUvs };
+      });
+      const islandDrawn = image && oldUv && drawAtlasImageIsland(context, image, mappings, surface);
+      if (islandDrawn) continue;
+      for (const { sourceUvs, destinationUvs } of mappings) {
+        const normalizedDestinationUvs = destinationUvs.map(([x, y]) => [x / settings.atlasSize, 1 - y / settings.atlasSize]);
+        const destination = destinationUvs.map(([x, y]) => new Vector2(x, y));
+        if (image && oldUv) {
+          drawAtlasImageTriangle(context, image, sourceUvs, normalizedDestinationUvs, settings.atlasSize, surface);
+          continue;
+        }
+        context.beginPath();
+        context.moveTo(destination[0].x, destination[0].y);
+        context.lineTo(destination[1].x, destination[1].y);
+        context.lineTo(destination[2].x, destination[2].y);
+        context.closePath();
+        context.fillStyle = color;
+        context.fill();
+      }
+    }
+    const sourceTextureUrl = mesh.userData.textureUrl || null;
+    const sourceTextureName = mesh.userData.textureName || `${mesh.name} Texture`;
+    recordHistory("bake texture atlas");
+    const dataUrl = canvas2.toDataURL("image/png");
+    const textureName = registerTextureAsset(`${mesh.name} Texture Atlas.png`, dataUrl) || `${mesh.name} Texture Atlas.png`;
+    lastBakedTextureAtlas = {
+      meshId: mesh.userData.id,
+      dataUrl,
+      fileName: `${safeFileName(String(textureName).replace(/\.png$/i, ""), "texture-atlas")}.png`,
+      atlasSize: settings.atlasSize,
+      sourceTextureUrl,
+      sourceTextureName
+    };
+    const geometry = geometryWithUvPlan(plan);
+    applyTextureToMesh(mesh, dataUrl, textureName, true, 0);
+    mesh.material.color.set("#ffffff");
+    finishUvUnwrapChange(mesh, geometry, `Baked and applied ${settings.atlasSize} x ${settings.atlasSize} texture atlas to ${mesh.name}. Undo is ready.`, { islands: plan.islands.length, atlasSize: settings.atlasSize, sourceTextureBaked: !!image });
+    refreshTextureLibraryUi();
+    return true;
+  }
+  function createUvLayoutCanvas(plan) {
+    const size = plan.settings.atlasSize;
+    const canvas2 = document.createElement("canvas");
+    canvas2.width = size;
+    canvas2.height = size;
+    const context = canvas2.getContext("2d");
+    context.clearRect(0, 0, size, size);
+    const drawTrianglePath = (triangleIndex) => {
+      const points = [0, 1, 2].map((corner) => {
+        const offset = (triangleIndex * 3 + corner) * 2;
+        return [plan.uvs[offset] * size, (1 - plan.uvs[offset + 1]) * size];
+      });
+      context.beginPath();
+      context.moveTo(points[0][0], points[0][1]);
+      context.lineTo(points[1][0], points[1][1]);
+      context.lineTo(points[2][0], points[2][1]);
+      context.closePath();
+    };
+    plan.islands.forEach((island, islandIndex) => {
+      const hue = Math.round(islandIndex * 137.508 % 360);
+      for (const triangleIndex of island.triangleIndices) {
+        drawTrianglePath(triangleIndex);
+        context.fillStyle = `hsla(${hue}, 90%, 58%, 0.16)`;
+        context.fill();
+        context.strokeStyle = "rgba(0, 0, 0, 0.92)";
+        context.lineWidth = Math.max(4, size / 256);
+        context.stroke();
+        drawTrianglePath(triangleIndex);
+        context.strokeStyle = `hsl(${hue}, 100%, 68%)`;
+        context.lineWidth = Math.max(2, size / 512);
+        context.stroke();
+      }
+    });
+    return canvas2;
+  }
+  function exportAnalyzedUvLayout({ announce = true } = {}) {
+    const target = currentUvUnwrapTarget();
+    if (!target?.plan?.safe) {
+      analyzeSelectedMeshUvLayout();
+      return false;
+    }
+    const canvas2 = createUvLayoutCanvas(target.plan);
+    const fileName = `${safeFileName(target.mesh.name || "mesh")}-uv-layout-${target.settings.atlasSize}.png`;
+    downloadDataUrl(fileName, canvas2.toDataURL("image/png"));
+    if (announce) {
+      syncUvUnwrapUi(`Saved 1 PNG: ${fileName} with ${target.plan.islands.length} UV islands.`);
+      log(`Exported UV layout guide for ${target.mesh.name}.`, { fileName, filesSaved: 1, islands: target.plan.islands.length, atlasSize: target.settings.atlasSize, geometryChanged: false });
+    }
+    return fileName;
+  }
+  function exportLastBakedTextureAtlas({ announce = true } = {}) {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    if (!lastBakedTextureAtlas.dataUrl || lastBakedTextureAtlas.meshId !== mesh?.userData.id) {
+      syncUvUnwrapUi("Bake a texture atlas before exporting the atlas image.");
+      log("Texture Atlas export needs one completed Bake Texture Atlas operation first.");
+      return false;
+    }
+    downloadDataUrl(lastBakedTextureAtlas.fileName || "texture-atlas.png", lastBakedTextureAtlas.dataUrl);
+    if (announce) {
+      syncUvUnwrapUi(`Saved 1 PNG: ${lastBakedTextureAtlas.fileName} containing the actual baked texture atlas.`);
+      log("Exported baked texture atlas image.", {
+        fileName: lastBakedTextureAtlas.fileName,
+        filesSaved: 1,
+        atlasSize: lastBakedTextureAtlas.atlasSize,
+        sourceMeshId: lastBakedTextureAtlas.meshId
+      });
+    }
+    return lastBakedTextureAtlas.fileName;
+  }
+  function currentUvSourceTexture() {
+    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    if (!mesh) return null;
+    const bakedSourceIsCurrent = lastBakedTextureAtlas.meshId === mesh.userData.id && lastBakedTextureAtlas.dataUrl === mesh.userData.textureUrl && lastBakedTextureAtlas.sourceTextureUrl;
+    const dataUrl = bakedSourceIsCurrent ? lastBakedTextureAtlas.sourceTextureUrl : mesh.userData.textureUrl;
+    if (!dataUrl) return null;
+    return {
+      mesh,
+      dataUrl,
+      textureName: bakedSourceIsCurrent ? lastBakedTextureAtlas.sourceTextureName || `${mesh.name} Texture` : mesh.userData.textureName || `${mesh.name} Texture`
+    };
+  }
+  async function exportCurrentMeshTexture({ announce = true } = {}) {
+    const source = currentUvSourceTexture();
+    if (!source?.dataUrl) {
+      syncUvUnwrapUi("Select one textured mesh before exporting its original texture.");
+      log("Original Texture export needs one selected textured mesh.");
+      return false;
+    }
+    let pngDataUrl = source.dataUrl;
+    try {
+      if (!/^data:image\/png[;,]/i.test(pngDataUrl)) {
+        const image = await loadMergeTextureImage(source.dataUrl);
+        const canvas2 = document.createElement("canvas");
+        canvas2.width = image.naturalWidth || image.width;
+        canvas2.height = image.naturalHeight || image.height;
+        const context = canvas2.getContext("2d");
+        if (!context) return false;
+        context.drawImage(image, 0, 0);
+        pngDataUrl = canvas2.toDataURL("image/png");
+      }
+    } catch (error) {
+      syncUvUnwrapUi(`Original Texture could not be converted to PNG: ${error.message}`);
+      log(`Original Texture export failed on ${source.mesh.name}: ${error.message}`);
+      return false;
+    }
+    const baseName = safeFileName(String(source.textureName || source.mesh.name || "texture").replace(/\.(png|jpe?g|webp|gif|bmp|svg)$/i, ""), "texture");
+    const fileName = `${baseName}.png`;
+    downloadDataUrl(fileName, pngDataUrl);
+    if (announce) {
+      syncUvUnwrapUi(`Saved 1 PNG: ${fileName}, matching the unchanged image in Mesh Details.`);
+      log("Exported original Mesh Details texture without UV baking.", { fileName, filesSaved: 1, sourceMeshId: source.mesh.userData.id, uvBaked: false });
+    }
+    return fileName;
+  }
+  async function exportSelectedUvPngs() {
+    const exportMode = els.uvPngExportSelect?.value || "texture";
+    const fileNames = [];
+    if (exportMode === "texture" || exportMode === "all") {
+      const textureFile = await exportCurrentMeshTexture({ announce: false });
+      if (!textureFile) return false;
+      fileNames.push(textureFile);
+    }
+    if (exportMode === "guide" || exportMode === "all") {
+      const guideFile = exportAnalyzedUvLayout({ announce: false });
+      if (!guideFile) return false;
+      fileNames.push(guideFile);
+    }
+    if (exportMode === "atlas" || exportMode === "all") {
+      const atlasFile = exportLastBakedTextureAtlas({ announce: false });
+      if (!atlasFile) return false;
+      fileNames.push(atlasFile);
+    }
+    const count = fileNames.length;
+    syncUvUnwrapUi(`Saved ${count} PNG${count === 1 ? "" : "s"}: ${fileNames.join(", ")}.`);
+    log(`Exported ${count} selected texture/UV PNG${count === 1 ? "" : "s"}.`, {
+      filesSaved: count,
+      files: fileNames,
+      exportMode
+    });
+    return fileNames;
+  }
+  function segmentsIntersect2d(a, b, c, d) {
+    const cross = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+    const abC = cross(a, b, c);
+    const abD = cross(a, b, d);
+    const cdA = cross(c, d, a);
+    const cdB = cross(c, d, b);
+    return abC * abD < -1e-10 && cdA * cdB < -1e-10;
+  }
+  function holeRepairUvOptions() {
+    return {
+      projection: els?.holeRepairUvProjectionSelect?.value || "auto"
+    };
+  }
+  function holeRepairPlanarUvs(points, normal, options = null) {
+    options || (options = {});
+    const dominant = ["x", "y", "z"].sort((a, b) => Math.abs(normal[b]) - Math.abs(normal[a]))[0];
+    const projection = ["x", "y", "z"].includes(options.projection) ? options.projection : dominant;
+    const projected = points.map((point) => {
+      if (projection === "x") return new Vector2(point.z, point.y);
+      if (projection === "y") return new Vector2(point.x, point.z);
+      return new Vector2(point.x, point.y);
+    });
+    const box = new Box2().setFromPoints(projected);
+    const size = box.getSize(new Vector2());
+    const rotation = ((Number(options.rotation) || 0) % 360 + 360) % 360;
+    return projected.map((point) => {
+      let u = size.x > 1e-8 ? (point.x - box.min.x) / size.x : 0.5;
+      let v = size.y > 1e-8 ? (point.y - box.min.y) / size.y : 0.5;
+      if (rotation === 90) [u, v] = [1 - v, u];
+      else if (rotation === 180) [u, v] = [1 - u, 1 - v];
+      else if (rotation === 270) [u, v] = [v, 1 - u];
+      if (options.flipU) u = 1 - u;
+      if (options.flipV) v = 1 - v;
+      return new Vector2(u, v);
+    });
+  }
+  function holeRepairAdjacentSurfaceUvs(source, loop, basis) {
+    const position = source.getAttribute("position");
+    const uv = source.getAttribute("uv");
+    if (!position || !uv || !loop?.edgeSignatures?.size) return null;
+    const { center, xAxis, yAxis, zAxis } = basis;
+    const holeBox = new Box3().setFromPoints(loop.points);
+    const holeSize = Math.max(holeBox.getSize(new Vector3()).length(), 1e-6);
+    let best = null;
+    for (let index = 0; index + 2 < position.count; index += 3) {
+      const points = [0, 1, 2].map((offset) => new Vector3(
+        position.getX(index + offset),
+        position.getY(index + offset),
+        position.getZ(index + offset)
+      ));
+      const keys = points.map(vertexKey);
+      const touchesBoundary = [[0, 1], [1, 2], [2, 0]].some(
+        ([a, b]) => loop.edgeSignatures.has([keys[a], keys[b]].sort().join("|"))
+      );
+      if (!touchesBoundary) continue;
+      const triangleNormal = new Vector3().crossVectors(
+        points[1].clone().sub(points[0]),
+        points[2].clone().sub(points[0])
+      );
+      const area2 = triangleNormal.length();
+      if (area2 <= 1e-10) continue;
+      triangleNormal.multiplyScalar(1 / area2);
+      const alignment = Math.abs(triangleNormal.dot(zAxis));
+      if (alignment < 0.995) continue;
+      const planeDistance = points.reduce((maximum, point) => Math.max(maximum, Math.abs(point.clone().sub(center).dot(zAxis))), 0);
+      if (planeDistance > Math.max(1e-4, holeSize * 2e-3)) continue;
+      const projected = points.map((point) => {
+        const local = point.clone().sub(center);
+        return new Vector2(local.dot(xAxis), local.dot(yAxis));
+      });
+      const geometryA = projected[1].clone().sub(projected[0]);
+      const geometryB = projected[2].clone().sub(projected[0]);
+      const determinant = geometryA.x * geometryB.y - geometryA.y * geometryB.x;
+      if (Math.abs(determinant) <= 1e-12) continue;
+      const triangleUvs = [0, 1, 2].map((offset) => new Vector2(uv.getX(index + offset), uv.getY(index + offset)));
+      const uvA = triangleUvs[1].clone().sub(triangleUvs[0]);
+      const uvB = triangleUvs[2].clone().sub(triangleUvs[0]);
+      if (Math.abs(uvA.x * uvB.y - uvA.y * uvB.x) <= 1e-12) continue;
+      const mapped = loop.points.map((point) => {
+        const local = point.clone().sub(center);
+        const projectedPoint = new Vector2(local.dot(xAxis), local.dot(yAxis));
+        const delta = projectedPoint.sub(projected[0]);
+        const weightA = (delta.x * geometryB.y - delta.y * geometryB.x) / determinant;
+        const weightB = (geometryA.x * delta.y - geometryA.y * delta.x) / determinant;
+        return triangleUvs[0].clone().addScaledVector(uvA, weightA).addScaledVector(uvB, weightB);
+      });
+      const score = alignment * 1e3 + area2;
+      if (!best || score > best.score) best = { uvs: mapped, score };
+    }
+    return best?.uvs || null;
+  }
+  function safeHoleCapPlan(source, loop, uvOptions = null) {
+    uvOptions || (uvOptions = {});
+    if (!loop?.points || loop.points.length < 3 || new Set(loop.keys).size !== loop.keys.length) {
+      return { safe: false, reason: "degenerate boundary" };
+    }
+    const basis = basisFromPoints(loop.points);
+    const { center, xAxis, yAxis, zAxis } = basis;
+    const contour = loop.points.map((point) => {
+      const local = point.clone().sub(center);
+      return new Vector2(local.dot(xAxis), local.dot(yAxis));
+    });
+    const box = new Box3().setFromPoints(loop.points);
+    const diagonal = Math.max(box.getSize(new Vector3()).length(), 1e-6);
+    const maxPlaneDistance = loop.points.reduce((max, point) => Math.max(max, Math.abs(point.clone().sub(center).dot(zAxis))), 0);
+    if (maxPlaneDistance > Math.max(1e-4, diagonal * 0.02)) {
+      return { safe: false, reason: "boundary is too twisted to cap safely" };
+    }
+    for (let a = 0; a < contour.length; a++) {
+      const aNext = (a + 1) % contour.length;
+      for (let b = a + 1; b < contour.length; b++) {
+        const bNext = (b + 1) % contour.length;
+        if (a === b || aNext === b || bNext === a) continue;
+        if (segmentsIntersect2d(contour[a], contour[aNext], contour[b], contour[bNext])) {
+          return { safe: false, reason: "boundary crosses itself" };
+        }
+      }
+    }
+    const rawTriangles = ShapeUtils.triangulateShape(contour, []);
+    if (rawTriangles.length !== contour.length - 2) return { safe: false, reason: "boundary could not be triangulated" };
+    let triangles = rawTriangles.map((indices) => [...indices]);
+    const directedBoundary = /* @__PURE__ */ new Map();
+    loop.keys.forEach((key2, index) => directedBoundary.set(`${key2}>${loop.keys[(index + 1) % loop.keys.length]}`, 1));
+    let same = 0;
+    let opposite = 0;
+    for (const triangle of triangles) {
+      for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+        const from = loop.keys[triangle[a]];
+        const to = loop.keys[triangle[b]];
+        if (directedBoundary.has(`${from}>${to}`)) same++;
+        if (directedBoundary.has(`${to}>${from}`)) opposite++;
+      }
+    }
+    if (same > opposite) triangles = triangles.map(([a, b, c]) => [a, c, b]);
+    const adjacentUvs = !uvOptions.projection || uvOptions.projection === "auto" ? holeRepairAdjacentSurfaceUvs(source, loop, basis) : null;
+    const planarUvs = adjacentUvs || holeRepairPlanarUvs(loop.points, zAxis, uvOptions);
+    const triangleMaterials = /* @__PURE__ */ new Map();
+    const position = source.getAttribute("position");
+    const boundaryKeys = new Set(loop.keys);
+    const sourceIndexByKey = /* @__PURE__ */ new Map();
+    for (let index = 0; index < position.count; index++) {
+      const key2 = vertexKey(new Vector3(position.getX(index), position.getY(index), position.getZ(index)));
+      if (!sourceIndexByKey.has(key2)) sourceIndexByKey.set(key2, index);
+    }
+    for (let triangleIndex = 0; triangleIndex < position.count / 3; triangleIndex++) {
+      const keys = [0, 1, 2].map((offset) => vertexKey(new Vector3(
+        position.getX(triangleIndex * 3 + offset),
+        position.getY(triangleIndex * 3 + offset),
+        position.getZ(triangleIndex * 3 + offset)
+      )));
+      if (keys.filter((key2) => boundaryKeys.has(key2)).length < 2) continue;
+      const material = materialIndexForTriangle(source, triangleIndex);
+      triangleMaterials.set(material, (triangleMaterials.get(material) || 0) + 1);
+    }
+    const materialIndex = [...triangleMaterials.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? 0;
+    return {
+      safe: true,
+      triangles,
+      planarUvs,
+      sourceIndexByKey,
+      materialIndex,
+      uvSource: adjacentUvs ? "adjacent-face" : "planar-projection"
+    };
+  }
+  function geometryWithHoleCaps(source, caps) {
+    const geometry = new BufferGeometry();
+    for (const [name, attribute] of Object.entries(source.attributes)) {
+      if (name === "normal" || name === "tangent") continue;
+      const values = Array.from(attribute.array);
+      for (const cap of caps) {
+        for (const triangle of cap.plan.triangles) {
+          for (const loopIndex of triangle) {
+            if (name === "position") {
+              values.push(...cap.loop.points[loopIndex].toArray());
+            } else if (name === "uv") {
+              values.push(...cap.plan.planarUvs[loopIndex].toArray());
+            } else {
+              const sourceIndex = cap.plan.sourceIndexByKey.get(cap.loop.keys[loopIndex]);
+              const offset = sourceIndex * attribute.itemSize;
+              for (let component2 = 0; component2 < attribute.itemSize; component2++) values.push(attribute.array[offset + component2]);
+            }
+          }
+        }
+      }
+      const TypedArray = attribute.array.constructor;
+      geometry.setAttribute(name, new BufferAttribute(new TypedArray(values), attribute.itemSize, attribute.normalized));
+    }
+    if (!source.getAttribute("uv")) {
+      const uvs = Array.from({ length: source.getAttribute("position").count * 2 }, () => 0);
+      for (const cap of caps) for (const triangle of cap.plan.triangles) for (const loopIndex of triangle) {
+        uvs.push(...cap.plan.planarUvs[loopIndex].toArray());
+      }
+      geometry.setAttribute("uv", new Float32BufferAttribute(uvs, 2));
+    }
+    if (source.groups.length) source.groups.forEach((group) => geometry.addGroup(group.start, group.count, group.materialIndex));
+    else geometry.addGroup(0, source.getAttribute("position").count, 0);
+    let start = source.getAttribute("position").count;
+    for (const cap of caps) {
+      const count = cap.plan.triangles.length * 3;
+      geometry.addGroup(start, count, cap.plan.materialIndex);
+      start += count;
+    }
+    geometry.name = source.name;
+    geometry.userData = { ...source.userData || {} };
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    return geometry;
+  }
+  function repairFoundHoles({ all = false } = {}) {
+    const mesh = objects.find((candidate) => candidate.userData?.id === holeRepairState.meshId) || normalEditTargetMesh() || singleMeshTarget();
+    if (!mesh?.geometry) {
+      log("Find Holes before repairing a boundary.");
+      return null;
+    }
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const topology = bridgeBoundaryTopology(source);
+    const selectedKey = holeRepairLoopKey(holeRepairState.loops[holeRepairState.index]);
+    const candidates = all ? topology.loops : topology.loops.filter((loop) => holeRepairLoopKey(loop) === selectedKey);
+    if (!candidates.length) {
+      source.dispose();
+      log("The highlighted hole changed or no longer exists. Run Find Holes again.");
+      findSelectedMeshHoles({ announce: false });
+      return null;
+    }
+    const safeCaps = [];
+    const refused = [];
+    const uvOptions = holeRepairUvOptions();
+    for (const loop of candidates) {
+      const plan = safeHoleCapPlan(source, loop, uvOptions);
+      if (plan.safe) safeCaps.push({ loop, plan });
+      else refused.push({ vertices: loop.points.length, reason: plan.reason });
+    }
+    if (!safeCaps.length) {
+      source.dispose();
+      log("No selected holes were safe to repair, so the mesh was left unchanged.", { refused });
+      return null;
+    }
+    const geometry = geometryWithHoleCaps(source, safeCaps);
+    const repairedTopology = bridgeBoundaryTopology(geometry);
+    const sourceTriangles = [];
+    const resultPosition = geometry.getAttribute("position");
+    for (let index = 0; index < resultPosition.count; index += 3) {
+      sourceTriangles.push([0, 1, 2].map((offset) => vertexKey(new Vector3(
+        resultPosition.getX(index + offset),
+        resultPosition.getY(index + offset),
+        resultPosition.getZ(index + offset)
+      ))));
+    }
+    const counts = topologyEdgeCounts(sourceTriangles);
+    const nonManifoldEdges = [...counts.values()].filter((count) => count > 2).length;
+    const uvValid = geometry.getAttribute("uv")?.count === resultPosition.count;
+    const expectedRemaining = topology.loops.length - safeCaps.length;
+    if (nonManifoldEdges || !uvValid || repairedTopology.loops.length !== expectedRemaining) {
+      source.dispose();
+      geometry.dispose();
+      log("Repair validation failed, so the mesh was left unchanged.", {
+        nonManifoldEdges,
+        uvValid,
+        expectedRemainingHoles: expectedRemaining,
+        detectedRemainingHoles: repairedTopology.loops.length
+      });
+      return null;
+    }
+    const beforeTriangles = source.getAttribute("position").count / 3;
+    const createdTriangles = safeCaps.reduce((sum, cap) => sum + cap.plan.triangles.length, 0);
+    source.dispose();
+    recordHistory(all ? "repair all safe holes" : "repair selected hole");
+    replaceEditableMeshGeometry(mesh, geometry);
+    selectedFaces.length = 0;
+    selectedFace = null;
+    clearSelectedSurfaceComponents();
+    updateFaceMarker();
+    updateAll();
+    findSelectedMeshHoles({ announce: false });
+    syncSurfaceEditorUi();
+    log(`Repaired ${safeCaps.length} hole${safeCaps.length === 1 ? "" : "s"} inside ${mesh.name}.`, {
+      beforeTriangles,
+      afterTriangles: beforeTriangles + createdTriangles,
+      createdTriangles,
+      remainingHoles: expectedRemaining,
+      planarUvsCreated: true,
+      inheritedAdjacentUvCaps: safeCaps.filter((cap) => cap.plan.uvSource === "adjacent-face").length,
+      uvProjection: uvOptions.projection,
+      uvRotation: uvOptions.rotation,
+      flipU: uvOptions.flipU,
+      flipV: uvOptions.flipV,
+      materialsPreserved: true,
+      refused,
+      undoReady: true
+    });
+    return mesh;
+  }
+  function normalEditTargetMesh() {
+    if (selectedFace?.mesh?.geometry) return selectedFace.mesh;
+    return selected?.isMesh && selected.geometry ? selected : null;
+  }
+  function swapTriangleCorners(geometry, triangleIndex) {
+    const second = triangleIndex * 3 + 1;
+    const third = second + 1;
+    for (const [name, attribute] of Object.entries(geometry.attributes || {})) {
+      if (name === "normal" || name === "tangent") continue;
+      swapAttributeVertices(attribute, second, third);
+    }
+  }
+  function finishNormalEdit(mesh, geometry, label, details) {
+    geometry.deleteAttribute("normal");
+    geometry.deleteAttribute("tangent");
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    recordHistory(label);
+    replaceEditableMeshGeometry(mesh, geometry);
+    selectedFaces.length = 0;
+    selectedFace = null;
+    clearSelectedSurfaceComponents();
+    updateFaceMarker();
+    updateAll();
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+    log(details.message, details.data);
+    return mesh;
+  }
+  function flipSelectedFaceNormals() {
+    const mesh = normalEditTargetMesh();
+    const faces = mesh ? selectedFaces.filter((face) => face.mesh === mesh) : [];
+    const triangleIndices = [...new Set(faces.map((face) => face.faceIndex).filter((index) => Number.isInteger(index) && index >= 0))];
+    if (!mesh || !triangleIndices.length) {
+      log("Flip Selected Faces needs a Triangle or Whole Face selection on one editable mesh.");
+      return null;
+    }
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const triangleCount = Math.floor((geometry.getAttribute("position")?.count || 0) / 3);
+    const usableIndices = triangleIndices.filter((index) => index < triangleCount);
+    if (!usableIndices.length) {
+      geometry.dispose();
+      log("The selected faces no longer match the current mesh topology, so nothing was changed.");
+      return null;
+    }
+    usableIndices.forEach((index) => swapTriangleCorners(geometry, index));
+    return finishNormalEdit(mesh, geometry, "flip selected face normals", {
+      message: `Flipped ${usableIndices.length} selected face normal${usableIndices.length === 1 ? "" : "s"} on ${mesh.name}.`,
+      data: { flippedTriangles: usableIndices.length, uvPreserved: !!geometry.getAttribute("uv"), undoReady: true }
+    });
+  }
+  function recalculateSelectedMeshNormals() {
+    const mesh = normalEditTargetMesh();
+    if (!mesh) {
+      log("Recalculate Outside needs one editable mesh selected.");
+      return null;
+    }
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const position = geometry.getAttribute("position");
+    const triangleCount = Math.floor((position?.count || 0) / 3);
+    if (!position || !triangleCount) {
+      geometry.dispose();
+      log("The selected mesh has no triangles to recalculate.");
+      return null;
+    }
+    const triangles = [];
+    const edgeMap = /* @__PURE__ */ new Map();
+    for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+      const points = [0, 1, 2].map((offset) => new Vector3(
+        position.getX(triangleIndex * 3 + offset),
+        position.getY(triangleIndex * 3 + offset),
+        position.getZ(triangleIndex * 3 + offset)
+      ));
+      const keys = points.map(vertexKey);
+      triangles.push({ points, keys });
+      for (const [fromIndex, toIndex] of [[0, 1], [1, 2], [2, 0]]) {
+        const from = keys[fromIndex];
+        const to = keys[toIndex];
+        const signature = [from, to].sort().join("|");
+        if (!edgeMap.has(signature)) edgeMap.set(signature, []);
+        edgeMap.get(signature).push({ triangleIndex, from, to });
+      }
+    }
+    const nonManifoldEdges = [...edgeMap.values()].filter((entries) => entries.length > 2).length;
+    if (nonManifoldEdges) {
+      geometry.dispose();
+      log("Recalculate Outside found non-manifold edges, so the mesh was left unchanged.", { nonManifoldEdges });
+      return null;
+    }
+    const neighbors = Array.from({ length: triangleCount }, () => []);
+    for (const entries of edgeMap.values()) {
+      if (entries.length !== 2) continue;
+      const [first, second] = entries;
+      const sameDirection = first.from === second.from && first.to === second.to;
+      neighbors[first.triangleIndex].push({ triangleIndex: second.triangleIndex, xorFlip: sameDirection });
+      neighbors[second.triangleIndex].push({ triangleIndex: first.triangleIndex, xorFlip: sameDirection });
+    }
+    const flips = Array(triangleCount).fill(null);
+    const components = [];
+    let orientationConflicts = 0;
+    for (let seed = 0; seed < triangleCount; seed++) {
+      if (flips[seed] !== null) continue;
+      flips[seed] = false;
+      const component2 = [];
+      const queue = [seed];
+      while (queue.length) {
+        const current = queue.shift();
+        component2.push(current);
+        for (const neighbor of neighbors[current]) {
+          const expected = Boolean(flips[current]) !== Boolean(neighbor.xorFlip);
+          if (flips[neighbor.triangleIndex] === null) {
+            flips[neighbor.triangleIndex] = expected;
+            queue.push(neighbor.triangleIndex);
+          } else if (flips[neighbor.triangleIndex] !== expected) {
+            orientationConflicts++;
+          }
+        }
+      }
+      components.push(component2);
+    }
+    if (orientationConflicts) {
+      geometry.dispose();
+      log("Recalculate Outside found a non-orientable surface, so the mesh was left unchanged.", { orientationConflicts });
+      return null;
+    }
+    let closedComponents = 0;
+    for (const component2 of components) {
+      const componentSet = new Set(component2);
+      const componentEdges = [...edgeMap.values()].filter((entries) => entries.some((entry) => componentSet.has(entry.triangleIndex)));
+      const closed = componentEdges.every((entries) => entries.length === 2);
+      if (!closed) continue;
+      closedComponents++;
+      let signedVolume = 0;
+      for (const triangleIndex of component2) {
+        const points = triangles[triangleIndex].points;
+        const a = points[0];
+        const b = flips[triangleIndex] ? points[2] : points[1];
+        const c = flips[triangleIndex] ? points[1] : points[2];
+        signedVolume += a.dot(new Vector3().crossVectors(b, c)) / 6;
+      }
+      if (signedVolume < -1e-10) {
+        component2.forEach((triangleIndex) => {
+          flips[triangleIndex] = !flips[triangleIndex];
+        });
+      }
+    }
+    let flippedTriangles = 0;
+    flips.forEach((flip, triangleIndex) => {
+      if (!flip) return;
+      swapTriangleCorners(geometry, triangleIndex);
+      flippedTriangles++;
+    });
+    return finishNormalEdit(mesh, geometry, "recalculate outside normals", {
+      message: `Recalculated ${triangleCount} triangle normals on ${mesh.name}.`,
+      data: {
+        flippedTriangles,
+        connectedComponents: components.length,
+        closedComponents,
+        openComponents: components.length - closedComponents,
+        uvPreserved: !!geometry.getAttribute("uv"),
+        undoReady: true
+      }
+    });
   }
   function openingLoopDetailsForMesh(mesh) {
     const { triangleNormals, vertexPoints, edgeData, edgeKey } = meshEdgeTopology(mesh);
@@ -41217,6 +44221,7 @@ void main() {
         axis: ["x", "y", "z"].includes(mesh.userData.liveMirror.axis) ? mesh.userData.liveMirror.axis : "x",
         plane: Number(mesh.userData.liveMirror.plane) || 0
       } : null,
+      lod: mesh.userData.lod ? { ...mesh.userData.lod } : null,
       edgeBevelProtectedEdges: Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? [...mesh.userData.edgeBevelProtectedEdges] : [],
       dissolvedSurfaceEdges: Array.isArray(mesh.userData.dissolvedSurfaceEdges) ? [...mesh.userData.dissolvedSurfaceEdges] : []
     };
@@ -41267,7 +44272,7 @@ void main() {
     return {
       shapes: Object.keys(shapeFactories),
       transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
-      faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom"],
+      faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
       textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary"],
       exports: ["project", "json", "obj", "robloxPack", "dae"],
       sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
@@ -42160,9 +45165,12 @@ void main() {
     const transformTargets = transformTargetObjects();
     const selectedName = selected?.name || (transformTargets.length > 1 ? `${pivotEditMode ? "Pivot" : "Group"} (${transformTargets.length})` : "None");
     const markerCount = markerHelpers.length;
-    const triangleCount = selectedFaces.length;
+    const selectedModelTriangles = selected?.geometry ? Math.floor((selected.geometry.index?.count || selected.geometry.getAttribute("position")?.count || 0) / 3) : 0;
+    const selectedFaceCount = selectedFaces.length;
     const componentCount = selectedSurfaceVertices.length + selectedSurfaceEdges.length;
-    els.stateOutput.textContent = `Scene: ${totalObjects} object${totalObjects === 1 ? "" : "s"} | Selected mesh: ${selectedName} | Selected triangles: ${triangleCount} | Selected components: ${componentCount} | Marks: ${markerCount}`;
+    els.stateOutput.textContent = `Scene: ${totalObjects} object${totalObjects === 1 ? "" : "s"} | Selected mesh: ${selectedName} | Model triangles: ${selected ? selectedModelTriangles : "\u2014"} | Selected faces: ${selectedFaceCount} | Selected components: ${componentCount} | Marks: ${markerCount}`;
+    const exportSelectedObjBtn = document.querySelector("#exportSelectedObjBtn");
+    if (exportSelectedObjBtn) exportSelectedObjBtn.disabled = !selected?.geometry;
   }
   function updateAll() {
     syncSpotLightRig();
@@ -46423,6 +49431,19 @@ end
     boneDrag.canvas.releasePointerCapture?.(event.pointerId);
     boneDrag = null;
   }
+  function sortSurfaceEditorToolsAlphabetically() {
+    const body = document.querySelector("#surfaceEditorBody");
+    if (!body) return;
+    const sections = Array.from(body.children).filter((child) => child.matches("details.surface-bevel-details"));
+    const notes = Array.from(body.children).filter((child) => child.matches("p.api-note"));
+    const insertionPoint = notes[notes.length - 1] || null;
+    sections.sort((left, right) => {
+      const leftLabel = left.querySelector(":scope > summary")?.textContent?.trim() || "";
+      const rightLabel = right.querySelector(":scope > summary")?.textContent?.trim() || "";
+      return leftLabel.localeCompare(rightLabel, "en", { sensitivity: "base" });
+    }).forEach((section) => body.insertBefore(section, insertionPoint));
+  }
+  sortSurfaceEditorToolsAlphabetically();
   function resize() {
     const rect = canvas.parentElement.getBoundingClientRect();
     renderer.setSize(rect.width, rect.height, false);
@@ -46667,6 +49688,7 @@ end
   document.querySelector("#markerBtn").addEventListener("click", addMarkerFromSelectedTriangle);
   document.querySelector("#clearTriBtn").addEventListener("click", clearTriangleSelection);
   document.querySelector("#deleteTriBtn").addEventListener("click", deleteSelectedTriangles);
+  els.deleteSelectedSurfaceBtn?.addEventListener("click", deleteSelectedTriangles);
   document.querySelector("#extractTriBtn").addEventListener("click", extractSelectedTriangles);
   document.querySelector("#fillHoleBtn").addEventListener("click", fillSelectedHole);
   document.querySelector("#bridgeMeshesBtn").addEventListener("click", bridgeCheckedMeshes);
@@ -46701,13 +49723,13 @@ end
   function setModelToolsOpen(open = true) {
     if (!els.modelToolsWindow) return;
     setSectionCollapsed(els.modelToolsWindow, els.modelToolsCloseBtn, !open);
-    els.modelToolsOpenBtn?.classList.toggle("active", open);
+    els.modelToolsOpenBtn?.classList.remove("active");
     if (open) requestAnimationFrame(() => els.modelToolsWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
   function setOutputToolsOpen(open = true) {
     if (!els.outputToolsWindow) return;
     setSectionCollapsed(els.outputToolsWindow, els.outputToolsCloseBtn, !open);
-    els.outputToolsOpenBtn?.classList.toggle("active", open);
+    els.outputToolsOpenBtn?.classList.remove("active");
     if (open) requestAnimationFrame(() => els.outputToolsWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
   }
   function setCameraControlsOpen(open = true) {
@@ -46721,15 +49743,15 @@ end
   }
   els.modelToolsOpenBtn?.addEventListener("click", () => setModelToolsOpen(true));
   els.modelToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
-    els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
+    els.modelToolsOpenBtn?.classList.remove("active");
   }));
   els.outputToolsOpenBtn?.addEventListener("click", () => setOutputToolsOpen(true));
   els.outputToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
-    els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
+    els.outputToolsOpenBtn?.classList.remove("active");
   }));
   els.cameraControlsOpenBtn?.addEventListener("click", () => setCameraControlsOpen(true));
-  els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
-  els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
+  els.modelToolsOpenBtn?.classList.remove("active");
+  els.outputToolsOpenBtn?.classList.remove("active");
   els.cameraControlsOpenBtn?.classList.remove("active");
   document.querySelector("#digIntoBtn").addEventListener("click", digIntoSelectedFace);
   document.querySelector("#removeMarksBtn").addEventListener("click", removeMarkersForSelection);
@@ -46796,6 +49818,59 @@ end
   els.knifeCutCancelBtn?.addEventListener("click", () => cancelKnifeCutStroke());
   els.planeCutBtn?.addEventListener("click", applyPlaneCut);
   els.bridgeEdgeLoopsBtn?.addEventListener("click", bridgeSelectedEdgeLoops);
+  els.recalculateNormalsBtn?.addEventListener("click", recalculateSelectedMeshNormals);
+  els.flipNormalsBtn?.addEventListener("click", flipSelectedFaceNormals);
+  els.findHolesBtn?.addEventListener("click", () => findSelectedMeshHoles());
+  els.previousHoleBtn?.addEventListener("click", () => cycleSelectedHole(-1));
+  els.nextHoleBtn?.addEventListener("click", () => cycleSelectedHole(1));
+  els.frameHoleBtn?.addEventListener("click", frameSelectedHole);
+  els.repairSelectedHoleBtn?.addEventListener("click", () => repairFoundHoles({ all: false }));
+  els.repairAllHolesBtn?.addEventListener("click", () => repairFoundHoles({ all: true }));
+  els.checkNonManifoldBtn?.addEventListener("click", () => checkSelectedMeshIntegrity());
+  els.previousMeshIssueBtn?.addEventListener("click", () => cycleMeshIntegrityIssue(-1));
+  els.nextMeshIssueBtn?.addEventListener("click", () => cycleMeshIntegrityIssue(1));
+  els.frameMeshIssueBtn?.addEventListener("click", frameMeshIntegrityIssue);
+  els.clearMeshIssuesBtn?.addEventListener("click", () => clearMeshIntegrityReport({ announce: true }));
+  els.analyzeDoublesBtn?.addEventListener("click", () => analyzeSelectedMeshDoubles());
+  els.removeDoublesBtn?.addEventListener("click", removeAnalyzedDoubles);
+  els.removeDoublesToleranceInput?.addEventListener("input", () => invalidateRemoveDoublesAnalysis());
+  els.calculateMeshStatisticsBtn?.addEventListener("click", () => calculateSelectedMeshStatistics());
+  els.copyMeshStatisticsBtn?.addEventListener("click", copyMeshStatisticsReport);
+  els.analyzeDecimateBtn?.addEventListener("click", () => analyzeSelectedMeshDecimation());
+  els.applyDecimateBtn?.addEventListener("click", applyAnalyzedDecimation);
+  for (const input of [
+    els.decimateReductionInput,
+    els.decimateFeatureAngleInput,
+    els.decimatePreserveBoundariesInput,
+    els.decimatePreserveUvSeamsInput,
+    els.decimatePreserveMaterialsInput
+  ]) input?.addEventListener("input", invalidateDecimateAnalysis);
+  els.analyzeLodGeneratorBtn?.addEventListener("click", () => analyzeSelectedMeshLodSet());
+  els.generateLodGeneratorBtn?.addEventListener("click", generateAnalyzedLodSet);
+  for (const input of [
+    els.lod1ReductionInput,
+    els.lod2ReductionInput,
+    els.lod3ReductionInput,
+    els.lodFeatureAngleInput,
+    els.lodPreserveBoundariesInput,
+    els.lodPreserveUvSeamsInput,
+    els.lodPreserveMaterialsInput,
+    els.lodHideGeneratedInput
+  ]) input?.addEventListener("input", invalidateLodGeneratorAnalysis);
+  els.analyzeUvUnwrapBtn?.addEventListener("click", () => analyzeSelectedMeshUvLayout());
+  els.applyUvUnwrapBtn?.addEventListener("click", applyAnalyzedUvUnwrap);
+  els.bakeTextureAtlasBtn?.addEventListener("click", bakeAnalyzedTextureAtlas);
+  els.exportUvPngBtn?.addEventListener("click", exportSelectedUvPngs);
+  els.uvPngExportSelect?.addEventListener("change", () => syncUvUnwrapUi());
+  for (const input of [
+    els.uvUnwrapSeamAngleInput,
+    els.uvUnwrapPaddingInput,
+    els.uvAtlasSizeSelect
+  ]) input?.addEventListener("input", invalidateUvUnwrapAnalysis);
+  els.rotateSelectedUvLeftBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ rotation: 90 }));
+  els.rotateSelectedUvRightBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ rotation: -90 }));
+  els.flipSelectedUvUBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ flipU: true }));
+  els.flipSelectedUvVBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ flipV: true }));
   els.planeCutResultSelect?.addEventListener("change", () => {
     if (els.planeCutCapInput) els.planeCutCapInput.disabled = els.planeCutResultSelect.value === "both";
   });
@@ -46991,6 +50066,22 @@ end
     objects.forEach((mesh) => group.add(mesh.clone()));
     download(`${currentProjectBaseName()}.obj`, new OBJExporter().parse(group), "text/plain");
   });
+  document.querySelector("#exportSelectedObjBtn")?.addEventListener("click", () => {
+    if (!selected?.geometry) {
+      log("Export Selected OBJ needs one selected model or LOD level.");
+      return;
+    }
+    const exportMesh = selected.clone();
+    exportMesh.visible = true;
+    exportMesh.updateMatrixWorld(true);
+    const fileName = `${currentProjectBaseName()}-${safeFileName(selected.name, "selected-model")}.obj`;
+    download(fileName, new OBJExporter().parse(exportMesh), "text/plain");
+    log(`Exported selected model ${selected.name} as a separate OBJ.`, {
+      fileName,
+      lodLevel: Number.isInteger(selected.userData?.lod?.level) ? selected.userData.lod.level : null,
+      triangles: Math.floor((selected.geometry.index?.count || selected.geometry.getAttribute("position")?.count || 0) / 3)
+    });
+  });
   document.querySelector("#exportObjPartsBtn").addEventListener("click", exportObjParts);
   els.exportBolt2dBtn?.addEventListener("click", exportBolt2dPackage);
   document.querySelector("#exportDaeBtn").addEventListener("click", () => {
@@ -47101,12 +50192,24 @@ end
   els.textureEditorCloseBtn.addEventListener("click", closeTextureEditor);
   els.textureEditorApplyBtn.addEventListener("click", applyTextureEditorChanges);
   els.textureEditorResetBtn.addEventListener("click", resetTextureEditorCanvas);
+  els.textureEditorUndoBtn.addEventListener("click", undoTextureEditorPaint);
   [els.textureEditorShowUv, els.textureEditorSelectedOnly].forEach((input) => input.addEventListener("change", renderTextureEditor));
-  [els.textureEditorColor, els.textureEditorBrushSize, els.textureEditorHammerRadius].forEach((input) => input.addEventListener("input", renderTextureEditor));
-  els.textureEditorTool.addEventListener("change", (event) => {
-    textureEditorState.tool = event.target.value || "brush";
-    syncTextureEditorCursor();
+  [els.textureEditorColor, els.textureEditorBrushSize, els.textureEditorHardness, els.textureEditorOpacity, els.textureEditorHammerRadius].forEach((input) => input.addEventListener("input", () => {
+    renderTextureEditorBrushPreview();
     renderTextureEditor();
+  }));
+  els.textureEditorTool.addEventListener("change", (event) => {
+    setTextureEditorTool(event.target.value || "brush");
+  });
+  for (const button of els.textureEditorToolButtons || []) {
+    button.addEventListener("click", () => setTextureEditorTool(button.dataset.textureTool || "brush"));
+  }
+  els.textureEditorZoomOutBtn?.addEventListener("click", () => setTextureEditorZoom((textureEditorState.zoom || 1) / 1.25));
+  els.textureEditorZoomInBtn?.addEventListener("click", () => setTextureEditorZoom((textureEditorState.zoom || 1) * 1.25));
+  els.textureEditorZoomResetBtn?.addEventListener("click", () => {
+    textureEditorState.panX = 0;
+    textureEditorState.panY = 0;
+    setTextureEditorZoom(1);
   });
   els.textureEditorModal.addEventListener("click", (event) => {
     if (event.target === els.textureEditorModal) closeTextureEditor();
@@ -47123,24 +50226,52 @@ end
   els.meshMaterialRuleSelect?.addEventListener("change", (event) => {
     renderMeshMaterialRuleInfo(event.target.value);
   });
+  els.meshDetailsShowUvInput?.addEventListener("change", refreshMeshDetails);
   els.meshDetailsModal.addEventListener("click", (event) => {
     if (event.target === els.meshDetailsModal) closeMeshDetails();
   });
   els.textureEditorCanvas.addEventListener("pointerdown", (event) => {
     if (!textureEditorState.open) return;
+    textureEditorState.tool = els.textureEditorTool?.value || textureEditorState.tool || "brush";
+    if (textureEditorState.tool === "pan" || event.button === 1) {
+      event.preventDefault();
+      textureEditorState.isPanning = true;
+      textureEditorState.panStart = textureEditorCanvasPointFromEvent(event);
+      els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
+      syncTextureEditorCursor();
+      return;
+    }
     const point = textureEditorPointFromEvent(event);
     if (!point) return;
-    textureEditorState.tool = els.textureEditorTool?.value || "brush";
     if (textureEditorState.tool === "hammer") {
       applyGlassBreakEffect(point);
       return;
     }
+    if (textureEditorState.tool === "eyedropper") {
+      sampleTextureEditorColor(point);
+      return;
+    }
+    if (textureEditorState.tool === "fill") {
+      fillTextureEditorIsland(point);
+      return;
+    }
+    snapshotTextureEditor();
+    textureEditorState.strokeSnapshotTaken = true;
     textureEditorState.isPainting = true;
     textureEditorState.lastPoint = point;
     els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
     textureEditorStrokeTo(point);
   });
   els.textureEditorCanvas.addEventListener("pointermove", (event) => {
+    if (textureEditorState.isPanning) {
+      const current = textureEditorCanvasPointFromEvent(event);
+      const previous = textureEditorState.panStart || current;
+      textureEditorState.panX += current.x - previous.x;
+      textureEditorState.panY += current.y - previous.y;
+      textureEditorState.panStart = current;
+      renderTextureEditor();
+      return;
+    }
     const point = textureEditorPointFromEvent(event);
     textureEditorState.hoverPoint = point;
     if (!textureEditorState.isPainting) return;
@@ -47153,13 +50284,17 @@ end
   });
   var finishTextureEditorStroke = (pointerId) => {
     textureEditorState.isPainting = false;
+    textureEditorState.isPanning = false;
+    textureEditorState.panStart = null;
     textureEditorState.lastPoint = null;
+    textureEditorState.strokeSnapshotTaken = false;
     if (pointerId !== void 0) {
       try {
         els.textureEditorCanvas.releasePointerCapture?.(pointerId);
       } catch {
       }
     }
+    syncTextureEditorCursor();
   };
   els.textureEditorCanvas.addEventListener("pointerup", (event) => finishTextureEditorStroke(event.pointerId));
   els.textureEditorCanvas.addEventListener("pointerleave", (event) => {
@@ -47167,6 +50302,12 @@ end
     finishTextureEditorStroke(event.pointerId);
     renderTextureEditor();
   });
+  els.textureEditorCanvas.addEventListener("wheel", (event) => {
+    if (!textureEditorState.open) return;
+    event.preventDefault();
+    const anchor = textureEditorCanvasPointFromEvent(event);
+    setTextureEditorZoom((textureEditorState.zoom || 1) * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchor);
+  }, { passive: false });
   els.importProjectFile.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;

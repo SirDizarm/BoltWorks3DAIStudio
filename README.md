@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.10.1**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.20.5**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
 ## Local development source
 
@@ -23,7 +23,7 @@ The primary document is `index.html`; canonical application logic lives under
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.10.1.js`, so direct file opening does not depend on module CORS or a
+`app/studio-v49.20.5.js`, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
@@ -37,6 +37,8 @@ Use the collapsible **Reference Image** panel to keep concept art beside the mod
 Open `samples/showcases/uv-topology-test.modelerproj` before testing topology-changing tools. The large selected block is the editable test object; the smaller block is an untouched visual reference. Its embedded A1-D4 grid, directional labels, asymmetric colors, origin marker, and center cross make stretched, flipped, rotated, missing, or discontinuous UV coordinates immediately visible. Regenerate the project after changing its source texture with `npm run generate:uv-test`.
 
 Manual mesh tests use the permanent shorthand documented in `docs/MESH_TEST_CODES.md`. For example, `M01#D` means that Extrude Region test 01 was completed through step D, while `M01#D FEL UV` reports a texture failure at that step.
+
+**Surface Edit > UV Unwrap / Texture Atlas** analyzes sharp and material boundaries into packed, non-overlapping UV islands before changing the mesh. It can apply UVs only, bake the current single-material appearance into a new 512â€“2048 px atlas, or export a transparent PNG layout for painting. Analysis and layout export are read-only; Apply and Bake each support Undo.
 
 ## Shape building
 
@@ -53,11 +55,17 @@ Manual mesh tests use the permanent shorthand documented in `docs/MESH_TEST_CODE
 - **Loop Cut / Ring Cut** inserts one or more local-axis cutting planes through the selected mesh without changing its silhouette. A single cut uses an exact percentage of the mesh bounds; multiple cuts are evenly spaced. UVs and protected bevel edges are retained, and every newly inserted ring segment stays selected for immediate movement.
 - **Knife / Plane Cut** adds either a two-click viewport stroke or an exact local X/Y/Z cutting plane. Plane Cut can retain both halves or remove one side with a closed planar cap. Interpolated texture coordinates stay attached, newly created cut edges remain selected, and Knife can be limited to the drawn segment or pass through the whole mesh.
 - **Bridge Edge Loops** joins two complete open boundary loops inside the same mesh with a real quad strip. Select one boundary edge on each opening; the full loops are traced automatically, paired with minimum twist, and connected while existing and new UVs remain available. Equal loop vertex counts are required in this first safe version.
+- **Normals** can recalculate consistent outward winding for a selected mesh or deliberately flip selected faces. Position and UV corners stay paired, non-manifold input is rejected, and both edits support Undo.
+- **Find and Repair Holes** scans the selected mesh for true open boundary loops, highlights and frames each hole, then safely caps one or all valid holes inside the same mesh. Auto UV first continues the affine UV mapping of a coplanar neighboring triangle, preserving texture scale, direction, and alignment across a repaired triangulated face. If no suitable planar UV neighbor exists, Auto falls back to a stable closest-world-plane projection; X/Y/Z explicitly starts a new projection. After repair, **Selected Face UV** rotates the chosen Triangle or Whole Face 90 degrees left/right or flips it horizontally/vertically without changing geometry, material, or neighboring UVs. Surrounding material is retained; twisted, crossing, degenerate, or non-manifold results are refused without changing the model.
+- **Explicit delete actions** keep object and topology editing separate: **Delete Selected Model** removes the selected scene model, while **Delete Selected Face** is available inside Surface Edit only for an active Triangle or Whole Face selection.
 - **Edge Slide** moves selected edges along their neighboring topology rails without adding triangles. Signed percentage values choose either direction, Loop Cut rings remember their cutting axis, and Auto can infer a rail for manually selected edges.
 - **Scale Selected Surface** scales selected vertices, edges, triangles, or a Whole Face around its own center. Uniform scaling keeps flat faces in their plane, world X/Y/Z can change one dimension, UV coordinates remain attached, the active selection is retained, and Undo restores the previous surface.
 - **Smooth / Relax Vertices** edits selected vertices through connected one-ring topology. Relax Surface moves displaced vertices toward their neighboring surface while stabilizing the center of multi-vertex selections; Smooth Shape also rounds the silhouette. Strength, iterations, open-boundary protection, retained UVs, and Undo are supported. v49.8.1 settles completed pointer drags and prioritizes visible surface arrows; v49.8.2 also exposes the same selected-surface gizmo in the FRONT and SIDE reference views, so a camera-aligned world axis remains draggable.
 - **Weld Vertices** merges two or more ordered Vertex selections inside one mesh. The result can be placed at the center, first selected vertex, or last selected vertex; per-corner UVs and materials stay intact, degenerate and duplicate triangles are removed, closed meshes are protected from accidental holes, and the welded result remains selected.
 - **Dissolve Edge or Vertex** hides a flat internal renderer diagonal as a modeling edge, or removes one internal manifold vertex and re-triangulates its closed one-ring boundary. Boundary edges, material seams, UV seams, and non-manifold results are protected. **Show Modeling Edges** draws the active topology on the selected mesh so the removed edge visibly disappears.
+- **LOD Generator** analyzes a dense selected model before changing the scene, then keeps the unchanged source as LOD0 and creates progressively lighter LOD1, LOD2, and LOD3 models as separate members of one named scene group. Its preview explicitly reports the total model count and identifies LOD0 as Original and LOD1–LOD3 as Preview models. Each level can be selected in the scene tree and exported alone with **Export Selected OBJ**. Generated levels retain per-corner UV/material data, carry machine-readable LOD metadata, are hidden by default to avoid z-fighting, and the complete generation is one Undo step.
+- **Selected-model scene statistics** keep the current model's full triangle count visible in the scene summary while selected face and component counts remain separate editing statistics.
+- **Alphabetical Surface Edit tools** are sorted automatically from their visible English labels, so current and future tool sections remain easy to scan.
 - **Extrude Region** replaces one connected planar selection inside its original mesh with a translated cap and one continuous set of boundary walls. Internal triangle edges do not create duplicate walls, UVs are retained, and the new cap remains selected for repeated shaping.
 - Mouse Drag only captures pointer-down events that begin on an already selected triangle. Unselected triangles remain clickable, double-click releases the current surface selection, and clicking the active Mouse Drag tab releases the drag mode and hides its arrows.
 - On small surfaces, the visible X/Y/Z arrow pickers take priority where they overlap the mesh. Elsewhere an unselected mesh triangle remains directly selectable, while clicking an already selected face can still start Mouse Drag.

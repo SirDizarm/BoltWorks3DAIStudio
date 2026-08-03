@@ -15,21 +15,22 @@ Den här listan är den låsta verktygsplanen för BoltWorks 3D AI Studio.
 - [x] Scale Selected Surface
 - [x] Smooth / Relax Vertices (M12R2 confirmed in v49.8.2; repeated Relax tests softened the selected surface correctly)
 - [x] Knife / Plane Cut
-- [ ] Bridge Edge Loops
+- [x] Bridge Edge Loops (automated manifold + UV regression confirmed in v49.10.2)
 
 ## Kvalitet och reparation – därefter
 
-- [ ] Recalculate / Flip Normals
-- [ ] Find and Repair Holes
-- [ ] Non-manifold Check
-- [ ] Remove Doubles
-- [ ] Mesh Statistics
+- [x] Recalculate / Flip Normals (automated winding + UV regression confirmed in v49.10.2)
+- [x] Find and Repair Holes (same-mesh manifold caps, surrounding material and safe rejection in v49.11.0; stable world-plane UV projection in v49.11.1; post-repair Selected Face UV rotation and flipping in v49.13.0; coplanar neighboring UV scale and alignment inheritance in v49.13.1)
+- [x] Non-manifold Check (read-only issue detection, viewport highlighting, issue navigation, framing, and automated closed/open/non-manifold topology regression in v49.14.0)
+- [x] Remove Doubles (analysis-first tolerance workflow, exact shared UV corners ignored, per-corner attributes retained, unsafe topology rejected, and automated near-seam regression in v49.15.0)
+- [x] Mesh Statistics (read-only geometry/topology/size/area/volume/render/memory report, AI-copyable output, and automated indexed/open-mesh regression in v49.16.0)
 
 ## Spelmodeller – sist
 
-- [ ] Decimate med skyddade detaljer
-- [ ] LOD-generator
-- [ ] UV Unwrap och Texture Atlas
+- [x] Decimate med skyddade detaljer (analysis-first protected edge collapse, boundary/feature/UV/material safeguards, retained per-corner attributes, topology validation and Undo in v49.17.0)
+- [x] LOD-generator (analysis-first protected LOD0–LOD3 sets, separate grouped scene objects, retained UV/material data, hidden generated previews, metadata and single-step Undo in v49.18.0)
+- [x] UV Unwrap och Texture Atlas (read-only smart island analysis, sharp/material seams, non-overlapping padded packing, UV-only apply, seam-free current-texture atlas baking, separate unchanged Mesh Details texture / optional UV preview guide / baked atlas PNG exports with explicit file counts, single-step Undo and automated cube regression in v49.19.4)
+- [ ] Texture / Material Paint (Pen, Brush, Spray, Eraser, Eyedropper, UV-island Fill, Glass Hammer, zoom/pan, live tool preview, selected-face masking, solid Pen stamping, and texture-bound PNG snapshot Undo/Restore implemented through v49.20.5; material channels, symmetry and layers remain)
 - [ ] Bake high-poly till Normal Map
 - [ ] Bone Weights och Weight Paint
 - [ ] Pose- och animationstest

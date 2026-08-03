@@ -33,6 +33,7 @@ function serializeObject(mesh) {
       axis: ["x", "y", "z"].includes(mesh.userData.liveMirror.axis) ? mesh.userData.liveMirror.axis : "x",
       plane: Number(mesh.userData.liveMirror.plane) || 0
     } : null,
+    lod: mesh.userData.lod ? { ...mesh.userData.lod } : null,
     edgeBevelProtectedEdges: Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? [...mesh.userData.edgeBevelProtectedEdges] : [],
     dissolvedSurfaceEdges: Array.isArray(mesh.userData.dissolvedSurfaceEdges) ? [...mesh.userData.dissolvedSurfaceEdges] : []
   };
@@ -86,7 +87,7 @@ function projectCapabilities() {
   return {
     shapes: Object.keys(shapeFactories),
     transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
-    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom"],
+    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
     textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
     sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
@@ -1053,9 +1054,14 @@ function updateState() {
   const transformTargets = transformTargetObjects();
   const selectedName = selected?.name || (transformTargets.length > 1 ? `${pivotEditMode ? "Pivot" : "Group"} (${transformTargets.length})` : "None");
   const markerCount = markerHelpers.length;
-  const triangleCount = selectedFaces.length;
+  const selectedModelTriangles = selected?.geometry
+    ? Math.floor((selected.geometry.index?.count || selected.geometry.getAttribute("position")?.count || 0) / 3)
+    : 0;
+  const selectedFaceCount = selectedFaces.length;
   const componentCount = selectedSurfaceVertices.length + selectedSurfaceEdges.length;
-  els.stateOutput.textContent = `Scene: ${totalObjects} object${totalObjects === 1 ? "" : "s"} | Selected mesh: ${selectedName} | Selected triangles: ${triangleCount} | Selected components: ${componentCount} | Marks: ${markerCount}`;
+  els.stateOutput.textContent = `Scene: ${totalObjects} object${totalObjects === 1 ? "" : "s"} | Selected mesh: ${selectedName} | Model triangles: ${selected ? selectedModelTriangles : "—"} | Selected faces: ${selectedFaceCount} | Selected components: ${componentCount} | Marks: ${markerCount}`;
+  const exportSelectedObjBtn = document.querySelector("#exportSelectedObjBtn");
+  if (exportSelectedObjBtn) exportSelectedObjBtn.disabled = !selected?.geometry;
 }
 
 function updateAll() {

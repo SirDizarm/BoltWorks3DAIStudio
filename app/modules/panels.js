@@ -1,3 +1,20 @@
+function sortSurfaceEditorToolsAlphabetically() {
+  const body = document.querySelector("#surfaceEditorBody");
+  if (!body) return;
+  const sections = Array.from(body.children).filter(child => child.matches("details.surface-bevel-details"));
+  const notes = Array.from(body.children).filter(child => child.matches("p.api-note"));
+  const insertionPoint = notes[notes.length - 1] || null;
+  sections
+    .sort((left, right) => {
+      const leftLabel = left.querySelector(":scope > summary")?.textContent?.trim() || "";
+      const rightLabel = right.querySelector(":scope > summary")?.textContent?.trim() || "";
+      return leftLabel.localeCompare(rightLabel, "en", { sensitivity: "base" });
+    })
+    .forEach(section => body.insertBefore(section, insertionPoint));
+}
+
+sortSurfaceEditorToolsAlphabetically();
+
 function resize() {
   const rect = canvas.parentElement.getBoundingClientRect();
   renderer.setSize(rect.width, rect.height, false);
@@ -251,6 +268,7 @@ els.clearLineBtn.addEventListener("click", () => clearLineSketch({ keepMode: fal
 document.querySelector("#markerBtn").addEventListener("click", addMarkerFromSelectedTriangle);
 document.querySelector("#clearTriBtn").addEventListener("click", clearTriangleSelection);
 document.querySelector("#deleteTriBtn").addEventListener("click", deleteSelectedTriangles);
+els.deleteSelectedSurfaceBtn?.addEventListener("click", deleteSelectedTriangles);
 document.querySelector("#extractTriBtn").addEventListener("click", extractSelectedTriangles);
 document.querySelector("#fillHoleBtn").addEventListener("click", fillSelectedHole);
 document.querySelector("#bridgeMeshesBtn").addEventListener("click", bridgeCheckedMeshes);
@@ -288,14 +306,14 @@ for (const groupId of ["toolbarViewsGroup", "toolbarImportExportGroup"]) {
 function setModelToolsOpen(open = true) {
   if (!els.modelToolsWindow) return;
   setSectionCollapsed(els.modelToolsWindow, els.modelToolsCloseBtn, !open);
-  els.modelToolsOpenBtn?.classList.toggle("active", open);
+  els.modelToolsOpenBtn?.classList.remove("active");
   if (open) requestAnimationFrame(() => els.modelToolsWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
 function setOutputToolsOpen(open = true) {
   if (!els.outputToolsWindow) return;
   setSectionCollapsed(els.outputToolsWindow, els.outputToolsCloseBtn, !open);
-  els.outputToolsOpenBtn?.classList.toggle("active", open);
+  els.outputToolsOpenBtn?.classList.remove("active");
   if (open) requestAnimationFrame(() => els.outputToolsWindow.scrollIntoView({ behavior: "smooth", block: "start" }));
 }
 
@@ -311,15 +329,15 @@ function setCameraControlsOpen(open = true) {
 
 els.modelToolsOpenBtn?.addEventListener("click", () => setModelToolsOpen(true));
 els.modelToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
-  els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
+  els.modelToolsOpenBtn?.classList.remove("active");
 }));
 els.outputToolsOpenBtn?.addEventListener("click", () => setOutputToolsOpen(true));
 els.outputToolsCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
-  els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
+  els.outputToolsOpenBtn?.classList.remove("active");
 }));
 els.cameraControlsOpenBtn?.addEventListener("click", () => setCameraControlsOpen(true));
-els.modelToolsOpenBtn?.classList.toggle("active", !els.modelToolsWindow?.classList.contains("collapsed"));
-els.outputToolsOpenBtn?.classList.toggle("active", !els.outputToolsWindow?.classList.contains("collapsed"));
+els.modelToolsOpenBtn?.classList.remove("active");
+els.outputToolsOpenBtn?.classList.remove("active");
 els.cameraControlsOpenBtn?.classList.remove("active");
 document.querySelector("#digIntoBtn").addEventListener("click", digIntoSelectedFace);
 document.querySelector("#removeMarksBtn").addEventListener("click", removeMarkersForSelection);
@@ -388,6 +406,59 @@ els.knifeCutModeBtn?.addEventListener("click", () => setKnifeCutMode(!knifeCutMo
 els.knifeCutCancelBtn?.addEventListener("click", () => cancelKnifeCutStroke());
 els.planeCutBtn?.addEventListener("click", applyPlaneCut);
 els.bridgeEdgeLoopsBtn?.addEventListener("click", bridgeSelectedEdgeLoops);
+els.recalculateNormalsBtn?.addEventListener("click", recalculateSelectedMeshNormals);
+els.flipNormalsBtn?.addEventListener("click", flipSelectedFaceNormals);
+els.findHolesBtn?.addEventListener("click", () => findSelectedMeshHoles());
+els.previousHoleBtn?.addEventListener("click", () => cycleSelectedHole(-1));
+els.nextHoleBtn?.addEventListener("click", () => cycleSelectedHole(1));
+els.frameHoleBtn?.addEventListener("click", frameSelectedHole);
+els.repairSelectedHoleBtn?.addEventListener("click", () => repairFoundHoles({ all: false }));
+els.repairAllHolesBtn?.addEventListener("click", () => repairFoundHoles({ all: true }));
+els.checkNonManifoldBtn?.addEventListener("click", () => checkSelectedMeshIntegrity());
+els.previousMeshIssueBtn?.addEventListener("click", () => cycleMeshIntegrityIssue(-1));
+els.nextMeshIssueBtn?.addEventListener("click", () => cycleMeshIntegrityIssue(1));
+els.frameMeshIssueBtn?.addEventListener("click", frameMeshIntegrityIssue);
+els.clearMeshIssuesBtn?.addEventListener("click", () => clearMeshIntegrityReport({ announce: true }));
+els.analyzeDoublesBtn?.addEventListener("click", () => analyzeSelectedMeshDoubles());
+els.removeDoublesBtn?.addEventListener("click", removeAnalyzedDoubles);
+els.removeDoublesToleranceInput?.addEventListener("input", () => invalidateRemoveDoublesAnalysis());
+els.calculateMeshStatisticsBtn?.addEventListener("click", () => calculateSelectedMeshStatistics());
+els.copyMeshStatisticsBtn?.addEventListener("click", copyMeshStatisticsReport);
+els.analyzeDecimateBtn?.addEventListener("click", () => analyzeSelectedMeshDecimation());
+els.applyDecimateBtn?.addEventListener("click", applyAnalyzedDecimation);
+for (const input of [
+  els.decimateReductionInput,
+  els.decimateFeatureAngleInput,
+  els.decimatePreserveBoundariesInput,
+  els.decimatePreserveUvSeamsInput,
+  els.decimatePreserveMaterialsInput
+]) input?.addEventListener("input", invalidateDecimateAnalysis);
+els.analyzeLodGeneratorBtn?.addEventListener("click", () => analyzeSelectedMeshLodSet());
+els.generateLodGeneratorBtn?.addEventListener("click", generateAnalyzedLodSet);
+for (const input of [
+  els.lod1ReductionInput,
+  els.lod2ReductionInput,
+  els.lod3ReductionInput,
+  els.lodFeatureAngleInput,
+  els.lodPreserveBoundariesInput,
+  els.lodPreserveUvSeamsInput,
+  els.lodPreserveMaterialsInput,
+  els.lodHideGeneratedInput
+]) input?.addEventListener("input", invalidateLodGeneratorAnalysis);
+els.analyzeUvUnwrapBtn?.addEventListener("click", () => analyzeSelectedMeshUvLayout());
+els.applyUvUnwrapBtn?.addEventListener("click", applyAnalyzedUvUnwrap);
+els.bakeTextureAtlasBtn?.addEventListener("click", bakeAnalyzedTextureAtlas);
+els.exportUvPngBtn?.addEventListener("click", exportSelectedUvPngs);
+els.uvPngExportSelect?.addEventListener("change", () => syncUvUnwrapUi());
+for (const input of [
+  els.uvUnwrapSeamAngleInput,
+  els.uvUnwrapPaddingInput,
+  els.uvAtlasSizeSelect
+]) input?.addEventListener("input", invalidateUvUnwrapAnalysis);
+els.rotateSelectedUvLeftBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ rotation: 90 }));
+els.rotateSelectedUvRightBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ rotation: -90 }));
+els.flipSelectedUvUBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ flipU: true }));
+els.flipSelectedUvVBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ flipV: true }));
 els.planeCutResultSelect?.addEventListener("change", () => {
   if (els.planeCutCapInput) els.planeCutCapInput.disabled = els.planeCutResultSelect.value === "both";
 });
@@ -581,6 +652,22 @@ document.querySelector("#exportObjBtn").addEventListener("click", () => {
   objects.forEach(mesh => group.add(mesh.clone()));
   download(`${currentProjectBaseName()}.obj`, new OBJExporter().parse(group), "text/plain");
 });
+document.querySelector("#exportSelectedObjBtn")?.addEventListener("click", () => {
+  if (!selected?.geometry) {
+    log("Export Selected OBJ needs one selected model or LOD level.");
+    return;
+  }
+  const exportMesh = selected.clone();
+  exportMesh.visible = true;
+  exportMesh.updateMatrixWorld(true);
+  const fileName = `${currentProjectBaseName()}-${safeFileName(selected.name, "selected-model")}.obj`;
+  download(fileName, new OBJExporter().parse(exportMesh), "text/plain");
+  log(`Exported selected model ${selected.name} as a separate OBJ.`, {
+    fileName,
+    lodLevel: Number.isInteger(selected.userData?.lod?.level) ? selected.userData.lod.level : null,
+    triangles: Math.floor((selected.geometry.index?.count || selected.geometry.getAttribute("position")?.count || 0) / 3)
+  });
+});
 document.querySelector("#exportObjPartsBtn").addEventListener("click", exportObjParts);
 els.exportBolt2dBtn?.addEventListener("click", exportBolt2dPackage);
 document.querySelector("#exportDaeBtn").addEventListener("click", () => {
@@ -691,12 +778,24 @@ els.textureFile.addEventListener("change", async event => {
 els.textureEditorCloseBtn.addEventListener("click", closeTextureEditor);
 els.textureEditorApplyBtn.addEventListener("click", applyTextureEditorChanges);
 els.textureEditorResetBtn.addEventListener("click", resetTextureEditorCanvas);
+els.textureEditorUndoBtn.addEventListener("click", undoTextureEditorPaint);
 [els.textureEditorShowUv, els.textureEditorSelectedOnly].forEach(input => input.addEventListener("change", renderTextureEditor));
-[els.textureEditorColor, els.textureEditorBrushSize, els.textureEditorHammerRadius].forEach(input => input.addEventListener("input", renderTextureEditor));
-els.textureEditorTool.addEventListener("change", event => {
-  textureEditorState.tool = event.target.value || "brush";
-  syncTextureEditorCursor();
+[els.textureEditorColor, els.textureEditorBrushSize, els.textureEditorHardness, els.textureEditorOpacity, els.textureEditorHammerRadius].forEach(input => input.addEventListener("input", () => {
+  renderTextureEditorBrushPreview();
   renderTextureEditor();
+}));
+els.textureEditorTool.addEventListener("change", event => {
+  setTextureEditorTool(event.target.value || "brush");
+});
+for (const button of els.textureEditorToolButtons || []) {
+  button.addEventListener("click", () => setTextureEditorTool(button.dataset.textureTool || "brush"));
+}
+els.textureEditorZoomOutBtn?.addEventListener("click", () => setTextureEditorZoom((textureEditorState.zoom || 1) / 1.25));
+els.textureEditorZoomInBtn?.addEventListener("click", () => setTextureEditorZoom((textureEditorState.zoom || 1) * 1.25));
+els.textureEditorZoomResetBtn?.addEventListener("click", () => {
+  textureEditorState.panX = 0;
+  textureEditorState.panY = 0;
+  setTextureEditorZoom(1);
 });
 els.textureEditorModal.addEventListener("click", event => {
   if (event.target === els.textureEditorModal) closeTextureEditor();
@@ -713,24 +812,52 @@ els.meshDetailsSaveBtn.addEventListener("click", saveMeshDetails);
 els.meshMaterialRuleSelect?.addEventListener("change", event => {
   renderMeshMaterialRuleInfo(event.target.value);
 });
+els.meshDetailsShowUvInput?.addEventListener("change", refreshMeshDetails);
 els.meshDetailsModal.addEventListener("click", event => {
   if (event.target === els.meshDetailsModal) closeMeshDetails();
 });
 els.textureEditorCanvas.addEventListener("pointerdown", event => {
   if (!textureEditorState.open) return;
+  textureEditorState.tool = els.textureEditorTool?.value || textureEditorState.tool || "brush";
+  if (textureEditorState.tool === "pan" || event.button === 1) {
+    event.preventDefault();
+    textureEditorState.isPanning = true;
+    textureEditorState.panStart = textureEditorCanvasPointFromEvent(event);
+    els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
+    syncTextureEditorCursor();
+    return;
+  }
   const point = textureEditorPointFromEvent(event);
   if (!point) return;
-  textureEditorState.tool = els.textureEditorTool?.value || "brush";
   if (textureEditorState.tool === "hammer") {
     applyGlassBreakEffect(point);
     return;
   }
+  if (textureEditorState.tool === "eyedropper") {
+    sampleTextureEditorColor(point);
+    return;
+  }
+  if (textureEditorState.tool === "fill") {
+    fillTextureEditorIsland(point);
+    return;
+  }
+  snapshotTextureEditor();
+  textureEditorState.strokeSnapshotTaken = true;
   textureEditorState.isPainting = true;
   textureEditorState.lastPoint = point;
   els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
   textureEditorStrokeTo(point);
 });
 els.textureEditorCanvas.addEventListener("pointermove", event => {
+  if (textureEditorState.isPanning) {
+    const current = textureEditorCanvasPointFromEvent(event);
+    const previous = textureEditorState.panStart || current;
+    textureEditorState.panX += current.x - previous.x;
+    textureEditorState.panY += current.y - previous.y;
+    textureEditorState.panStart = current;
+    renderTextureEditor();
+    return;
+  }
   const point = textureEditorPointFromEvent(event);
   textureEditorState.hoverPoint = point;
   if (!textureEditorState.isPainting) return;
@@ -743,12 +870,16 @@ els.textureEditorCanvas.addEventListener("pointermove", () => {
 });
 const finishTextureEditorStroke = pointerId => {
   textureEditorState.isPainting = false;
+  textureEditorState.isPanning = false;
+  textureEditorState.panStart = null;
   textureEditorState.lastPoint = null;
+  textureEditorState.strokeSnapshotTaken = false;
   if (pointerId !== undefined) {
     try {
       els.textureEditorCanvas.releasePointerCapture?.(pointerId);
     } catch {}
   }
+  syncTextureEditorCursor();
 };
 els.textureEditorCanvas.addEventListener("pointerup", event => finishTextureEditorStroke(event.pointerId));
 els.textureEditorCanvas.addEventListener("pointerleave", event => {
@@ -756,6 +887,12 @@ els.textureEditorCanvas.addEventListener("pointerleave", event => {
   finishTextureEditorStroke(event.pointerId);
   renderTextureEditor();
 });
+els.textureEditorCanvas.addEventListener("wheel", event => {
+  if (!textureEditorState.open) return;
+  event.preventDefault();
+  const anchor = textureEditorCanvasPointFromEvent(event);
+  setTextureEditorZoom((textureEditorState.zoom || 1) * (event.deltaY < 0 ? 1.12 : 1 / 1.12), anchor);
+}, { passive: false });
 els.importProjectFile.addEventListener("change", async event => {
   const file = event.target.files?.[0];
   if (!file) return;
