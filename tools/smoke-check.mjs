@@ -13,7 +13,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.25.1.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.25.2.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -863,13 +863,13 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.25.1.js?v=49.25.1"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.25.2.js?v=49.25.2"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
   throw new Error("Top view must not replace the OrbitControls world-up axis.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.25.1.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.25.2.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -884,7 +884,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.25.1",
+  "tool-docking.js?v=49.25.2",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1107,6 +1107,13 @@ for (const required of [
   "captureViewsBtn",
   "if (data?.scene?.objects)",
   "loadProjectData(data, fileName)",
+  "loadProjectUrlBtn",
+  "loadProjectFromUrl",
+  "validateRemoteProjectUrl",
+  "validateRemoteProjectData",
+  "MAX_REMOTE_PROJECT_BYTES",
+  "credentials: \"omit\"",
+  "Project URL load failed",
   "Save Views",
   "captureView",
   "captureViews",
@@ -1579,8 +1586,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.25.1 Experimental") || !documentSource.includes("v49.25.1 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.25.1 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.25.2 Experimental") || !documentSource.includes("v49.25.2 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.25.2 version.");
 }
 
 for (const expectedDefault of [

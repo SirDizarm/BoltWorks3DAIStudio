@@ -645,6 +645,24 @@ els.saveProjectBtn.addEventListener("click", () => {
   });
 });
 els.loadProjectBtn.addEventListener("click", () => els.importProjectFile.click());
+els.loadProjectUrlBtn?.addEventListener("click", async () => {
+  const rawUrl = window.prompt(
+    "Paste an HTTPS URL to a BoltWorks .modelerproj or saved scene JSON file. Localhost HTTP is also allowed:"
+  );
+  if (rawUrl === null) return;
+
+  const previousLabel = els.loadProjectUrlBtn.textContent;
+  els.loadProjectUrlBtn.disabled = true;
+  els.loadProjectUrlBtn.textContent = "Loading URL...";
+  try {
+    await loadProjectFromUrl(rawUrl);
+  } catch (error) {
+    log(`Project URL load failed: ${error.message}`);
+  } finally {
+    els.loadProjectUrlBtn.disabled = false;
+    els.loadProjectUrlBtn.textContent = previousLabel;
+  }
+});
 els.stopServerBtn?.addEventListener("click", shutdownServerAndCloseApp);
 document.querySelector("#exportJsonBtn").addEventListener("click", () => download(`${currentProjectBaseName()}-scene.json`, JSON.stringify(state(), null, 2), "application/json"));
 document.querySelector("#exportObjBtn").addEventListener("click", () => {

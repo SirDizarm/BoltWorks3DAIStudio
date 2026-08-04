@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.25.1**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.25.2**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
 ## Local development source
 
@@ -23,10 +23,14 @@ The primary document is `index.html`; canonical application logic lives under
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.25.1.js`, so direct file opening does not depend on module CORS or a
+`app/studio-v49.25.2.js`, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
+
+## Load a project from a URL
+
+Use **Load Project URL** beside **Load Project** to open an HTTPS link to a valid BoltWorks `.modelerproj` or saved-scene JSON file, including GitHub Raw links. The current scene is preserved if downloading, validation, or loading fails. Remote files are limited to 128 MB; HTTP is accepted only from localhost, and the host must allow browser CORS access.
 
 ## Local MCP for AI clients
 

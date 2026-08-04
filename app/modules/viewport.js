@@ -529,6 +529,7 @@ const els = {
   projectNameInput: document.querySelector("#projectNameInput"),
   saveProjectBtn: document.querySelector("#saveProjectBtn"),
   loadProjectBtn: document.querySelector("#loadProjectBtn"),
+  loadProjectUrlBtn: document.querySelector("#loadProjectUrlBtn"),
   stopServerBtn: document.querySelector("#stopServerBtn"),
   importProjectFile: document.querySelector("#importProjectFile"),
   importObjBtn: document.querySelector("#importObjBtn"),

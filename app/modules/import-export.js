@@ -636,6 +636,131 @@ function loadProjectData(data, fileName = "Project") {
   throw new Error("Project must be a modeler project file or a saved scene JSON.");
 }
 
+const MAX_REMOTE_PROJECT_BYTES = 128 * 1024 * 1024;
+const REMOTE_PROJECT_TIMEOUT_MS = 60000;
+
+function validateRemoteProjectUrl(rawValue) {
+  const value = String(rawValue || "").trim();
+  if (!value) throw new Error("Enter a project URL.");
+
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    throw new Error("Project URL is not valid.");
+  }
+
+  if (url.username || url.password) {
+    throw new Error("Project URLs cannot contain embedded credentials.");
+  }
+
+  const localHttpHosts = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+  const allowed = url.protocol === "https:"
+    || (url.protocol === "http:" && localHttpHosts.has(url.hostname.toLowerCase()));
+  if (!allowed) {
+    throw new Error("Project URL must use HTTPS. HTTP is allowed only for localhost.");
+  }
+  return url;
+}
+
+function remoteProjectFileName(url) {
+  const segment = url.pathname.split("/").filter(Boolean).pop() || "remote-project.modelerproj";
+  try {
+    return decodeURIComponent(segment) || "remote-project.modelerproj";
+  } catch {
+    return segment;
+  }
+}
+
+function validateRemoteProjectData(data) {
+  const sceneData = data?.kind === "modeler-project" ? data.scene : data;
+  if (!data || typeof data !== "object" || !Array.isArray(sceneData?.objects)) {
+    throw new Error("Downloaded JSON is not a valid BoltWorks project or saved scene.");
+  }
+  if (sceneData.objects.length > 250000) throw new Error("Project contains too many scene objects.");
+
+  const validVector = value => Array.isArray(value)
+    && value.length === 3
+    && value.every(number => Number.isFinite(Number(number)));
+  sceneData.objects.forEach((object, index) => {
+    if (!object || typeof object !== "object") throw new Error(`Scene object ${index + 1} is invalid.`);
+    for (const key of ["position", "rotation", "scale"]) {
+      if (object[key] !== undefined && !validVector(object[key])) {
+        throw new Error(`Scene object ${index + 1} has an invalid ${key}.`);
+      }
+    }
+    const geometry = object.geometry;
+    if (geometry !== undefined && geometry !== null) {
+      if (!geometry || typeof geometry !== "object" || !Array.isArray(geometry.positions)
+        || geometry.positions.length < 9 || geometry.positions.length % 3 !== 0
+        || !geometry.positions.every(number => Number.isFinite(Number(number)))) {
+        throw new Error(`Scene object ${index + 1} has invalid geometry.`);
+      }
+    }
+  });
+  return data;
+}
+
+async function loadProjectFromUrl(rawUrl) {
+  const requestedUrl = validateRemoteProjectUrl(rawUrl);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REMOTE_PROJECT_TIMEOUT_MS);
+  let response;
+  try {
+    response = await fetch(requestedUrl.href, {
+      cache: "no-store",
+      credentials: "omit",
+      redirect: "follow",
+      referrerPolicy: "no-referrer",
+      signal: controller.signal
+    });
+  } catch (error) {
+    if (error?.name === "AbortError") throw new Error("Project download timed out after 60 seconds.");
+    throw new Error("Project download failed or was blocked by the remote server's CORS policy.");
+  } finally {
+    clearTimeout(timeout);
+  }
+
+  if (!response.ok) throw new Error(`Project download failed with HTTP ${response.status}.`);
+  if (response.url) validateRemoteProjectUrl(response.url);
+
+  const declaredBytes = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredBytes) && declaredBytes > MAX_REMOTE_PROJECT_BYTES) {
+    throw new Error("Project is larger than the 128 MB URL load limit.");
+  }
+
+  const projectBlob = await response.blob();
+  if (projectBlob.size > MAX_REMOTE_PROJECT_BYTES) {
+    throw new Error("Project is larger than the 128 MB URL load limit.");
+  }
+
+  let data;
+  try {
+    data = JSON.parse((await projectBlob.text()).replace(/^\uFEFF/, ""));
+  } catch {
+    throw new Error("Downloaded file is not valid JSON.");
+  }
+  validateRemoteProjectData(data);
+
+  const finalUrl = response.url ? new URL(response.url) : requestedUrl;
+  const fileName = remoteProjectFileName(finalUrl);
+  const previousProject = projectState();
+  const previousFileName = `${currentProjectBaseName()}.modelerproj`;
+  try {
+    loadProjectData(data, fileName);
+  } catch (error) {
+    try {
+      loadProjectData(previousProject, previousFileName);
+    } catch {}
+    throw new Error(`Project could not be opened safely: ${error.message}`);
+  }
+  log(`Loaded project URL from ${finalUrl.hostname}.`, {
+    fileName,
+    bytes: projectBlob.size,
+    source: `${finalUrl.origin}${finalUrl.pathname}`
+  });
+}
+
 async function tryLoadPendingProjectFromHost() {
   try {
     const response = await fetch("/__modeler/open-project", { cache: "no-store" });
