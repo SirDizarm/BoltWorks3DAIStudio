@@ -1,0 +1,624 @@
+const mcpBridgeVersion = 1;
+const mcpBridgeNextUrl = "/__modeler/mcp/next";
+const mcpBridgeResultUrl = "/__modeler/mcp/result";
+const mcpBridgeMaxBatchSize = 256;
+const mcpBridgeMaxAuditEntries = 200;
+const mcpBridgeMaxStringLength = 512;
+const mcpBridgeAllowedShapes = new Set(Object.keys(shapeFactories));
+const mcpBridgeAuditEntries = [];
+let mcpBridgeAuditSequence = 0;
+let mcpBridgeRevision = 0;
+let mcpBridgePolling = false;
+let mcpBridgePollAbortController = null;
+
+class McpBridgeError extends Error {
+  constructor(code, message, details = null) {
+    super(message);
+    this.name = "McpBridgeError";
+    this.code = code;
+    this.details = details;
+  }
+}
+
+function mcpBridgeIsPlainObject(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function mcpBridgeAssert(condition, code, message, details = null) {
+  if (!condition) throw new McpBridgeError(code, message, details);
+}
+
+function mcpBridgeFiniteNumber(value, label, { min = -1_000_000, max = 1_000_000 } = {}) {
+  const number = Number(value);
+  mcpBridgeAssert(Number.isFinite(number), "INVALID_PARAMS", `${label} must be a finite number.`);
+  mcpBridgeAssert(number >= min && number <= max, "INVALID_PARAMS", `${label} must be between ${min} and ${max}.`);
+  return number;
+}
+
+function mcpBridgeInteger(value, label, { min = 0, max = Number.MAX_SAFE_INTEGER } = {}) {
+  const number = Number(value);
+  mcpBridgeAssert(Number.isSafeInteger(number), "INVALID_PARAMS", `${label} must be an integer.`);
+  mcpBridgeAssert(number >= min && number <= max, "INVALID_PARAMS", `${label} must be between ${min} and ${max}.`);
+  return number;
+}
+
+function mcpBridgeString(value, label, { required = false, nullable = false, maxLength = mcpBridgeMaxStringLength } = {}) {
+  if (value === null && nullable) return null;
+  mcpBridgeAssert(typeof value === "string", "INVALID_PARAMS", `${label} must be a string${nullable ? " or null" : ""}.`);
+  const text = value.trim();
+  if (required) mcpBridgeAssert(text.length > 0, "INVALID_PARAMS", `${label} cannot be empty.`);
+  mcpBridgeAssert(text.length <= maxLength, "INVALID_PARAMS", `${label} cannot exceed ${maxLength} characters.`);
+  return text;
+}
+
+function mcpBridgeVector(value, label, { scale = false } = {}) {
+  mcpBridgeAssert(Array.isArray(value) && value.length === 3, "INVALID_PARAMS", `${label} must contain exactly three numbers.`);
+  const vector = value.map((component, index) => mcpBridgeFiniteNumber(component, `${label}[${index}]`));
+  if (scale) {
+    vector.forEach((component, index) => {
+      mcpBridgeAssert(Math.abs(component) >= .000001, "INVALID_PARAMS", `${label}[${index}] cannot be zero.`);
+    });
+  }
+  return vector;
+}
+
+function mcpBridgeColor(value, label) {
+  const text = mcpBridgeString(value, label, { required: true, maxLength: 9 });
+  mcpBridgeAssert(/^#[0-9a-f]{6}$/i.test(text), "INVALID_PARAMS", `${label} must use #RRGGBB format.`);
+  return text.toUpperCase();
+}
+
+function mcpBridgeAssertAllowedKeys(value, allowedKeys, label) {
+  mcpBridgeAssert(mcpBridgeIsPlainObject(value), "INVALID_PARAMS", `${label} must be an object.`);
+  const unexpected = Object.keys(value).filter(key => !allowedKeys.has(key));
+  mcpBridgeAssert(!unexpected.length, "INVALID_PARAMS", `${label} contains unsupported fields.`, { fields: unexpected });
+}
+
+function mcpBridgeBatch(params, key) {
+  mcpBridgeAssert(mcpBridgeIsPlainObject(params), "INVALID_PARAMS", "params must be an object.");
+  const batch = params[key];
+  mcpBridgeAssert(Array.isArray(batch), "INVALID_PARAMS", `params.${key} must be an array.`);
+  mcpBridgeAssert(batch.length > 0, "INVALID_PARAMS", `params.${key} cannot be empty.`);
+  mcpBridgeAssert(batch.length <= mcpBridgeMaxBatchSize, "LIMIT_EXCEEDED", `A batch can contain at most ${mcpBridgeMaxBatchSize} entries.`);
+  return batch;
+}
+
+function mcpBridgeExactObject(id, label = "id") {
+  const exactId = mcpBridgeString(id, label, { required: true, maxLength: 128 });
+  const mesh = findObject(exactId);
+  mcpBridgeAssert(mesh?.userData?.id === exactId, "OBJECT_NOT_FOUND", `No object exists with the exact ID '${exactId}'.`, { id: exactId });
+  return mesh;
+}
+
+function mcpBridgeUniqueIds(ids, label = "ids", { allowEmpty = false } = {}) {
+  mcpBridgeAssert(Array.isArray(ids), "INVALID_PARAMS", `${label} must be an array.`);
+  mcpBridgeAssert(allowEmpty || ids.length > 0, "INVALID_PARAMS", `${label} cannot be empty.`);
+  mcpBridgeAssert(ids.length <= mcpBridgeMaxBatchSize, "LIMIT_EXCEEDED", `${label} can contain at most ${mcpBridgeMaxBatchSize} IDs.`);
+  const normalized = ids.map((id, index) => mcpBridgeString(id, `${label}[${index}]`, { required: true, maxLength: 128 }));
+  mcpBridgeAssert(new Set(normalized).size === normalized.length, "INVALID_PARAMS", `${label} cannot contain duplicate IDs.`);
+  return normalized;
+}
+
+const mcpBridgeCreateKeys = new Set([
+  "id", "shape", "name", "position", "rotation", "scale", "color", "roughness", "opacity",
+  "materialRule", "hidden", "groupId", "groupName", "linkId", "linkColor", "bevel", "depth",
+  "direction", "pivot", "playerAvatar", "playerHeadOffset"
+]);
+
+const mcpBridgeUpdateKeys = new Set([
+  "name", "position", "rotation", "scale", "color", "roughness", "opacity", "materialRule", "hidden",
+  "groupId", "groupName", "linkId", "linkColor", "pivot", "playerAvatar", "playerHeadOffset"
+]);
+
+function mcpBridgeOptionalText(spec, key, label, { nullable = false, maxLength = 256 } = {}) {
+  if (!Object.prototype.hasOwnProperty.call(spec, key)) return undefined;
+  return mcpBridgeString(spec[key], label, { nullable, maxLength });
+}
+
+function mcpBridgeValidateCreateSpec(value, index) {
+  const label = `objects[${index}]`;
+  mcpBridgeAssertAllowedKeys(value, mcpBridgeCreateKeys, label);
+  const shapeInput = Object.prototype.hasOwnProperty.call(value, "shape")
+    ? mcpBridgeString(value.shape, `${label}.shape`, { required: true, maxLength: 64 })
+    : "box";
+  const shape = normalizeShapeName(shapeInput);
+  mcpBridgeAssert(mcpBridgeAllowedShapes.has(shape), "UNSUPPORTED_SHAPE", `Unsupported shape '${shapeInput}'.`, {
+    supportedShapes: [...mcpBridgeAllowedShapes]
+  });
+  const spec = { shape };
+  if (Object.prototype.hasOwnProperty.call(value, "id")) spec.id = mcpBridgeString(value.id, `${label}.id`, { required: true, maxLength: 128 });
+  if (Object.prototype.hasOwnProperty.call(value, "name")) spec.name = mcpBridgeString(value.name, `${label}.name`, { required: true, maxLength: 256 });
+  if (Object.prototype.hasOwnProperty.call(value, "position")) spec.position = mcpBridgeVector(value.position, `${label}.position`);
+  if (Object.prototype.hasOwnProperty.call(value, "rotation")) spec.rotation = mcpBridgeVector(value.rotation, `${label}.rotation`);
+  if (Object.prototype.hasOwnProperty.call(value, "scale")) spec.scale = mcpBridgeVector(value.scale, `${label}.scale`, { scale: true });
+  if (Object.prototype.hasOwnProperty.call(value, "color")) spec.color = mcpBridgeColor(value.color, `${label}.color`);
+  if (Object.prototype.hasOwnProperty.call(value, "roughness")) spec.roughness = mcpBridgeFiniteNumber(value.roughness, `${label}.roughness`, { min: 0, max: 1 });
+  if (Object.prototype.hasOwnProperty.call(value, "opacity")) spec.opacity = mcpBridgeFiniteNumber(value.opacity, `${label}.opacity`, { min: .05, max: 1 });
+  if (Object.prototype.hasOwnProperty.call(value, "materialRule")) {
+    const materialRule = mcpBridgeString(value.materialRule, `${label}.materialRule`, { required: true, maxLength: 64 });
+    mcpBridgeAssert(normalizeMaterialRule(materialRule) === materialRule, "INVALID_PARAMS", `${label}.materialRule is not supported.`);
+    spec.materialRule = materialRule;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "hidden")) {
+    mcpBridgeAssert(typeof value.hidden === "boolean", "INVALID_PARAMS", `${label}.hidden must be a boolean.`);
+    spec.hidden = value.hidden;
+  }
+  for (const key of ["groupId", "groupName", "linkId", "linkColor", "direction"]) {
+    const text = mcpBridgeOptionalText(value, key, `${label}.${key}`, { nullable: true });
+    if (text !== undefined) spec[key] = text;
+  }
+  for (const key of ["bevel", "depth"]) {
+    if (Object.prototype.hasOwnProperty.call(value, key)) spec[key] = mcpBridgeFiniteNumber(value[key], `${label}.${key}`, { min: 0, max: 100_000 });
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "pivot")) spec.pivot = value.pivot === null ? null : mcpBridgeVector(value.pivot, `${label}.pivot`);
+  if (Object.prototype.hasOwnProperty.call(value, "playerAvatar")) {
+    mcpBridgeAssert(typeof value.playerAvatar === "boolean", "INVALID_PARAMS", `${label}.playerAvatar must be a boolean.`);
+    spec.playerAvatar = value.playerAvatar;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "playerHeadOffset")) {
+    spec.playerHeadOffset = value.playerHeadOffset === null ? null : mcpBridgeVector(value.playerHeadOffset, `${label}.playerHeadOffset`);
+  }
+  return spec;
+}
+
+function mcpBridgeValidateUpdatePatch(value, label) {
+  mcpBridgeAssertAllowedKeys(value, mcpBridgeUpdateKeys, label);
+  mcpBridgeAssert(Object.keys(value).length > 0, "INVALID_PARAMS", `${label} cannot be empty.`);
+  const patch = {};
+  if (Object.prototype.hasOwnProperty.call(value, "name")) patch.name = mcpBridgeString(value.name, `${label}.name`, { required: true, maxLength: 256 });
+  if (Object.prototype.hasOwnProperty.call(value, "position")) patch.position = mcpBridgeVector(value.position, `${label}.position`);
+  if (Object.prototype.hasOwnProperty.call(value, "rotation")) patch.rotation = mcpBridgeVector(value.rotation, `${label}.rotation`);
+  if (Object.prototype.hasOwnProperty.call(value, "scale")) patch.scale = mcpBridgeVector(value.scale, `${label}.scale`, { scale: true });
+  if (Object.prototype.hasOwnProperty.call(value, "color")) patch.color = mcpBridgeColor(value.color, `${label}.color`);
+  if (Object.prototype.hasOwnProperty.call(value, "roughness")) patch.roughness = mcpBridgeFiniteNumber(value.roughness, `${label}.roughness`, { min: 0, max: 1 });
+  if (Object.prototype.hasOwnProperty.call(value, "opacity")) patch.opacity = mcpBridgeFiniteNumber(value.opacity, `${label}.opacity`, { min: .05, max: 1 });
+  if (Object.prototype.hasOwnProperty.call(value, "materialRule")) {
+    const materialRule = mcpBridgeString(value.materialRule, `${label}.materialRule`, { required: true, maxLength: 64 });
+    mcpBridgeAssert(normalizeMaterialRule(materialRule) === materialRule, "INVALID_PARAMS", `${label}.materialRule is not supported.`);
+    patch.materialRule = materialRule;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "hidden")) {
+    mcpBridgeAssert(typeof value.hidden === "boolean", "INVALID_PARAMS", `${label}.hidden must be a boolean.`);
+    patch.hidden = value.hidden;
+  }
+  for (const key of ["groupId", "groupName", "linkId", "linkColor"]) {
+    const text = mcpBridgeOptionalText(value, key, `${label}.${key}`, { nullable: true });
+    if (text !== undefined) patch[key] = text;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "pivot")) patch.pivot = value.pivot === null ? null : mcpBridgeVector(value.pivot, `${label}.pivot`);
+  if (Object.prototype.hasOwnProperty.call(value, "playerAvatar")) {
+    mcpBridgeAssert(typeof value.playerAvatar === "boolean", "INVALID_PARAMS", `${label}.playerAvatar must be a boolean.`);
+    patch.playerAvatar = value.playerAvatar;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "playerHeadOffset")) {
+    patch.playerHeadOffset = value.playerHeadOffset === null ? null : mcpBridgeVector(value.playerHeadOffset, `${label}.playerHeadOffset`);
+  }
+  return patch;
+}
+
+function mcpBridgeMeshMaterials(mesh) {
+  return Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+}
+
+function mcpBridgeApplyUpdate(mesh, patch) {
+  if (patch.name !== undefined) mesh.name = patch.name;
+  if (patch.position) mesh.position.fromArray(patch.position);
+  if (patch.rotation) {
+    mesh.rotation.set(
+      THREE.MathUtils.degToRad(patch.rotation[0]),
+      THREE.MathUtils.degToRad(patch.rotation[1]),
+      THREE.MathUtils.degToRad(patch.rotation[2])
+    );
+  }
+  if (patch.scale) mesh.scale.fromArray(patch.scale);
+  if (patch.color !== undefined) {
+    mesh.userData.color = patch.color;
+    for (const material of mcpBridgeMeshMaterials(mesh)) material?.color?.set(patch.color);
+  }
+  if (patch.roughness !== undefined) {
+    mesh.userData.roughness = patch.roughness;
+    for (const material of mcpBridgeMeshMaterials(mesh)) {
+      if (material && "roughness" in material) material.roughness = patch.roughness;
+    }
+  }
+  if (patch.opacity !== undefined) {
+    mesh.userData.opacity = patch.opacity;
+    for (const material of mcpBridgeMeshMaterials(mesh)) {
+      if (!material) continue;
+      material.opacity = patch.opacity;
+      material.transparent = patch.opacity < .999;
+      material.depthWrite = patch.opacity >= .999;
+      material.needsUpdate = true;
+    }
+  }
+  if (patch.materialRule !== undefined) {
+    mesh.userData.materialRule = patch.materialRule;
+    for (const material of mcpBridgeMeshMaterials(mesh)) {
+      if (material && "metalness" in material) material.metalness = patch.materialRule === "metal" ? .52 : .05;
+    }
+  }
+  if (patch.hidden !== undefined) {
+    mesh.userData.hidden = patch.hidden;
+    mesh.visible = !patch.hidden;
+  }
+  for (const key of ["groupId", "groupName", "linkId", "linkColor"]) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) mesh.userData[key] = patch[key];
+  }
+  if (Object.prototype.hasOwnProperty.call(patch, "pivot")) mesh.userData.pivot = patch.pivot ? [...patch.pivot] : null;
+  if (patch.playerAvatar !== undefined) mesh.userData.playerAvatar = patch.playerAvatar;
+  if (Object.prototype.hasOwnProperty.call(patch, "playerHeadOffset")) {
+    mesh.userData.playerHeadOffset = patch.playerHeadOffset ? [...patch.playerHeadOffset] : null;
+  }
+  for (const material of mcpBridgeMeshMaterials(mesh)) {
+    if (material) material.needsUpdate = true;
+  }
+  mesh.updateMatrixWorld(true);
+}
+
+function mcpBridgeTriangleCount(mesh) {
+  if (!mesh?.geometry) return 0;
+  return Math.floor((mesh.geometry.index?.count || mesh.geometry.getAttribute("position")?.count || 0) / 3);
+}
+
+function mcpBridgeCapabilitiesResult() {
+  return {
+    bridgeVersion: mcpBridgeVersion,
+    revision: mcpBridgeRevision,
+    transport: {
+      commandEndpoint: "/__mcp/command",
+      browserNextEndpoint: mcpBridgeNextUrl,
+      browserResultEndpoint: mcpBridgeResultUrl
+    },
+    methods: {
+      "capabilities.get": {},
+      "scene.get": { detail: ["summary", "objects", "project"] },
+      "selection.get": {},
+      "objects.create": { maxBatchSize: mcpBridgeMaxBatchSize, shapes: [...mcpBridgeAllowedShapes] },
+      "objects.update": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
+      "objects.delete": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
+      "selection.set": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
+      undo: {},
+      "audit.get": { maxEntries: mcpBridgeMaxAuditEntries }
+    },
+    studio: projectCapabilities()
+  };
+}
+
+function mcpBridgeSceneResult(params) {
+  mcpBridgeAssert(mcpBridgeIsPlainObject(params), "INVALID_PARAMS", "params must be an object.");
+  mcpBridgeAssertAllowedKeys(params, new Set(["detail"]), "params");
+  const detail = params.detail === undefined ? "summary" : mcpBridgeString(params.detail, "params.detail", { required: true, maxLength: 32 });
+  mcpBridgeAssert(["summary", "objects", "project"].includes(detail), "INVALID_PARAMS", "params.detail must be summary, objects, or project.");
+  const project = projectState();
+  if (detail === "project") return { revision: mcpBridgeRevision, project };
+  if (detail === "objects") {
+    return {
+      revision: mcpBridgeRevision,
+      coordinateSystem: project.scene.coordinateSystem,
+      groups: project.scene.groups,
+      hierarchy: project.scene.hierarchy,
+      objects: project.scene.objects
+    };
+  }
+  const triangleCount = objects.reduce((total, mesh) => total + mcpBridgeTriangleCount(mesh), 0);
+  return {
+    revision: mcpBridgeRevision,
+    name: project.name,
+    objectCount: objects.length,
+    triangleCount,
+    groupCount: project.scene.groups?.length || 0,
+    selectedId: selected?.userData?.id || null,
+    selectedIds: activeGroupIds.length ? [...activeGroupIds] : (selected?.userData?.id ? [selected.userData.id] : []),
+    checkedIds: [...checkedIds]
+  };
+}
+
+function mcpBridgeSelectionResult() {
+  const ids = activeGroupIds.length ? [...activeGroupIds] : (selected?.userData?.id ? [selected.userData.id] : []);
+  return {
+    revision: mcpBridgeRevision,
+    primaryId: selected?.userData?.id || null,
+    ids,
+    checkedIds: [...checkedIds],
+    objects: ids.map(id => objects.find(mesh => mesh.userData.id === id)).filter(Boolean).map(serializeObject)
+  };
+}
+
+function mcpBridgeCreateObjects(params) {
+  mcpBridgeAssertAllowedKeys(params, new Set(["objects", "expectedRevision"]), "params");
+  const batch = mcpBridgeBatch(params, "objects");
+  const specs = batch.map(mcpBridgeValidateCreateSpec);
+  const requestedIds = specs.filter(spec => spec.id).map(spec => spec.id);
+  mcpBridgeAssert(new Set(requestedIds).size === requestedIds.length, "INVALID_PARAMS", "The batch contains duplicate object IDs.");
+  for (const id of requestedIds) {
+    mcpBridgeAssert(!objects.some(mesh => mesh.userData.id === id), "ID_CONFLICT", `An object already exists with ID '${id}'.`, { id });
+  }
+  recordHistory();
+  const created = specs.map(spec => addObject(spec, { record: false, select: false, update: false }));
+  updateAll();
+  mcpBridgeRevision++;
+  return {
+    revision: mcpBridgeRevision,
+    createdIds: created.map(mesh => mesh.userData.id),
+    objects: created.map(serializeObject)
+  };
+}
+
+function mcpBridgeUpdateObjects(params) {
+  mcpBridgeAssertAllowedKeys(params, new Set(["objects", "expectedRevision"]), "params");
+  const batch = mcpBridgeBatch(params, "objects");
+  const updates = batch.map((entry, index) => {
+    mcpBridgeAssert(mcpBridgeIsPlainObject(entry), "INVALID_PARAMS", `objects[${index}] must be an object.`);
+    const entryKeys = Object.keys(entry);
+    mcpBridgeAssert(entryKeys.includes("id"), "INVALID_PARAMS", `objects[${index}].id is required.`);
+    const id = mcpBridgeString(entry.id, `objects[${index}].id`, { required: true, maxLength: 128 });
+    const patchSource = Object.prototype.hasOwnProperty.call(entry, "patch")
+      ? entry.patch
+      : Object.fromEntries(Object.entries(entry).filter(([key]) => key !== "id"));
+    if (Object.prototype.hasOwnProperty.call(entry, "patch")) {
+      mcpBridgeAssertAllowedKeys(entry, new Set(["id", "patch"]), `objects[${index}]`);
+    }
+    return {
+      id,
+      mesh: mcpBridgeExactObject(id, `objects[${index}].id`),
+      patch: mcpBridgeValidateUpdatePatch(patchSource, `objects[${index}].patch`)
+    };
+  });
+  mcpBridgeAssert(new Set(updates.map(update => update.id)).size === updates.length, "INVALID_PARAMS", "The batch contains duplicate object IDs.");
+  recordHistory();
+  updates.forEach(update => mcpBridgeApplyUpdate(update.mesh, update.patch));
+  updateAll();
+  mcpBridgeRevision++;
+  return {
+    revision: mcpBridgeRevision,
+    updatedIds: updates.map(update => update.id),
+    objects: updates.map(update => serializeObject(update.mesh))
+  };
+}
+
+function mcpBridgeDeleteObjects(params) {
+  mcpBridgeAssertAllowedKeys(params, new Set(["ids", "expectedRevision"]), "params");
+  const ids = mcpBridgeUniqueIds(params.ids);
+  const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
+  const removesPrimarySelection = !!selected && ids.includes(selected.userData.id);
+  recordHistory();
+  if (removesPrimarySelection) selected = null;
+  meshes.forEach(mesh => removeObject(mesh, { record: false, update: false }));
+  // Refresh both the transform attachment and the UI exactly once after the
+  // complete batch. removeObject intentionally runs without its own updates.
+  if (removesPrimarySelection) selectObject(null, { keepGroup: true });
+  else updateAll();
+  mcpBridgeRevision++;
+  return { revision: mcpBridgeRevision, deletedIds: ids };
+}
+
+function mcpBridgeSelectObjects(params) {
+  mcpBridgeAssertAllowedKeys(params, new Set(["ids", "expectedRevision"]), "params");
+  const ids = mcpBridgeUniqueIds(params.ids, "ids", { allowEmpty: true });
+  const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
+  activeGroupIds = ids.length > 1 ? [...ids] : [];
+  selectedGroupRecordId = null;
+  selectObject(meshes[0] || null, { keepGroup: true });
+  mcpBridgeRevision++;
+  return { revision: mcpBridgeRevision, selectedIds: ids, primaryId: meshes[0]?.userData?.id || null };
+}
+
+function mcpBridgeUndo() {
+  mcpBridgeAssert(history.length > 0, "NOTHING_TO_UNDO", "There is no scene mutation to undo.");
+  undo();
+  mcpBridgeRevision++;
+  return { revision: mcpBridgeRevision, scene: mcpBridgeSceneResult({ detail: "summary" }) };
+}
+
+function mcpBridgeAuditResult(params) {
+  mcpBridgeAssertAllowedKeys(params, new Set(["limit", "sinceSequence"]), "params");
+  const limit = params.limit === undefined
+    ? 50
+    : mcpBridgeInteger(params.limit, "params.limit", { min: 1, max: mcpBridgeMaxAuditEntries });
+  const sinceSequence = params.sinceSequence === undefined
+    ? 0
+    : mcpBridgeInteger(params.sinceSequence, "params.sinceSequence", { min: 0 });
+  const entries = mcpBridgeAuditEntries.filter(entry => entry.sequence > sinceSequence).slice(-limit);
+  return { revision: mcpBridgeRevision, entries, latestSequence: mcpBridgeAuditSequence };
+}
+
+function mcpBridgeNormalizeMethod(method) {
+  return mcpBridgeString(method, "method", { required: true, maxLength: 80 });
+}
+
+function mcpBridgeIsMutation(method) {
+  return ["objects.create", "objects.update", "objects.delete", "selection.set", "undo"].includes(method);
+}
+
+function mcpBridgeValidateExpectedRevision(command, params, method) {
+  const raw = command.expectedRevision ?? params.expectedRevision;
+  if (raw === undefined) return;
+  const expectedRevision = mcpBridgeInteger(raw, "expectedRevision", { min: 0 });
+  mcpBridgeAssert(expectedRevision === mcpBridgeRevision, "REVISION_CONFLICT", `Expected revision ${expectedRevision}, but the live scene is revision ${mcpBridgeRevision}.`, {
+    expectedRevision,
+    actualRevision: mcpBridgeRevision,
+    mutation: mcpBridgeIsMutation(method)
+  });
+}
+
+function mcpBridgeAuditParams(method, params) {
+  if (["objects.create", "objects.update"].includes(method)) {
+    return {
+      count: Array.isArray(params.objects) ? params.objects.length : 0,
+      ids: Array.isArray(params.objects) ? params.objects.map(entry => entry?.id).filter(Boolean).slice(0, mcpBridgeMaxBatchSize) : []
+    };
+  }
+  if (["objects.delete", "selection.set"].includes(method)) {
+    return { count: Array.isArray(params.ids) ? params.ids.length : 0, ids: Array.isArray(params.ids) ? params.ids.slice(0, mcpBridgeMaxBatchSize) : [] };
+  }
+  return { ...params };
+}
+
+function mcpBridgeAppendAudit({ method, params, beforeRevision, ok, error = null }) {
+  const entry = {
+    sequence: ++mcpBridgeAuditSequence,
+    timestamp: new Date().toISOString(),
+    actor: "mcp",
+    method,
+    params: mcpBridgeAuditParams(method, params),
+    beforeRevision,
+    afterRevision: mcpBridgeRevision,
+    ok
+  };
+  if (error) entry.error = { code: error.code || "INTERNAL_ERROR", message: error.message || String(error) };
+  mcpBridgeAuditEntries.push(entry);
+  if (mcpBridgeAuditEntries.length > mcpBridgeMaxAuditEntries) mcpBridgeAuditEntries.splice(0, mcpBridgeAuditEntries.length - mcpBridgeMaxAuditEntries);
+}
+
+async function mcpBridgeExecuteCommand(command) {
+  mcpBridgeAssert(mcpBridgeIsPlainObject(command), "INVALID_REQUEST", "The command must be an object.");
+  const method = mcpBridgeNormalizeMethod(command.method);
+  const params = command.params === undefined ? {} : command.params;
+  mcpBridgeAssert(mcpBridgeIsPlainObject(params), "INVALID_PARAMS", "params must be an object.");
+  const beforeRevision = mcpBridgeRevision;
+  try {
+    mcpBridgeValidateExpectedRevision(command, params, method);
+    let result;
+    if (method === "capabilities.get") {
+      mcpBridgeAssertAllowedKeys(params, new Set(), "params");
+      result = mcpBridgeCapabilitiesResult();
+    }
+    else if (method === "scene.get") result = mcpBridgeSceneResult(params);
+    else if (method === "selection.get") {
+      mcpBridgeAssertAllowedKeys(params, new Set(), "params");
+      result = mcpBridgeSelectionResult();
+    }
+    else if (method === "objects.create") result = mcpBridgeCreateObjects(params);
+    else if (method === "objects.update") result = mcpBridgeUpdateObjects(params);
+    else if (method === "objects.delete") result = mcpBridgeDeleteObjects(params);
+    else if (method === "selection.set") result = mcpBridgeSelectObjects(params);
+    else if (method === "undo") {
+      mcpBridgeAssertAllowedKeys(params, new Set(["expectedRevision"]), "params");
+      result = mcpBridgeUndo();
+    }
+    else if (method === "audit.get") result = mcpBridgeAuditResult(params);
+    else throw new McpBridgeError("METHOD_NOT_FOUND", `Unknown MCP bridge method '${method}'.`);
+    mcpBridgeAppendAudit({ method, params, beforeRevision, ok: true });
+    return result;
+  }
+  catch (error) {
+    mcpBridgeAppendAudit({ method, params, beforeRevision, ok: false, error });
+    throw error;
+  }
+}
+
+function mcpBridgeErrorPayload(error) {
+  const payload = {
+    code: error?.code || "INTERNAL_ERROR",
+    message: error?.message || "The browser bridge could not complete the command."
+  };
+  if (error?.details !== null && error?.details !== undefined) payload.details = error.details;
+  return payload;
+}
+
+function mcpBridgeDelay(milliseconds) {
+  return new Promise(resolve => setTimeout(resolve, milliseconds));
+}
+
+async function mcpBridgePostResult(payload) {
+  const response = await fetch(mcpBridgeResultUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    cache: "no-store",
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) throw new Error(`MCP result relay returned HTTP ${response.status}.`);
+}
+
+async function mcpBridgeHandleRelayCommand(command) {
+  const id = command?.id;
+  if (typeof id !== "string" || !id.trim()) return;
+  try {
+    const result = await mcpBridgeExecuteCommand(command);
+    await mcpBridgePostResult({ id, ok: true, result });
+  }
+  catch (error) {
+    try {
+      await mcpBridgePostResult({ id, ok: false, error: mcpBridgeErrorPayload(error) });
+    }
+    catch {
+      // The relay owns transport diagnostics. The editor stays quiet and retries polling.
+    }
+  }
+}
+
+async function mcpBridgePollLoop() {
+  while (mcpBridgePolling) {
+    try {
+      mcpBridgePollAbortController = new AbortController();
+      const timeoutId = setTimeout(() => mcpBridgePollAbortController?.abort(), 30_000);
+      let response;
+      try {
+        response = await fetch(`${mcpBridgeNextUrl}?waitMs=25000`, {
+          method: "GET",
+          cache: "no-store",
+          headers: { Accept: "application/json" },
+          signal: mcpBridgePollAbortController.signal
+        });
+      }
+      finally {
+        clearTimeout(timeoutId);
+      }
+      if (!mcpBridgePolling) break;
+      if (response.status === 204) continue;
+      if (!response.ok) {
+        await mcpBridgeDelay(response.status === 404 ? 2_500 : 1_000);
+        continue;
+      }
+      const command = await response.json();
+      await mcpBridgeHandleRelayCommand(command);
+    }
+    catch (error) {
+      if (!mcpBridgePolling) break;
+      if (error?.name !== "AbortError") await mcpBridgeDelay(1_000);
+    }
+    finally {
+      mcpBridgePollAbortController = null;
+    }
+  }
+}
+
+function mcpBridgeCanPollHere() {
+  return ["127.0.0.1", "localhost", "::1"].includes(window.location.hostname);
+}
+
+function mcpBridgeStartPolling() {
+  if (mcpBridgePolling || !mcpBridgeCanPollHere()) return false;
+  mcpBridgePolling = true;
+  void mcpBridgePollLoop();
+  return true;
+}
+
+function mcpBridgeStopPolling() {
+  mcpBridgePolling = false;
+  mcpBridgePollAbortController?.abort();
+}
+
+window.BoltWorksMcpBridge = Object.freeze({
+  version: mcpBridgeVersion,
+  execute: mcpBridgeExecuteCommand,
+  startPolling: mcpBridgeStartPolling,
+  stopPolling: mcpBridgeStopPolling,
+  status: () => ({
+    version: mcpBridgeVersion,
+    revision: mcpBridgeRevision,
+    polling: mcpBridgePolling,
+    auditEntries: mcpBridgeAuditEntries.length
+  })
+});
+
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", mcpBridgeStartPolling, { once: true });
+}
+else {
+  queueMicrotask(mcpBridgeStartPolling);
+}
+
+window.addEventListener("pagehide", mcpBridgeStopPolling, { once: true });

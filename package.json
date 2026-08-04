@@ -1,6 +1,6 @@
 {
   "name": "boltworks-3d-ai-studio",
-  "version": "49.23.0",
+  "version": "49.25.0",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,12 +11,18 @@
     "build:web": "node tools/build-web.mjs",
     "check:mobile": "node tools/mobile-smoke-check.mjs",
     "check:server": "node tools/localserver/smoke-check.mjs",
+    "mcp": "node tools/mcp/server.mjs",
+    "check:mcp": "node tools/mcp/smoke-check.mjs",
+    "check:mcp:live": "node tools/mcp/live-check.mjs",
     "generate:uv-test": "node tools/generate-uv-topology-test.mjs",
     "pack:project-textures": "node tools/pack-project-textures.mjs"
   },
   "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "jimp": "^1.6.1",
-    "three": "0.165.0"
+    "three": "0.165.0",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "esbuild": "^0.28.1"

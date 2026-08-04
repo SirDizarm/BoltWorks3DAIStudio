@@ -4,6 +4,7 @@ dist/
 .cache/
 server.log
 server.err.log
+.codex-localserver.*.log
 *.obj
 *_mesh.json
 .DS_Store

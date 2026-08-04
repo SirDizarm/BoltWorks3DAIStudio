@@ -818,6 +818,12 @@ els.textureEditorZoomResetBtn?.addEventListener("click", () => {
   textureEditorState.panY = 0;
   setTextureEditorZoom(1);
 });
+els.textureEditorAddLayerBtn?.addEventListener("click", addTextureEditorLayer);
+els.textureEditorDuplicateLayerBtn?.addEventListener("click", duplicateTextureEditorLayer);
+els.textureEditorLayerUpBtn?.addEventListener("click", () => moveTextureEditorLayer(1));
+els.textureEditorLayerDownBtn?.addEventListener("click", () => moveTextureEditorLayer(-1));
+els.textureEditorMergeDownBtn?.addEventListener("click", mergeTextureEditorLayerDown);
+els.textureEditorDeleteLayerBtn?.addEventListener("click", deleteTextureEditorLayer);
 els.textureEditorModal.addEventListener("click", event => {
   if (event.target === els.textureEditorModal) closeTextureEditor();
 });

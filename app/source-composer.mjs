@@ -5,6 +5,7 @@ export const studioModuleOrder = Object.freeze([
   "toolbar",
   "meshes",
   "import-export",
+  "mcp-bridge",
   "rigging",
   "panels"
 ]);

@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.23.0**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.25.0**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
 ## Local development source
 
@@ -23,14 +23,26 @@ The primary document is `index.html`; canonical application logic lives under
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.23.0.js`, so direct file opening does not depend on module CORS or a
+`app/studio-v49.25.0.js`, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
 
+## Local MCP for AI clients
+
+BoltWorks can expose the open local editor to an MCP-compatible AI client without a BoltWorks login or cloud relay. Start BoltWorks with `npm start`, open the local editor in a browser, keep that tab open, and configure the AI client to run `node D:\Game\BoltWorks3DAIStudio\tools\mcp\server.mjs`. The short-lived local token is discovered automatically.
+
+This release contains **MCP v1**, an experimental but working foundation. It provides 12 handbook/schema/example resources plus nine live tools for capabilities, scene inspection, selection, object creation/update/deletion, undo, and an MCP audit log. Exact object IDs and optional scene revisions protect collaborative changes. Full setup and the recommended AI workflow are documented in `BoltWorksStudioAi/MCP_SETUP.md`; `npm run check:mcp` verifies the stdio server and authenticated relay contract.
+
+MCP v1 is not yet a one-click image-to-mesh system. The planned next stage is to expose calibrated reference matching, landmarks, silhouette guides, topology operations, QA cameras, and checkpoints through the same MCP contract. That will let an AI turn front/side/back reference images into an editable `.modelerproj` mesh, compare its result visibly, and keep every change inspectable by a person.
+
 ## Reference images
 
 Use the collapsible **Reference Image** panel to keep concept art beside the model, display it as a transparent viewport overlay, or show both. Overlay opacity, scale, and X/Y offsets can be adjusted for silhouette matching. The image and its display settings are stored inside the editable project file. When a reference exists, Save Views and the AI QA sheet place it in the sixth panel instead of the automatic Iso view; the separate Iso PNG export remains available.
+
+## AI reference-model prototype
+
+`samples/assets/female-t-pose-player-model.modelerproj` is the first high-detail human reference-model prototype produced for the future player-scale and image-to-mesh workflow. The matching `female-t-pose-player-model-preview-v6.png` is the reviewed visual checkpoint, and `tools/generate-female-t-pose.mjs` keeps its construction reproducible. This prototype demonstrates that BoltWorks can store, inspect, revise, and QA a reference-derived mesh; it does not claim that automatic image-to-mesh generation is complete yet.
 
 ## UV and topology test asset
 

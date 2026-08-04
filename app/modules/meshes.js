@@ -1292,7 +1292,152 @@ function textureEditorTrianglesPath(context, triangles, width, height, offsetX =
 }
 
 function currentTextureEditorCanvas() {
-  return textureEditorState.sourceCanvas;
+  const active = textureEditorState.layers.find(layer => layer.id === textureEditorState.activeLayerId);
+  if (active?.canvas) textureEditorState.sourceCanvas = active.canvas;
+  return active?.canvas || textureEditorState.sourceCanvas;
+}
+
+function nextTextureEditorLayerId() {
+  textureEditorState.layerCounter += 1;
+  return `paint-layer-${Date.now()}-${textureEditorState.layerCounter}`;
+}
+
+function createTextureEditorLayer(name, canvas, visible = true, id = nextTextureEditorLayerId()) {
+  return { id, name: name || "Paint Layer", canvas, visible: visible !== false };
+}
+
+function cloneTextureEditorLayers(layers = textureEditorState.layers) {
+  return layers.map(layer => ({
+    id: layer.id,
+    name: layer.name,
+    visible: layer.visible !== false,
+    canvas: cloneTextureEditorCanvas(layer.canvas)
+  }));
+}
+
+function compositeTextureEditorLayers() {
+  const layers = textureEditorState.layers || [];
+  const reference = layers.find(layer => layer.canvas)?.canvas || textureEditorState.sourceCanvas;
+  if (!reference) return null;
+  const canvas = document.createElement("canvas");
+  canvas.width = reference.width;
+  canvas.height = reference.height;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  for (const layer of layers) {
+    if (layer.visible !== false && layer.canvas) context.drawImage(layer.canvas, 0, 0, canvas.width, canvas.height);
+  }
+  return canvas;
+}
+
+function setActiveTextureEditorLayer(id) {
+  const layer = textureEditorState.layers.find(candidate => candidate.id === id);
+  if (!layer) return;
+  textureEditorState.activeLayerId = layer.id;
+  textureEditorState.sourceCanvas = layer.canvas;
+  renderTextureEditorLayerUi();
+  renderTextureEditor();
+}
+
+function renderTextureEditorLayerUi() {
+  const layers = textureEditorState.layers || [];
+  const activeIndex = layers.findIndex(layer => layer.id === textureEditorState.activeLayerId);
+  if (els.textureEditorLayerCount) {
+    els.textureEditorLayerCount.textContent = `${layers.length} layer${layers.length === 1 ? "" : "s"}`;
+  }
+  if (els.textureEditorLayerList) {
+    els.textureEditorLayerList.replaceChildren();
+    [...layers].reverse().forEach(layer => {
+      const row = document.createElement("div");
+      row.className = `texture-editor-layer-row${layer.id === textureEditorState.activeLayerId ? " active" : ""}`;
+      const visibility = document.createElement("button");
+      visibility.type = "button";
+      visibility.className = "texture-editor-layer-visibility";
+      visibility.textContent = layer.visible === false ? "Off" : "On";
+      visibility.title = layer.visible === false ? `Show ${layer.name}` : `Hide ${layer.name}`;
+      visibility.addEventListener("click", event => {
+        event.stopPropagation();
+        snapshotTextureEditor();
+        layer.visible = layer.visible === false;
+        renderTextureEditorLayerUi();
+        renderTextureEditor();
+      });
+      const select = document.createElement("button");
+      select.type = "button";
+      select.textContent = layer.name;
+      select.title = `Paint on ${layer.name}`;
+      select.addEventListener("click", () => setActiveTextureEditorLayer(layer.id));
+      row.append(visibility, select);
+      els.textureEditorLayerList.append(row);
+    });
+  }
+  if (els.textureEditorAddLayerBtn) els.textureEditorAddLayerBtn.disabled = layers.length === 0 || !currentTextureEditorCanvas();
+  if (els.textureEditorDuplicateLayerBtn) els.textureEditorDuplicateLayerBtn.disabled = activeIndex < 0;
+  if (els.textureEditorLayerUpBtn) els.textureEditorLayerUpBtn.disabled = activeIndex < 0 || activeIndex >= layers.length - 1;
+  if (els.textureEditorLayerDownBtn) els.textureEditorLayerDownBtn.disabled = activeIndex <= 0;
+  if (els.textureEditorMergeDownBtn) els.textureEditorMergeDownBtn.disabled = activeIndex <= 0;
+  if (els.textureEditorDeleteLayerBtn) els.textureEditorDeleteLayerBtn.disabled = layers.length <= 1 || activeIndex < 0;
+}
+
+function addTextureEditorLayer() {
+  const source = currentTextureEditorCanvas();
+  if (!source) return;
+  snapshotTextureEditor();
+  const canvas = document.createElement("canvas");
+  canvas.width = source.width;
+  canvas.height = source.height;
+  const layer = createTextureEditorLayer(`Paint ${textureEditorState.layers.length}` , canvas);
+  textureEditorState.layers.push(layer);
+  setActiveTextureEditorLayer(layer.id);
+}
+
+function duplicateTextureEditorLayer() {
+  const active = textureEditorState.layers.find(layer => layer.id === textureEditorState.activeLayerId);
+  if (!active) return;
+  snapshotTextureEditor();
+  const index = textureEditorState.layers.indexOf(active);
+  const duplicate = createTextureEditorLayer(`${active.name} Copy`, cloneTextureEditorCanvas(active.canvas), active.visible);
+  textureEditorState.layers.splice(index + 1, 0, duplicate);
+  setActiveTextureEditorLayer(duplicate.id);
+}
+
+function moveTextureEditorLayer(direction) {
+  const layers = textureEditorState.layers;
+  const index = layers.findIndex(layer => layer.id === textureEditorState.activeLayerId);
+  const target = index + Math.sign(direction || 0);
+  if (index < 0 || target < 0 || target >= layers.length) return;
+  snapshotTextureEditor();
+  [layers[index], layers[target]] = [layers[target], layers[index]];
+  renderTextureEditorLayerUi();
+  renderTextureEditor();
+}
+
+function mergeTextureEditorLayerDown() {
+  const layers = textureEditorState.layers;
+  const index = layers.findIndex(layer => layer.id === textureEditorState.activeLayerId);
+  if (index <= 0) return;
+  snapshotTextureEditor();
+  const active = layers[index];
+  const below = layers[index - 1];
+  const merged = document.createElement("canvas");
+  merged.width = below.canvas.width;
+  merged.height = below.canvas.height;
+  const context = merged.getContext("2d", { willReadFrequently: true });
+  if (below.visible) context.drawImage(below.canvas, 0, 0);
+  if (active.visible) context.drawImage(active.canvas, 0, 0);
+  below.canvas = merged;
+  below.visible = true;
+  layers.splice(index, 1);
+  setActiveTextureEditorLayer(below.id);
+}
+
+function deleteTextureEditorLayer() {
+  const layers = textureEditorState.layers;
+  const index = layers.findIndex(layer => layer.id === textureEditorState.activeLayerId);
+  if (index < 0 || layers.length <= 1) return;
+  snapshotTextureEditor();
+  layers.splice(index, 1);
+  const next = layers[Math.min(index, layers.length - 1)];
+  setActiveTextureEditorLayer(next.id);
 }
 
 function updateTextureEditorUndoButton() {
@@ -1306,20 +1451,29 @@ function updateTextureEditorResetButton() {
 }
 
 function snapshotTextureEditor() {
-  const source = currentTextureEditorCanvas();
-  if (!source) return;
-  const context = source.getContext("2d", { willReadFrequently: true });
-  textureEditorState.undoStack.push(context.getImageData(0, 0, source.width, source.height));
+  if (!currentTextureEditorCanvas()) return;
+  textureEditorState.undoStack.push({
+    layers: cloneTextureEditorLayers(),
+    activeLayerId: textureEditorState.activeLayerId
+  });
   if (textureEditorState.undoStack.length > 30) textureEditorState.undoStack.shift();
   updateTextureEditorUndoButton();
 }
 
 function undoTextureEditorPaint() {
-  const source = currentTextureEditorCanvas();
   const previous = textureEditorState.undoStack.pop();
-  if (!source || !previous) return;
-  source.getContext("2d").putImageData(previous, 0, 0);
+  if (!previous) return;
+  if (previous.layers?.length) {
+    textureEditorState.layers = cloneTextureEditorLayers(previous.layers);
+    textureEditorState.activeLayerId = textureEditorState.layers.some(layer => layer.id === previous.activeLayerId)
+      ? previous.activeLayerId
+      : textureEditorState.layers.at(-1)?.id || null;
+    textureEditorState.sourceCanvas = currentTextureEditorCanvas();
+  } else if (previous.width && previous.height) {
+    currentTextureEditorCanvas()?.getContext("2d").putImageData(previous, 0, 0);
+  }
   updateTextureEditorUndoButton();
+  renderTextureEditorLayerUi();
   renderTextureEditor();
 }
 
@@ -1806,7 +1960,7 @@ function drawUvTriangleOverlay(context, triangle, drawRect, color, lineWidth = 1
 function renderTextureEditor() {
   if (!textureEditorState.open) return;
   const mesh = textureEditorMesh();
-  const source = currentTextureEditorCanvas();
+  const source = compositeTextureEditorLayers();
   const canvas = els.textureEditorCanvas;
   if (!mesh || !source || !canvas) return;
   const displayRect = canvas.getBoundingClientRect();
@@ -1970,7 +2124,7 @@ function textureEditorStrokeTo(point) {
 }
 
 function sampleTextureEditorColor(point) {
-  const source = currentTextureEditorCanvas();
+  const source = compositeTextureEditorLayers();
   if (!source || !point) return;
   const pixel = source.getContext("2d", { willReadFrequently: true }).getImageData(
     Math.max(0, Math.min(source.width - 1, Math.floor(point.x))),
@@ -2136,9 +2290,17 @@ function persistTextureEditorDraft() {
   if (!textureEditorState.meshId || !textureEditorState.sourceCanvas) return;
   const mesh = textureEditorMesh();
   const channelData = materialTextureChannelData(mesh, textureEditorState.channel);
+  const composite = compositeTextureEditorLayers();
   textureEditorDrafts.set(textureEditorDraftKey(textureEditorState.meshId, channelData.channel), {
     sourceCanvas: textureEditorState.sourceCanvas,
-    sourceDataUrl: textureEditorState.sourceCanvas.toDataURL("image/png"),
+    sourceDataUrl: composite?.toDataURL("image/png") || textureEditorState.sourceCanvas.toDataURL("image/png"),
+    layers: textureEditorState.layers.map(layer => ({
+      id: layer.id,
+      name: layer.name,
+      visible: layer.visible !== false,
+      dataUrl: layer.canvas.toDataURL("image/png")
+    })),
+    activeLayerId: textureEditorState.activeLayerId,
     originalCanvas: textureEditorState.originalCanvas,
     originalPixels: cloneTextureEditorPixels(textureEditorState.originalPixels),
     originalDataUrl: textureEditorState.originalDataUrl,
@@ -2187,6 +2349,18 @@ async function loadTextureEditorChannel(mesh, channel = "baseColor") {
   const draftSourceCanvas = draftMatchesTexture && draft.sourceDataUrl
     ? readImageToCanvas(await loadImage(draft.sourceDataUrl))
     : null;
+  const restoredLayers = [];
+  if (draftMatchesTexture && draft?.layers?.length) {
+    for (const savedLayer of draft.layers) {
+      const image = await loadImage(savedLayer.dataUrl);
+      restoredLayers.push(createTextureEditorLayer(
+        savedLayer.name,
+        readImageToCanvas(image),
+        savedLayer.visible,
+        savedLayer.id
+      ));
+    }
+  }
   const originalDataUrl = draftMatchesTexture && draft.originalDataUrl
     ? draft.originalDataUrl
     : liveTextureCanvas.toDataURL("image/png");
@@ -2194,7 +2368,14 @@ async function loadTextureEditorChannel(mesh, channel = "baseColor") {
   textureEditorState.meshId = mesh.userData.id;
   textureEditorState.channel = channelData.channel;
   textureEditorState.textureName = channelData.name;
-  textureEditorState.sourceCanvas = draftSourceCanvas || (draftMatchesTexture ? draft?.sourceCanvas : null) || liveTextureCanvas;
+  const initialCanvas = draftSourceCanvas || (draftMatchesTexture ? draft?.sourceCanvas : null) || liveTextureCanvas;
+  textureEditorState.layers = restoredLayers.length
+    ? restoredLayers
+    : [createTextureEditorLayer("Base", initialCanvas)];
+  textureEditorState.activeLayerId = textureEditorState.layers.some(layer => layer.id === draft?.activeLayerId)
+    ? draft.activeLayerId
+    : textureEditorState.layers.at(-1).id;
+  textureEditorState.sourceCanvas = currentTextureEditorCanvas();
   textureEditorState.originalCanvas = originalCanvas;
   textureEditorState.originalPixels = draftMatchesTexture && draft?.originalPixels
     ? cloneTextureEditorPixels(draft.originalPixels)
@@ -2229,6 +2410,7 @@ async function loadTextureEditorChannel(mesh, channel = "baseColor") {
   setTextureEditorSymmetry(textureEditorState.symmetry);
   updateTextureEditorUndoButton();
   updateTextureEditorResetButton();
+  renderTextureEditorLayerUi();
   renderTextureEditor();
 }
 
@@ -2280,6 +2462,8 @@ function closeTextureEditor() {
   textureEditorState.open = false;
   textureEditorState.meshId = null;
   textureEditorState.sourceCanvas = null;
+  textureEditorState.layers = [];
+  textureEditorState.activeLayerId = null;
   textureEditorState.originalCanvas = null;
   textureEditorState.originalPixels = null;
   textureEditorState.originalDataUrl = null;
@@ -2307,6 +2491,7 @@ function closeTextureEditor() {
   syncTextureEditorSelectionUi();
   updateTextureEditorUndoButton();
   updateTextureEditorResetButton();
+  renderTextureEditorLayerUi();
   els.textureEditorModal.classList.remove("open");
   els.textureEditorModal.setAttribute("aria-hidden", "true");
 }
@@ -2317,20 +2502,27 @@ function resetTextureEditorCanvas() {
     return;
   }
   snapshotTextureEditor();
-  textureEditorState.sourceCanvas = canvasFromTextureEditorPixels(textureEditorState.originalPixels);
+  const original = canvasFromTextureEditorPixels(textureEditorState.originalPixels);
+  const base = createTextureEditorLayer("Base", original);
+  textureEditorState.layers = [base];
+  textureEditorState.activeLayerId = base.id;
+  textureEditorState.sourceCanvas = original;
   const draft = textureEditorDrafts.get(textureEditorDraftKey(textureEditorState.meshId, textureEditorState.channel));
   if (draft) {
     draft.sourceCanvas = textureEditorState.sourceCanvas;
     draft.sourceDataUrl = textureEditorState.sourceCanvas.toDataURL("image/png");
+    draft.layers = [{ id: base.id, name: base.name, visible: true, dataUrl: draft.sourceDataUrl }];
+    draft.activeLayerId = base.id;
   }
   updateTextureEditorUndoButton();
+  renderTextureEditorLayerUi();
   renderTextureEditor();
   log("Restored the texture editor to the original texture from before this editing session.");
 }
 
 function applyTextureEditorChanges() {
   const mesh = textureEditorMesh();
-  const source = currentTextureEditorCanvas();
+  const source = compositeTextureEditorLayers();
   if (!mesh || !source) return;
   recordHistory("edit texture");
   const dataUrl = source.toDataURL("image/png");

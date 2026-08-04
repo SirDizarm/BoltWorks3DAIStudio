@@ -13,7 +13,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.23.0.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.25.0.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -863,13 +863,13 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.23.0.js?v=49.23.0"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.25.0.js?v=49.25.0"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
   throw new Error("Top view must not replace the OrbitControls world-up axis.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.23.0.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.25.0.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -884,7 +884,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.23.0",
+  "tool-docking.js?v=49.25.0",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1579,8 +1579,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.23.0 Experimental") || !documentSource.includes("v49.23.0 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.23.0 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.25.0 Experimental") || !documentSource.includes("v49.25.0 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.25.0 version.");
 }
 
 for (const expectedDefault of [
@@ -1654,6 +1654,14 @@ for (const texturePaintControl of [
   'id="textureEditorClearSelectionBtn"',
   'id="textureEditorSelectionStatus"',
   'id="textureEditorShapeFilled"',
+  'id="textureEditorLayerCount"',
+  'id="textureEditorLayerList"',
+  'id="textureEditorAddLayerBtn"',
+  'id="textureEditorDuplicateLayerBtn"',
+  'id="textureEditorLayerUpBtn"',
+  'id="textureEditorLayerDownBtn"',
+  'id="textureEditorMergeDownBtn"',
+  'id="textureEditorDeleteLayerBtn"',
   'data-texture-shape="rectangle"',
   'data-texture-shape="ellipse"',
   'data-texture-shape="triangle"',
@@ -1672,6 +1680,18 @@ for (const texturePaintControl of [
   'data-texture-channel="emissive"'
 ]) {
   if (!documentSource.includes(texturePaintControl)) throw new Error(`M20 texture paint control is missing: ${texturePaintControl}`);
+}
+if (!documentSource.includes('<div class="texture-editor-workspace">') ||
+    !documentSource.includes('<aside class="texture-editor-layer-panel" aria-label="Texture paint layers">')) {
+  throw new Error("M20 texture layers must live in a dedicated workspace sidebar beside the texture canvas.");
+}
+for (const layerSidebarStyle of [
+  ".texture-editor-workspace {",
+  "grid-template-columns: minmax(0, 1fr) 220px;",
+  "grid-template-rows: auto auto minmax(0, 1fr);",
+  "overflow-y: auto;"
+]) {
+  if (!styleSource.includes(layerSidebarStyle)) throw new Error(`M20 vertical layer sidebar style is missing: ${layerSidebarStyle}`);
 }
 for (const texturePaintBehavior of [
   "function syncTextureEditorToolSettings(tool = \"none\")",
@@ -1713,7 +1733,14 @@ for (const texturePaintBehavior of [
   "textureEditorDrafts.set(textureEditorDraftKey(textureEditorState.meshId, channelData.channel)",
   "textureEditorState.originalCanvas = originalCanvas",
   "originalPixels: cloneTextureEditorPixels(textureEditorState.originalPixels)",
-  "sourceDataUrl: textureEditorState.sourceCanvas.toDataURL(\"image/png\")",
+  "sourceDataUrl: composite?.toDataURL(\"image/png\")",
+  "function compositeTextureEditorLayers()",
+  "function renderTextureEditorLayerUi()",
+  "function addTextureEditorLayer()",
+  "function duplicateTextureEditorLayer()",
+  "function mergeTextureEditorLayerDown()",
+  "function deleteTextureEditorLayer()",
+  "activeLayerId: textureEditorState.activeLayerId",
   "draft.textureUrl === channelData.url",
   "Keep the frozen pre-edit pixels after Apply",
   "function applyMaterialTextureChannel(mesh, channel, textureUrl, textureName)",

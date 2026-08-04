@@ -770,6 +770,14 @@ const els = {
   textureEditorZoomResetBtn: document.querySelector("#textureEditorZoomResetBtn"),
   textureEditorZoomInBtn: document.querySelector("#textureEditorZoomInBtn"),
   textureEditorZoomValue: document.querySelector("#textureEditorZoomValue"),
+  textureEditorLayerCount: document.querySelector("#textureEditorLayerCount"),
+  textureEditorLayerList: document.querySelector("#textureEditorLayerList"),
+  textureEditorAddLayerBtn: document.querySelector("#textureEditorAddLayerBtn"),
+  textureEditorDuplicateLayerBtn: document.querySelector("#textureEditorDuplicateLayerBtn"),
+  textureEditorLayerUpBtn: document.querySelector("#textureEditorLayerUpBtn"),
+  textureEditorLayerDownBtn: document.querySelector("#textureEditorLayerDownBtn"),
+  textureEditorMergeDownBtn: document.querySelector("#textureEditorMergeDownBtn"),
+  textureEditorDeleteLayerBtn: document.querySelector("#textureEditorDeleteLayerBtn"),
   groupEditorModal: document.querySelector("#groupEditorModal"),
   groupEditorTitle: document.querySelector("#groupEditorTitle"),
   groupEditorInfo: document.querySelector("#groupEditorInfo"),
@@ -871,7 +879,10 @@ const textureEditorState = {
   symmetry: "none",
   shapeStart: null,
   shapeEnd: null,
-  isDrawingShape: false
+  isDrawingShape: false,
+  layers: [],
+  activeLayerId: null,
+  layerCounter: 0
 };
 
 const textureLibrary = new Map();

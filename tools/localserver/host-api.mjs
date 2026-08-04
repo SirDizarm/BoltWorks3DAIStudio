@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, unlinkSync } from "node:fs";
 
-export function handleHostApi({ pathname, response, server, pendingProjectFile }) {
+export function handleHostApi({ pathname, request, response, server, pendingProjectFile, mcpRelay, url }) {
+  if (mcpRelay?.handleHttp({ pathname, request, response, url })) return true;
   if (pathname === "/__ping") {
     response.writeHead(200, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
     response.end("ok");
