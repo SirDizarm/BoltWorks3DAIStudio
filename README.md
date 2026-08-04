@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.25.0**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.25.1**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
 ## Local development source
 
@@ -23,7 +23,7 @@ The primary document is `index.html`; canonical application logic lives under
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.25.0.js`, so direct file opening does not depend on module CORS or a
+`app/studio-v49.25.1.js`, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
@@ -43,6 +43,14 @@ Use the collapsible **Reference Image** panel to keep concept art beside the mod
 ## AI reference-model prototype
 
 `samples/assets/female-t-pose-player-model.modelerproj` is the first high-detail human reference-model prototype produced for the future player-scale and image-to-mesh workflow. The matching `female-t-pose-player-model-preview-v6.png` is the reviewed visual checkpoint, and `tools/generate-female-t-pose.mjs` keeps its construction reproducible. This prototype demonstrates that BoltWorks can store, inspect, revise, and QA a reference-derived mesh; it does not claim that automatic image-to-mesh generation is complete yet.
+
+Downloadable source files:
+
+- [Original front/side/back T-pose reference image](samples/assets/female-t-pose-reference.png)
+- [Editable BoltWorks Studio project](samples/assets/female-t-pose-player-model.modelerproj)
+- [Latest four-view model preview](samples/assets/female-t-pose-player-model-preview-v6.png)
+
+The original reference image is also embedded in the editable project, so the project remains self-contained after download.
 
 ## UV and topology test asset
 
