@@ -348,6 +348,7 @@ body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup {
 
 #inspectorSection,
 #utilitiesSection,
+#aiViewerSection,
 #statusSection {
   display: flex;
   flex-direction: column;
@@ -359,6 +360,10 @@ body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup {
 }
 
 #utilitiesSection {
+  flex: 0 0 auto;
+}
+
+#aiViewerSection {
   flex: 0 0 auto;
 }
 
@@ -377,6 +382,292 @@ body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup {
 
 #statusBody {
   max-height: 220px;
+}
+
+.ai-viewer-section .section-header {
+  justify-content: flex-start;
+}
+
+.ai-viewer-header-state {
+  margin-left: auto;
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.ai-viewer-header-state[data-state="running"],
+.ai-viewer-header-state[data-state="connected"] {
+  border-color: rgba(64, 199, 165, .65);
+  color: var(--accent);
+}
+
+.ai-viewer-header-state[data-state="paused"] {
+  border-color: rgba(225, 177, 75, .65);
+  color: var(--accent-2);
+}
+
+.ai-viewer-header-state[data-state="error"],
+.ai-viewer-header-state[data-state="offline"] {
+  border-color: rgba(239, 111, 108, .5);
+  color: var(--danger);
+}
+
+#aiViewerBody {
+  gap: 10px;
+}
+
+#aiViewerGoalInput {
+  min-height: 68px;
+  max-height: 150px;
+}
+
+.ai-viewer-status-row,
+.ai-viewer-controls,
+.ai-viewer-feed-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.ai-viewer-pill {
+  min-width: 0;
+  padding: 4px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #101417;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.ai-viewer-pill[data-state="connected"],
+.ai-viewer-pill[data-state="running"],
+.ai-viewer-pill[data-state="completed"] {
+  border-color: rgba(64, 199, 165, .6);
+  color: var(--accent);
+}
+
+.ai-viewer-pill[data-state="paused"],
+.ai-viewer-pill[data-state="stopped"],
+.ai-viewer-pill[data-state="expired"] {
+  border-color: rgba(225, 177, 75, .6);
+  color: var(--accent-2);
+}
+
+.ai-viewer-pill[data-state="offline"],
+.ai-viewer-pill[data-state="error"],
+.ai-viewer-pill[data-state="failed"] {
+  border-color: rgba(239, 111, 108, .55);
+  color: var(--danger);
+}
+
+.ai-viewer-timer-card,
+.ai-viewer-current-card {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #111518;
+}
+
+.ai-viewer-timer-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+}
+
+.ai-viewer-timer {
+  color: var(--accent);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 23px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+}
+
+.ai-viewer-timer[data-state="paused"],
+.ai-viewer-timer[data-state="stopped"],
+.ai-viewer-timer[data-state="expired"] {
+  color: var(--accent-2);
+}
+
+.ai-viewer-timer[data-state="error"] {
+  color: var(--danger);
+}
+
+.ai-viewer-start-row {
+  display: grid;
+  grid-template-columns: minmax(0, .75fr) minmax(0, 1fr);
+  gap: 8px;
+  align-items: end;
+}
+
+.ai-viewer-controls {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.ai-viewer-controls button {
+  min-width: 0;
+  padding-inline: 5px;
+  font-size: 11px;
+}
+
+.ai-viewer-attention {
+  display: grid;
+  gap: 4px;
+  padding: 9px 10px;
+  border: 1px solid rgba(225, 177, 75, .7);
+  border-radius: 7px;
+  background: rgba(225, 177, 75, .1);
+}
+
+.ai-viewer-attention[hidden] {
+  display: none;
+}
+
+.ai-viewer-attention strong {
+  color: var(--accent-2);
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.ai-viewer-attention span {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.ai-viewer-attention[data-priority="urgent"] {
+  border-color: rgba(239, 111, 108, .8);
+  background: rgba(239, 111, 108, .12);
+}
+
+.ai-viewer-attention[data-priority="urgent"] strong {
+  color: var(--danger);
+}
+
+.ai-viewer-current-card strong {
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.ai-viewer-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+  margin: 0;
+}
+
+.ai-viewer-metrics > div {
+  display: grid;
+  gap: 2px;
+  padding: 7px 4px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #111518;
+  text-align: center;
+}
+
+.ai-viewer-metrics dt {
+  color: var(--muted);
+  font-size: 9px;
+  text-transform: uppercase;
+}
+
+.ai-viewer-metrics dd {
+  margin: 0;
+  color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 14px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-viewer-feed-header {
+  justify-content: space-between;
+  font-size: 11px;
+}
+
+.ai-viewer-feed {
+  max-height: 280px;
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding: 0 3px 0 0;
+  list-style: none;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+.ai-viewer-empty,
+.ai-viewer-event {
+  padding: 8px 9px;
+  border: 1px solid var(--line);
+  border-left-width: 3px;
+  border-radius: 6px;
+  background: #111518;
+}
+
+.ai-viewer-empty {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.ai-viewer-event {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 7px;
+  border-left-color: #68737a;
+  font-size: 11px;
+}
+
+.ai-viewer-event[data-state="completed"],
+.ai-viewer-event[data-state="success"] {
+  border-left-color: var(--accent);
+}
+
+.ai-viewer-event[data-state="failed"],
+.ai-viewer-event[data-state="error"] {
+  border-left-color: var(--danger);
+}
+
+.ai-viewer-event[data-state="started"],
+.ai-viewer-event[data-state="running"],
+.ai-viewer-event[data-state="paused"] {
+  border-left-color: var(--accent-2);
+}
+
+.ai-viewer-event-time {
+  grid-row: 1 / span 2;
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 9px;
+  font-variant-numeric: tabular-nums;
+}
+
+.ai-viewer-event-title {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--text);
+  font-weight: 700;
+}
+
+.ai-viewer-event-detail {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+  line-height: 1.35;
 }
 
 .grid {
@@ -448,7 +739,7 @@ label {
 
 .tree-group-header {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) auto auto auto;
+  grid-template-columns: 22px minmax(0, 1fr) auto auto auto auto;
   gap: 6px;
   align-items: center;
   min-height: 30px;
@@ -478,10 +769,15 @@ label {
   border-color: transparent;
 }
 
-.group-only-btn {
+.group-only-btn,
+.group-hide-btn {
   min-height: 26px;
   padding: 2px 8px;
   font-size: 12px;
+}
+
+.group-hide-btn.show-hidden {
+  color: var(--accent);
 }
 
 .object-row {
@@ -639,6 +935,45 @@ label {
   background: #101517;
   border-left: 1px solid #334046;
 }
+.work-view-controls {
+  position: absolute;
+  z-index: 12;
+  top: 10px;
+  left: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.work-view-controls button {
+  padding: 5px 8px;
+  background: rgba(10, 16, 20, .88);
+}
+.work-view-controls button.active { border-color: var(--accent); color: var(--accent); }
+.reference-view-label { cursor: pointer; }
+.gameplay-preview {
+  position: absolute;
+  z-index: 30;
+  inset: 0;
+  background: #05080a;
+}
+.gameplay-preview canvas { width: 100%; height: 100%; display: block; }
+.gameplay-preview-bar {
+  position: absolute;
+  left: 10px;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 9px;
+  border: 1px solid #34434c;
+  border-radius: 5px;
+  background: rgba(5, 9, 12, .88);
+}
+.gameplay-preview-bar span { flex: 1; color: #aab6bd; font-size: 12px; }
+.viewport.work-view-active .reference-viewports { display: none; }
+.viewport.work-view-active { grid-template-columns: minmax(0, 1fr); }
+.range-field { display: grid; gap: 4px; margin: 8px 0; }
 
 .viewport canvas {
   position: absolute;
@@ -659,7 +994,7 @@ label {
   color: #dce7e9;
   background: rgba(9, 13, 15, .82);
   font-size: 11px;
-  pointer-events: none;
+  pointer-events: auto;
 }
 
 .reference-view-hint {

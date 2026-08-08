@@ -26,6 +26,7 @@ function serializeObject(mesh) {
     materialRule: normalizeMaterialRule(mesh.userData.materialRule || "auto"),
     textureFlipY: mesh.userData.textureFlipY ?? true,
     textureRotation: normalizeTextureRotation(mesh.userData.textureRotation || 0),
+    textureHasTransparency: !!mesh.userData.textureHasTransparency,
     roughnessTextureUrl: mesh.userData.roughnessTextureUrl || null,
     roughnessTextureName: mesh.userData.roughnessTextureName || null,
     metalnessTextureUrl: mesh.userData.metalnessTextureUrl || null,
@@ -183,6 +184,7 @@ function projectState() {
         addMeshCollapsed: els.addMeshSection.classList.contains("collapsed"),
         inspectorCollapsed: els.inspectorSection.classList.contains("collapsed"),
         utilitiesCollapsed: els.utilitiesSection.classList.contains("collapsed"),
+        aiViewerCollapsed: els.aiViewerSection?.classList.contains("collapsed") ?? true,
         referenceImageCollapsed: els.referenceImageSection.classList.contains("collapsed"),
         cameraViewsCollapsed: els.cameraViewsSection.classList.contains("collapsed"),
         statusCollapsed: els.statusSection.classList.contains("collapsed"),
@@ -471,6 +473,7 @@ function applyProjectEditorState(editor = {}) {
   setSectionCollapsed(els.addMeshSection, els.addMeshToggle, !!panels.addMeshCollapsed);
   setSectionCollapsed(els.inspectorSection, els.inspectorToggle, !!panels.inspectorCollapsed);
   setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, !!panels.utilitiesCollapsed);
+  setSectionCollapsed(els.aiViewerSection, els.aiViewerToggle, panels.aiViewerCollapsed !== false);
   setSectionCollapsed(els.referenceImageSection, els.referenceImageToggle, !!panels.referenceImageCollapsed);
   setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, !!panels.cameraViewsCollapsed);
   setSectionCollapsed(els.statusSection, els.statusToggle, !!panels.statusCollapsed);
@@ -917,17 +920,22 @@ function renderTree() {
 
     const header = document.createElement("div");
     header.className = "tree-group-header";
-    header.innerHTML = `<input class="part-check group-check" type="checkbox" aria-label="Toggle ${record.name} group"><span class="tree-group-name"></span><span></span><small class="tree-group-count"></small><button class="group-only-btn" type="button">Only</button>`;
-    const groupCheck = header.children[0];
-    const groupNameEl = header.children[1];
-    const groupCountEl = header.children[3];
-    const groupOnlyBtn = header.children[4];
+    header.innerHTML = `<input class="part-check group-check" type="checkbox" aria-label="Toggle ${record.name} group"><span class="tree-group-name"></span><span></span><small class="tree-group-count"></small><button class="group-hide-btn" type="button">Hide</button><button class="group-only-btn" type="button">Only</button>`;
+    const groupCheck = header.querySelector(".group-check");
+    const groupNameEl = header.querySelector(".tree-group-name");
+    const groupCountEl = header.querySelector(".tree-group-count");
+    const groupHideBtn = header.querySelector(".group-hide-btn");
+    const groupOnlyBtn = header.querySelector(".group-only-btn");
     const checkedCount = meshes.filter(mesh => checkedIds.has(mesh.userData.id)).length;
     groupCheck.checked = checkedCount === meshes.length;
     groupCheck.indeterminate = checkedCount > 0 && checkedCount < meshes.length;
     groupNameEl.textContent = record.name;
     header.classList.toggle("selected", selectedGroupRecordId === record.id);
     groupCountEl.textContent = `${meshes.length} item${meshes.length === 1 ? "" : "s"}`;
+    const allHidden = meshes.length > 0 && meshes.every(mesh => !!mesh.userData.hidden);
+    groupHideBtn.textContent = allHidden ? "Show" : "Hide";
+    groupHideBtn.title = allHidden ? `Show every model in ${record.name}` : `Hide every model in ${record.name}`;
+    groupHideBtn.classList.toggle("show-hidden", allHidden);
     groupCheck.addEventListener("click", event => event.stopPropagation());
     groupCheck.addEventListener("change", event => setCheckedMeshes(meshes, event.target.checked));
     groupNameEl.title = record.name;
@@ -939,6 +947,13 @@ function renderTree() {
       event.stopPropagation();
       selectGroupRecord(record.id);
       log(`Selected only group ${record.name}.`, { count: meshes.length });
+    });
+    groupHideBtn.addEventListener("click", event => {
+      event.stopPropagation();
+      const hide = !allHidden;
+      recordHistory(hide ? "hide group" : "show group");
+      setHiddenTargets(meshes, hide);
+      log(`${hide ? "Hid" : "Showed"} group ${record.name}.`, { count: meshes.length });
     });
     header.addEventListener("click", () => selectGroupRecord(record.id));
     groupWrap.append(header);
@@ -955,22 +970,34 @@ function renderTree() {
     groupWrap.className = "tree-group";
     const header = document.createElement("div");
     header.className = "tree-group-header";
-    header.innerHTML = `<input class="part-check group-check" type="checkbox" aria-label="Toggle ${groupName} group"><span class="tree-group-name"></span><span></span><small class="tree-group-count"></small><button class="group-only-btn" type="button">Only</button>`;
-    const groupCheck = header.children[0];
-    const groupNameEl = header.children[1];
-    const groupCountEl = header.children[3];
-    const groupOnlyBtn = header.children[4];
+    header.innerHTML = `<input class="part-check group-check" type="checkbox" aria-label="Toggle ${groupName} group"><span class="tree-group-name"></span><span></span><small class="tree-group-count"></small><button class="group-hide-btn" type="button">Hide</button><button class="group-only-btn" type="button">Only</button>`;
+    const groupCheck = header.querySelector(".group-check");
+    const groupNameEl = header.querySelector(".tree-group-name");
+    const groupCountEl = header.querySelector(".tree-group-count");
+    const groupHideBtn = header.querySelector(".group-hide-btn");
+    const groupOnlyBtn = header.querySelector(".group-only-btn");
     const checkedCount = meshes.filter(mesh => checkedIds.has(mesh.userData.id)).length;
     groupCheck.checked = checkedCount === meshes.length;
     groupCheck.indeterminate = checkedCount > 0 && checkedCount < meshes.length;
     groupNameEl.textContent = groupName;
     groupCountEl.textContent = `${meshes.length} item${meshes.length === 1 ? "" : "s"}`;
+    const allHidden = meshes.length > 0 && meshes.every(mesh => !!mesh.userData.hidden);
+    groupHideBtn.textContent = allHidden ? "Show" : "Hide";
+    groupHideBtn.title = allHidden ? `Show every model in ${groupName}` : `Hide every model in ${groupName}`;
+    groupHideBtn.classList.toggle("show-hidden", allHidden);
     groupCheck.addEventListener("click", event => event.stopPropagation());
     groupCheck.addEventListener("change", event => setCheckedMeshes(meshes, event.target.checked));
     groupOnlyBtn.addEventListener("click", event => {
       event.stopPropagation();
       setCheckedMeshes(meshes, true, { replace: true });
       log(`Checked only ${groupName} group.`, { count: meshes.length });
+    });
+    groupHideBtn.addEventListener("click", event => {
+      event.stopPropagation();
+      const hide = !allHidden;
+      recordHistory(hide ? "hide group" : "show group");
+      setHiddenTargets(meshes, hide);
+      log(`${hide ? "Hid" : "Showed"} group ${groupName}.`, { count: meshes.length });
     });
     header.addEventListener("click", () => setCheckedMeshes(meshes, true, { replace: true }));
     groupWrap.append(header);
@@ -1147,14 +1174,15 @@ function applyInspector({ record = true } = {}) {
   selected.material.color.set(normalizedColor);
   selected.material.roughness = +els.roughInput.value;
   const opacity = Math.max(.05, Math.min(1, Number(els.opacityInput.value) || 1));
-  selected.material.transparent = opacity < .999;
+  selected.material.transparent = opacity < .999 || !!selected.userData.textureHasTransparency;
   selected.material.opacity = opacity;
   selected.material.wireframe = false;
-  selected.material.depthWrite = opacity >= .999;
+  selected.material.depthWrite = opacity >= .999 && !selected.userData.textureHasTransparency;
   selected.material.needsUpdate = true;
   selected.userData.color = normalizedColor;
   selected.userData.roughness = +els.roughInput.value;
   selected.userData.opacity = opacity;
+  syncMeshRenderCulling(selected);
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
   els.opacityValue.value = opacity.toFixed(2);
   updateAll();
@@ -4757,13 +4785,65 @@ function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = n
   camera.position.copy(center).add(direction.multiplyScalar(distance));
   camera.near = Math.max(.01, distance / 2000);
   camera.far = Math.max(1000000, distance * 60);
-  // OrbitControls must keep one stable world-up axis after every preset view.
-  // The slight Z component in the Top direction already defines its screen-up orientation.
   camera.up.set(0, 1, 0);
+  if (viewName === "top") camera.up.set(0, 0, -1);
   orbit.target.copy(center);
   camera.lookAt(center);
   camera.updateProjectionMatrix();
   orbit.update();
+}
+
+function syncOrthographicWorkViewUi() {
+  const map = {
+    front: els.workViewFrontBtn,
+    side: els.workViewSideBtn,
+    top: els.workViewTopBtn
+  };
+  for (const [name, button] of Object.entries(map)) button?.classList.toggle("active", activeWorkView === name);
+  if (els.workViewRestoreBtn) els.workViewRestoreBtn.hidden = !activeWorkView;
+  els.viewportRoot?.classList.toggle("work-view-active", !!activeWorkView);
+}
+
+function setOrthographicWorkView(viewName) {
+  if (!["front", "side", "top"].includes(viewName)) return false;
+  if (!savedWorkViewCamera) {
+    savedWorkViewCamera = {
+      position: camera.position.clone(),
+      up: camera.up.clone(),
+      target: orbit.target.clone(),
+      near: camera.near,
+      far: camera.far,
+      enableRotate: orbit.enableRotate
+    };
+  }
+  activeWorkView = viewName;
+  setCameraToView(viewName);
+  orbit.enableRotate = false;
+  syncOrthographicWorkViewUi();
+  configureSurfaceTransformAxis();
+  updateSurfaceGizmoAttachment();
+  log(`${viewName[0].toUpperCase()}${viewName.slice(1)} is now the main constrained work view.`);
+  return true;
+}
+
+function restoreOrthographicWorkView() {
+  if (!savedWorkViewCamera) return false;
+  camera.position.copy(savedWorkViewCamera.position);
+  camera.up.copy(savedWorkViewCamera.up);
+  orbit.target.copy(savedWorkViewCamera.target);
+  camera.near = savedWorkViewCamera.near;
+  camera.far = savedWorkViewCamera.far;
+  orbit.enableRotate = savedWorkViewCamera.enableRotate;
+  camera.lookAt(orbit.target);
+  camera.updateProjectionMatrix();
+  orbit.update();
+  activeWorkView = null;
+  savedWorkViewCamera = null;
+  syncOrthographicWorkViewUi();
+  configureSurfaceTransformAxis();
+  updateSurfaceGizmoAttachment();
+  log("Restored the free perspective work view.");
+  return true;
 }
 
 function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName() } = {}) {

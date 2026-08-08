@@ -25,6 +25,37 @@ The loader also accepts a legacy scene object with a top-level `objects` array,
 but AI-generated deliverables should use the wrapper because it preserves
 textures and editor state.
 
+## Optional AI session summaries
+
+The wrapper may contain an optional `ai.sessionSummaries` array. It is a small,
+forward-compatible index of AI-assisted work and is not the event log itself:
+
+```json
+{
+  "ai": {
+    "sessionSummaries": [
+      {
+        "id": "session-2026-08-04-001",
+        "goal": "Block out the reference-matched torso",
+        "startedAt": "2026-08-04T08:00:00.000Z",
+        "endedAt": "2026-08-04T08:15:00.000Z",
+        "outcome": "time-limit",
+        "reportPath": "female-t-pose.session.bws-session.json",
+        "reportSha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+      }
+    ]
+  }
+}
+```
+
+Keep the complete, schema-validated report in the referenced
+`.bws-session.json` sidecar. Do not embed full scenes or per-event snapshots in
+the project wrapper. A missing sidecar must not prevent the `.modelerproj` from
+loading; the project remains the source of truth for the current editable
+scene. Readers that do not understand `ai` may safely ignore it. See
+[`AI_WORK_SESSIONS.md`](AI_WORK_SESSIONS.md) for the event contract and privacy
+rules.
+
 ## Coordinate contract
 
 - right-handed coordinate system;

@@ -490,6 +490,7 @@ function saveMeshDetails() {
   recordHistory("save mesh details");
   mesh.name = nextName;
   mesh.userData.materialRule = nextRule;
+  syncMeshRenderCulling(mesh);
   refreshMeshDetails();
   updateAll();
   log(`Saved mesh details for ${mesh.name}.`, {
@@ -861,6 +862,7 @@ function makeMaterial(color = "#40c7a5", roughness = .6, textureUrl = null, text
     color,
     roughness,
     metalness: .05,
+    side: THREE.FrontSide,
     transparent: false,
     opacity: 1,
     wireframe: false,
@@ -873,6 +875,26 @@ function makeMaterial(color = "#40c7a5", roughness = .6, textureUrl = null, text
     material.needsUpdate = true;
   }
   return material;
+}
+
+function primaryMeshMaterial(mesh) {
+  const materials = Array.isArray(mesh?.material) ? mesh.material : [mesh?.material];
+  return materials.find(material => material?.isMaterial) || null;
+}
+
+function syncMeshRenderCulling(mesh) {
+  if (!mesh?.isMesh || mesh.userData?.editorHelper) return;
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  const materialRule = normalizeMaterialRule(mesh.userData?.materialRule || "auto");
+  const opacity = Number(mesh.userData?.opacity ?? primaryMeshMaterial(mesh)?.opacity ?? 1);
+  const needsInteriorView = materialRule === "glass" || opacity < .999 || !!mesh.userData?.textureHasTransparency;
+  for (const material of materials) {
+    if (!material?.isMaterial) continue;
+    material.side = needsInteriorView ? THREE.DoubleSide : THREE.FrontSide;
+    material.needsUpdate = true;
+  }
+  mesh.frustumCulled = true;
+  if (!mesh.geometry.boundingSphere) mesh.geometry.computeBoundingSphere();
 }
 
 let textureUiRefreshScheduled = false;
@@ -970,6 +992,10 @@ function applyTextureToMesh(mesh, textureUrl, textureName = "Texture", textureFl
   } else {
     delete mesh.userData.textureDisplayColor;
   }
+  const materialOpacity = Number(mesh.userData?.opacity ?? mesh.material.opacity ?? 1);
+  const textureHasTransparency = !!mesh.userData?.textureHasTransparency;
+  mesh.material.transparent = materialOpacity < .999 || textureHasTransparency;
+  mesh.material.depthWrite = materialOpacity >= .999 && !textureHasTransparency;
   mesh.material.needsUpdate = true;
   mesh.userData.textureUrl = textureUrl || null;
   mesh.userData.textureName = textureUrl ? textureName : null;
@@ -3036,7 +3062,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3052,8 +3078,8 @@ function createMesh(spec = {}) {
   mesh.material.metalness = normalizedMaterialRule === "metal" ? .52 : .05;
   const materialOpacity = Math.max(.05, Math.min(1, Number(opacity) || 1));
   mesh.material.opacity = materialOpacity;
-  mesh.material.transparent = materialOpacity < .999;
-  mesh.material.depthWrite = materialOpacity >= .999;
+  mesh.material.transparent = materialOpacity < .999 || !!textureHasTransparency;
+  mesh.material.depthWrite = materialOpacity >= .999 && !textureHasTransparency;
   mesh.material.needsUpdate = true;
   mesh.name = name || `${shape} ${defaultOrdinal}`;
   mesh.userData = {
@@ -3068,6 +3094,7 @@ function createMesh(spec = {}) {
     textureRobloxAssetId: normalizeRobloxAssetId(textureRobloxAssetId || ""),
     textureFlipY,
     textureRotation: normalizeTextureRotation(textureRotation),
+    textureHasTransparency: !!textureHasTransparency,
     roughnessTextureUrl,
     roughnessTextureName,
     metalnessTextureUrl,
@@ -3119,6 +3146,7 @@ function createMesh(spec = {}) {
   if (roughnessTextureUrl) applyMaterialTextureChannel(mesh, "roughness", roughnessTextureUrl, roughnessTextureName);
   if (metalnessTextureUrl) applyMaterialTextureChannel(mesh, "metalness", metalnessTextureUrl, metalnessTextureName);
   if (emissiveTextureUrl) applyMaterialTextureChannel(mesh, "emissive", emissiveTextureUrl, emissiveTextureName);
+  syncMeshRenderCulling(mesh);
   return mesh;
 }
 
@@ -3904,6 +3932,19 @@ function syncSurfaceEditorUi() {
   if (els.bridgeEdgeLoopsBtn) {
     els.bridgeEdgeLoopsBtn.disabled = !(surfaceComponentMode === "edge" && selectedSurfaceEdges.length >= 2);
   }
+  const minecraftCornerBevel = els.cornerBevelModeSelect?.value === "minecraft";
+  if (els.cornerBevelWidthLabel) els.cornerBevelWidthLabel.hidden = minecraftCornerBevel;
+  if (els.cornerBevelDragLabel) els.cornerBevelDragLabel.hidden = minecraftCornerBevel;
+  if (els.cornerBevelPixelsLabel) els.cornerBevelPixelsLabel.hidden = !minecraftCornerBevel;
+  if (els.cornerBevelBtn) {
+    const canBevelCorner = surfaceComponentMode === "vertex" && selectedSurfaceVertices.length === 1;
+    els.cornerBevelBtn.disabled = !canBevelCorner;
+    els.cornerBevelBtn.title = canBevelCorner
+      ? (minecraftCornerBevel
+        ? "Remove stepped voxels from this corner on a 16 by 16 by 16 grid"
+        : "Chamfer all three edges meeting at this corner")
+      : "Choose Vertex and select exactly one corner first";
+  }
   syncHoleRepairUi();
   syncSurfaceAxisUi();
   syncUvUnwrapUi();
@@ -4077,9 +4118,13 @@ function surfaceAxisWorldDirection(axisMode = surfaceAxisMode()) {
 function configureSurfaceTransformAxis() {
   const axisMode = surfaceAxisMode();
   for (const control of surfaceTransforms) {
-    control.showX = axisMode === "free" || axisMode === "x";
-    control.showY = axisMode === "free" || axisMode === "y";
-    control.showZ = axisMode === "free" || axisMode === "z";
+    const allowed = { x: true, y: true, z: true };
+    if (control === surfaceTransform && activeWorkView === "front") allowed.z = false;
+    if (control === surfaceTransform && activeWorkView === "side") allowed.x = false;
+    if (control === surfaceTransform && activeWorkView === "top") allowed.y = false;
+    control.showX = allowed.x && (axisMode === "free" || axisMode === "x");
+    control.showY = allowed.y && (axisMode === "free" || axisMode === "y");
+    control.showZ = allowed.z && (axisMode === "free" || axisMode === "z");
     control.setSpace("world");
   }
   syncSurfaceAxisUi();
@@ -14782,6 +14827,171 @@ function bevelSelectedEdge() {
   return mesh;
 }
 
+function minecraftCornerBevelGeometry(geometry, cornerPoint, requestedPixels = 2) {
+  const source = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  const sourcePosition = source.getAttribute("position");
+  if (!sourcePosition || sourcePosition.count / 3 !== 12) {
+    source.dispose();
+    return null;
+  }
+  source.computeBoundingBox();
+  const box = source.boundingBox.clone();
+  const size = box.getSize(new THREE.Vector3());
+  if (Math.min(size.x, size.y, size.z) <= .00001) {
+    source.dispose();
+    return null;
+  }
+  const center = box.getCenter(new THREE.Vector3());
+  const sign = new THREE.Vector3(
+    cornerPoint.x >= center.x ? 1 : -1,
+    cornerPoint.y >= center.y ? 1 : -1,
+    cornerPoint.z >= center.z ? 1 : -1
+  );
+  const pixels = THREE.MathUtils.clamp(Math.round(Number(requestedPixels) || 2), 1, 8);
+  const divisions = 16;
+  const step = size.clone().multiplyScalar(1 / divisions);
+  const occupied = (x, y, z) => {
+    if (x < 0 || y < 0 || z < 0 || x >= divisions || y >= divisions || z >= divisions) return false;
+    const dx = sign.x > 0 ? divisions - 1 - x : x;
+    const dy = sign.y > 0 ? divisions - 1 - y : y;
+    const dz = sign.z > 0 ? divisions - 1 - z : z;
+    return dx + dy + dz >= pixels;
+  };
+  const positions = [];
+  const uvs = [];
+  const faceDefinitions = [
+    { delta: [1, 0, 0], axis: "x", corners: [[1,0,0],[1,1,0],[1,1,1],[1,0,1]] },
+    { delta: [-1, 0, 0], axis: "x", corners: [[0,0,1],[0,1,1],[0,1,0],[0,0,0]] },
+    { delta: [0, 1, 0], axis: "y", corners: [[0,1,1],[1,1,1],[1,1,0],[0,1,0]] },
+    { delta: [0, -1, 0], axis: "y", corners: [[0,0,0],[1,0,0],[1,0,1],[0,0,1]] },
+    { delta: [0, 0, 1], axis: "z", corners: [[0,0,1],[1,0,1],[1,1,1],[0,1,1]] },
+    { delta: [0, 0, -1], axis: "z", corners: [[1,0,0],[0,0,0],[0,1,0],[1,1,0]] }
+  ];
+  const uvFor = (point, axis) => {
+    if (axis === "x") return [(point.z - box.min.z) / size.z, (point.y - box.min.y) / size.y];
+    if (axis === "y") return [(point.x - box.min.x) / size.x, (point.z - box.min.z) / size.z];
+    return [(point.x - box.min.x) / size.x, (point.y - box.min.y) / size.y];
+  };
+  const addQuad = (points, axis) => {
+    for (const index of [0, 1, 2, 0, 2, 3]) {
+      positions.push(...points[index].toArray());
+      uvs.push(...uvFor(points[index], axis));
+    }
+  };
+  for (let x = 0; x < divisions; x++) {
+    for (let y = 0; y < divisions; y++) {
+      for (let z = 0; z < divisions; z++) {
+        if (!occupied(x, y, z)) continue;
+        for (const face of faceDefinitions) {
+          if (occupied(x + face.delta[0], y + face.delta[1], z + face.delta[2])) continue;
+          const points = face.corners.map(corner => new THREE.Vector3(
+            box.min.x + (x + corner[0]) * step.x,
+            box.min.y + (y + corner[1]) * step.y,
+            box.min.z + (z + corner[2]) * step.z
+          ));
+          addQuad(points, face.axis);
+        }
+      }
+    }
+  }
+  source.dispose();
+  const result = new THREE.BufferGeometry();
+  result.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  result.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+  result.computeVertexNormals();
+  result.computeBoundingBox();
+  result.computeBoundingSphere();
+  return { geometry: result, pixels };
+}
+
+function bevelSelectedCorner() {
+  if (selectedSurfaceVertices.length !== 1) {
+    log("Choose Vertex and select exactly one corner before using Corner Bevel.");
+    return null;
+  }
+  const selectedVertex = selectedSurfaceVertices[0];
+  const mesh = selectedVertex.mesh;
+  if (!mesh?.geometry) {
+    log("The selected corner does not belong to an editable mesh.");
+    return null;
+  }
+  const cornerPoint = selectedVertex.localPoint.clone();
+  const mode = els.cornerBevelModeSelect?.value === "minecraft" ? "minecraft" : "standard";
+  const beforeTriangles = mesh.geometry.index
+    ? mesh.geometry.index.count / 3
+    : mesh.geometry.getAttribute("position").count / 3;
+  let resultGeometry = null;
+  let description = "";
+
+  if (mode === "minecraft") {
+    const voxelResult = minecraftCornerBevelGeometry(mesh.geometry, cornerPoint, els.cornerBevelPixelsInput?.value);
+    if (!voxelResult) {
+      log("Minecraft Corner Bevel currently needs a simple closed cube. Use Standard for custom or OBJ geometry.");
+      return null;
+    }
+    resultGeometry = voxelResult.geometry;
+    description = `${voxelResult.pixels} pixel step${voxelResult.pixels === 1 ? "" : "s"} on a 16x16x16 cube`;
+  } else {
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const position = source.getAttribute("position");
+    const cornerKey = vertexKey(cornerPoint);
+    const neighbours = new Map();
+    for (let index = 0; index < position.count; index += 3) {
+      const points = [0, 1, 2].map(offset => new THREE.Vector3(
+        position.getX(index + offset), position.getY(index + offset), position.getZ(index + offset)
+      ));
+      if (!points.some(point => vertexKey(point) === cornerKey)) continue;
+      for (const point of points) {
+        if (vertexKey(point) !== cornerKey) neighbours.set(vertexKey(point), point);
+      }
+    }
+    const edgeLengths = [...neighbours.values()]
+      .map(point => point.distanceTo(cornerPoint))
+      .filter(length => length > .00001);
+    if (edgeLengths.length < 3) {
+      source.dispose();
+      log("Corner Bevel needs a closed corner with at least three connected edges.");
+      return null;
+    }
+    source.computeBoundingBox();
+    const center = source.boundingBox.getCenter(new THREE.Vector3());
+    const outward = cornerPoint.clone().sub(center).normalize();
+    if (outward.lengthSq() <= .00001) {
+      source.dispose();
+      log("Corner Bevel could not determine which side of this corner is outside.");
+      return null;
+    }
+    const requestedWidth = Math.max(.001, Number(els.cornerBevelWidthInput?.value) || .12);
+    const usedWidth = Math.min(requestedWidth, Math.min(...edgeLengths) * .65);
+    const component = Math.max(Math.abs(outward.x), Math.abs(outward.y), Math.abs(outward.z), .0001);
+    const planePoint = cornerPoint.clone().addScaledVector(outward, -usedWidth / component);
+    const clipped = clipGeometryByLocalPlane(source, outward, planePoint);
+    source.dispose();
+    if (clipped.capLoop.length < 3 || !clipped.geometry.getAttribute("position")?.count) {
+      clipped.geometry.dispose();
+      log("Corner Bevel could not create a closed cut at this corner.");
+      return null;
+    }
+    resultGeometry = clipped.geometry;
+    description = `width ${round(usedWidth)}`;
+  }
+
+  recordHistory(`bevel selected corner (${mode})`);
+  clearMarkers(mesh.userData.id);
+  replaceEditableMeshGeometry(mesh, resultGeometry);
+  mesh.updateMatrixWorld(true);
+  clearSelectedSurfaceComponents();
+  if (selected !== mesh) selectObject(mesh);
+  syncSurfaceEditorUi();
+  updateAll();
+  log(`Beveled one corner on ${mesh.name} using ${mode} mode (${description}).`, {
+    beforeTriangles,
+    afterTriangles: resultGeometry.getAttribute("position").count / 3,
+    mode
+  });
+  return mesh;
+}
+
 function bevelSelectedFace() {
   if (!selectedFace?.mesh) {
     log("Pick a face first, then press Bevel Face.");
@@ -14882,10 +15092,14 @@ function groupCheckedParts() {
 }
 
 function mergeSelectionTargets() {
-  if (selectedGroupRecordId && groupRecord(selectedGroupRecordId) && !checkedIds.size) {
-    return descendantMeshesForGroup(selectedGroupRecordId);
+  const checked = checkedObjects();
+  if (checked.length) return uniqueMeshList(checked);
+  if (selectedGroupRecordId && groupRecord(selectedGroupRecordId)) {
+    return uniqueMeshList(descendantMeshesForGroup(selectedGroupRecordId));
   }
-  return selectionTargetsForGrouping();
+  const active = activeGroupObjects();
+  if (active.length) return uniqueMeshList(active);
+  return selected ? [selected] : [];
 }
 
 function sharedMergeTextureState(meshes) {
@@ -14898,14 +15112,16 @@ function sharedMergeTextureState(meshes) {
   const firstFlipY = first.userData.textureFlipY ?? true;
   const firstRotation = normalizeTextureRotation(first.userData.textureRotation || 0);
   const firstRobloxId = normalizeRobloxAssetId(first.userData.textureRobloxAssetId || "");
-  const firstColor = `#${first.material.color.getHexString()}`.toLowerCase();
+  const firstColor = `#${primaryMeshMaterial(first)?.color?.getHexString?.() || "ffffff"}`.toLowerCase();
+  const firstOpacity = Math.max(.05, Math.min(1, Number(first.userData.opacity ?? primaryMeshMaterial(first)?.opacity ?? 1) || 1));
   const allTexturedMatch = textured.every(mesh =>
     (mesh.userData.textureUrl || null) === firstUrl
     && (mesh.userData.textureName || null) === firstName
     && (mesh.userData.textureFlipY ?? true) === firstFlipY
     && normalizeTextureRotation(mesh.userData.textureRotation || 0) === firstRotation
     && normalizeRobloxAssetId(mesh.userData.textureRobloxAssetId || "") === firstRobloxId
-    && `#${mesh.material.color.getHexString()}`.toLowerCase() === firstColor
+    && `#${primaryMeshMaterial(mesh)?.color?.getHexString?.() || "ffffff"}`.toLowerCase() === firstColor
+    && Math.max(.05, Math.min(1, Number(mesh.userData.opacity ?? primaryMeshMaterial(mesh)?.opacity ?? 1) || 1)) === firstOpacity
   );
   return allTexturedMatch ? {
     textureUrl: firstUrl,
@@ -14913,25 +15129,28 @@ function sharedMergeTextureState(meshes) {
     textureFlipY: firstFlipY,
     textureRotation: firstRotation,
     textureRobloxAssetId: firstRobloxId,
-    color: firstColor
+    color: firstColor,
+    opacity: firstOpacity
   } : null;
 }
 
 function mergeSourceMaterialColor(mesh) {
-  return `#${mesh.material.color.getHexString()}`.toLowerCase();
+  return `#${primaryMeshMaterial(mesh)?.color?.getHexString?.() || "ffffff"}`.toLowerCase();
 }
 
 function mergeSurfaceDescriptor(mesh) {
   const textureUrl = mesh.userData.textureUrl || null;
   const color = mergeSourceMaterialColor(mesh);
+  const opacity = Math.max(.05, Math.min(1, Number(mesh.userData.opacity ?? primaryMeshMaterial(mesh)?.opacity ?? 1) || 1));
   const textureFlipY = mesh.userData.textureFlipY ?? true;
   const textureRotation = normalizeTextureRotation(mesh.userData.textureRotation || 0);
   return {
     key: textureUrl
-      ? JSON.stringify(["texture", textureUrl, color, textureFlipY, textureRotation])
-      : `color:${color}`,
+      ? JSON.stringify(["texture", textureUrl, color, opacity, textureFlipY, textureRotation])
+      : JSON.stringify(["color", color, opacity]),
     textureUrl,
     color,
+    opacity,
     textureFlipY,
     textureRotation,
     image: null,
@@ -14989,9 +15208,15 @@ async function createMergedMaterialAtlas(meshes, name = "Merged Mesh") {
   }
   if (!surfaces.length) return null;
 
+  let failedTextureCount = 0;
   await Promise.all(surfaces.map(async surface => {
     if (!surface.textureUrl) return;
-    surface.image = await loadMergeTextureImage(surface.textureUrl);
+    try {
+      surface.image = await loadMergeTextureImage(surface.textureUrl);
+    } catch {
+      failedTextureCount++;
+      surface.image = null;
+    }
   }));
 
   const columns = Math.ceil(Math.sqrt(surfaces.length));
@@ -15000,8 +15225,13 @@ async function createMergedMaterialAtlas(meshes, name = "Merged Mesh") {
     Number(surface.image?.naturalWidth || surface.image?.width || 0),
     Number(surface.image?.naturalHeight || surface.image?.height || 0)
   )));
-  const maxCellSize = Math.floor(4096 / Math.max(columns, rows));
+  const atlasDimensionLimit = surfaces.length > 16 ? 1536 : 2048;
+  const maxCellSize = Math.floor(atlasDimensionLimit / Math.max(columns, rows));
   const cellSize = Math.max(32, Math.min(512, largestSource, maxCellSize));
+  const downscaledTextureCount = surfaces.filter(surface => surface.image && Math.max(
+    Number(surface.image.naturalWidth || surface.image.width || 0),
+    Number(surface.image.naturalHeight || surface.image.height || 0)
+  ) > cellSize).length;
   const padding = Math.max(2, Math.min(8, Math.floor(cellSize * .02)));
   const canvas = document.createElement("canvas");
   canvas.width = columns * cellSize;
@@ -15015,17 +15245,30 @@ async function createMergedMaterialAtlas(meshes, name = "Merged Mesh") {
     const row = Math.floor(surface.index / columns);
     const x = column * cellSize;
     const y = row * cellSize;
+    context.save();
+    context.clearRect(x, y, cellSize, cellSize);
     context.globalCompositeOperation = "source-over";
-    context.fillStyle = surface.textureUrl ? "#ffffff" : surface.color;
-    context.fillRect(x, y, cellSize, cellSize);
-    if (!surface.image) return;
+    if (!surface.image) {
+      context.globalAlpha = surface.opacity;
+      context.fillStyle = surface.color;
+      context.fillRect(x, y, cellSize, cellSize);
+      context.restore();
+      return;
+    }
     context.drawImage(surface.image, x, y, cellSize, cellSize);
     if (surface.color !== "#ffffff") {
       context.globalCompositeOperation = "multiply";
       context.fillStyle = surface.color;
       context.fillRect(x, y, cellSize, cellSize);
-      context.globalCompositeOperation = "source-over";
+      context.globalCompositeOperation = "destination-in";
+      context.globalAlpha = surface.opacity;
+      context.drawImage(surface.image, x, y, cellSize, cellSize);
+    } else if (surface.opacity < .999) {
+      context.globalCompositeOperation = "destination-in";
+      context.globalAlpha = surface.opacity;
+      context.drawImage(surface.image, x, y, cellSize, cellSize);
     }
+    context.restore();
   });
 
   const mapUv = (mesh, sourceUv = [.5, .5]) => {
@@ -15045,8 +15288,11 @@ async function createMergedMaterialAtlas(meshes, name = "Merged Mesh") {
     return [round(pixelX / canvas.width, 6), round(1 - pixelY / canvas.height, 6)];
   };
 
+  const textureUrl = canvas.toDataURL("image/png");
+  const encodedPayload = textureUrl.slice(textureUrl.indexOf(",") + 1);
+  const approximateByteSize = Math.ceil(encodedPayload.length * .75);
   return {
-    textureUrl: canvas.toDataURL("image/png"),
+    textureUrl,
     textureName: `${name} Material Atlas`,
     textureFlipY: true,
     textureRotation: 0,
@@ -15054,6 +15300,11 @@ async function createMergedMaterialAtlas(meshes, name = "Merged Mesh") {
     mapUv,
     surfaceCount: surfaces.length,
     textureCount: surfaces.filter(surface => !!surface.textureUrl).length,
+    failedTextureCount,
+    downscaledTextureCount,
+    hasTransparency: surfaces.some(surface => surface.opacity < .999),
+    approximateByteSize,
+    dimensionLimit: atlasDimensionLimit,
     width: canvas.width,
     height: canvas.height
   };
@@ -15086,13 +15337,77 @@ function fallbackMergedUv(point, box, axes) {
   ];
 }
 
+function mergeTrianglePointKey(positions, vertexIndex) {
+  const offset = vertexIndex * 3;
+  const precision = 100000;
+  return [
+    Math.round(positions[offset] * precision),
+    Math.round(positions[offset + 1] * precision),
+    Math.round(positions[offset + 2] * precision)
+  ].join(",");
+}
+
+function cullCoincidentOpposingMergeTriangles(positions, normals, vertexUvs) {
+  const triangleCount = Math.floor(positions.length / 9);
+  if (triangleCount < 2) return { positions, normals, vertexUvs, removedTriangles: 0 };
+  const keep = new Array(triangleCount).fill(true);
+  const pendingBySurface = new Map();
+  const triangleNormal = triangleIndex => {
+    const offset = triangleIndex * 9;
+    const a = new THREE.Vector3(positions[offset], positions[offset + 1], positions[offset + 2]);
+    const b = new THREE.Vector3(positions[offset + 3], positions[offset + 4], positions[offset + 5]);
+    const c = new THREE.Vector3(positions[offset + 6], positions[offset + 7], positions[offset + 8]);
+    return new THREE.Vector3().crossVectors(b.sub(a), c.sub(a)).normalize();
+  };
+
+  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+    const vertexIndex = triangleIndex * 3;
+    const surfaceKey = [0, 1, 2]
+      .map(corner => mergeTrianglePointKey(positions, vertexIndex + corner))
+      .sort()
+      .join("|");
+    const normal = triangleNormal(triangleIndex);
+    const pending = pendingBySurface.get(surfaceKey) || [];
+    const oppositeIndex = pending.findIndex(entry => entry.normal.dot(normal) < -.9999);
+    if (oppositeIndex >= 0) {
+      const opposite = pending.splice(oppositeIndex, 1)[0];
+      keep[opposite.triangleIndex] = false;
+      keep[triangleIndex] = false;
+    } else {
+      pending.push({ triangleIndex, normal });
+    }
+    if (pending.length) pendingBySurface.set(surfaceKey, pending);
+    else pendingBySurface.delete(surfaceKey);
+  }
+
+  const keptPositions = [];
+  const keptNormals = [];
+  const keptVertexUvs = [];
+  for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
+    if (!keep[triangleIndex]) continue;
+    keptPositions.push(...positions.slice(triangleIndex * 9, triangleIndex * 9 + 9));
+    if (normals.length >= triangleIndex * 9 + 9) {
+      keptNormals.push(...normals.slice(triangleIndex * 9, triangleIndex * 9 + 9));
+    }
+    if (vertexUvs.length >= triangleIndex * 3 + 3) {
+      keptVertexUvs.push(...vertexUvs.slice(triangleIndex * 3, triangleIndex * 3 + 3));
+    }
+  }
+  return {
+    positions: keptPositions,
+    normals: keptNormals,
+    vertexUvs: keptVertexUvs,
+    removedTriangles: keep.filter(value => !value).length
+  };
+}
+
 async function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, groupName = null } = {}) {
   if (!meshes.length) return null;
-  const positions = [];
-  const normals = [];
+  let positions = [];
+  let normals = [];
   const textureState = sharedMergeTextureState(meshes);
   const materialAtlas = textureState ? null : await createMergedMaterialAtlas(meshes, name);
-  const vertexUvs = [];
+  let vertexUvs = [];
   let hasAnyNormals = false;
   let hasAnyUvs = !!(textureState || materialAtlas);
 
@@ -15143,6 +15458,11 @@ async function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, gr
     }
     geometry.dispose();
   }
+
+  const culled = cullCoincidentOpposingMergeTriangles(positions, normals, vertexUvs);
+  positions = culled.positions;
+  normals = culled.normals;
+  vertexUvs = culled.vertexUvs;
 
   if (positions.length < 9) return null;
 
@@ -15200,16 +15520,23 @@ async function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, gr
     position: center.toArray().map(round),
     rotation: [0, 0, 0],
     scale: [1, 1, 1],
-    color: materialAtlas ? "#ffffff" : (textureState?.color || `#${meshes[0].material.color.getHexString()}`),
-    roughness: round(meshes.reduce((sum, mesh) => sum + Number(mesh.material.roughness || 0), 0) / meshes.length),
+    color: materialAtlas ? "#ffffff" : (textureState?.color || mergeSourceMaterialColor(meshes[0])),
+    opacity: materialAtlas ? 1 : (textureState?.opacity ?? Math.max(.05, Math.min(1, Number(meshes[0].userData.opacity ?? primaryMeshMaterial(meshes[0])?.opacity ?? 1) || 1))),
+    roughness: round(meshes.reduce((sum, mesh) => sum + Number(primaryMeshMaterial(mesh)?.roughness || 0), 0) / meshes.length),
     textureUrl: textureState?.textureUrl || materialAtlas?.textureUrl || null,
     textureName: textureState?.textureName || materialAtlas?.textureName || null,
     textureFlipY: textureState?.textureFlipY ?? materialAtlas?.textureFlipY ?? true,
     textureRotation: textureState?.textureRotation ?? materialAtlas?.textureRotation ?? 0,
     textureRobloxAssetId: textureState?.textureRobloxAssetId || materialAtlas?.textureRobloxAssetId || "",
+    textureHasTransparency: !!materialAtlas?.hasTransparency,
     generatedMaterialAtlas: !!materialAtlas,
     mergedMaterialCount: materialAtlas?.surfaceCount || 0,
     mergedTextureCount: materialAtlas?.textureCount || 0,
+    failedMergedTextureCount: materialAtlas?.failedTextureCount || 0,
+    downscaledMergedTextureCount: materialAtlas?.downscaledTextureCount || 0,
+    materialAtlasByteSize: materialAtlas?.approximateByteSize || 0,
+    materialAtlasDimensionLimit: materialAtlas?.dimensionLimit || 0,
+    culledInternalTriangles: culled.removedTriangles,
     materialAtlasSize: materialAtlas ? [materialAtlas.width, materialAtlas.height] : null,
     materialRule: sameRule,
     groupId,
@@ -15243,7 +15570,16 @@ async function mergeCheckedMeshes() {
       ? `${normalizeGroupName(targetMeshes[0].name)} merged`
       : "Merged Mesh");
   let spec = null;
-  if (els.mergeMeshBtn) els.mergeMeshBtn.disabled = true;
+  const mergeButtonLabel = els.mergeMeshBtn?.textContent || "Merge Mesh";
+  if (els.mergeMeshBtn) {
+    els.mergeMeshBtn.disabled = true;
+    els.mergeMeshBtn.textContent = `Merging ${targetMeshes.length}...`;
+    els.mergeMeshBtn.setAttribute("aria-busy", "true");
+  }
+  log(`Merging ${targetMeshes.length} meshes. Large textured groups can take a moment...`, {
+    sourceMeshes: targetMeshes.map(mesh => mesh.name)
+  });
+  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try {
     spec = await mergedMeshSpec(targetMeshes, {
       name: mergedName,
@@ -15251,10 +15587,14 @@ async function mergeCheckedMeshes() {
       groupName: parentRecord?.name || null
     });
   } catch (error) {
-    log("Could not bake the source textures into the merged material atlas.", error?.message || error);
+    log("Could not merge the selected meshes.", error?.message || error);
     return null;
   } finally {
-    if (els.mergeMeshBtn) els.mergeMeshBtn.disabled = false;
+    if (els.mergeMeshBtn) {
+      els.mergeMeshBtn.disabled = false;
+      els.mergeMeshBtn.textContent = mergeButtonLabel;
+      els.mergeMeshBtn.removeAttribute("aria-busy");
+    }
   }
 
   if (!spec) {
@@ -15266,10 +15606,20 @@ async function mergeCheckedMeshes() {
   const generatedMaterialAtlas = !!spec.generatedMaterialAtlas;
   const mergedMaterialCount = Number(spec.mergedMaterialCount) || 0;
   const mergedTextureCount = Number(spec.mergedTextureCount) || 0;
+  const failedMergedTextureCount = Number(spec.failedMergedTextureCount) || 0;
+  const downscaledMergedTextureCount = Number(spec.downscaledMergedTextureCount) || 0;
+  const materialAtlasByteSize = Number(spec.materialAtlasByteSize) || 0;
+  const materialAtlasDimensionLimit = Number(spec.materialAtlasDimensionLimit) || 0;
+  const culledInternalTriangles = Number(spec.culledInternalTriangles) || 0;
   const materialAtlasSize = Array.isArray(spec.materialAtlasSize) ? [...spec.materialAtlasSize] : null;
   delete spec.generatedMaterialAtlas;
   delete spec.mergedMaterialCount;
   delete spec.mergedTextureCount;
+  delete spec.failedMergedTextureCount;
+  delete spec.downscaledMergedTextureCount;
+  delete spec.materialAtlasByteSize;
+  delete spec.materialAtlasDimensionLimit;
+  delete spec.culledInternalTriangles;
   delete spec.materialAtlasSize;
   recordHistory("merge mesh");
   if (generatedMaterialAtlas && spec.textureUrl && spec.textureName) {
@@ -15296,11 +15646,20 @@ async function mergeCheckedMeshes() {
   currentTransformTargetKey = "";
   updateTransformAttachment();
   updateAll();
-  log(`Merged ${targetMeshes.length} meshes into ${merged.name}.`, {
+  const cullingSummary = culledInternalTriangles
+    ? ` Removed ${culledInternalTriangles} hidden internal triangles.`
+    : "";
+  log(`Merged ${targetMeshes.length} meshes into ${merged.name}.${cullingSummary}`, {
     keptTexture,
     generatedMaterialAtlas,
     mergedMaterialCount,
     mergedTextureCount,
+    failedMergedTextureCount,
+    downscaledMergedTextureCount,
+    materialAtlasApproximateMegabytes: round(materialAtlasByteSize / (1024 * 1024), 2),
+    materialAtlasDimensionLimit,
+    culledInternalTriangles,
+    culledInternalFaces: Math.floor(culledInternalTriangles / 2),
     materialAtlasSize,
     sourceMeshes: targetMeshes.map(mesh => mesh.name),
     parent: parentRecord?.name || "Root"

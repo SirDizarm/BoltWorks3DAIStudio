@@ -1,5 +1,6 @@
-const mcpBridgeVersion = 1;
+const mcpBridgeVersion = 2;
 const mcpBridgeNextUrl = "/__modeler/mcp/next";
+const mcpBridgePreflightUrl = "/__modeler/mcp/preflight";
 const mcpBridgeResultUrl = "/__modeler/mcp/result";
 const mcpBridgeMaxBatchSize = 256;
 const mcpBridgeMaxAuditEntries = 200;
@@ -239,6 +240,7 @@ function mcpBridgeApplyUpdate(mesh, patch) {
       if (material && "metalness" in material) material.metalness = patch.materialRule === "metal" ? .52 : .05;
     }
   }
+  if (patch.opacity !== undefined || patch.materialRule !== undefined) syncMeshRenderCulling(mesh);
   if (patch.hidden !== undefined) {
     mesh.userData.hidden = patch.hidden;
     mesh.visible = !patch.hidden;
@@ -280,7 +282,11 @@ function mcpBridgeCapabilitiesResult() {
       "objects.delete": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
       "selection.set": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
       undo: {},
-      "audit.get": { maxEntries: mcpBridgeMaxAuditEntries }
+      "audit.get": { maxEntries: mcpBridgeMaxAuditEntries },
+      "work_session.start": { relayLocal: true, realDeadline: true },
+      "work_session.get": { relayLocal: true },
+      "work_session.note": { relayLocal: true, factualNotesOnly: true },
+      "work_session.stop": { relayLocal: true }
     },
     studio: projectCapabilities()
   };
@@ -443,6 +449,33 @@ function mcpBridgeValidateExpectedRevision(command, params, method) {
   });
 }
 
+function mcpBridgeValidateWorkSession(command, method) {
+  if (!mcpBridgeIsMutation(method) || command.workSession === undefined) return;
+  const session = command.workSession;
+  mcpBridgeAssert(mcpBridgeIsPlainObject(session), "SESSION_INVALID", "The timed work-session context is invalid.");
+  const sessionId = mcpBridgeString(session.id, "workSession.id", { required: true, maxLength: 128 });
+  const generation = mcpBridgeInteger(session.generation, "workSession.generation", { min: 1 });
+  if (session.status !== undefined) {
+    mcpBridgeAssert(session.status === "running", "SESSION_NOT_RUNNING", "The timed work session is no longer running.", {
+      sessionId,
+      generation,
+      status: session.status
+    });
+  }
+  const deadlineAt = typeof session.deadlineAt === "number"
+    ? session.deadlineAt
+    : Date.parse(String(session.deadlineAt || ""));
+  mcpBridgeAssert(Number.isFinite(deadlineAt), "SESSION_INVALID", "The timed work-session deadline is invalid.", {
+    sessionId,
+    generation
+  });
+  mcpBridgeAssert(Date.now() < deadlineAt, "SESSION_TIME_LIMIT", "The timed work session has reached its deadline. Start or resume a session before making more changes.", {
+    sessionId,
+    generation,
+    deadlineAt: new Date(deadlineAt).toISOString()
+  });
+}
+
 function mcpBridgeAuditParams(method, params) {
   if (["objects.create", "objects.update"].includes(method)) {
     return {
@@ -456,7 +489,15 @@ function mcpBridgeAuditParams(method, params) {
   return { ...params };
 }
 
-function mcpBridgeAppendAudit({ method, params, beforeRevision, ok, error = null }) {
+function mcpBridgeResultIds(result) {
+  if (!mcpBridgeIsPlainObject(result)) return [];
+  for (const key of ["createdIds", "updatedIds", "deletedIds", "selectedIds"]) {
+    if (Array.isArray(result[key])) return result[key].filter(id => typeof id === "string").slice(0, mcpBridgeMaxBatchSize);
+  }
+  return [];
+}
+
+function mcpBridgeAppendAudit({ command, method, params, beforeRevision, ok, result = null, error = null }) {
   const entry = {
     sequence: ++mcpBridgeAuditSequence,
     timestamp: new Date().toISOString(),
@@ -467,9 +508,36 @@ function mcpBridgeAppendAudit({ method, params, beforeRevision, ok, error = null
     afterRevision: mcpBridgeRevision,
     ok
   };
+  if (typeof command?.id === "string" && command.id.trim()) entry.commandId = command.id;
+  if (mcpBridgeIsPlainObject(command?.workSession)) {
+    entry.workSession = {
+      id: String(command.workSession.id || ""),
+      generation: Number(command.workSession.generation) || 0
+    };
+  }
+  const targetIds = mcpBridgeResultIds(result);
+  if (targetIds.length) entry.targetIds = targetIds;
   if (error) entry.error = { code: error.code || "INTERNAL_ERROR", message: error.message || String(error) };
   mcpBridgeAuditEntries.push(entry);
   if (mcpBridgeAuditEntries.length > mcpBridgeMaxAuditEntries) mcpBridgeAuditEntries.splice(0, mcpBridgeAuditEntries.length - mcpBridgeMaxAuditEntries);
+  return entry;
+}
+
+function mcpBridgeLatestAuditForCommand(commandId) {
+  for (let index = mcpBridgeAuditEntries.length - 1; index >= 0; index -= 1) {
+    if (mcpBridgeAuditEntries[index]?.commandId === commandId) return mcpBridgeAuditEntries[index];
+  }
+  return null;
+}
+
+function mcpBridgeRelayAuditPayload(commandId) {
+  const entry = mcpBridgeLatestAuditForCommand(commandId);
+  if (!entry) return null;
+  return {
+    targetIds: Array.isArray(entry.targetIds) ? entry.targetIds.slice(0, mcpBridgeMaxBatchSize) : [],
+    beforeRevision: entry.beforeRevision,
+    afterRevision: entry.afterRevision
+  };
 }
 
 async function mcpBridgeExecuteCommand(command) {
@@ -479,6 +547,7 @@ async function mcpBridgeExecuteCommand(command) {
   mcpBridgeAssert(mcpBridgeIsPlainObject(params), "INVALID_PARAMS", "params must be an object.");
   const beforeRevision = mcpBridgeRevision;
   try {
+    mcpBridgeValidateWorkSession(command, method);
     mcpBridgeValidateExpectedRevision(command, params, method);
     let result;
     if (method === "capabilities.get") {
@@ -500,11 +569,11 @@ async function mcpBridgeExecuteCommand(command) {
     }
     else if (method === "audit.get") result = mcpBridgeAuditResult(params);
     else throw new McpBridgeError("METHOD_NOT_FOUND", `Unknown MCP bridge method '${method}'.`);
-    mcpBridgeAppendAudit({ method, params, beforeRevision, ok: true });
+    mcpBridgeAppendAudit({ command, method, params, beforeRevision, ok: true, result });
     return result;
   }
   catch (error) {
-    mcpBridgeAppendAudit({ method, params, beforeRevision, ok: false, error });
+    mcpBridgeAppendAudit({ command, method, params, beforeRevision, ok: false, error });
     throw error;
   }
 }
@@ -522,6 +591,33 @@ function mcpBridgeDelay(milliseconds) {
   return new Promise(resolve => setTimeout(resolve, milliseconds));
 }
 
+async function mcpBridgePreflightRelayCommand(command) {
+  const method = mcpBridgeNormalizeMethod(command?.method);
+  if (!mcpBridgeIsMutation(method) || command?.workSession === undefined) return;
+  const id = mcpBridgeString(command?.id, "id", { required: true, maxLength: 128 });
+  const response = await fetch(mcpBridgePreflightUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Accept: "application/json" },
+    cache: "no-store",
+    body: JSON.stringify({ id })
+  });
+  let payload = null;
+  try {
+    payload = await response.json();
+  }
+  catch {
+    // A malformed relay response is handled as a failed preflight below.
+  }
+  if (response.ok && payload?.ok === true) return;
+  const relayError = mcpBridgeIsPlainObject(payload?.error) ? payload.error : null;
+  throw new McpBridgeError(
+    typeof relayError?.code === "string" ? relayError.code : "SESSION_PREFLIGHT_FAILED",
+    typeof relayError?.message === "string"
+      ? relayError.message
+      : `The timed work session could not be verified immediately before this mutation (HTTP ${response.status}).`
+  );
+}
+
 async function mcpBridgePostResult(payload) {
   const response = await fetch(mcpBridgeResultUrl, {
     method: "POST",
@@ -536,12 +632,18 @@ async function mcpBridgeHandleRelayCommand(command) {
   const id = command?.id;
   if (typeof id !== "string" || !id.trim()) return;
   try {
+    await mcpBridgePreflightRelayCommand(command);
     const result = await mcpBridgeExecuteCommand(command);
-    await mcpBridgePostResult({ id, ok: true, result });
+    await mcpBridgePostResult({ id, ok: true, result, audit: mcpBridgeRelayAuditPayload(id) });
   }
   catch (error) {
     try {
-      await mcpBridgePostResult({ id, ok: false, error: mcpBridgeErrorPayload(error) });
+      await mcpBridgePostResult({
+        id,
+        ok: false,
+        error: mcpBridgeErrorPayload(error),
+        audit: mcpBridgeRelayAuditPayload(id)
+      });
     }
     catch {
       // The relay owns transport diagnostics. The editor stays quiet and retries polling.

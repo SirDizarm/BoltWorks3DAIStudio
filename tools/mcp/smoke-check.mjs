@@ -12,6 +12,10 @@ const REPO_ROOT = resolve(THIS_DIR, "..", "..");
 const MCP_SERVER = resolve(THIS_DIR, "server.mjs");
 const TOKEN = "boltworks-mcp-smoke-secret";
 const REQUIRED_TOOLS = [
+  "bws_start_work_session",
+  "bws_get_work_session",
+  "bws_add_session_note",
+  "bws_stop_work_session",
   "bws_get_capabilities",
   "bws_get_scene",
   "bws_get_selection",
@@ -133,6 +137,37 @@ try {
 
   const scene = await client.callTool({ name: "bws_get_scene", arguments: { detail: "project" } });
   assert.equal(scene.structuredContent.detail, "project");
+
+  await client.callTool({
+    name: "bws_start_work_session",
+    arguments: { goal: "Verify the timed MCP workflow", durationSeconds: 900 }
+  });
+  assert.equal(relay.calls.at(-1).method, "work_session.start");
+  assert.deepEqual(relay.calls.at(-1).params, {
+    goal: "Verify the timed MCP workflow",
+    durationMs: 900_000
+  });
+
+  await client.callTool({
+    name: "bws_get_work_session",
+    arguments: { sinceSequence: 3, includeReport: true }
+  });
+  assert.equal(relay.calls.at(-1).method, "work_session.get");
+  assert.deepEqual(relay.calls.at(-1).params, { sinceSequence: 3, includeReport: true });
+
+  await client.callTool({
+    name: "bws_add_session_note",
+    arguments: { text: "Timer and viewer verified.", category: "result" }
+  });
+  assert.equal(relay.calls.at(-1).method, "work_session.note");
+  assert.deepEqual(relay.calls.at(-1).params, { text: "Timer and viewer verified.", category: "result" });
+
+  await client.callTool({
+    name: "bws_stop_work_session",
+    arguments: { reason: "Smoke check complete" }
+  });
+  assert.equal(relay.calls.at(-1).method, "work_session.stop");
+  assert.deepEqual(relay.calls.at(-1).params, { reason: "Smoke check complete" });
 
   await client.callTool({
     name: "bws_update_objects",

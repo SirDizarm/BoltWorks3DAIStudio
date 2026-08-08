@@ -24,6 +24,16 @@ ska kunna:
 7. [`schemas/modeler-project.schema.json`](schemas/modeler-project.schema.json) – maskinläsbart schema.
 8. [`examples/minimal-valid.modelerproj`](examples/minimal-valid.modelerproj) – litet fungerande exempel.
 
+## AI work sessions
+
+[`AI_WORK_SESSIONS.md`](AI_WORK_SESSIONS.md) defines bounded AI work sessions,
+the Human AI Viewer event stream, and the optional `.bws-session.json` sidecar.
+Its machine-readable contract is
+[`schemas/ai-work-session.schema.json`](schemas/ai-work-session.schema.json).
+Session notes record concise, observable workflow facts and results; they must
+never request or store hidden reasoning, private chain-of-thought, credentials,
+or a full scene snapshot for every event.
+
 ## Verktyg
 
 Inspektera och validera ett projekt utan att öppna studion:

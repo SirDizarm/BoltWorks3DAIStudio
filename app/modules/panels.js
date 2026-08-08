@@ -15,6 +15,94 @@ function sortSurfaceEditorToolsAlphabetically() {
 
 sortSurfaceEditorToolsAlphabetically();
 
+function gameplayPreviewVisible() {
+  return !!(els.gameplayPreview && !els.gameplayPreview.hidden && gameplayRenderer);
+}
+
+function resetGameplayPreviewCamera() {
+  if (!gameplayRenderer) return;
+  gameplayCamera.position.copy(camera.position);
+  const direction = orbit.target.clone().sub(camera.position).normalize();
+  gameplayYaw = Math.atan2(-direction.x, -direction.z);
+  gameplayPitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1));
+  gameplayCamera.rotation.set(gameplayPitch, gameplayYaw, 0, "YXZ");
+  gameplayCamera.near = camera.near;
+  gameplayCamera.far = camera.far;
+  gameplayCamera.updateProjectionMatrix();
+}
+
+function openGameplayPreview() {
+  if (!els.gameplayPreview || !gameplayRenderer) return false;
+  els.gameplayPreview.hidden = false;
+  gameplayKeys.clear();
+  resetGameplayPreviewCamera();
+  gameplayLastFrame = performance.now();
+  resizeGameplayPreview();
+  log("Opened Gameplay Preview. Click the player screen for mouse look; use WASD to move, Space to rise, and Shift to descend.");
+  return true;
+}
+
+function closeGameplayPreview() {
+  if (!els.gameplayPreview) return false;
+  if (document.pointerLockElement === gameplayCanvas) document.exitPointerLock?.();
+  els.gameplayPreview.hidden = true;
+  gameplayKeys.clear();
+  log("Closed Gameplay Preview and returned to the editor camera.");
+  return true;
+}
+
+function resizeGameplayPreview() {
+  if (!gameplayPreviewVisible()) return;
+  const rect = gameplayCanvas.getBoundingClientRect();
+  if (rect.width < 1 || rect.height < 1) return;
+  gameplayRenderer.setSize(rect.width, rect.height, false);
+  gameplayCamera.aspect = rect.width / rect.height;
+  gameplayCamera.updateProjectionMatrix();
+}
+
+function updateGameplayPreview(deltaSeconds) {
+  if (!gameplayPreviewVisible()) return;
+  gameplayCamera.rotation.set(gameplayPitch, gameplayYaw, 0, "YXZ");
+  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(gameplayCamera.quaternion);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(gameplayCamera.quaternion);
+  forward.y = 0;
+  right.y = 0;
+  if (forward.lengthSq()) forward.normalize();
+  if (right.lengthSq()) right.normalize();
+  const movement = new THREE.Vector3();
+  if (gameplayKeys.has("KeyW")) movement.add(forward);
+  if (gameplayKeys.has("KeyS")) movement.sub(forward);
+  if (gameplayKeys.has("KeyD")) movement.add(right);
+  if (gameplayKeys.has("KeyA")) movement.sub(right);
+  if (gameplayKeys.has("Space") || gameplayKeys.has("KeyE")) movement.y += 1;
+  if (gameplayKeys.has("ShiftLeft") || gameplayKeys.has("ShiftRight") || gameplayKeys.has("KeyQ")) movement.y -= 1;
+  if (movement.lengthSq()) {
+    const worldSize = sceneBounds().getSize(new THREE.Vector3()).length();
+    const speed = Math.max(.75, worldSize * .22);
+    gameplayCamera.position.addScaledVector(movement.normalize(), speed * deltaSeconds);
+  }
+}
+
+function renderGameplayPreview() {
+  if (!gameplayPreviewVisible()) return;
+  const helpers = [
+    transform,
+    surfaceTransform,
+    surfaceFrontTransform,
+    surfaceSideTransform,
+    faceMarker,
+    selectionOutlineGroup,
+    openingPickGuideGroup,
+    markerGroup,
+    cameraDirectorGroup,
+    lineSketchCursor
+  ].filter(Boolean);
+  const visibility = helpers.map(helper => helper.visible);
+  helpers.forEach(helper => { helper.visible = false; });
+  gameplayRenderer.render(scene, gameplayCamera);
+  helpers.forEach((helper, index) => { helper.visible = visibility[index]; });
+}
+
 function resize() {
   const rect = canvas.parentElement.getBoundingClientRect();
   renderer.setSize(rect.width, rect.height, false);
@@ -22,10 +110,14 @@ function resize() {
   camera.updateProjectionMatrix();
   resizeReferenceRenderer(frontBoneRenderer, frontBoneCamera, frontBoneCanvas, "front");
   resizeReferenceRenderer(sideBoneRenderer, sideBoneCamera, sideBoneCanvas, "side");
+  resizeGameplayPreview();
 }
 
 function animate() {
   requestAnimationFrame(animate);
+  const frameTime = performance.now();
+  const gameplayDelta = Math.min(.05, Math.max(0, (frameTime - gameplayLastFrame) / 1000));
+  gameplayLastFrame = frameTime;
   resize();
   syncLiveMirrorPreview();
   boneGridAxisGroup.visible = !!els.showGridInput?.checked;
@@ -57,6 +149,8 @@ function animate() {
   surfaceTransform.visible = surfaceTransformWasVisible;
   scene.background = mainBackground;
   scene.fog = mainFog;
+  updateGameplayPreview(gameplayDelta);
+  renderGameplayPreview();
 }
 
 function hitFromPointerEvent(event) {
@@ -400,6 +494,14 @@ els.showModelingEdgesInput?.addEventListener("change", () => {
 syncSurfaceEditorUi();
 document.querySelector("#bevelFaceBtn").addEventListener("click", bevelSelectedFace);
 els.edgeBevelBtn?.addEventListener("click", bevelSelectedEdge);
+els.cornerBevelBtn?.addEventListener("click", bevelSelectedCorner);
+els.cornerBevelModeSelect?.addEventListener("change", syncSurfaceEditorUi);
+els.cornerBevelWidthInput?.addEventListener("input", () => {
+  if (els.cornerBevelWidthRange) els.cornerBevelWidthRange.value = els.cornerBevelWidthInput.value;
+});
+els.cornerBevelWidthRange?.addEventListener("input", () => {
+  if (els.cornerBevelWidthInput) els.cornerBevelWidthInput.value = els.cornerBevelWidthRange.value;
+});
 els.subdivideSelectedBtn?.addEventListener("click", subdivideSelectedSurface);
 els.loopCutBtn?.addEventListener("click", applyLoopCut);
 els.knifeCutModeBtn?.addEventListener("click", () => setKnifeCutMode(!knifeCutMode));
@@ -1246,6 +1348,19 @@ canvas.addEventListener("dblclick", event => {
 });
 
 window.addEventListener("keydown", event => {
+  const editingText = event.target?.matches?.("input, textarea, select, [contenteditable='true']");
+  if (gameplayPreviewVisible()) {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeGameplayPreview();
+      return;
+    }
+    if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Space", "ShiftLeft", "ShiftRight"].includes(event.code)) {
+      event.preventDefault();
+      gameplayKeys.add(event.code);
+      return;
+    }
+  }
   if (event.key === "Shift") isShiftHeld = true;
   if (knifeCutMode && event.key === "Escape") {
     event.preventDefault();
@@ -1308,6 +1423,7 @@ window.addEventListener("keydown", event => {
 });
 
 window.addEventListener("keyup", event => {
+  gameplayKeys.delete(event.code);
   if (event.key === "Shift") isShiftHeld = false;
   if (event.code !== "Space") return;
   spaceCameraMode = false;
@@ -1316,12 +1432,32 @@ window.addEventListener("keyup", event => {
   }
 });
 window.addEventListener("blur", () => {
+  gameplayKeys.clear();
   isShiftHeld = false;
   finishDragPushSession();
   finishScaleDragSession();
 });
 window.addEventListener("resize", () => {
   if (textureEditorState.open) renderTextureEditor();
+});
+
+els.workViewFrontBtn?.addEventListener("click", () => setOrthographicWorkView("front"));
+els.workViewSideBtn?.addEventListener("click", () => setOrthographicWorkView("side"));
+els.workViewTopBtn?.addEventListener("click", () => setOrthographicWorkView("top"));
+els.frontReferenceWorkBtn?.addEventListener("click", () => setOrthographicWorkView("front"));
+els.sideReferenceWorkBtn?.addEventListener("click", () => setOrthographicWorkView("side"));
+els.workViewRestoreBtn?.addEventListener("click", restoreOrthographicWorkView);
+els.gameplayPreviewOpenBtn?.addEventListener("click", openGameplayPreview);
+els.gameplayPreviewResetBtn?.addEventListener("click", resetGameplayPreviewCamera);
+els.gameplayPreviewCloseBtn?.addEventListener("click", closeGameplayPreview);
+gameplayCanvas?.addEventListener("click", () => gameplayCanvas.requestPointerLock?.());
+document.addEventListener("mousemove", event => {
+  if (document.pointerLockElement !== gameplayCanvas || !gameplayPreviewVisible()) return;
+  gameplayYaw -= event.movementX * .0022;
+  gameplayPitch = THREE.MathUtils.clamp(gameplayPitch - event.movementY * .0022, -Math.PI / 2 + .02, Math.PI / 2 - .02);
+});
+document.addEventListener("pointerlockchange", () => {
+  if (document.pointerLockElement !== gameplayCanvas) gameplayKeys.clear();
 });
 
 window.ModelerStudio = {
@@ -1360,8 +1496,13 @@ window.ModelerStudio = {
   pullSelectedFaces,
   pushSelectedFaces,
   bevelSelectedEdge,
+  bevelSelectedCorner,
   subdivideSelectedSurface,
   applyLoopCut,
+  setOrthographicWorkView,
+  restoreOrthographicWorkView,
+  openGameplayPreview,
+  closeGameplayPreview,
   surfaceGizmoState: () => ({
     visible: surfaceTransform.visible,
     axis: surfaceTransform.axis,

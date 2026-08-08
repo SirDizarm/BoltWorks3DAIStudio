@@ -1,6 +1,7 @@
 const canvas = document.querySelector("#canvas");
 const frontBoneCanvas = document.querySelector("#frontBoneCanvas");
 const sideBoneCanvas = document.querySelector("#sideBoneCanvas");
+const gameplayCanvas = document.querySelector("#gameplayCanvas");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
@@ -9,6 +10,13 @@ const frontBoneRenderer = new THREE.WebGLRenderer({ canvas: frontBoneCanvas, ant
 const sideBoneRenderer = new THREE.WebGLRenderer({ canvas: sideBoneCanvas, antialias: true, alpha: true });
 frontBoneRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 sideBoneRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+const gameplayRenderer = gameplayCanvas
+  ? new THREE.WebGLRenderer({ canvas: gameplayCanvas, antialias: true, alpha: true })
+  : null;
+if (gameplayRenderer) {
+  gameplayRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  gameplayRenderer.shadowMap.enabled = true;
+}
 
 const scene = new THREE.Scene();
 const studioBackground = new THREE.Color(0x0b0e10);
@@ -18,6 +26,15 @@ scene.background = studioBackground;
 const camera = new THREE.PerspectiveCamera(55, 1, 0.05, 1000000);
 camera.position.set(6, 5, 7);
 camera.layers.enable(3);
+const gameplayCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 1000000);
+gameplayCamera.layers.enable(3);
+gameplayCamera.rotation.order = "YXZ";
+const gameplayKeys = new Set();
+let gameplayYaw = 0;
+let gameplayPitch = 0;
+let gameplayLastFrame = performance.now();
+let activeWorkView = null;
+let savedWorkViewCamera = null;
 
 const frontBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
 frontBoneCamera.position.set(0, 0, 100);
@@ -428,6 +445,17 @@ const sceneGroupRegistry = new Map();
 let selectedGroupRecordId = null;
 
 const els = {
+  viewportRoot: document.querySelector(".viewport"),
+  workViewFrontBtn: document.querySelector("#workViewFrontBtn"),
+  workViewSideBtn: document.querySelector("#workViewSideBtn"),
+  workViewTopBtn: document.querySelector("#workViewTopBtn"),
+  workViewRestoreBtn: document.querySelector("#workViewRestoreBtn"),
+  frontReferenceWorkBtn: document.querySelector("#frontReferenceWorkBtn"),
+  sideReferenceWorkBtn: document.querySelector("#sideReferenceWorkBtn"),
+  gameplayPreview: document.querySelector("#gameplayPreview"),
+  gameplayPreviewOpenBtn: document.querySelector("#gameplayPreviewOpenBtn"),
+  gameplayPreviewResetBtn: document.querySelector("#gameplayPreviewResetBtn"),
+  gameplayPreviewCloseBtn: document.querySelector("#gameplayPreviewCloseBtn"),
   tree: document.querySelector("#sceneTree"),
   goToSelectedMeshBtn: document.querySelector("#goToSelectedMeshBtn"),
   log: document.querySelector("#log"),
@@ -456,6 +484,32 @@ const els = {
   inspectorToggle: document.querySelector("#inspectorToggle"),
   utilitiesSection: document.querySelector("#utilitiesSection"),
   utilitiesToggle: document.querySelector("#utilitiesToggle"),
+  aiViewerSection: document.querySelector("#aiViewerSection"),
+  aiViewerToggle: document.querySelector("#aiViewerToggle"),
+  aiViewerBody: document.querySelector("#aiViewerBody"),
+  aiViewerHeaderState: document.querySelector("#aiViewerHeaderState"),
+  aiViewerConnectionStatus: document.querySelector("#aiViewerConnectionStatus"),
+  aiViewerSessionStatus: document.querySelector("#aiViewerSessionStatus"),
+  aiViewerTimer: document.querySelector("#aiViewerTimer"),
+  aiViewerGoalInput: document.querySelector("#aiViewerGoalInput"),
+  aiViewerDurationInput: document.querySelector("#aiViewerDurationInput"),
+  aiViewerStartBtn: document.querySelector("#aiViewerStartBtn"),
+  aiViewerPauseBtn: document.querySelector("#aiViewerPauseBtn"),
+  aiViewerResumeBtn: document.querySelector("#aiViewerResumeBtn"),
+  aiViewerExtendBtn: document.querySelector("#aiViewerExtendBtn"),
+  aiViewerStopBtn: document.querySelector("#aiViewerStopBtn"),
+  aiViewerClearBtn: document.querySelector("#aiViewerClearBtn"),
+  aiViewerAttention: document.querySelector("#aiViewerAttention"),
+  aiViewerAttentionMessage: document.querySelector("#aiViewerAttentionMessage"),
+  aiViewerAttentionDirective: document.querySelector("#aiViewerAttentionDirective"),
+  aiViewerCurrentAction: document.querySelector("#aiViewerCurrentAction"),
+  aiViewerMetricEvents: document.querySelector("#aiViewerMetricEvents"),
+  aiViewerMetricCompleted: document.querySelector("#aiViewerMetricCompleted"),
+  aiViewerMetricFailed: document.querySelector("#aiViewerMetricFailed"),
+  aiViewerMetricObjects: document.querySelector("#aiViewerMetricObjects"),
+  aiViewerFeedCount: document.querySelector("#aiViewerFeedCount"),
+  aiViewerFeed: document.querySelector("#aiViewerFeed"),
+  aiViewerDownloadBtn: document.querySelector("#aiViewerDownloadBtn"),
   cameraViewsSection: document.querySelector("#cameraViewsSection"),
   cameraViewsToggle: document.querySelector("#cameraViewsToggle"),
   cameraControlsOpenBtn: document.querySelector("#cameraControlsOpenBtn"),
@@ -609,6 +663,14 @@ const els = {
   bevelDepthInput: document.querySelector("#bevelDepthInput"),
   edgeBevelWidthInput: document.querySelector("#edgeBevelWidthInput"),
   edgeBevelBtn: document.querySelector("#edgeBevelBtn"),
+  cornerBevelModeSelect: document.querySelector("#cornerBevelModeSelect"),
+  cornerBevelWidthInput: document.querySelector("#cornerBevelWidthInput"),
+  cornerBevelPixelsInput: document.querySelector("#cornerBevelPixelsInput"),
+  cornerBevelWidthRange: document.querySelector("#cornerBevelWidthRange"),
+  cornerBevelWidthLabel: document.querySelector("#cornerBevelWidthLabel"),
+  cornerBevelPixelsLabel: document.querySelector("#cornerBevelPixelsLabel"),
+  cornerBevelDragLabel: document.querySelector("#cornerBevelDragLabel"),
+  cornerBevelBtn: document.querySelector("#cornerBevelBtn"),
   subdivideLevelsInput: document.querySelector("#subdivideLevelsInput"),
   subdivideSelectedBtn: document.querySelector("#subdivideSelectedBtn"),
   loopCutAxisSelect: document.querySelector("#loopCutAxisSelect"),

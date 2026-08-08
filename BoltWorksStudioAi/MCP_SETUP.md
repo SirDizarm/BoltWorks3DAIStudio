@@ -4,7 +4,7 @@ BoltWorks Studio's MCP server gives an AI client controlled access to the same l
 
 ## What is exposed
 
-The server provides read tools for capabilities, scene state, selection, and the audit log; write tools for creating, updating, selecting, and deleting exact object IDs; and one-step undo. It also exposes the authoring handbook, project schema, minimal project, medieval-house library, and mesh QA codes as MCP resources.
+The server provides read tools for capabilities, scene state, selection, the audit log, and the current timed work session; write tools for creating, updating, selecting, and deleting exact object IDs; one-step undo; and a bounded work-session lifecycle. It also exposes the authoring handbook, project schema, work-session guide and schema, minimal project, medieval-house library, and mesh QA codes as MCP resources.
 
 The editor remains the source of truth. Writes can include `expectedRevision`, which prevents an AI from silently overwriting a newer human or AI edit.
 
@@ -66,16 +66,36 @@ npx @modelcontextprotocol/inspector node tools/mcp/server.mjs
 
 1. Call `bws_get_capabilities`.
 2. Read the relevant handbook resources.
-3. Call `bws_get_scene` with `detail: "summary"`, then request more detail only when needed.
-4. Read `bws_get_selection` before changing selected work.
-5. Write by exact object ID and include the last observed `expectedRevision`.
-6. Inspect the scene again and use the existing BoltWorks cameras and QA sheet for visual verification.
-7. Read `bws_get_audit_log` for a traceable history of MCP/AI operations. Use `bws_undo` if the most recent edit is wrong.
+3. When the person requested a time limit, call `bws_start_work_session` with the visible goal and duration before the first mutation.
+4. Call `bws_get_scene` with `detail: "summary"`, then request more detail only when needed.
+5. Read `bws_get_selection` before changing selected work.
+6. Write by exact object ID and include the last observed `expectedRevision`.
+7. Inspect the scene again and use the existing BoltWorks cameras and QA sheet for visual verification.
+8. Add only concise, factual progress or checkpoint notes with `bws_add_session_note`; do not store hidden reasoning.
+9. Read `bws_get_audit_log` for a traceable history of MCP/AI operations. Use `bws_undo` if the most recent edit is wrong.
+10. Call `bws_stop_work_session` when the bounded task ends and retain the returned report with the project and QA evidence.
 
 The MCP server writes protocol messages only to stdout. Diagnostics go to stderr so stdio framing stays valid.
 
+## Timed AI work sessions
+
+The v1 lifecycle is intentionally small:
+
+- `bws_start_work_session` starts one session with a user-visible goal and a real duration in milliseconds;
+- `bws_get_work_session` returns server-owned timing and new events, optionally after a previously observed sequence number;
+- `bws_add_session_note` appends a factual, user-visible note to the shared timeline;
+- `bws_stop_work_session` ends the session and returns its report.
+
+The local relay owns the deadline. It checks the deadline immediately before every scene mutation instead of trusting an AI to estimate elapsed time. At or after the deadline, new mutations are refused with `SESSION_TIME_LIMIT`, while safe reads, inspection, finalization, and report retrieval remain available. A person can watch the same state in the Human AI Viewer, including elapsed and remaining time, actions, notes, target IDs, and terminal reason.
+
+Pause and Stop also expose a machine-readable `session.attention` object. Pause uses `HUMAN_INPUT_MAY_BE_AVAILABLE` and instructs the connected AI to ask whether the person has new input before resuming. Stop uses urgent `HUMAN_ATTENTION_REQUIRED`, displays `I need your attention!`, and blocks further scene mutations. An MCP client must still poll `bws_get_work_session` between actions; this local relay cannot inject an unsolicited message into a disconnected AI conversation or replace that client's own emergency Stop control.
+
+The compact MCP audit log remains useful evidence, but it is not a complete replay format. A durable session report uses the sidecar contract in `AI_WORK_SESSIONS.md` and `schemas/ai-work-session.schema.json`. Workflow notes must describe observable actions, checks, outcomes, and next steps only; they must never request or expose private chain-of-thought, credentials, tokens, or hidden model state.
+
 ## Current scope and roadmap
 
-The implementation in v49.25.0 is **MCP v1**. It is the first working local bridge between an MCP-compatible AI client and the open BoltWorks editor, not the final AI modeling interface. Its present scope is deliberate: discover capabilities and documentation, inspect the scene and selection, perform exact-ID object edits, undo safely, and retain an auditable history.
+The implementation is **MCP v1**. It is the first working local bridge between an MCP-compatible AI client and the open BoltWorks editor, not the final AI modeling interface. Its present scope is deliberate: discover capabilities and documentation, inspect the scene and selection, perform exact-ID object edits, undo safely, run a server-timed session visible to a person, and retain an auditable history.
 
 The next major MCP milestone is Reference Match / Image-to-Mesh. Planned additions include calibrated multi-view references, measurable landmarks, editable silhouette guides, topology and surface-edit commands, visual-difference checks, repeatable QA cameras, and recoverable checkpoints. The intended result is an AI workflow that can construct and refine an editable `.modelerproj` mesh from reference images while a person can inspect, correct, replay, or undo every stage.
+
+Full forward/backward replay is a later milestone and requires verified operation deltas that are not present in every current audit entry. MP4 export is likewise a future derived view of that event timeline; it cannot replace the editable project or the JSON session report.

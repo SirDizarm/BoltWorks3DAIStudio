@@ -9,3 +9,6 @@ server.err.log
 *_mesh.json
 .DS_Store
 Thumbs.db
+
+# Local-only planning notes, not for the public repo
+docs/FUTURE-MINECRAFT-WORKFLOW.md

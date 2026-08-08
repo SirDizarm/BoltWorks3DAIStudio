@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.25.2**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.25.8**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
 ## Local development source
 
@@ -23,7 +23,7 @@ The primary document is `index.html`; canonical application logic lives under
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.25.2.js`, so direct file opening does not depend on module CORS or a
+`app/studio-v49.25.8.js`, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
@@ -36,7 +36,9 @@ Use **Load Project URL** beside **Load Project** to open an HTTPS link to a vali
 
 BoltWorks can expose the open local editor to an MCP-compatible AI client without a BoltWorks login or cloud relay. Start BoltWorks with `npm start`, open the local editor in a browser, keep that tab open, and configure the AI client to run `node D:\Game\BoltWorks3DAIStudio\tools\mcp\server.mjs`. The short-lived local token is discovered automatically.
 
-This release contains **MCP v1**, an experimental but working foundation. It provides 12 handbook/schema/example resources plus nine live tools for capabilities, scene inspection, selection, object creation/update/deletion, undo, and an MCP audit log. Exact object IDs and optional scene revisions protect collaborative changes. Full setup and the recommended AI workflow are documented in `BoltWorksStudioAi/MCP_SETUP.md`; `npm run check:mcp` verifies the stdio server and authenticated relay contract.
+This release contains **MCP v1**, an experimental but working foundation. It provides 14 handbook/schema/example resources plus live tools for capabilities, scene inspection, selection, object creation/update/deletion, undo, an MCP audit log, and bounded AI work sessions. Exact object IDs and optional scene revisions protect collaborative changes. Full setup and the recommended AI workflow are documented in `BoltWorksStudioAi/MCP_SETUP.md`; `npm run check:mcp` verifies the stdio server and authenticated relay contract.
+
+Timed AI sessions use a server-owned deadline, so a stated limit such as 15 minutes is enforced even if the client stalls. The Human AI Viewer can show the session's incremental, user-visible actions while it runs. A durable `.bws-session.json` sidecar may preserve compact forward/inverse deltas and factual workflow notes, but it must not contain hidden reasoning, private chain-of-thought, credentials, or a complete scene snapshot for every event. Deterministic replay and MP4 tutorial export remain future work rather than guarantees of the current session log.
 
 MCP v1 is not yet a one-click image-to-mesh system. The planned next stage is to expose calibrated reference matching, landmarks, silhouette guides, topology operations, QA cameras, and checkpoints through the same MCP contract. That will let an AI turn front/side/back reference images into an editable `.modelerproj` mesh, compare its result visibly, and keep every change inspectable by a person.
 

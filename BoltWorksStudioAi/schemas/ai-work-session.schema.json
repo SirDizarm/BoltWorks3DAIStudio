@@ -1,0 +1,283 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://boltworksstudio.com/schemas/ai-work-session-v1.json",
+  "title": "BoltWorks AI work-session report",
+  "description": "Durable, replay-aware report for one bounded human/AI authoring session. Events contain operation deltas, not complete scene snapshots.",
+  "type": "object",
+  "required": [
+    "kind",
+    "version",
+    "id",
+    "project",
+    "goal",
+    "actor",
+    "timing",
+    "references",
+    "events",
+    "metrics",
+    "summary",
+    "artifacts"
+  ],
+  "properties": {
+    "kind": { "const": "boltworks-ai-work-session" },
+    "version": { "const": 1 },
+    "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "project": { "$ref": "#/$defs/projectReference" },
+    "goal": { "type": "string", "minLength": 1, "maxLength": 4000 },
+    "actor": { "$ref": "#/$defs/actor" },
+    "timing": { "$ref": "#/$defs/timing" },
+    "references": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/reference" }
+    },
+    "events": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/event" }
+    },
+    "metrics": { "$ref": "#/$defs/metrics" },
+    "summary": { "$ref": "#/$defs/summary" },
+    "artifacts": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/artifact" }
+    }
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{64}$"
+    },
+    "projectReference": {
+      "type": "object",
+      "required": ["name", "kind", "version", "startRevision", "endRevision"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "kind": { "const": "modeler-project" },
+        "version": { "const": 1 },
+        "uri": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "baseProjectSha256": { "$ref": "#/$defs/sha256" },
+        "startRevision": { "type": "integer", "minimum": 0 },
+        "endRevision": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "actor": {
+      "type": "object",
+      "required": ["type", "client"],
+      "properties": {
+        "type": { "enum": ["ai", "human", "mixed"] },
+        "client": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 200 }
+      },
+      "additionalProperties": false
+    },
+    "timing": {
+      "type": "object",
+      "required": [
+        "budgetMs",
+        "startedAt",
+        "deadlineAt",
+        "endedAt",
+        "elapsedMs",
+        "endReason"
+      ],
+      "properties": {
+        "budgetMs": { "type": "integer", "minimum": 1 },
+        "startedAt": { "type": "string", "format": "date-time" },
+        "deadlineAt": { "type": "string", "format": "date-time" },
+        "endedAt": {
+          "anyOf": [
+            { "type": "string", "format": "date-time" },
+            { "type": "null" }
+          ]
+        },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "endReason": {
+          "enum": ["active", "completed", "time-limit", "user-stop", "error"]
+        }
+      },
+      "additionalProperties": false
+    },
+    "reference": {
+      "type": "object",
+      "required": ["role", "name", "uri"],
+      "properties": {
+        "role": { "enum": ["image", "project", "knowledge", "other"] },
+        "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "uri": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "sha256": { "$ref": "#/$defs/sha256" }
+      },
+      "additionalProperties": false
+    },
+    "actionEnvelope": {
+      "type": "object",
+      "required": ["method", "params"],
+      "properties": {
+        "method": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "params": {
+          "type": "object",
+          "propertyNames": {
+            "not": {
+              "enum": [
+                "scene",
+                "project",
+                "textureLibrary",
+                "dataUrl",
+                "token",
+                "authorization"
+              ]
+            }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "eventError": {
+      "type": "object",
+      "required": ["code", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 4000 }
+      },
+      "additionalProperties": false
+    },
+    "event": {
+      "type": "object",
+      "required": [
+        "sequence",
+        "timestamp",
+        "elapsedMs",
+        "kind",
+        "actor",
+        "label",
+        "ok",
+        "replayable",
+        "targetIds"
+      ],
+      "properties": {
+        "sequence": { "type": "integer", "minimum": 1 },
+        "timestamp": { "type": "string", "format": "date-time" },
+        "elapsedMs": { "type": "integer", "minimum": 0 },
+        "kind": { "enum": ["action", "checkpoint", "note", "undo", "error", "human"] },
+        "actor": { "enum": ["mcp", "human", "editor", "system"] },
+        "method": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "label": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "note": { "type": "string", "maxLength": 4000 },
+        "ok": { "type": "boolean" },
+        "replayable": { "type": "boolean" },
+        "beforeRevision": { "type": "integer", "minimum": 0 },
+        "afterRevision": { "type": "integer", "minimum": 0 },
+        "targetIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        },
+        "expectedBaseHash": { "$ref": "#/$defs/sha256" },
+        "forward": {
+          "anyOf": [
+            { "$ref": "#/$defs/actionEnvelope" },
+            { "type": "null" }
+          ]
+        },
+        "inverse": {
+          "anyOf": [
+            { "$ref": "#/$defs/actionEnvelope" },
+            { "type": "null" }
+          ]
+        },
+        "result": { "type": "object", "additionalProperties": true },
+        "error": { "$ref": "#/$defs/eventError" },
+        "undoOfSequence": { "type": "integer", "minimum": 1 },
+        "artifactIds": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 },
+          "uniqueItems": true
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "replayable": { "const": true } },
+            "required": ["replayable"]
+          },
+          "then": {
+            "required": ["method", "forward"],
+            "properties": {
+              "forward": { "$ref": "#/$defs/actionEnvelope" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "kind": { "const": "error" } },
+            "required": ["kind"]
+          },
+          "then": { "required": ["error"] }
+        }
+      ],
+      "additionalProperties": false
+    },
+    "metrics": {
+      "type": "object",
+      "properties": {
+        "eventCount": { "type": "integer", "minimum": 0 },
+        "mutationCount": { "type": "integer", "minimum": 0 },
+        "undoCount": { "type": "integer", "minimum": 0 },
+        "objectsCreated": { "type": "integer", "minimum": 0 },
+        "objectsUpdated": { "type": "integer", "minimum": 0 },
+        "objectsDeleted": { "type": "integer", "minimum": 0 },
+        "startObjectCount": { "type": "integer", "minimum": 0 },
+        "endObjectCount": { "type": "integer", "minimum": 0 },
+        "startTriangleCount": { "type": "integer", "minimum": 0 },
+        "endTriangleCount": { "type": "integer", "minimum": 0 }
+      },
+      "additionalProperties": false
+    },
+    "summary": {
+      "type": "object",
+      "required": ["outcome", "completed", "issues", "nextSteps", "workflowNotes"],
+      "properties": {
+        "outcome": { "enum": ["active", "completed", "partial", "failed"] },
+        "completed": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 2000 }
+        },
+        "issues": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 2000 }
+        },
+        "nextSteps": {
+          "type": "array",
+          "items": { "type": "string", "maxLength": 2000 }
+        },
+        "workflowNotes": {
+          "type": "array",
+          "description": "Factual, user-visible process notes only. Hidden reasoning or private chain-of-thought is not stored.",
+          "items": { "type": "string", "maxLength": 4000 }
+        }
+      },
+      "additionalProperties": false
+    },
+    "artifact": {
+      "type": "object",
+      "required": ["id", "role", "name"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "role": {
+          "enum": ["final-project", "checkpoint-project", "qa-sheet", "reference", "preview", "other"]
+        },
+        "name": { "type": "string", "minLength": 1, "maxLength": 300 },
+        "path": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "uri": { "type": "string", "minLength": 1, "maxLength": 4000 },
+        "sha256": { "$ref": "#/$defs/sha256" },
+        "mediaType": { "type": "string", "minLength": 1, "maxLength": 200 }
+      },
+      "anyOf": [
+        { "required": ["path"] },
+        { "required": ["uri"] }
+      ],
+      "additionalProperties": false
+    }
+  }
+}

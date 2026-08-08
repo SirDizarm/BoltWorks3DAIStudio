@@ -3,23 +3,23 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>BoltWorks 3D AI Studio v49.25.2 Experimental</title>
-  <meta name="application-version" content="v49.25.2 modular studio" />
+  <title>BoltWorks 3D AI Studio v49.25.8 Experimental</title>
+  <meta name="application-version" content="v49.25.8 modular studio" />
   <link rel="icon" type="image/png" href="./app/assets/branding/boltworks-logo.png" />
-  <link rel="stylesheet" href="./app/styles/studio.css?v=49.25.2" />
+  <link rel="stylesheet" href="./app/styles/studio.css?v=49.25.8" />
 
 </head>
 <body>
-  <script defer src="./app/panels/panel-collapse.js?v=49.25.2"></script>
-  <script defer src="./app/panels/tool-docking.js?v=49.25.2"></script>
+  <script defer src="./app/panels/panel-collapse.js?v=49.25.8"></script>
+  <script defer src="./app/panels/tool-docking.js?v=49.25.8"></script>
 
   <div class="persistent-notices" aria-label="Version and copyright notices">
-    <div class="persistent-notice experimental-notice" role="status"><strong>v49.25.2 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
+    <div class="persistent-notice experimental-notice" role="status"><strong>v49.25.8 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span></div>
     <div class="persistent-notice copyright-notice" role="note"><strong>© 2026 Daniel Rydin</strong><span>BoltWorks branding and visual assets. All rights reserved.</span></div>
   </div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.25.2 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.25.8 Experimental</small></span></div>
       <div class="toolbar-group toolbar-picker-group" aria-label="Toolbar picker">
         <details class="toolbar-picker" id="toolbarPicker">
           <summary>Toolbars</summary>
@@ -200,6 +200,22 @@
     <section class="viewport" aria-label="3D and bone placement viewports">
       <div class="viewport-pane">
         <canvas id="canvas"></canvas>
+        <div class="work-view-controls" aria-label="Orthographic work views">
+          <button id="workViewFrontBtn" type="button" title="Use Front as the main constrained X/Y work view">Front Work</button>
+          <button id="workViewSideBtn" type="button" title="Use Side as the main constrained Z/Y work view">Side Work</button>
+          <button id="workViewTopBtn" type="button" title="Use Top as the main constrained X/Z work view">Top Work</button>
+          <button id="workViewRestoreBtn" type="button" title="Restore the previous perspective editor camera" hidden>Restore View</button>
+          <button id="gameplayPreviewOpenBtn" type="button" title="Open an independent player screen with WASD and mouse look">Gameplay Preview</button>
+        </div>
+        <div id="gameplayPreview" class="gameplay-preview" hidden>
+          <canvas id="gameplayCanvas"></canvas>
+          <div class="gameplay-preview-bar">
+            <strong>PLAYER SCREEN</strong>
+            <span>Click view · WASD move · mouse look · Esc releases mouse</span>
+            <button id="gameplayPreviewResetBtn" type="button">Reset</button>
+            <button id="gameplayPreviewCloseBtn" type="button">Close</button>
+          </div>
+        </div>
         <div id="referenceImageOverlay" class="reference-image-overlay" hidden aria-hidden="true">
           <img id="referenceImageOverlayImg" alt="Viewport reference" />
         </div>
@@ -209,12 +225,12 @@
       <div class="reference-viewports" aria-label="Bone placement reference views">
         <div class="reference-viewport">
           <canvas id="frontBoneCanvas"></canvas>
-          <span class="reference-view-label">FRONT: X / Y</span>
+          <button id="frontReferenceWorkBtn" class="reference-view-label" type="button" title="Open this Front X/Y view as the main work view">FRONT: X / Y</button>
           <span class="reference-view-hint">Surface: drag X/Y | Bone: drag joint</span>
         </div>
         <div class="reference-viewport">
           <canvas id="sideBoneCanvas"></canvas>
-          <span class="reference-view-label">SIDE: Z / Y</span>
+          <button id="sideReferenceWorkBtn" class="reference-view-label" type="button" title="Open this Side Z/Y view as the main work view">SIDE: Z / Y</button>
           <span class="reference-view-hint">Surface: drag Z/Y | Bone: drag joint</span>
         </div>
       </div>
@@ -520,6 +536,70 @@
         </div>
         </div>
       </section>
+      <section class="section ai-viewer-section collapsed" id="aiViewerSection" data-collapse-persist="ai-viewer">
+        <button class="section-header" id="aiViewerToggle" type="button" aria-expanded="false" aria-controls="aiViewerBody">
+          <h2>Human AI Viewer</h2>
+          <span class="ai-viewer-header-state" id="aiViewerHeaderState" data-state="offline">Offline</span>
+        </button>
+        <div class="section-body" id="aiViewerBody">
+          <p class="api-note">Watch verified MCP actions, results, and timing while an AI works in BoltWorks. Private model reasoning is never shown.</p>
+
+          <div class="ai-viewer-status-row" aria-label="AI viewer status">
+            <span class="ai-viewer-pill" id="aiViewerConnectionStatus" data-state="offline">MCP offline</span>
+            <span class="ai-viewer-pill" id="aiViewerSessionStatus" data-state="idle">No session</span>
+          </div>
+
+          <div class="ai-viewer-timer-card">
+            <span class="api-note">Time remaining</span>
+            <time class="ai-viewer-timer" id="aiViewerTimer" datetime="PT0S">00:00</time>
+          </div>
+
+          <label>Goal
+            <textarea id="aiViewerGoalInput" rows="3" placeholder="Describe the concrete result the AI should complete."></textarea>
+          </label>
+          <div class="ai-viewer-start-row">
+            <label>Duration (minutes)
+              <input id="aiViewerDurationInput" type="number" min="1" max="1440" step="1" value="15" />
+            </label>
+            <button id="aiViewerStartBtn" class="primary" type="button">Start Session</button>
+          </div>
+
+          <div class="ai-viewer-controls" role="group" aria-label="AI work session controls">
+            <button id="aiViewerPauseBtn" type="button" disabled>Pause</button>
+            <button id="aiViewerResumeBtn" type="button" disabled>Resume</button>
+            <button id="aiViewerExtendBtn" type="button" disabled>+5 min</button>
+            <button id="aiViewerStopBtn" class="warn" type="button" disabled>Stop</button>
+            <button id="aiViewerClearBtn" type="button" disabled>Clear</button>
+          </div>
+
+          <div class="ai-viewer-attention" id="aiViewerAttention" data-priority="none" role="alert" aria-live="assertive" hidden>
+            <strong id="aiViewerAttentionMessage"></strong>
+            <span id="aiViewerAttentionDirective"></span>
+          </div>
+
+          <div class="ai-viewer-current-card">
+            <span class="api-note">Current verified action</span>
+            <strong id="aiViewerCurrentAction">Waiting for a session.</strong>
+          </div>
+
+          <dl class="ai-viewer-metrics" aria-label="Session metrics">
+            <div><dt>Events</dt><dd id="aiViewerMetricEvents">0</dd></div>
+            <div><dt>Completed</dt><dd id="aiViewerMetricCompleted">0</dd></div>
+            <div><dt>Failed</dt><dd id="aiViewerMetricFailed">0</dd></div>
+            <div><dt>Objects</dt><dd id="aiViewerMetricObjects">0</dd></div>
+          </dl>
+
+          <div class="ai-viewer-feed-header">
+            <strong>Verified event feed</strong>
+            <span class="api-note" id="aiViewerFeedCount">0 events</span>
+          </div>
+          <ol class="ai-viewer-feed" id="aiViewerFeed" role="log" aria-live="polite" aria-relevant="additions">
+            <li class="ai-viewer-empty">No verified events yet.</li>
+          </ol>
+
+          <button id="aiViewerDownloadBtn" type="button" disabled>Download Session Report JSON</button>
+        </div>
+      </section>
       <section class="section log-section" id="statusSection">
         <button class="section-header" id="statusToggle" type="button" aria-expanded="true" aria-controls="statusBody">
           <h2>Status</h2>
@@ -598,6 +678,22 @@
         </div>
         <button id="edgeBevelBtn" type="button" title="Chamfer one selected sharp edge and add a new bevel strip to the same mesh">Bevel Selected Edge</button>
         <p class="api-note">Choose Edge, select one visible crease, then apply. Flat triangulation diagonals are ignored.</p>
+      </details>
+      <details class="surface-bevel-details">
+        <summary>Corner Bevel</summary>
+        <div class="field-grid">
+          <label>Geometry
+            <select id="cornerBevelModeSelect">
+              <option value="standard">Standard / OBJ</option>
+              <option value="minecraft">Minecraft 16×16</option>
+            </select>
+          </label>
+          <label id="cornerBevelWidthLabel">Width <input id="cornerBevelWidthInput" type="number" min="0.001" max="10" step="0.01" value="0.12" /></label>
+          <label id="cornerBevelPixelsLabel" hidden>Pixels removed <input id="cornerBevelPixelsInput" type="number" min="1" max="8" step="1" value="2" /></label>
+        </div>
+        <label class="range-field" id="cornerBevelDragLabel">Drag width <input id="cornerBevelWidthRange" type="range" min="0.001" max="1" step="0.001" value="0.12" /></label>
+        <button id="cornerBevelBtn" type="button" title="Select one vertex, then cut all connected corner edges with one bevel plane">Bevel Selected Corner</button>
+        <p class="api-note">Standard creates a real corner chamfer that remains OBJ-exportable. Minecraft rebuilds a box on a 16×16×16 voxel grid and removes stepped pixels from the selected corner.</p>
       </details>
       <details class="surface-bevel-details">
         <summary>Subdivide Surface</summary>
@@ -1095,7 +1191,7 @@
     </div>
   </div>
 
-  <script defer src="./app/studio-v49.25.2.js?v=49.25.2"></script>
+  <script defer src="./app/studio-v49.25.8.js?v=49.25.8"></script>
 <script src="./app/selection/runtime-bridge.js"></script>
 </body>
 </html>

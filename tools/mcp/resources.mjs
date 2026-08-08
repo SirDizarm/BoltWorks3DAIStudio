@@ -110,6 +110,14 @@ export async function registerKnowledgeResources(server) {
       path: "schemas/modeler-project.schema.json"
     },
     {
+      name: "boltworks-work-session-schema",
+      uri: "boltworks://schema/ai-work-session",
+      title: "BoltWorks AI work-session schema",
+      description: "Canonical JSON Schema for bounded, auditable .bws-session.json reports.",
+      root: HANDBOOK_ROOT,
+      path: "schemas/ai-work-session.schema.json"
+    },
+    {
       name: "boltworks-minimal-project",
       uri: "boltworks://example/minimal-project",
       title: "Minimal valid BoltWorks project",

@@ -60,6 +60,66 @@ async function createServer() {
 
   registerRelayTool(
     server,
+    "bws_start_work_session",
+    {
+      title: "Start timed BoltWorks work session",
+      description: "Start an authoritative timed AI work session. Once started, editor mutations require the active session and stop automatically when it is paused, stopped, or expired.",
+      inputSchema: z.object({
+        goal: z.string().trim().min(1).max(2_000).describe("Concrete outcome to pursue during this timed session."),
+        durationSeconds: z.number().int().min(1).max(86_400).default(900)
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    },
+    "work_session.start",
+    ({ goal, durationSeconds }) => ({ goal, durationMs: durationSeconds * 1_000 })
+  );
+
+  registerRelayTool(
+    server,
+    "bws_get_work_session",
+    {
+      title: "Get timed BoltWorks work session",
+      description: "Read the authoritative timer, factual event history, counters, human-attention signal, and optionally the downloadable work-session report. If session.attention.required is true, follow its aiDirective before doing more work. This remains available after the timer expires.",
+      inputSchema: z.object({
+        sinceSequence: z.number().int().nonnegative().default(0),
+        includeReport: z.boolean().default(false)
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    "work_session.get"
+  );
+
+  registerRelayTool(
+    server,
+    "bws_add_session_note",
+    {
+      title: "Add factual BoltWorks session note",
+      description: "Add a factual progress, decision, or result note to the active session history. Record observable work only; do not include hidden chain-of-thought or private reasoning.",
+      inputSchema: z.object({
+        text: z.string().trim().min(1).max(4_000),
+        category: z.string().trim().min(1).max(64).default("progress")
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    },
+    "work_session.note"
+  );
+
+  registerRelayTool(
+    server,
+    "bws_stop_work_session",
+    {
+      title: "Stop timed BoltWorks work session",
+      description: "Stop the current timed AI work session, cancel pending editor mutations, and raise the urgent human-attention signal 'I need your attention!'. Reads and the final factual report remain available.",
+      inputSchema: z.object({
+        reason: z.string().trim().max(500).optional()
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    "work_session.stop"
+  );
+
+  registerRelayTool(
+    server,
     "bws_get_capabilities",
     {
       title: "Get BoltWorks capabilities",

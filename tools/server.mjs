@@ -16,12 +16,12 @@ const mcpSessionFile = process.env.BWS_MCP_SESSION_FILE
   ? normalize(process.env.BWS_MCP_SESSION_FILE)
   : join(root, ".runtime", "mcp-session.json");
 const mcpRelay = createMcpRelay({ token: process.env.BWS_MCP_TOKEN });
-const studioSource = await buildStudioBundle({ outfile: join(root, "app", "studio-v49.25.2.js") });
+const studioSource = await buildStudioBundle({ outfile: join(root, "app", "studio-v49.25.7.js") });
 
 const server = createServer((request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
   if (handleHostApi({ pathname: url.pathname, request, response, server, pendingProjectFile, mcpRelay, url })) return;
-  if (url.pathname === "/app/studio-v49.25.2.js") {
+  if (url.pathname === "/app/studio-v49.25.7.js") {
     response.writeHead(200, {
       "content-type": "text/javascript; charset=utf-8",
       "cache-control": "no-store"
