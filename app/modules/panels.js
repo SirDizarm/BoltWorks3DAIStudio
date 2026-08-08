@@ -31,14 +31,23 @@ function resetGameplayPreviewCamera() {
   gameplayCamera.updateProjectionMatrix();
 }
 
+function updateGameplayHint() {
+  if (!els.gameplayHintText) return;
+  const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
+  els.gameplayHintText.textContent =
+    `Click view · WASD move · E/Q or Space/Shift up-down · Scroll: speed ${speedLabel} · mouse look · Esc releases mouse`;
+}
+
 function openGameplayPreview() {
   if (!els.gameplayPreview || !gameplayRenderer) return false;
   els.gameplayPreview.hidden = false;
   gameplayKeys.clear();
+  gameplaySpeedMultiplier = 1;
   resetGameplayPreviewCamera();
   gameplayLastFrame = performance.now();
   resizeGameplayPreview();
-  log("Opened Gameplay Preview. Click the player screen for mouse look; use WASD to move, Space to rise, and Shift to descend.");
+  updateGameplayHint();
+  log("Opened Gameplay Preview. Click the player screen for mouse look; use WASD to move, E/Q or Space/Shift for up/down, and scroll to adjust speed.");
   return true;
 }
 
@@ -78,7 +87,7 @@ function updateGameplayPreview(deltaSeconds) {
   if (gameplayKeys.has("ShiftLeft") || gameplayKeys.has("ShiftRight") || gameplayKeys.has("KeyQ")) movement.y -= 1;
   if (movement.lengthSq()) {
     const worldSize = sceneBounds().getSize(new THREE.Vector3()).length();
-    const speed = Math.max(.75, worldSize * .22);
+    const speed = Math.max(.75, worldSize * .22) * gameplaySpeedMultiplier;
     gameplayCamera.position.addScaledVector(movement.normalize(), speed * deltaSeconds);
   }
 }
@@ -1451,6 +1460,17 @@ els.gameplayPreviewOpenBtn?.addEventListener("click", openGameplayPreview);
 els.gameplayPreviewResetBtn?.addEventListener("click", resetGameplayPreviewCamera);
 els.gameplayPreviewCloseBtn?.addEventListener("click", closeGameplayPreview);
 gameplayCanvas?.addEventListener("click", () => gameplayCanvas.requestPointerLock?.());
+gameplayCanvas?.addEventListener("wheel", event => {
+  if (!gameplayPreviewVisible()) return;
+  event.preventDefault();
+  const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
+  gameplaySpeedMultiplier = THREE.MathUtils.clamp(
+    gameplaySpeedMultiplier * factor,
+    GAMEPLAY_SPEED_MIN,
+    GAMEPLAY_SPEED_MAX
+  );
+  updateGameplayHint();
+}, { passive: false });
 document.addEventListener("mousemove", event => {
   if (document.pointerLockElement !== gameplayCanvas || !gameplayPreviewVisible()) return;
   gameplayYaw -= event.movementX * .0022;

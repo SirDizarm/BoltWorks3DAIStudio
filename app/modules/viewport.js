@@ -33,6 +33,9 @@ const gameplayKeys = new Set();
 let gameplayYaw = 0;
 let gameplayPitch = 0;
 let gameplayLastFrame = performance.now();
+let gameplaySpeedMultiplier = 1;
+const GAMEPLAY_SPEED_MIN = 0.15;
+const GAMEPLAY_SPEED_MAX = 6;
 let activeWorkView = null;
 let savedWorkViewCamera = null;
 
@@ -456,6 +459,7 @@ const els = {
   gameplayPreviewOpenBtn: document.querySelector("#gameplayPreviewOpenBtn"),
   gameplayPreviewResetBtn: document.querySelector("#gameplayPreviewResetBtn"),
   gameplayPreviewCloseBtn: document.querySelector("#gameplayPreviewCloseBtn"),
+  gameplayHintText: document.querySelector("#gameplayHintText"),
   tree: document.querySelector("#sceneTree"),
   goToSelectedMeshBtn: document.querySelector("#goToSelectedMeshBtn"),
   log: document.querySelector("#log"),
