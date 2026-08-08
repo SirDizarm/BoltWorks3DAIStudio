@@ -4,6 +4,10 @@
 
 Current preview version: **v49.25.9**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, import/export, plugins, and styling. GitHub Pages and the local adapter consume the same module sources.
 
+## AI authorship note
+
+Built with OpenAI Codex through v49.25.8. Claude (Anthropic) picked up development from v49.25.9 onward.
+
 ## Local development source
 
 `D:\Game\BoltWorks3DAIStudio` is the canonical local development repository. Make 3D Studio and bone/rig changes here, then commit and push this repository to publish the GitHub Pages version.
