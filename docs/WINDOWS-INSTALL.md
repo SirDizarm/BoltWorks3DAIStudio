@@ -19,6 +19,12 @@ This app can now be installed on Windows without requiring Python.
 - Double-click the desktop shortcut, or
 - run `windows/Launch-3D-Model-Studio.ps1` from the installed studio folder.
 
+## Rebuild after source changes
+
+- Double-click [`windows/Rebuild-3D-Model-Studio.cmd`](../windows/Rebuild-3D-Model-Studio.cmd) in `D:\Game\BoltWorks3DAIStudio` any time `app/modules/*.js` or other source files change (for example after an AI assistant edits the source directly).
+- It runs `npm run build:studio`, which regenerates the versioned bundle that `index.html` loads directly. `npm start` does not need this, since it composes the modules live.
+- Run it before opening `index.html` directly or pushing to GitHub Pages, so the published version matches the edited source.
+
 ## Stop the app
 
 - Use the `Stop Server` button inside the studio toolbar
