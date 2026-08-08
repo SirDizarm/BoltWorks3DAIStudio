@@ -25,6 +25,13 @@ This app can now be installed on Windows without requiring Python.
 - It runs `npm run build:studio`, which regenerates the versioned bundle that `index.html` loads directly. `npm start` does not need this, since it composes the modules live.
 - Run it before opening `index.html` directly or pushing to GitHub Pages, so the published version matches the edited source.
 
+## Rebuild, check, and push in one click
+
+- Double-click [`windows/Rebuild-And-Push-3D-Model-Studio.cmd`](../windows/Rebuild-And-Push-3D-Model-Studio.cmd) to do the full sequence with no typing: rebuild the bundle, run `npm run check`, then `git push` to `origin/main` if there is anything new to send.
+- It stops before pushing if the rebuild or checks fail, so nothing broken goes to GitHub.
+- It only pushes commits that already exist locally; it does not stage or commit anything itself. Staging/committing which files belong in a push (and leaving out local-only test files) stays a separate, reviewed step.
+- If there is nothing new to push, it says so and finishes without contacting GitHub.
+
 ## Stop the app
 
 - Use the `Stop Server` button inside the studio toolbar
