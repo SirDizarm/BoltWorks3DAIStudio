@@ -949,6 +949,18 @@ label {
   background: rgba(10, 16, 20, .88);
 }
 .work-view-controls button.active { border-color: var(--accent); color: var(--accent); }
+.work-view-axis-label {
+  display: flex;
+  align-items: center;
+  padding: 5px 8px;
+  background: rgba(10, 16, 20, .88);
+  border: 1px solid #334046;
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .02em;
+}
 .reference-view-label { cursor: pointer; }
 .gameplay-preview {
   position: absolute;

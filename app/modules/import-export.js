@@ -4758,6 +4758,7 @@ const screenshotViewDirections = {
   back: new THREE.Vector3(0, .05, -1),
   left: new THREE.Vector3(-1, .05, 0),
   right: new THREE.Vector3(1, .05, 0),
+  side: new THREE.Vector3(1, .05, 0),
   top: new THREE.Vector3(0, 1, .001),
   iso: new THREE.Vector3(.78, .52, .92)
 };
@@ -4793,6 +4794,12 @@ function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = n
   orbit.update();
 }
 
+const workViewAxisLabels = {
+  front: "Front view: X ↔ horizontal · Y ↕ vertical (Z hidden)",
+  side: "Side view: Z ↔ horizontal · Y ↕ vertical (X hidden)",
+  top: "Top view: X ↔ horizontal · Z ↕ vertical (Y hidden)"
+};
+
 function syncOrthographicWorkViewUi() {
   const map = {
     front: els.workViewFrontBtn,
@@ -4801,6 +4808,10 @@ function syncOrthographicWorkViewUi() {
   };
   for (const [name, button] of Object.entries(map)) button?.classList.toggle("active", activeWorkView === name);
   if (els.workViewRestoreBtn) els.workViewRestoreBtn.hidden = !activeWorkView;
+  if (els.workViewAxisLabel) {
+    els.workViewAxisLabel.hidden = !activeWorkView;
+    els.workViewAxisLabel.textContent = activeWorkView ? workViewAxisLabels[activeWorkView] || "" : "";
+  }
   els.viewportRoot?.classList.toggle("work-view-active", !!activeWorkView);
 }
 

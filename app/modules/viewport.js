@@ -453,6 +453,7 @@ const els = {
   workViewSideBtn: document.querySelector("#workViewSideBtn"),
   workViewTopBtn: document.querySelector("#workViewTopBtn"),
   workViewRestoreBtn: document.querySelector("#workViewRestoreBtn"),
+  workViewAxisLabel: document.querySelector("#workViewAxisLabel"),
   frontReferenceWorkBtn: document.querySelector("#frontReferenceWorkBtn"),
   sideReferenceWorkBtn: document.querySelector("#sideReferenceWorkBtn"),
   gameplayPreview: document.querySelector("#gameplayPreview"),
