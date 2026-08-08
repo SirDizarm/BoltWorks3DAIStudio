@@ -3,25 +3,48 @@ $ErrorActionPreference = "Stop"
 $appRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $appRoot
 
-Write-Host "=== BoltWorks 3D AI Studio: Rebuild + Check + Push ==="
+Write-Host "=== BoltWorks 3D AI Studio: Rebuild + Commit Bundle + Check + Push ==="
 Write-Host "Working in $appRoot"
 Write-Host ""
 
-Write-Host "--- Step 1/3: Rebuild bundle (npm run build:studio) ---"
+Write-Host "--- Step 1/4: Rebuild bundle (npm run build:studio) ---"
 npm run build:studio
 if ($LASTEXITCODE -ne 0) {
-  throw "npm run build:studio failed with exit code $LASTEXITCODE. Nothing was pushed."
+  throw "npm run build:studio failed with exit code $LASTEXITCODE. Nothing was committed or pushed."
 }
 
 Write-Host ""
-Write-Host "--- Step 2/3: Run checks (npm run check) ---"
+Write-Host "--- Step 2/4: Commit the rebuilt bundle, if it changed ---"
+
+$packageJson = Get-Content (Join-Path $appRoot "package.json") -Raw | ConvertFrom-Json
+$bundleRelPath = "app/studio-v$($packageJson.version).js"
+$bundleFullPath = Join-Path $appRoot $bundleRelPath
+
+if (-not (Test-Path $bundleFullPath)) {
+  throw "Expected build output $bundleRelPath was not found after npm run build:studio. Nothing was committed or pushed."
+}
+
+$bundleStatus = git status --porcelain -- $bundleRelPath
+if ($bundleStatus) {
+  Write-Host "Committing rebuilt bundle: $bundleRelPath"
+  git add -- $bundleRelPath
+  git commit -m "Rebuild bundle for v$($packageJson.version)"
+  if ($LASTEXITCODE -ne 0) {
+    throw "git commit for the rebuilt bundle failed. Nothing was pushed."
+  }
+} else {
+  Write-Host "$bundleRelPath is already committed and unchanged. Nothing to commit here."
+}
+
+Write-Host ""
+Write-Host "--- Step 3/4: Run checks (npm run check) ---"
 npm run check
 if ($LASTEXITCODE -ne 0) {
   throw "npm run check failed with exit code $LASTEXITCODE. Nothing was pushed."
 }
 
 Write-Host ""
-Write-Host "--- Step 3/3: Push to GitHub ---"
+Write-Host "--- Step 4/4: Push to GitHub ---"
 
 git fetch origin main --quiet
 
@@ -41,4 +64,4 @@ if ($ahead -eq 0) {
 }
 
 Write-Host ""
-Write-Host "All done: bundle rebuilt, checks passed, GitHub is up to date."
+Write-Host "All done: bundle rebuilt, committed if changed, checks passed, GitHub is up to date."

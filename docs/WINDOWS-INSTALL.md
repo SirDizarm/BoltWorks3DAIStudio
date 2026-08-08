@@ -27,9 +27,9 @@ This app can now be installed on Windows without requiring Python.
 
 ## Rebuild, check, and push in one click
 
-- Double-click [`windows/Rebuild-And-Push-3D-Model-Studio.cmd`](../windows/Rebuild-And-Push-3D-Model-Studio.cmd) to do the full sequence with no typing: rebuild the bundle, run `npm run check`, then `git push` to `origin/main` if there is anything new to send.
-- It stops before pushing if the rebuild or checks fail, so nothing broken goes to GitHub.
-- It only pushes commits that already exist locally; it does not stage or commit anything itself. Staging/committing which files belong in a push (and leaving out local-only test files) stays a separate, reviewed step.
+- Double-click [`windows/Rebuild-And-Push-3D-Model-Studio.cmd`](../windows/Rebuild-And-Push-3D-Model-Studio.cmd) to do the full sequence with no typing: rebuild the bundle, commit the rebuilt bundle file if it changed, run `npm run check`, then `git push` to `origin/main` if there is anything new to send.
+- It stops before committing/pushing if the rebuild or checks fail, so nothing broken goes to GitHub.
+- It commits exactly one file itself: the versioned direct-open bundle (`app/studio-v<version>.js`), and only when that file actually changed. That bundle is a required build output the live site depends on, so it always needs to be in the same push as the source changes that produced it. It never stages or commits anything else — deciding which other source files belong in a push (and leaving out local-only test files) stays a separate, reviewed step.
 - If there is nothing new to push, it says so and finishes without contacting GitHub.
 
 ## Stop the app
