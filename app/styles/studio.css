@@ -2105,3 +2105,10 @@ label {
     justify-content: center;
   }
 }
+.animation-panel .animation-toolbar { flex-wrap: wrap; }
+.animation-frame-readout { display:flex; justify-content:space-between; margin:8px 0 4px; color:var(--muted, #9aa7ad); font-size:11px; }
+.animation-scrubber { width:100%; accent-color:#e1b14b; }
+.animation-track-list { display:grid; gap:4px; max-height:180px; overflow:auto; margin:8px 0; padding:5px; border:1px solid var(--line, #293638); border-radius:5px; background:#101617; }
+.animation-track { display:grid; grid-template-columns:minmax(90px, 1fr) 2fr; align-items:center; gap:6px; min-height:25px; font-size:11px; }
+.animation-track > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#d8e2df; }
+.animation-track button { min-width:25px; padding:3px 5px; margin:1px; color:#101617; background:#e1b14b; border:0; border-radius:3px; font-size:10px; cursor:pointer; }

@@ -127,6 +127,7 @@ function animate() {
   const frameTime = performance.now();
   const gameplayDelta = Math.min(.05, Math.max(0, (frameTime - gameplayLastFrame) / 1000));
   gameplayLastFrame = frameTime;
+  updateAnimation(gameplayDelta);
   resize();
   syncLiveMirrorPreview();
   boneGridAxisGroup.visible = !!els.showGridInput?.checked;
@@ -354,6 +355,16 @@ function finishReferenceSurfaceDrag(event) {
 window.addEventListener("pointerup", finishReferenceSurfaceDrag);
 window.addEventListener("pointercancel", finishReferenceSurfaceDrag);
 restoreBoneRig({ bones: [], showGuides: true });
+els.animationToggle?.addEventListener("click", () => els.animationSection.classList.toggle("collapsed"));
+els.animationPlayBtn?.addEventListener("click", () => { animationState.playing = !animationState.playing; animationState.lastTime = 0; updateAnimationPanel(); });
+els.animationStopBtn?.addEventListener("click", () => { animationState.playing = false; animationSetFrame(0); });
+els.animationScrubber?.addEventListener("input", event => animationSetFrame(event.target.value));
+els.animationKeyBtn?.addEventListener("click", keyAnimationPose);
+els.animationClearBtn?.addEventListener("click", () => { animationState.keys = {}; updateAnimationPanel(); });
+els.animationExportBtn?.addEventListener("click", exportAnimationJson);
+els.animationFpsInput?.addEventListener("change", event => { animationState.fps = Math.max(1, Math.min(120, Number(event.target.value) || 24)); updateAnimationPanel(); });
+els.animationEndInput?.addEventListener("change", event => { animationState.end = Math.max(1, Math.min(9999, Number(event.target.value) || 48)); animationState.frame = Math.min(animationState.frame, animationState.end); updateAnimationPanel(); });
+updateAnimationPanel();
 document.querySelector("#groupBtn").addEventListener("click", groupCheckedParts);
 document.querySelector("#ungroupBtn").addEventListener("click", ungroupParts);
 document.querySelector("#mergeMeshBtn").addEventListener("click", async () => mergeCheckedMeshes());

@@ -69,6 +69,7 @@ let selectedBoneId = null;
 let boneToolMode = null;
 let boneMoveAxis = null;
 let boneDrag = null;
+const animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {} };
 const boneRaycaster = new THREE.Raycaster();
 boneRaycaster.layers.enable(1);
 boneRaycaster.layers.enable(2);
@@ -100,7 +101,8 @@ function serializeBoneRig() {
       avatarObjectId: bone.avatarObjectId || null,
       position: bone.position.toArray().map(round),
       rotation: bone.rotation.toArray().map(round)
-    }))
+    })),
+    animation: { fps: animationState.fps, end: animationState.end, frame: animationState.frame, keys: animationState.keys }
   };
 }
 
@@ -115,10 +117,48 @@ function restoreBoneRig(data = {}) {
     rotation: new THREE.Vector3().fromArray(Array.isArray(bone.rotation) ? bone.rotation : [0, 0, 0])
   }));
   selectedBoneId = boneById(data.selectedBoneId)?.id || rigBones[0]?.id || null;
+  animationState.fps = Math.max(1, Math.min(120, Number(data.animation?.fps) || 24));
+  animationState.end = Math.max(1, Math.min(9999, Number(data.animation?.end) || 48));
+  animationState.frame = Math.max(0, Math.min(animationState.end, Number(data.animation?.frame) || 0));
+  animationState.keys = data.animation?.keys && typeof data.animation.keys === "object" ? data.animation.keys : {};
   if (els.showBonesInput) els.showBonesInput.checked = data.showGuides ?? true;
   rebuildBoneVisuals();
   syncBonePanel();
 }
+
+function animationPoseForBone(bone) {
+  return { position: bone.position.toArray(), rotation: bone.rotation.toArray() };
+}
+function animationSetFrame(frame, { render = true } = {}) {
+  animationState.frame = Math.max(0, Math.min(animationState.end, Math.round(Number(frame) || 0)));
+  const t = animationState.frame;
+  for (const bone of rigBones) {
+    const frames = (animationState.keys[bone.id] || []).slice().sort((a, b) => a.frame - b.frame);
+    if (!frames.length) continue;
+    let a = frames[0], b = frames[frames.length - 1];
+    for (let i = 0; i < frames.length; i++) { if (frames[i].frame <= t) a = frames[i]; if (frames[i].frame >= t) { b = frames[i]; break; } }
+    const span = Math.max(1, b.frame - a.frame), alpha = a === b ? 0 : (t - a.frame) / span;
+    bone.position.fromArray(a.position.map((v, i) => v + (b.position[i] - v) * alpha));
+    bone.rotation.fromArray(a.rotation.map((v, i) => v + (b.rotation[i] - v) * alpha));
+  }
+  if (render) { rebuildBoneVisuals(); syncBonePanel(); }
+  updateAnimationPanel();
+}
+function keyAnimationPose() {
+  for (const bone of rigBones) { const list = animationState.keys[bone.id] || (animationState.keys[bone.id] = []); const pose = animationPoseForBone(bone); const key = { frame: animationState.frame, ...pose }; const index = list.findIndex(item => item.frame === key.frame); if (index >= 0) list[index] = key; else list.push(key); }
+  updateAnimationPanel();
+}
+function updateAnimationPanel() {
+  if (!els.animationScrubber) return;
+  els.animationScrubber.max = animationState.end; els.animationScrubber.value = animationState.frame;
+  els.animationFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
+  els.animationTimeLabel.textContent = `${(animationState.frame / animationState.fps).toFixed(2)}s`;
+  els.animationPlayBtn.textContent = animationState.playing ? "❚❚ Pause" : "▶ Play";
+  els.animationTrackList.innerHTML = rigBones.length ? rigBones.map(bone => `<div class="animation-track"><span>${bone.name}</span><span>${(animationState.keys[bone.id] || []).map(key => `<button type="button" data-animation-frame="${key.frame}" title="Go to frame ${key.frame}">${key.frame}</button>`).join("") || "—"}</span></div>`).join("") : '<span class="api-note">Add bones, then use “Key Pose” to create animation keys.</span>';
+  els.animationTrackList.querySelectorAll("[data-animation-frame]").forEach(button => button.addEventListener("click", () => animationSetFrame(button.dataset.animationFrame)));
+}
+function updateAnimation(delta) { if (!animationState.playing) return; animationState.lastTime += delta; if (animationState.lastTime >= 1 / animationState.fps) { animationState.lastTime = 0; animationSetFrame(animationState.frame + 1); if (animationState.frame >= animationState.end) animationState.frame = 0; } }
+function exportAnimationJson() { const blob = new Blob([JSON.stringify({ kind: "boltworks-animation", version: 1, ...serializeBoneRig().animation }, null, 2)], { type: "application/json" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "boltworks-animation.json"; link.click(); URL.revokeObjectURL(link.href); }
 
 function importedBoneArray(data) {
   if (Array.isArray(data)) return data;

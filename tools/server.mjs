@@ -15,13 +15,16 @@ const pendingProjectFile = process.env.MODELER_PENDING_PROJECT_FILE
 const mcpSessionFile = process.env.BWS_MCP_SESSION_FILE
   ? normalize(process.env.BWS_MCP_SESSION_FILE)
   : join(root, ".runtime", "mcp-session.json");
-const mcpRelay = createMcpRelay({ token: process.env.BWS_MCP_TOKEN });
-const studioSource = await buildStudioBundle({ outfile: join(root, "app", "studio-v49.25.7.js") });
+// 12 MB gives a base64-encoded reference photo (referenceMatch.createMesh)
+// headroom above the relay's previous 4 MB default, while staying under its
+// 16 MB hard cap.
+const mcpRelay = createMcpRelay({ token: process.env.BWS_MCP_TOKEN, maxBodyBytes: 12 * 1024 * 1024 });
+const studioSource = await buildStudioBundle({ outfile: join(root, "app", "studio-v49.27.0.js") });
 
 const server = createServer((request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
   if (handleHostApi({ pathname: url.pathname, request, response, server, pendingProjectFile, mcpRelay, url })) return;
-  if (url.pathname === "/app/studio-v49.25.7.js") {
+  if (url.pathname === "/app/studio-v49.27.0.js") {
     response.writeHead(200, {
       "content-type": "text/javascript; charset=utf-8",
       "cache-control": "no-store"
