@@ -71,6 +71,64 @@ function mcpBridgeColor(value, label) {
   return text.toUpperCase();
 }
 
+const mcpBridgeMaxGeometryVertices = 200_000;
+
+function mcpBridgeNumberArray(value, label, { minLength = 0, multipleOf = 1, integer = false, min = -1_000_000, max = 1_000_000 } = {}) {
+  mcpBridgeAssert(Array.isArray(value), "INVALID_PARAMS", `${label} must be an array.`);
+  mcpBridgeAssert(value.length >= minLength, "INVALID_PARAMS", `${label} must contain at least ${minLength} numbers.`);
+  mcpBridgeAssert(value.length % multipleOf === 0, "INVALID_PARAMS", `${label} length must be a multiple of ${multipleOf}.`);
+  return value.map((component, index) => {
+    const number = Number(component);
+    mcpBridgeAssert(Number.isFinite(number), "INVALID_PARAMS", `${label}[${index}] must be a finite number.`);
+    mcpBridgeAssert(number >= min && number <= max, "INVALID_PARAMS", `${label}[${index}] must be between ${min} and ${max}.`);
+    if (integer) mcpBridgeAssert(Number.isInteger(number), "INVALID_PARAMS", `${label}[${index}] must be an integer.`);
+    return number;
+  });
+}
+
+const mcpBridgeGeometryKeys = new Set(["positions", "normals", "colors", "uvs", "indices"]);
+
+function mcpBridgeGeometry(value, label) {
+  mcpBridgeAssertAllowedKeys(value, mcpBridgeGeometryKeys, label);
+  mcpBridgeAssert(Object.prototype.hasOwnProperty.call(value, "positions"), "INVALID_PARAMS", `${label}.positions is required.`);
+  const positions = mcpBridgeNumberArray(value.positions, `${label}.positions`, { minLength: 9, multipleOf: 3 });
+  mcpBridgeAssert(positions.length / 3 <= mcpBridgeMaxGeometryVertices, "LIMIT_EXCEEDED", `${label}.positions cannot exceed ${mcpBridgeMaxGeometryVertices} vertices.`);
+  const geometry = { positions };
+  if (Object.prototype.hasOwnProperty.call(value, "normals")) {
+    const normals = mcpBridgeNumberArray(value.normals, `${label}.normals`, { multipleOf: 3, min: -1, max: 1 });
+    mcpBridgeAssert(normals.length === positions.length, "INVALID_PARAMS", `${label}.normals must contain the same number of components as ${label}.positions.`);
+    geometry.normals = normals;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "colors")) {
+    const colors = mcpBridgeNumberArray(value.colors, `${label}.colors`, { multipleOf: 3, min: 0, max: 1 });
+    mcpBridgeAssert(colors.length === positions.length, "INVALID_PARAMS", `${label}.colors must contain the same number of components as ${label}.positions.`);
+    geometry.colors = colors;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "uvs")) {
+    const uvs = mcpBridgeNumberArray(value.uvs, `${label}.uvs`, { multipleOf: 2 });
+    mcpBridgeAssert(uvs.length === (positions.length / 3) * 2, "INVALID_PARAMS", `${label}.uvs must contain exactly two numbers per vertex.`);
+    geometry.uvs = uvs;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "indices")) {
+    geometry.indices = mcpBridgeNumberArray(value.indices, `${label}.indices`, {
+      multipleOf: 3, integer: true, min: 0, max: Math.max(0, positions.length / 3 - 1)
+    });
+  }
+  return geometry;
+}
+
+// Kept well under the relay's HTTP body cap (see maxBodyBytes in
+// tools/localserver/mcp-relay.mjs) so an oversized image is rejected here
+// with a clear error instead of failing lower in the stack.
+const mcpBridgeMaxImageDataUrlLength = 10_000_000;
+
+function mcpBridgeImageDataUrl(value, label) {
+  mcpBridgeAssert(typeof value === "string" && value.length > 0, "INVALID_PARAMS", `${label} must be a non-empty string.`);
+  mcpBridgeAssert(/^data:image\/(png|jpe?g|webp|gif|bmp);base64,/i.test(value), "INVALID_PARAMS", `${label} must be a base64 image data URL (data:image/<type>;base64,...).`);
+  mcpBridgeAssert(value.length <= mcpBridgeMaxImageDataUrlLength, "LIMIT_EXCEEDED", `${label} exceeds the maximum accepted size.`);
+  return value;
+}
+
 function mcpBridgeAssertAllowedKeys(value, allowedKeys, label) {
   mcpBridgeAssert(mcpBridgeIsPlainObject(value), "INVALID_PARAMS", `${label} must be an object.`);
   const unexpected = Object.keys(value).filter(key => !allowedKeys.has(key));
@@ -105,7 +163,7 @@ function mcpBridgeUniqueIds(ids, label = "ids", { allowEmpty = false } = {}) {
 const mcpBridgeCreateKeys = new Set([
   "id", "shape", "name", "position", "rotation", "scale", "color", "roughness", "opacity",
   "materialRule", "hidden", "groupId", "groupName", "linkId", "linkColor", "bevel", "depth",
-  "direction", "pivot", "playerAvatar", "playerHeadOffset"
+  "direction", "pivot", "playerAvatar", "playerHeadOffset", "geometry"
 ]);
 
 const mcpBridgeUpdateKeys = new Set([
@@ -161,6 +219,7 @@ function mcpBridgeValidateCreateSpec(value, index) {
   if (Object.prototype.hasOwnProperty.call(value, "playerHeadOffset")) {
     spec.playerHeadOffset = value.playerHeadOffset === null ? null : mcpBridgeVector(value.playerHeadOffset, `${label}.playerHeadOffset`);
   }
+  if (Object.prototype.hasOwnProperty.call(value, "geometry")) spec.geometry = mcpBridgeGeometry(value.geometry, `${label}.geometry`);
   return spec;
 }
 
@@ -277,10 +336,16 @@ function mcpBridgeCapabilitiesResult() {
       "capabilities.get": {},
       "scene.get": { detail: ["summary", "objects", "project"] },
       "selection.get": {},
-      "objects.create": { maxBatchSize: mcpBridgeMaxBatchSize, shapes: [...mcpBridgeAllowedShapes] },
+      "objects.create": { maxBatchSize: mcpBridgeMaxBatchSize, shapes: [...mcpBridgeAllowedShapes], geometry: { maxVertices: mcpBridgeMaxGeometryVertices } },
       "objects.update": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
       "objects.delete": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
       "selection.set": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
+      "referenceMatch.createMesh": {
+        sourceModes: ["single", "sheet"],
+        maxImageDataUrlLength: mcpBridgeMaxImageDataUrlLength,
+        cols: { min: 8, max: 160 },
+        rows: { min: 8, max: 220 }
+      },
       undo: {},
       "audit.get": { maxEntries: mcpBridgeMaxAuditEntries },
       "work_session.start": { relayLocal: true, realDeadline: true },
@@ -349,6 +414,73 @@ function mcpBridgeCreateObjects(params) {
     revision: mcpBridgeRevision,
     createdIds: created.map(mesh => mesh.userData.id),
     objects: created.map(serializeObject)
+  };
+}
+
+const mcpBridgeReferenceMatchKeys = new Set([
+  "imageDataUrl", "sourceMode", "buildMode", "cols", "rows", "heightScale", "depth", "back", "threshold", "darkForeground",
+  "id", "name", "position", "rotation", "scale", "color", "roughness", "opacity", "materialRule", "hidden",
+  "groupId", "groupName", "linkId", "linkColor", "pivot"
+]);
+
+// Builds a mesh from a reference image using the same relief carving
+// pipeline (buildReliefGeometry, app/modules/meshes.js) that already backs
+// the editor's "Load image" panel, so there is exactly one implementation
+// of the algorithm behind both the UI and the MCP command.
+async function mcpBridgeCreateMeshFromReferenceImage(params) {
+  mcpBridgeAssertAllowedKeys(params, mcpBridgeReferenceMatchKeys, "params");
+  const imageDataUrl = mcpBridgeImageDataUrl(params.imageDataUrl, "params.imageDataUrl");
+  const sourceMode = params.sourceMode === undefined
+    ? "sheet"
+    : mcpBridgeString(params.sourceMode, "params.sourceMode", { required: true, maxLength: 16 });
+  mcpBridgeAssert(["single", "sheet"].includes(sourceMode), "INVALID_PARAMS", "params.sourceMode must be 'single' or 'sheet'.");
+  const buildMode = params.buildMode === undefined
+    ? (sourceMode === "sheet" ? "hybridV47" : "standard")
+    : mcpBridgeString(params.buildMode, "params.buildMode", { required: true, maxLength: 24 });
+  mcpBridgeAssert(["standard", "solidVisualHull", "recoveredV30", "hybridV46", "hybridV47"].includes(buildMode), "INVALID_PARAMS", "params.buildMode must be 'standard', 'solidVisualHull', 'recoveredV30', 'hybridV46', or 'hybridV47'.");
+  const cols = params.cols === undefined ? (buildMode === "solidVisualHull" || buildMode === "hybridV47" ? 160 : 56) : mcpBridgeInteger(params.cols, "params.cols", { min: 8, max: 160 });
+  const rows = params.rows === undefined ? (buildMode === "solidVisualHull" || buildMode === "hybridV47" ? 220 : 96) : mcpBridgeInteger(params.rows, "params.rows", { min: 8, max: 220 });
+  const heightScale = params.heightScale === undefined ? 6 : mcpBridgeFiniteNumber(params.heightScale, "params.heightScale", { min: .5, max: 20 });
+  const depth = params.depth === undefined ? .9 : mcpBridgeFiniteNumber(params.depth, "params.depth", { min: 0, max: 5 });
+  const back = params.back === undefined ? .22 : mcpBridgeFiniteNumber(params.back, "params.back", { min: 0, max: 3 });
+  const threshold = params.threshold === undefined ? 70 : mcpBridgeFiniteNumber(params.threshold, "params.threshold", { min: 0, max: 255 });
+  const smoothPasses = 4;
+  let darkForeground = false;
+  if (params.darkForeground !== undefined) {
+    mcpBridgeAssert(typeof params.darkForeground === "boolean", "INVALID_PARAMS", "params.darkForeground must be a boolean.");
+    darkForeground = params.darkForeground;
+  }
+
+  const objectSpecSource = Object.fromEntries(
+    Object.entries(params).filter(([key]) => mcpBridgeCreateKeys.has(key) && key !== "geometry" && key !== "shape")
+  );
+  if (Object.prototype.hasOwnProperty.call(objectSpecSource, "id")) {
+    mcpBridgeAssert(!objects.some(mesh => mesh.userData.id === objectSpecSource.id), "ID_CONFLICT", `An object already exists with ID '${objectSpecSource.id}'.`, { id: objectSpecSource.id });
+  }
+  const objectSpec = mcpBridgeValidateCreateSpec(objectSpecSource, 0);
+
+  const { imageData } = await decodeImageDataUrl(imageDataUrl);
+  const { positions, uvs, meta } = buildReliefGeometry({
+    imageData, cols, rows, scale: heightScale, depth, back, threshold, smoothPasses, darkForeground,
+    sourceMode, buildMode, sourceName: objectSpec.name || "reference match image"
+  });
+
+  recordHistory("reference match mesh");
+  const mesh = addObject({
+    ...objectSpec,
+    shape: "imageRelief",
+    name: objectSpec.name || "reference match mesh",
+    geometry: { positions, uvs }
+  }, { record: false, select: false, update: false });
+  mesh.userData.reliefSource = { ...meta };
+  updateAll();
+  mcpBridgeRevision++;
+  return {
+    revision: mcpBridgeRevision,
+    createdIds: [mesh.userData.id],
+    objects: [serializeObject(mesh)],
+    triangleCount: positions.length / 9,
+    meta
   };
 }
 
@@ -435,7 +567,7 @@ function mcpBridgeNormalizeMethod(method) {
 }
 
 function mcpBridgeIsMutation(method) {
-  return ["objects.create", "objects.update", "objects.delete", "selection.set", "undo"].includes(method);
+  return ["objects.create", "objects.update", "objects.delete", "selection.set", "undo", "referenceMatch.createMesh"].includes(method);
 }
 
 function mcpBridgeValidateExpectedRevision(command, params, method) {
@@ -485,6 +617,11 @@ function mcpBridgeAuditParams(method, params) {
   }
   if (["objects.delete", "selection.set"].includes(method)) {
     return { count: Array.isArray(params.ids) ? params.ids.length : 0, ids: Array.isArray(params.ids) ? params.ids.slice(0, mcpBridgeMaxBatchSize) : [] };
+  }
+  if (method === "referenceMatch.createMesh") {
+    // Never write the (potentially multi-MB) base64 image into the audit log.
+    const { imageDataUrl, ...rest } = params;
+    return { ...rest, imageDataUrlLength: typeof imageDataUrl === "string" ? imageDataUrl.length : 0 };
   }
   return { ...params };
 }
@@ -560,6 +697,7 @@ async function mcpBridgeExecuteCommand(command) {
       result = mcpBridgeSelectionResult();
     }
     else if (method === "objects.create") result = mcpBridgeCreateObjects(params);
+    else if (method === "referenceMatch.createMesh") result = await mcpBridgeCreateMeshFromReferenceImage(params);
     else if (method === "objects.update") result = mcpBridgeUpdateObjects(params);
     else if (method === "objects.delete") result = mcpBridgeDeleteObjects(params);
     else if (method === "selection.set") result = mcpBridgeSelectObjects(params);

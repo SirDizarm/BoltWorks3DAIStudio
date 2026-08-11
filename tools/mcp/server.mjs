@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
+import path from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod/v4";
@@ -8,6 +10,26 @@ import { registerKnowledgeResources } from "./resources.mjs";
 
 const MAX_OBJECTS_PER_CALL = 256;
 const MAX_AUDIT_ITEMS = 200;
+
+const REFERENCE_IMAGE_MIME_TYPES = {
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".webp": "image/webp",
+  ".gif": "image/gif",
+  ".bmp": "image/bmp"
+};
+
+function referenceImageFileToDataUrl(imagePath) {
+  const resolved = path.resolve(imagePath);
+  const extension = path.extname(resolved).toLowerCase();
+  const mimeType = REFERENCE_IMAGE_MIME_TYPES[extension];
+  if (!mimeType) {
+    throw new Error(`Unsupported reference image type '${extension}'. Supported: ${Object.keys(REFERENCE_IMAGE_MIME_TYPES).join(", ")}.`);
+  }
+  const bytes = fs.readFileSync(resolved);
+  return `data:${mimeType};base64,${bytes.toString("base64")}`;
+}
 
 const jsonObject = z.record(z.string(), z.unknown());
 const exactId = z.string().trim().min(1).max(128);
@@ -169,6 +191,34 @@ async function createServer() {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
     },
     "objects.create"
+  );
+
+  registerRelayTool(
+    server,
+    "bws_create_mesh_from_reference_image",
+    {
+      title: "Create BoltWorks mesh from a reference image",
+      description: "Generate a real editable mesh from a reference image via visual-hull silhouette carving (the same pipeline behind the editor's Image to Mesh panel). Use sourceMode 'sheet' (default) for front/side/back or front/left/right/back views laid out left-to-right; four-view sheets retain independent left/right profiles for asymmetric clothing and accessories. Use 'single' for one-view depth relief. Provide imagePath (preferred, a local file path read and base64-encoded here) or imageBase64. Inspect capabilities and the scene first; include expectedRevision for safe collaborative writes.",
+      inputSchema: z.object({
+        imagePath: z.string().trim().min(1).optional().describe("Absolute local path to the reference image (png/jpg/jpeg/webp/gif/bmp)."),
+        imageBase64: z.string().trim().min(1).optional().describe("Base64 image data URL (data:image/<type>;base64,...); only used if imagePath is omitted."),
+        params: jsonObject.optional().describe(
+          "referenceMatch.createMesh params: sourceMode ('single'|'sheet'), buildMode ('hybridV47' continuous mesh reshaped by V30 silhouette | 'recoveredV30' original | 'solidVisualHull' four-view face/fingers | 'standard'), cols, rows, heightScale, depth, back, threshold, darkForeground, " +
+          "plus placement/material fields also used by bws_create_objects (id, name, position, rotation, scale, color, roughness, opacity, materialRule, hidden, groupId, groupName, linkId, linkColor, pivot)."
+        ),
+        expectedRevision
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
+    },
+    "referenceMatch.createMesh",
+    ({ imagePath, imageBase64, params = {}, expectedRevision: revision }) => {
+      if (!imagePath && !imageBase64) throw new Error("Provide either imagePath or imageBase64.");
+      return {
+        ...params,
+        imageDataUrl: imagePath ? referenceImageFileToDataUrl(imagePath) : imageBase64,
+        ...(revision === undefined ? {} : { expectedRevision: revision })
+      };
+    }
   );
 
   registerRelayTool(

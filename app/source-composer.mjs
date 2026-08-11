@@ -8,6 +8,8 @@ export const studioModuleOrder = Object.freeze([
   "mcp-bridge",
   "ai-viewer",
   "rigging",
+  "minecraft",
+  "animator-workspace",
   "panels"
 ]);
 

@@ -41,6 +41,7 @@ function serializeObject(mesh) {
       plane: Number(mesh.userData.liveMirror.plane) || 0
     } : null,
     lod: mesh.userData.lod ? { ...mesh.userData.lod } : null,
+    minecraft: mesh.userData.minecraft ? JSON.parse(JSON.stringify(mesh.userData.minecraft)) : null,
     edgeBevelProtectedEdges: Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? [...mesh.userData.edgeBevelProtectedEdges] : [],
     dissolvedSurfaceEdges: Array.isArray(mesh.userData.dissolvedSurfaceEdges) ? [...mesh.userData.dissolvedSurfaceEdges] : []
   };
@@ -136,6 +137,7 @@ function projectState() {
     scene,
     editor: {
       projectName,
+      workspace: document.body.dataset.workspace === "minecraft" ? "minecraft" : "general",
       selectedId: selected?.userData?.id || null,
       selectedGroupId: selectedGroupRecordId || null,
       checkedIds: [...checkedIds],
@@ -251,7 +253,8 @@ function projectState() {
         intensity: Number(els.lightIntensityInput.value) || 10,
         angle: Number(els.lightAngleInput.value) || 24
       },
-      rigging: serializeBoneRig()
+      rigging: serializeBoneRig(),
+      minecraft: serializeMinecraftWorkspace()
     }
   };
 }
@@ -468,6 +471,7 @@ function applyProjectEditorState(editor = {}) {
   activeGroupIds = (editor.activeGroupIds || []).filter(id => !!findObject(id));
   selectedGroupRecordId = editor.selectedGroupId && groupRecord(editor.selectedGroupId) ? editor.selectedGroupId : null;
   currentTransformTargetKey = "";
+  setWorkspace(editor.workspace || "general", { quiet: true });
 
   const panels = editor.panels || {};
   setSectionCollapsed(els.addMeshSection, els.addMeshToggle, !!panels.addMeshCollapsed);
@@ -575,6 +579,7 @@ function applyProjectEditorState(editor = {}) {
   els.lightAngleInput.value = String(lighting.angle ?? 24);
   syncSpotLightRig();
   restoreBoneRig(editor.rigging || {});
+  restoreMinecraftWorkspace(editor.minecraft || null);
   restoreCustomCameraViews(editor.cameraViews || {});
 
   const selectedMesh = editor.selectedId ? findObject(editor.selectedId) : null;
@@ -854,6 +859,8 @@ function normalizeHexColor(value, fallback = null) {
   return fallback;
 }
 
+const collapsedSceneGroupIds = new Set();
+
 function renderTree() {
   els.tree.innerHTML = "";
   if (!objects.length) {
@@ -916,19 +923,22 @@ function renderTree() {
     const children = childGroupRecords(record.id);
     const groupWrap = document.createElement("div");
     groupWrap.className = "tree-group";
-    if (depth) groupWrap.style.marginLeft = `${depth * 14}px`;
+    if (depth) groupWrap.classList.add("tree-group-nested");
 
     const header = document.createElement("div");
     header.className = "tree-group-header";
-    header.innerHTML = `<input class="part-check group-check" type="checkbox" aria-label="Toggle ${record.name} group"><span class="tree-group-name"></span><span></span><small class="tree-group-count"></small><button class="group-hide-btn" type="button">Hide</button><button class="group-only-btn" type="button">Only</button>`;
-    const groupCheck = header.querySelector(".group-check");
+    header.innerHTML = `<button class="tree-group-disclosure" type="button" aria-label="Collapse ${record.name}" aria-expanded="true">−</button><span class="tree-group-name"></span><small class="tree-group-count"></small><button class="group-hide-btn" type="button">Hide</button><button class="group-only-btn" type="button">Only</button><button class="group-info-btn" type="button" title="Open texture and group information for ${record.name}" aria-label="Open texture and group information for ${record.name}">...</button>`;
+    const disclosure = header.querySelector(".tree-group-disclosure");
     const groupNameEl = header.querySelector(".tree-group-name");
     const groupCountEl = header.querySelector(".tree-group-count");
     const groupHideBtn = header.querySelector(".group-hide-btn");
     const groupOnlyBtn = header.querySelector(".group-only-btn");
-    const checkedCount = meshes.filter(mesh => checkedIds.has(mesh.userData.id)).length;
-    groupCheck.checked = checkedCount === meshes.length;
-    groupCheck.indeterminate = checkedCount > 0 && checkedCount < meshes.length;
+    const groupInfoBtn = header.querySelector(".group-info-btn");
+    const collapsed = collapsedSceneGroupIds.has(record.id);
+    disclosure.textContent = collapsed ? "+" : "−";
+    disclosure.setAttribute("aria-expanded", String(!collapsed));
+    disclosure.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${record.name}`);
+    groupWrap.classList.toggle("collapsed", collapsed);
     groupNameEl.textContent = record.name;
     header.classList.toggle("selected", selectedGroupRecordId === record.id);
     groupCountEl.textContent = `${meshes.length} item${meshes.length === 1 ? "" : "s"}`;
@@ -936,8 +946,12 @@ function renderTree() {
     groupHideBtn.textContent = allHidden ? "Show" : "Hide";
     groupHideBtn.title = allHidden ? `Show every model in ${record.name}` : `Hide every model in ${record.name}`;
     groupHideBtn.classList.toggle("show-hidden", allHidden);
-    groupCheck.addEventListener("click", event => event.stopPropagation());
-    groupCheck.addEventListener("change", event => setCheckedMeshes(meshes, event.target.checked));
+    disclosure.addEventListener("click", event => {
+      event.stopPropagation();
+      if (collapsed) collapsedSceneGroupIds.delete(record.id);
+      else collapsedSceneGroupIds.add(record.id);
+      renderTree();
+    });
     groupNameEl.title = record.name;
     groupNameEl.addEventListener("dblclick", event => {
       event.stopPropagation();
@@ -947,6 +961,11 @@ function renderTree() {
       event.stopPropagation();
       selectGroupRecord(record.id);
       log(`Selected only group ${record.name}.`, { count: meshes.length });
+    });
+    groupInfoBtn.addEventListener("click", event => {
+      event.stopPropagation();
+      selectGroupRecord(record.id);
+      openGroupEditor(record.id);
     });
     groupHideBtn.addEventListener("click", event => {
       event.stopPropagation();
@@ -958,8 +977,10 @@ function renderTree() {
     header.addEventListener("click", () => selectGroupRecord(record.id));
     groupWrap.append(header);
 
-    for (const child of children) groupWrap.append(buildPersistentGroup(child, depth + 1));
-    for (const mesh of directMeshes) groupWrap.append(buildMeshRow(mesh));
+    if (!collapsed) {
+      for (const child of children) groupWrap.append(buildPersistentGroup(child, depth + 1));
+      for (const mesh of directMeshes) groupWrap.append(buildMeshRow(mesh));
+    }
     return groupWrap;
   }
 
@@ -970,27 +991,42 @@ function renderTree() {
     groupWrap.className = "tree-group";
     const header = document.createElement("div");
     header.className = "tree-group-header";
-    header.innerHTML = `<input class="part-check group-check" type="checkbox" aria-label="Toggle ${groupName} group"><span class="tree-group-name"></span><span></span><small class="tree-group-count"></small><button class="group-hide-btn" type="button">Hide</button><button class="group-only-btn" type="button">Only</button>`;
-    const groupCheck = header.querySelector(".group-check");
+    header.innerHTML = `<button class="tree-group-disclosure" type="button" aria-label="Collapse ${groupName}" aria-expanded="true">−</button><span class="tree-group-name"></span><small class="tree-group-count"></small><button class="group-hide-btn" type="button">Hide</button><button class="group-only-btn" type="button">Only</button><button class="group-info-btn" type="button" title="Open texture and mesh information for ${groupName}" aria-label="Open texture and mesh information for ${groupName}">...</button>`;
+    const disclosure = header.querySelector(".tree-group-disclosure");
     const groupNameEl = header.querySelector(".tree-group-name");
     const groupCountEl = header.querySelector(".tree-group-count");
     const groupHideBtn = header.querySelector(".group-hide-btn");
     const groupOnlyBtn = header.querySelector(".group-only-btn");
-    const checkedCount = meshes.filter(mesh => checkedIds.has(mesh.userData.id)).length;
-    groupCheck.checked = checkedCount === meshes.length;
-    groupCheck.indeterminate = checkedCount > 0 && checkedCount < meshes.length;
+    const groupInfoBtn = header.querySelector(".group-info-btn");
+    const collapseId = `legacy:${groupName}`;
+    const collapsed = collapsedSceneGroupIds.has(collapseId);
+    disclosure.textContent = collapsed ? "+" : "−";
+    disclosure.setAttribute("aria-expanded", String(!collapsed));
+    disclosure.setAttribute("aria-label", `${collapsed ? "Expand" : "Collapse"} ${groupName}`);
+    groupWrap.classList.toggle("collapsed", collapsed);
     groupNameEl.textContent = groupName;
     groupCountEl.textContent = `${meshes.length} item${meshes.length === 1 ? "" : "s"}`;
     const allHidden = meshes.length > 0 && meshes.every(mesh => !!mesh.userData.hidden);
     groupHideBtn.textContent = allHidden ? "Show" : "Hide";
     groupHideBtn.title = allHidden ? `Show every model in ${groupName}` : `Hide every model in ${groupName}`;
     groupHideBtn.classList.toggle("show-hidden", allHidden);
-    groupCheck.addEventListener("click", event => event.stopPropagation());
-    groupCheck.addEventListener("change", event => setCheckedMeshes(meshes, event.target.checked));
+    disclosure.addEventListener("click", event => {
+      event.stopPropagation();
+      if (collapsed) collapsedSceneGroupIds.delete(collapseId);
+      else collapsedSceneGroupIds.add(collapseId);
+      renderTree();
+    });
     groupOnlyBtn.addEventListener("click", event => {
       event.stopPropagation();
       setCheckedMeshes(meshes, true, { replace: true });
       log(`Checked only ${groupName} group.`, { count: meshes.length });
+    });
+    groupInfoBtn.addEventListener("click", event => {
+      event.stopPropagation();
+      const mesh = meshes[0];
+      if (!mesh) return;
+      selectObject(mesh);
+      openMeshDetails(mesh.userData.id);
     });
     groupHideBtn.addEventListener("click", event => {
       event.stopPropagation();
@@ -1001,7 +1037,7 @@ function renderTree() {
     });
     header.addEventListener("click", () => setCheckedMeshes(meshes, true, { replace: true }));
     groupWrap.append(header);
-    for (const mesh of meshes) groupWrap.append(buildMeshRow(mesh));
+    if (!collapsed) for (const mesh of meshes) groupWrap.append(buildMeshRow(mesh));
     els.tree.append(groupWrap);
   }
 }
@@ -4754,13 +4790,17 @@ function restoreCustomCameraViews(cameraState = {}) {
 }
 
 const screenshotViewDirections = {
-  front: new THREE.Vector3(0, .05, 1),
-  back: new THREE.Vector3(0, .05, -1),
+  front: new THREE.Vector3(0, .05, -1),
+  back: new THREE.Vector3(0, .05, 1),
   left: new THREE.Vector3(-1, .05, 0),
   right: new THREE.Vector3(1, .05, 0),
   side: new THREE.Vector3(1, .05, 0),
   top: new THREE.Vector3(0, 1, .001),
-  iso: new THREE.Vector3(.78, .52, .92)
+  iso: new THREE.Vector3(.78, .52, .92),
+  "front-left": new THREE.Vector3(-.78, .35, -.92),
+  "front-right": new THREE.Vector3(.78, .35, -.92),
+  "back-left": new THREE.Vector3(-.78, .35, .92),
+  "back-right": new THREE.Vector3(.78, .35, .92)
 };
 
 function sceneBounds() {
@@ -4772,8 +4812,8 @@ function sceneBounds() {
   return box;
 }
 
-function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = null } = {}) {
-  const box = sceneBounds();
+function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = null, bounds = null } = {}) {
+  const box = bounds?.isBox3 ? bounds : sceneBounds();
   const center = box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z, 2);
@@ -4799,6 +4839,24 @@ const workViewAxisLabels = {
   side: "Side view: Z ↔ horizontal · Y ↕ vertical (X hidden)",
   top: "Top view: X ↔ horizontal · Z ↕ vertical (Y hidden)"
 };
+
+let referenceViewportsCollapsed = false;
+
+function setReferenceViewportsCollapsed(collapsed) {
+  referenceViewportsCollapsed = !!collapsed;
+  els.viewportRoot?.classList.toggle("reference-views-collapsed", referenceViewportsCollapsed);
+  if (els.referenceViewportsToggleBtn) {
+    els.referenceViewportsToggleBtn.textContent = referenceViewportsCollapsed ? "◀" : "▶";
+    els.referenceViewportsToggleBtn.title = referenceViewportsCollapsed
+      ? "Show the Front and Side reference views"
+      : "Hide the Front and Side reference views";
+    els.referenceViewportsToggleBtn.setAttribute("aria-pressed", String(referenceViewportsCollapsed));
+  }
+  requestAnimationFrame(() => {
+    window.dispatchEvent(new Event("resize"));
+    if (typeof resize === "function") resize();
+  });
+}
 
 function syncOrthographicWorkViewUi() {
   const map = {
@@ -4857,7 +4915,7 @@ function restoreOrthographicWorkView() {
   return true;
 }
 
-function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName() } = {}) {
+function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1 } = {}) {
   const oldPosition = camera.position.clone();
   const oldUp = camera.up.clone();
   const oldTarget = orbit.target.clone();
@@ -4866,28 +4924,71 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   const oldFar = camera.far;
   const oldTransformVisible = transform.visible;
   const oldFaceMarkerVisible = faceMarker.visible;
+  const oldSurfaceComponentMarkerVisible = surfaceComponentMarker.visible;
+  const oldModelingEdgesOverlayVisible = modelingEdgesOverlay.visible;
+  const oldKnifeCutGuideVisible = knifeCutGuideGroup.visible;
   const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
   const oldOpeningPickGuideVisible = openingPickGuideGroup.visible;
+  const oldMeshIntegrityGuideVisible = meshIntegrityGuideGroup.visible;
   const oldMarkerGroupVisible = markerGroup.visible;
   const oldCameraDirectorGroupVisible = cameraDirectorGroup.visible;
   const oldGridVisible = grid.visible;
   const oldGridLabelsVisible = gridLabelGroup.visible;
+  const oldBoneRigVisible = boneRigGroup.visible;
+  const oldBoneGridAxisVisible = boneGridAxisGroup.visible;
+  const oldSceneBackground = scene.background;
+  const oldSceneFog = scene.fog;
+  const oldClearAlpha = renderer.getClearAlpha();
+  const oldPhotoEnvironmentVisible = photoEnvironment.visible;
+  const oldFloorVisible = floor.visible;
+  const oldStudioFloorVisible = studioFloor.visible;
+  const oldPixelRatio = renderer.getPixelRatio();
 
   transform.visible = false;
   faceMarker.visible = false;
+  surfaceComponentMarker.visible = false;
+  modelingEdgesOverlay.visible = false;
+  knifeCutGuideGroup.visible = false;
   selectionOutlineGroup.visible = false;
   openingPickGuideGroup.visible = false;
+  meshIntegrityGuideGroup.visible = false;
   markerGroup.visible = false;
   cameraDirectorGroup.visible = false;
+  if (transparent) {
+    scene.background = null;
+    scene.fog = null;
+    renderer.setClearAlpha(0);
+    photoEnvironment.visible = false;
+    floor.visible = false;
+    studioFloor.visible = false;
+    grid.visible = false;
+    gridLabelGroup.visible = false;
+    boneRigGroup.visible = false;
+    boneGridAxisGroup.visible = false;
+  }
   if (els.hideGridInShotsInput?.checked) {
     grid.visible = false;
     gridLabelGroup.visible = false;
+    boneRigGroup.visible = false;
+    boneGridAxisGroup.visible = false;
   }
+  renderer.setPixelRatio(Math.min(4, oldPixelRatio * Math.max(1, Number(qualityScale) || 1)));
   resize();
   setCameraToView(viewName, {
-    useCurrentZoom: els.useCurrentZoomInShotsInput?.checked ?? true,
-    currentDistance: oldDistance
+    useCurrentZoom: useCurrentZoom ?? (els.useCurrentZoomInShotsInput?.checked ?? true),
+    currentDistance: oldDistance,
+    bounds
   });
+  if (transparent) {
+    scene.background = null;
+    scene.fog = null;
+    renderer.setClearAlpha(0);
+    photoEnvironment.visible = false;
+    floor.visible = false;
+    studioFloor.visible = false;
+    grid.visible = false;
+    gridLabelGroup.visible = false;
+  }
   if (els.hideGridInShotsInput?.checked) {
     grid.visible = false;
     gridLabelGroup.visible = false;
@@ -4906,12 +5007,26 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
 
   transform.visible = oldTransformVisible;
   faceMarker.visible = oldFaceMarkerVisible;
+  surfaceComponentMarker.visible = oldSurfaceComponentMarkerVisible;
+  modelingEdgesOverlay.visible = oldModelingEdgesOverlayVisible;
+  knifeCutGuideGroup.visible = oldKnifeCutGuideVisible;
   selectionOutlineGroup.visible = oldSelectionOutlineVisible;
   openingPickGuideGroup.visible = oldOpeningPickGuideVisible;
+  meshIntegrityGuideGroup.visible = oldMeshIntegrityGuideVisible;
   markerGroup.visible = oldMarkerGroupVisible;
   cameraDirectorGroup.visible = oldCameraDirectorGroupVisible;
+  scene.background = oldSceneBackground;
+  scene.fog = oldSceneFog;
+  renderer.setClearAlpha(oldClearAlpha);
+  photoEnvironment.visible = oldPhotoEnvironmentVisible;
+  floor.visible = oldFloorVisible;
+  studioFloor.visible = oldStudioFloorVisible;
+  renderer.setPixelRatio(oldPixelRatio);
+  resize();
   grid.visible = oldGridVisible;
   gridLabelGroup.visible = oldGridLabelsVisible;
+  boneRigGroup.visible = oldBoneRigVisible;
+  boneGridAxisGroup.visible = oldBoneGridAxisVisible;
   camera.position.copy(oldPosition);
   camera.up.copy(oldUp);
   camera.near = oldNear;
@@ -5214,6 +5329,308 @@ async function saveQaSheet() {
     objects: objects.length
   });
   return { fileName, width: sheet.width, height: sheet.height, dataUrl, shots };
+}
+
+const animationSheetViews = ["front", "back", "left", "right", "front-left", "front-right", "back-left", "back-right"];
+
+function animationExportEndFrame(range = "end") {
+  return range === "current"
+    ? Math.max(0, Math.min(animationState.end, Math.round(Number(animationState.frame) || 0)))
+    : Math.max(1, Math.round(Number(animationState.end) || 1));
+}
+
+function animationMotionSheetFrames(frameCount = 8, endFrame = animationState.end) {
+  const end = Math.max(0, Math.round(Number(endFrame) || 0));
+  if (end === 0) return [0];
+  const count = Math.max(2, Math.min(64, end + 1, Math.round(Number(frameCount) || 8)));
+  return [...new Set(Array.from({ length: count }, (_, index) => Math.round((end * index) / (count - 1))))];
+}
+
+function animationImageAlphaBounds(image) {
+  const source = document.createElement("canvas");
+  source.width = image.width;
+  source.height = image.height;
+  const context = source.getContext("2d", { willReadFrequently: true });
+  context.drawImage(image, 0, 0);
+  const pixels = context.getImageData(0, 0, source.width, source.height).data;
+  let minX = source.width, minY = source.height, maxX = -1, maxY = -1;
+  for (let y = 0; y < source.height; y++) {
+    for (let x = 0; x < source.width; x++) {
+      if (pixels[(y * source.width + x) * 4 + 3] < 4) continue;
+      minX = Math.min(minX, x);
+      minY = Math.min(minY, y);
+      maxX = Math.max(maxX, x);
+      maxY = Math.max(maxY, y);
+    }
+  }
+  return maxX >= minX ? { minX, minY, maxX, maxY } : null;
+}
+
+async function composeAnimationMotionSheet(viewName, shots, clipLabel, prefix) {
+  const images = await Promise.all(shots.map(shot => loadShotImage(shot.dataUrl)));
+  const alphaBounds = images.map(animationImageAlphaBounds).filter(Boolean);
+  const union = alphaBounds.length ? alphaBounds.reduce((bounds, current) => ({
+    minX: Math.min(bounds.minX, current.minX),
+    minY: Math.min(bounds.minY, current.minY),
+    maxX: Math.max(bounds.maxX, current.maxX),
+    maxY: Math.max(bounds.maxY, current.maxY)
+  }), { minX: images[0].width, minY: images[0].height, maxX: 0, maxY: 0 }) : {
+    minX: 0,
+    minY: 0,
+    maxX: images[0].width - 1,
+    maxY: images[0].height - 1
+  };
+  const contentWidth = Math.max(1, union.maxX - union.minX + 1);
+  const contentHeight = Math.max(1, union.maxY - union.minY + 1);
+  const padding = Math.max(4, Math.round(Math.max(contentWidth, contentHeight) * .04));
+  const cropX = Math.max(0, union.minX - padding);
+  const cropY = Math.max(0, union.minY - padding);
+  const cellWidth = Math.min(images[0].width - cropX, contentWidth + padding * 2);
+  const cellHeight = Math.min(images[0].height - cropY, contentHeight + padding * 2);
+  const sheet = document.createElement("canvas");
+  const columns = Math.min(images.length, Math.max(1, Math.floor(30000 / Math.max(1, cellWidth))));
+  const rows = Math.ceil(images.length / columns);
+  sheet.width = cellWidth * columns;
+  sheet.height = cellHeight * rows;
+  const context = sheet.getContext("2d");
+  context.clearRect(0, 0, sheet.width, sheet.height);
+
+  images.forEach((image, index) => {
+    context.drawImage(image, cropX, cropY, cellWidth, cellHeight, (index % columns) * cellWidth, Math.floor(index / columns) * cellHeight, cellWidth, cellHeight);
+  });
+
+  const clipSlug = clipLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "animation";
+  const fileName = `${prefix}-${clipSlug}-${viewName}-sprite-sheet.png`;
+  return { fileName, width: sheet.width, height: sheet.height, frameWidth: cellWidth, frameHeight: cellHeight, columns, rows, dataUrl: sheet.toDataURL("image/png"), view: viewName, shots };
+}
+
+async function saveAnimationMotionSheets({ view = "left", frameCount = 8, range = "end", download = true, qualityScale = 1 } = {}) {
+  if (!animationHasKeys()) {
+    animationState.playing = false;
+    updateAnimationPanel();
+    log("Add at least one keyed pose before exporting animation sheets.");
+    return [];
+  }
+
+  const requestedViews = view === "all" ? animationSheetViews : [animationSheetViews.includes(view) ? view : "left"];
+  const originalFrame = animationState.frame;
+  const originalPlaying = animationState.playing;
+  const exportEnd = animationExportEndFrame(range);
+  const frames = animationMotionSheetFrames(frameCount, exportEnd);
+  const prefix = currentProjectBaseName();
+  const clipLabel = els.minecraftAnimationSelect?.selectedOptions?.[0]?.textContent?.trim() || "animation";
+  const sheets = [];
+  animationState.playing = false;
+
+  try {
+    await waitForSceneTextures();
+    const animationBounds = new THREE.Box3();
+    for (const frame of frames) {
+      animationSetFrame(frame, { render: false });
+      for (const object of objects) animationBounds.expandByObject(object);
+    }
+    for (const viewName of requestedViews) {
+      const shots = [];
+      for (const frame of frames) {
+        animationSetFrame(frame, { render: false });
+        renderer.render(scene, camera);
+        shots.push({ ...captureView(viewName, { download: false, prefix, transparent: true, useCurrentZoom: false, bounds: animationBounds, qualityScale }), frame });
+      }
+      const sheet = await composeAnimationMotionSheet(viewName, shots, clipLabel, prefix);
+      sheets.push(sheet);
+      if (download) downloadDataUrl(sheet.fileName, sheet.dataUrl);
+    }
+    log(`Saved ${sheets.length} tightly cropped animation sprite sheet${sheets.length === 1 ? "" : "s"}.`, {
+      clip: clipLabel,
+      views: requestedViews,
+      frames,
+      sheets: sheets.map(sheet => ({
+        fileName: sheet.fileName,
+        frameSize: `${sheet.frameWidth}x${sheet.frameHeight}`,
+        sheetSize: `${sheet.width}x${sheet.height}`
+      }))
+    });
+    return sheets;
+  } finally {
+    animationState.playing = originalPlaying;
+    animationSetFrame(originalFrame);
+  }
+}
+
+async function renderConnectedAnimationWebm({ view = "left", durationSeconds = 6, qualityScale = 1.5, endOnLastClip = false } = {}) {
+  const sequence = animationSequenceClipIndices();
+  if (!sequence.length) return [];
+  persistActiveMinecraftAnimationState();
+  const originalClip = activeMinecraftAnimation;
+  const originalFrame = animationState.frame;
+  const originalPlaying = animationState.playing;
+  const requestedViews = view === "all" ? animationSheetViews : [animationSheetViews.includes(view) ? view : "left"];
+  const plan = [];
+  const animationBounds = new THREE.Box3();
+  animationState.playing = false;
+  try {
+    for (const clipIndex of sequence) {
+      activateMinecraftAnimation(clipIndex, { quiet: true, preserveCurrent: false });
+      for (let frame = 0; frame <= animationState.end; frame += 1) {
+        animationSetFrame(frame, { render: false });
+        for (const object of objects) animationBounds.expandByObject(object);
+        plan.push({ clipIndex, frame });
+      }
+    }
+    const fps = Math.max(1, Math.min(120, Math.round(Number(animationState.fps) || 24)));
+    const videoDurationSeconds = Math.max(1, Math.min(60, Number(durationSeconds) || 6));
+    const outputFrameCount = endOnLastClip ? plan.length : Math.max(1, Math.round(videoDurationSeconds * fps));
+    const outputs = [];
+    for (const viewName of requestedViews) {
+      let currentClip = -1;
+      let recordingCanvas = null, context = null, stream = null, videoTrack = null, recorder = null, stopped = null;
+      const chunks = [];
+      const frameDuration = 1000 / fps;
+      for (let index = 0; index < outputFrameCount; index += 1) {
+        const step = plan[index % plan.length];
+        if (step.clipIndex !== currentClip) {
+          activateMinecraftAnimation(step.clipIndex, { quiet: true, preserveCurrent: false });
+          currentClip = step.clipIndex;
+        }
+        animationSetFrame(step.frame, { render: false });
+        const shot = captureView(viewName, { download: false, prefix: currentProjectBaseName(), transparent: true, useCurrentZoom: false, bounds: animationBounds, qualityScale });
+        const image = await loadShotImage(shot.dataUrl);
+        if (!recordingCanvas) {
+          recordingCanvas = document.createElement("canvas");
+          recordingCanvas.width = shot.width;
+          recordingCanvas.height = shot.height;
+          context = recordingCanvas.getContext("2d");
+          context.imageSmoothingEnabled = true;
+          context.imageSmoothingQuality = "high";
+          const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(type => MediaRecorder.isTypeSupported(type)) || "";
+          stream = recordingCanvas.captureStream(0);
+          videoTrack = stream.getVideoTracks()[0];
+          const bitrate = Math.round(16_000_000 * Math.max(1, qualityScale * qualityScale));
+          recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: bitrate } : { videoBitsPerSecond: bitrate });
+          recorder.addEventListener("dataavailable", event => { if (event.data?.size) chunks.push(event.data); });
+          stopped = new Promise(resolve => recorder.addEventListener("stop", resolve, { once: true }));
+          recorder.start(100);
+        }
+        context.clearRect(0, 0, recordingCanvas.width, recordingCanvas.height);
+        context.drawImage(image, 0, 0, recordingCanvas.width, recordingCanvas.height);
+        videoTrack?.requestFrame?.();
+        await new Promise(resolve => setTimeout(resolve, frameDuration));
+      }
+      recorder.requestData();
+      await new Promise(resolve => setTimeout(resolve, 50));
+      recorder.stop();
+      await Promise.race([stopped, new Promise((_, reject) => setTimeout(() => reject(new Error("The connected animation recorder did not finish within 8 seconds.")), 8000))]);
+      stream.getTracks().forEach(track => track.stop());
+      const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+      outputs.push({ fileName: `${currentProjectBaseName()}-connected-${viewName}.webm`, blob, view: viewName, sourceFrames: plan.length, frames: outputFrameCount, fps, durationSeconds: videoDurationSeconds });
+    }
+    return outputs;
+  } finally {
+    activateMinecraftAnimation(originalClip, { quiet: true, preserveCurrent: false });
+    animationSetFrame(originalFrame);
+    animationState.playing = originalPlaying;
+  }
+}
+
+async function renderAnimationWebm({ view = "left", range = "end", durationSeconds = 6, qualityScale = 1.5, useSequence = false, endOnLastClip = false } = {}) {
+  if (typeof MediaRecorder === "undefined" || typeof document.createElement("canvas").captureStream !== "function") {
+    log("WebM export is not supported by this browser.");
+    return [];
+  }
+  if (useSequence && useConnectedAnimationSequence()) return renderConnectedAnimationWebm({ view, durationSeconds, qualityScale, endOnLastClip });
+  const exportEnd = animationExportEndFrame(range);
+  const fullFrameCount = Math.min(64, exportEnd + 1);
+  const sheets = await saveAnimationMotionSheets({ view, frameCount: fullFrameCount, range, download: false, qualityScale });
+  const outputs = [];
+  for (const sheet of sheets) {
+    const image = await loadShotImage(sheet.dataUrl);
+    const recordingCanvas = document.createElement("canvas");
+    recordingCanvas.width = sheet.frameWidth;
+    recordingCanvas.height = sheet.frameHeight;
+    const context = recordingCanvas.getContext("2d");
+    const fps = Math.max(1, Math.min(120, Math.round(Number(animationState.fps) || 24)));
+    const videoDurationSeconds = Math.max(1, Math.min(60, Number(durationSeconds) || 6));
+    const outputFrameCount = endOnLastClip ? sheet.shots.length : Math.max(1, Math.round(videoDurationSeconds * fps));
+    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find(type => MediaRecorder.isTypeSupported(type)) || "";
+    const stream = recordingCanvas.captureStream(0);
+    const videoTrack = stream.getVideoTracks()[0];
+    const bitrate = Math.round(16_000_000 * Math.max(1, qualityScale * qualityScale));
+    const recorder = new MediaRecorder(stream, mimeType ? { mimeType, videoBitsPerSecond: bitrate } : { videoBitsPerSecond: bitrate });
+    const chunks = [];
+    recorder.addEventListener("dataavailable", event => { if (event.data?.size) chunks.push(event.data); });
+    const stopped = new Promise(resolve => recorder.addEventListener("stop", resolve, { once: true }));
+    recorder.start(100);
+    const frameDuration = 1000 / fps;
+    for (let index = 0; index < outputFrameCount; index++) {
+      const sourceFrame = index % sheet.shots.length;
+      context.clearRect(0, 0, recordingCanvas.width, recordingCanvas.height);
+      const sourceX = (sourceFrame % (sheet.columns || sheet.shots.length)) * sheet.frameWidth;
+      const sourceY = Math.floor(sourceFrame / (sheet.columns || sheet.shots.length)) * sheet.frameHeight;
+      context.drawImage(image, sourceX, sourceY, sheet.frameWidth, sheet.frameHeight, 0, 0, sheet.frameWidth, sheet.frameHeight);
+      videoTrack?.requestFrame?.();
+      await new Promise(resolve => setTimeout(resolve, frameDuration));
+    }
+    recorder.requestData();
+    await new Promise(resolve => setTimeout(resolve, 50));
+    recorder.stop();
+    await Promise.race([
+      stopped,
+      new Promise((_, reject) => setTimeout(() => reject(new Error("The browser video recorder did not finish within 8 seconds.")), 8000))
+    ]);
+    stream.getTracks().forEach(track => track.stop());
+    const blob = new Blob(chunks, { type: recorder.mimeType || "video/webm" });
+    const fileName = sheet.fileName.replace(/-sprite-sheet\.png$/i, ".webm");
+    outputs.push({ fileName, blob, view: sheet.view, sourceFrames: sheet.shots.length, frames: outputFrameCount, fps, durationSeconds: videoDurationSeconds });
+  }
+  return outputs;
+}
+
+async function exportAnimationWebm({ view = "left", range = "end", durationSeconds = 6, qualityScale = 1.5, useSequence = false, endOnLastClip = false } = {}) {
+  const rendered = await renderAnimationWebm({ view, range, durationSeconds, qualityScale, useSequence, endOnLastClip });
+  rendered.forEach(output => downloadBlob(output.fileName, output.blob));
+  const outputs = rendered.map(({ blob, ...output }) => ({ ...output, size: blob.size }));
+  log(`Saved ${outputs.length} isolated-model WebM animation${outputs.length === 1 ? "" : "s"}.`, outputs);
+  return outputs;
+}
+
+async function exportAnimationMp4({ view = "left", range = "end", durationSeconds = 6, qualityScale = 1.5, useSequence = false, endOnLastClip = false } = {}) {
+  let status;
+  try {
+    const response = await fetch("/api/video/mp4/status", { cache: "no-store" });
+    if (!response.ok) throw new Error("The local video service is unavailable.");
+    status = await response.json();
+  } catch {
+    log("MP4 export is available only while running the local BoltWorks server.");
+    return [];
+  }
+  if (!status?.available) {
+    log("MP4 export needs FFmpeg installed on this computer. WebM and sprite-sheet export remain available.");
+    return [];
+  }
+
+  log("Rendering the active animation for local MP4 conversion...");
+  const rendered = await renderAnimationWebm({ view, range, durationSeconds, qualityScale, useSequence, endOnLastClip });
+  const outputs = [];
+  for (const source of rendered) {
+    const response = await fetch("/api/video/mp4", {
+      method: "POST",
+      headers: {
+        "content-type": source.blob.type || "video/webm",
+        "x-boltworks-filename": source.fileName
+      },
+      body: source.blob
+    });
+    if (!response.ok) {
+      const detail = await response.json().catch(() => ({}));
+      throw new Error(detail.error || `MP4 conversion failed (${response.status}).`);
+    }
+    const blob = await response.blob();
+    const fileName = source.fileName.replace(/\.webm$/i, ".mp4");
+    downloadBlob(fileName, blob);
+    outputs.push({ fileName, size: blob.size, view: source.view, frames: source.frames, fps: source.fps });
+  }
+  log(`Saved ${outputs.length} local-server MP4 animation${outputs.length === 1 ? "" : "s"}.`, outputs);
+  return outputs;
 }
 function visibleSpriteObjects() {
   return objects.filter(object => object.visible && !object.userData?.hidden);

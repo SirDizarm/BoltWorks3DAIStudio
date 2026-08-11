@@ -75,7 +75,12 @@
           rowHits[y]++;
         }
       }
-      const minColumnHits = Math.max(2, Math.floor(height * .015));
+      // A panel can contain very thin fingers, wrists, cloth straps or hair.
+      // Requiring a percentage of the full image height here split those parts
+      // away from muscular references and made one person look like many views.
+      // Two foreground pixels are enough to keep a real silhouette column while
+      // the broad empty gutters between turntable views remain unambiguous.
+      const minColumnHits = 2;
       const rawRuns = [];
       let runStart = -1;
       for (let x = 0; x <= width; x++) {
@@ -89,7 +94,10 @@
       const mergedRuns = [];
       for (const run of rawRuns) {
         const prev = mergedRuns[mergedRuns.length - 1];
-        if (prev && run.x - prev.right < width * .035) {
+        // Only bridge small gaps inside one silhouette (for example separated
+        // fingertips). The old 3.5% allowance also swallowed the deliberately
+        // narrow gutter between a wide front T-pose and its side profile.
+        if (prev && run.x - prev.right < Math.max(5, width * .01)) {
           prev.right = run.right;
         } else {
           mergedRuns.push({ ...run });
@@ -111,7 +119,8 @@
         }))
         .filter(rect => rect.w > 8 && rect.h > 8)
         .sort((a, b) => a.x - b.x);
-      if (runs.length >= 3) return [runs[0], runs[Math.floor(runs.length / 2)], runs[runs.length - 1]];
+      if (runs.length >= 4) return [runs[0], runs[1], runs[runs.length - 2], runs[runs.length - 1]];
+      if (runs.length === 3) return [runs[0], runs[1], runs[2]];
       if (runs.length === 2) return [runs[0], runs[1], runs[0]];
       return [
         { x: 0, y: 0, w: Math.floor(width / 3), h: height },
@@ -868,14 +877,18 @@
       };
     }
 
-    function createSolidViewSheetGeometryV43({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, darkForeground, sourceName = "" }) {
+    function createSolidViewSheetGeometryV44({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, detailStrength = 1, darkForeground, sourceName = "" }) {
       const viewRects = detectReliefViewRects(imageData, threshold, darkForeground);
-      const [frontRect, sideRect, backRect] = viewRects;
+      const fourViewLayout = viewRects.length >= 4;
+      const frontRect = viewRects[0];
+      const leftRect = viewRects[1];
+      const rightRect = fourViewLayout ? viewRects[2] : leftRect;
+      const backRect = fourViewLayout ? viewRects[3] : viewRects[2];
       // The solid builder used to silently clamp the UI's higher resolutions to
       // 84 x 144. That is enough for limbs, but not for a face or hand silhouette.
-      const gridX = Math.max(18, Math.min(128, Math.round(cols)));
-      const gridY = Math.max(24, Math.min(208, Math.round(rows)));
-      const gridZ = Math.max(12, Math.min(64, Math.round(gridX * .48)));
+      const gridX = Math.max(18, Math.min(160, Math.round(cols)));
+      const gridY = Math.max(24, Math.min(220, Math.round(rows)));
+      const gridZ = Math.max(12, Math.min(72, Math.round(gridX * .48)));
       const meshH = scale;
       const meshW = scale * .78;
       const meshD = Math.max(back, depth, .25) * 2.15;
@@ -885,19 +898,55 @@
         return sampleReliefPixel(imageData, imageData.width, imageData.height, sx, sy);
       };
       const edgeMargin = Math.max(3, imageData.width * .018);
+      const clippedAtImageEdge = (rect, side) => {
+        const touchesEdge = side === "left"
+          ? rect.x <= edgeMargin
+          : rect.x + rect.w >= imageData.width - edgeMargin;
+        if (!touchesEdge) return false;
+        const edgeX = side === "left" ? 0 : imageData.width - 1;
+        const insetDirection = side === "left" ? 1 : -1;
+        let hitRows = 0;
+        let longestRun = 0;
+        let currentRun = 0;
+        for (let y = rect.y; y < rect.y + rect.h; y++) {
+          let rowHit = false;
+          for (let inset = 0; inset < 3; inset++) {
+            const pixel = sampleReliefPixel(imageData, imageData.width, imageData.height, edgeX + inset * insetDirection, y);
+            if (reliefForegroundCheck(pixel, threshold, darkForeground)) {
+              rowHit = true;
+              break;
+            }
+          }
+          if (rowHit) {
+            hitRows++;
+            currentRun++;
+            longestRun = Math.max(longestRun, currentRun);
+          } else {
+            currentRun = 0;
+          }
+        }
+        // A hand may lightly touch the canvas edge for a few rows. A genuinely
+        // cropped half-body intersects it continuously through the head, torso,
+        // hips or legs, which creates a much longer vertical edge run.
+        return longestRun >= rect.h * .1 || hitRows >= rect.h * .22;
+      };
       const halfMode = rect => {
         const left = rect.x <= edgeMargin;
         const right = rect.x + rect.w >= imageData.width - edgeMargin;
-        if ((!left && !right) || rect.w > imageData.width * .42) return "full";
-        return left ? "centerToOuter" : "outerToCenter";
+        if (left && clippedAtImageEdge(rect, "left")) return "centerToOuter";
+        if (right && clippedAtImageEdge(rect, "right")) return "outerToCenter";
+        return "full";
       };
       const remapHalf = (nx, mode) => {
         if (mode === "centerToOuter") return Math.abs(nx - .5) * 2;
         if (mode === "outerToCenter") return Math.min(nx, 1 - nx) * 2;
         return nx;
       };
-      const frontMode = halfMode(frontRect);
-      const backMode = halfMode(backRect);
+      // Four detected figures are an explicit full turntable sheet. Front and
+      // back may touch the outer image edges with their hands, but they are not
+      // cropped half-figures and must never be mirrored into duplicate bodies.
+      const frontMode = fourViewLayout ? "full" : halfMode(frontRect);
+      const backMode = fourViewLayout ? "full" : halfMode(backRect);
       const foreground = pixel => reliefForegroundCheck(pixel, threshold, darkForeground);
       const foregroundAt = (rect, nx, ny) => {
         const dx = .38 / Math.max(1, gridX - 1);
@@ -912,7 +961,8 @@
         return samples.some(foreground);
       };
       const silhouette = new Uint8Array(gridX * gridY);
-      const side = new Uint8Array(gridZ * gridY);
+      const leftSide = new Uint8Array(gridZ * gridY);
+      const rightSide = new Uint8Array(gridZ * gridY);
       for (let y = 0; y < gridY; y++) {
         const ny = y / Math.max(1, gridY - 1);
         for (let x = 0; x < gridX; x++) {
@@ -923,7 +973,14 @@
         }
         for (let z = 0; z < gridZ; z++) {
           const nz = z / Math.max(1, gridZ - 1);
-          side[y * gridZ + z] = foregroundAt(sideRect, nz, ny) ? 1 : 0;
+          // A conventional left profile faces toward the left edge of its
+          // panel. Model front is +Z, so reverse that panel: the nose, chest,
+          // knees and toes must project toward +Z rather than toward the back.
+          leftSide[y * gridZ + z] = foregroundAt(leftRect, 1 - nz, ny) ? 1 : 0;
+          // The explicit right profile faces toward its right edge and already
+          // matches +Z. A three-view sheet reuses the left profile for both
+          // body halves, so it keeps the same reversal as leftSide.
+          rightSide[y * gridZ + z] = foregroundAt(rightRect, fourViewLayout ? nz : 1 - nz, ny) ? 1 : 0;
         }
       }
       const occupied = new Uint8Array(gridX * gridY * gridZ);
@@ -955,14 +1012,17 @@
       let voxelCount = 0;
       for (let y = 0; y < gridY; y++) {
         const xRuns = runsAt(silhouette, gridX, y);
-        const zRuns = runsAt(side, gridZ, y);
-        if (!xRuns.length || !zRuns.length) continue;
-        const z0 = zRuns[0][0];
-        const z1 = zRuns[zRuns.length - 1][1];
-        const zCenter = (z0 + z1) * .5;
-        const zRadius = Math.max(1, (z1 - z0 + 1) * .5);
+        if (!xRuns.length) continue;
         for (const [x0, x1] of xRuns) {
           for (let x = x0; x <= x1; x++) {
+            const useLeftProfile = x < gridX * .5;
+            const sideMask = useLeftProfile ? leftSide : rightSide;
+            const zRuns = runsAt(sideMask, gridZ, y);
+            if (!zRuns.length) continue;
+            const z0 = zRuns[0][0];
+            const z1 = zRuns[zRuns.length - 1][1];
+            const zCenter = (z0 + z1) * .5;
+            const zRadius = Math.max(1, (z1 - z0 + 1) * .5);
             const horizontalRadius = Math.min(x - x0 + 1, x1 - x + 1) * cellX / cellZ;
             const verticalRadius = verticalRadiusAt(x, y) * cellY / cellZ;
             // Orthographic side views show the torso and an end-on T-pose arm at
@@ -972,7 +1032,7 @@
             // narrow while the central torso can still use the full side profile.
             const localRadius = Math.max(.7, Math.min(zRadius, horizontalRadius * 1.08, verticalRadius * .92));
             for (let z = z0; z <= z1; z++) {
-              if (!side[y * gridZ + z]) continue;
+              if (!sideMask[y * gridZ + z]) continue;
               if (Math.abs(z - zCenter) > localRadius) continue;
               occupied[index(x, y, z)] = 1;
               voxelCount++;
@@ -989,6 +1049,7 @@
       const uniquePositions = [];
       const uniqueUvs = [];
       const detailSides = [];
+      const profileDetailSides = [];
       const triangles = [];
       const point = (x, y, z) => [
         (x / gridX - .5) * meshW,
@@ -996,7 +1057,7 @@
         (z / gridZ - .5) * meshD
       ];
       const vertexKey = (x, y, z) => (y * (gridZ + 1) + z) * (gridX + 1) + x;
-      const vertex = (x, y, z, u, v, detailSide = 0) => {
+      const vertex = (x, y, z, u, v, detailSide = 0, profileDetailSide = 0) => {
         const key = vertexKey(x, y, z);
         let id = vertexIds[key];
         if (id < 0) {
@@ -1005,9 +1066,14 @@
           uniquePositions.push(...point(x, y, z));
           uniqueUvs.push(u, v);
           detailSides.push(detailSide);
+          profileDetailSides.push(profileDetailSide);
         } else if (detailSide) {
           const previous = detailSides[id] || 0;
           detailSides[id] = previous && previous !== detailSide ? 0 : detailSide;
+        }
+        if (profileDetailSide) {
+          const previous = profileDetailSides[id] || 0;
+          profileDetailSides[id] = previous && previous !== profileDetailSide ? 0 : profileDetailSide;
         }
         return id;
       };
@@ -1024,8 +1090,8 @@
             if (!inside(x, y, z)) continue;
             const u0 = x / gridX, u1 = (x + 1) / gridX;
             const v0 = 1 - y / gridY, v1 = 1 - (y + 1) / gridY;
-            if (!inside(x - 1, y, z)) quad(vertex(x,y,z,u0,v0), vertex(x,y+1,z,u0,v1), vertex(x,y+1,z+1,u1,v1), vertex(x,y,z+1,u1,v0));
-            if (!inside(x + 1, y, z)) quad(vertex(x+1,y,z+1,u0,v0), vertex(x+1,y+1,z+1,u0,v1), vertex(x+1,y+1,z,u1,v1), vertex(x+1,y,z,u1,v0));
+            if (!inside(x - 1, y, z)) quad(vertex(x,y,z,u0,v0,0,-1), vertex(x,y+1,z,u0,v1,0,-1), vertex(x,y+1,z+1,u1,v1,0,-1), vertex(x,y,z+1,u1,v0,0,-1));
+            if (!inside(x + 1, y, z)) quad(vertex(x+1,y,z+1,u0,v0,0,1), vertex(x+1,y+1,z+1,u0,v1,0,1), vertex(x+1,y+1,z,u1,v1,0,1), vertex(x+1,y,z,u1,v0,0,1));
             if (!inside(x, y - 1, z)) quad(vertex(x,y,z+1,u0,v0), vertex(x+1,y,z+1,u1,v0), vertex(x+1,y,z,u1,v1), vertex(x,y,z,u0,v1));
             if (!inside(x, y + 1, z)) quad(vertex(x,y+1,z,u0,v0), vertex(x+1,y+1,z,u1,v0), vertex(x+1,y+1,z+1,u1,v1), vertex(x,y+1,z+1,u0,v1));
             if (!inside(x, y, z - 1)) quad(vertex(x+1,y,z,u0,v0,-1), vertex(x+1,y+1,z,u1,v0,-1), vertex(x,y+1,z,u1,v1,-1), vertex(x,y,z,u0,v1,-1));
@@ -1033,58 +1099,111 @@
           }
         }
       }
-      const smoothClosedSurface = (passes, amount = .22) => {
+      const smoothClosedSurface = (passes, amount = .32) => {
         const vertexCount = uniquePositions.length / 3;
-        for (let pass = 0; pass < passes; pass++) {
-          const sums = new Float64Array(vertexCount * 3);
-          const counts = new Uint32Array(vertexCount);
-          for (let i = 0; i < triangles.length; i += 3) {
-            const a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
-            const ids = [a, b, c];
-            for (let corner = 0; corner < 3; corner++) {
-              const id = ids[corner];
-              const n1 = ids[(corner + 1) % 3];
-              const n2 = ids[(corner + 2) % 3];
-              sums[id * 3] += uniquePositions[n1 * 3] + uniquePositions[n2 * 3];
-              sums[id * 3 + 1] += uniquePositions[n1 * 3 + 1] + uniquePositions[n2 * 3 + 1];
-              sums[id * 3 + 2] += uniquePositions[n1 * 3 + 2] + uniquePositions[n2 * 3 + 2];
-              counts[id] += 2;
+        if (!passes || !vertexCount) return [];
+        const neighbors = Array.from({ length: vertexCount }, () => new Set());
+        for (let i = 0; i < triangles.length; i += 3) {
+          const a = triangles[i], b = triangles[i + 1], c = triangles[i + 2];
+          neighbors[a].add(b); neighbors[a].add(c);
+          neighbors[b].add(a); neighbors[b].add(c);
+          neighbors[c].add(a); neighbors[c].add(b);
+        }
+        const bounds = positions => {
+          const min = [Infinity, Infinity, Infinity];
+          const max = [-Infinity, -Infinity, -Infinity];
+          for (let id = 0; id < vertexCount; id++) {
+            for (let axis = 0; axis < 3; axis++) {
+              const value = positions[id * 3 + axis];
+              min[axis] = Math.min(min[axis], value);
+              max[axis] = Math.max(max[axis], value);
             }
           }
+          return { min, max };
+        };
+        const originalBounds = bounds(uniquePositions);
+        for (let pass = 0; pass < passes; pass++) {
           const next = new Float64Array(uniquePositions.length);
           for (let id = 0; id < vertexCount; id++) {
-            const count = counts[id];
+            const connected = neighbors[id];
             for (let axis = 0; axis < 3; axis++) {
               const offset = id * 3 + axis;
               const current = uniquePositions[offset];
-              next[offset] = count ? current + (sums[offset] / count - current) * amount : current;
+              if (!connected.size) {
+                next[offset] = current;
+                continue;
+              }
+              let sum = 0;
+              for (const neighbor of connected) sum += uniquePositions[neighbor * 3 + axis];
+              next[offset] = current + (sum / connected.size - current) * amount;
             }
           }
           for (let i = 0; i < uniquePositions.length; i++) uniquePositions[i] = next[i];
         }
+        // Restore the measured X/Y/Z extents after rounding. This avoids the
+        // shrinking silhouette of ordinary Laplacian smoothing without a
+        // negative pass that would re-amplify the voxel staircase.
+        const smoothedBounds = bounds(uniquePositions);
+        const originalCenter = originalBounds.min.map((value, axis) => (value + originalBounds.max[axis]) * .5);
+        const smoothedCenter = smoothedBounds.min.map((value, axis) => (value + smoothedBounds.max[axis]) * .5);
+        const axisScale = originalBounds.min.map((value, axis) => {
+          const originalSpan = originalBounds.max[axis] - value;
+          const smoothedSpan = smoothedBounds.max[axis] - smoothedBounds.min[axis];
+          return smoothedSpan > 1e-8 ? originalSpan / smoothedSpan : 1;
+        });
+        for (let id = 0; id < vertexCount; id++) {
+          for (let axis = 0; axis < 3; axis++) {
+            const offset = id * 3 + axis;
+            uniquePositions[offset] = originalCenter[axis] + (uniquePositions[offset] - smoothedCenter[axis]) * axisScale[axis];
+          }
+        }
+        return neighbors;
       };
-      smoothClosedSurface(Math.max(0, Math.min(4, Math.round(Number.isFinite(Number(smoothPasses)) ? Number(smoothPasses) : 1))));
+      const requestedSmoothPasses = Math.max(0, Math.min(8, Math.round(Number.isFinite(Number(smoothPasses)) ? Number(smoothPasses) : 4)));
+      const surfaceNeighbors = smoothClosedSurface(requestedSmoothPasses ? Math.min(14, requestedSmoothPasses * 3 + 2) : 0);
       const sampleSurfaceDetail = (rect, nx, ny) => {
+        const sampleRing = radiusPx => {
+          const px = radiusPx / Math.max(1, rect.w - 1);
+          const py = radiusPx / Math.max(1, rect.h - 1);
+          return [
+            sampleRect(rect, nx - px, ny), sampleRect(rect, nx + px, ny),
+            sampleRect(rect, nx, ny - py), sampleRect(rect, nx, ny + py),
+            sampleRect(rect, nx - px * .707, ny - py * .707), sampleRect(rect, nx + px * .707, ny - py * .707),
+            sampleRect(rect, nx - px * .707, ny + py * .707), sampleRect(rect, nx + px * .707, ny + py * .707)
+          ];
+        };
         const centerPixel = sampleRect(rect, nx, ny);
-        const px = 1.6 / Math.max(1, rect.w - 1);
-        const py = 1.6 / Math.max(1, rect.h - 1);
-        const aroundPixels = [
-          sampleRect(rect, nx - px, ny), sampleRect(rect, nx + px, ny),
-          sampleRect(rect, nx, ny - py), sampleRect(rect, nx, ny + py),
-          sampleRect(rect, nx - px, ny - py), sampleRect(rect, nx + px, ny - py),
-          sampleRect(rect, nx - px, ny + py), sampleRect(rect, nx + px, ny + py)
-        ];
-        // Never turn an outline transition into relief. Those transitions caused
-        // the striped wedges across shoulders, hips, feet, and open fingers.
-        if (!foreground(centerPixel) || aroundPixels.some(pixel => !foreground(pixel))) return 0;
-        const around = aroundPixels.map(pixel => pixel.luma);
-        const average = around.reduce((sum, value) => sum + value, 0) / around.length;
-        return Math.max(-.35, Math.min(.35, (centerPixel.luma - average) / 96));
+        const inner = [centerPixel, ...sampleRing(1.5)];
+        const middle = sampleRing(5);
+        const outer = sampleRing(11);
+        // Outline contrast describes the silhouette, not a bump. Requiring the
+        // close neighborhood to remain inside the figure prevents edge spikes.
+        if (inner.some(pixel => !foreground(pixel)) || middle.some(pixel => !foreground(pixel))) return 0;
+        const average = pixels => pixels.reduce((sum, pixel) => sum + pixel.luma, 0) / pixels.length;
+        const innerTone = average(inner);
+        const middleTone = average(middle);
+        const validOuter = outer.filter(foreground);
+        const outerTone = validOuter.length >= 6 ? average(validOuter) : middleTone;
+        // Two frequency bands retain eyes, lips and finger seams while also
+        // recovering broader nose, cheek, muscle and cloth folds from shading.
+        const fine = (innerTone - middleTone) / 46;
+        const form = (middleTone - outerTone) / 88;
+        return Math.max(-.62, Math.min(.62, fine * .72 + form * .52));
       };
       // A visual hull only sees outlines. Add a deliberately shallow relief from
       // the source shading so facial creases and closed-finger seams survive as
       // surface detail without changing the overall anatomy or duplicating views.
-      const detailAmount = cellZ * .18;
+      const resolvedDetailStrength = Math.max(0, Math.min(2, Number.isFinite(Number(detailStrength)) ? Number(detailStrength) : 1));
+      const detailAmount = cellZ * .74 * resolvedDetailStrength;
+      const regionalDetailScale = (nx, ny) => {
+        // Facial landmarks need more relief than broad torso shading, while
+        // hands need a smaller boost so the gaps and knuckle/finger seams read.
+        if (ny <= .19 && nx >= .34 && nx <= .66) return 1.7;
+        if (ny >= .16 && ny <= .36 && (nx <= .24 || nx >= .76)) return 1.25;
+        return .72;
+      };
+      const detailValues = new Float64Array(uniquePositions.length / 3);
+      const profileDetailValues = new Float64Array(uniquePositions.length / 3);
       for (let id = 0; id < uniquePositions.length / 3; id++) {
         const outward = detailSides[id] || 0;
         if (!outward) continue;
@@ -1096,8 +1215,95 @@
         const sourceX = outward > 0
           ? remapHalf(nx, mode)
           : remapHalf(1 - nx, mode);
-        uniquePositions[offset + 2] += outward * sampleSurfaceDetail(rect, sourceX, ny) * detailAmount;
+        let sourceDetail = sampleSurfaceDetail(rect, sourceX, ny);
+        const surfacePixel = sampleRect(rect, sourceX, ny);
+        if (foreground(surfacePixel)) {
+          const broadTone = darkForeground
+            ? (38 - surfacePixel.luma) / 72
+            : (surfacePixel.luma - 220) / 72;
+          sourceDetail += Math.max(-.7, Math.min(.55, broadTone)) * .12;
+        }
+        if (outward > 0 && ny <= .19 && nx >= .34 && nx <= .66) {
+          const facePixel = sampleRect(rect, sourceX, ny);
+          const absoluteFaceTone = darkForeground
+            ? (38 - facePixel.luma) / 64
+            : (facePixel.luma - 220) / 64;
+          sourceDetail += Math.max(-.7, Math.min(.55, absoluteFaceTone)) * .34;
+        }
+        detailValues[id] = outward * sourceDetail * detailAmount * regionalDetailScale(nx, ny);
       }
+      for (let id = 0; id < uniquePositions.length / 3; id++) {
+        const outward = profileDetailSides[id] || 0;
+        if (!outward) continue;
+        const offset = id * 3;
+        const nz = Math.max(0, Math.min(1, uniquePositions[offset + 2] / meshD + .5));
+        const ny = Math.max(0, Math.min(1, .5 - uniquePositions[offset + 1] / meshH));
+        const rect = outward < 0 ? leftRect : rightRect;
+        const sourceX = outward < 0 || !fourViewLayout ? 1 - nz : nz;
+        let sourceDetail = sampleSurfaceDetail(rect, sourceX, ny);
+        const surfacePixel = sampleRect(rect, sourceX, ny);
+        if (foreground(surfacePixel)) {
+          const broadTone = darkForeground
+            ? (38 - surfacePixel.luma) / 72
+            : (surfacePixel.luma - 220) / 72;
+          sourceDetail += Math.max(-.7, Math.min(.55, broadTone)) * .1;
+        }
+        const profileScale = ny <= .2 ? .95 : (ny <= .72 ? .62 : .48);
+        profileDetailValues[id] = outward * sourceDetail * detailAmount * profileScale;
+      }
+      // Blend adjacent displacement values on the same front/back skin. This
+      // removes image-row banding while retaining coherent eyes, lips, folds,
+      // knuckles and muscle forms.
+      for (let pass = 0; pass < 2 && surfaceNeighbors.length; pass++) {
+        const next = detailValues.slice();
+        const nextProfile = profileDetailValues.slice();
+        for (let id = 0; id < detailValues.length; id++) {
+          const side = detailSides[id] || 0;
+          if (side) {
+            let sum = 0;
+            let count = 0;
+            for (const neighbor of surfaceNeighbors[id]) {
+              if ((detailSides[neighbor] || 0) !== side) continue;
+              sum += detailValues[neighbor];
+              count++;
+            }
+            if (count) next[id] = detailValues[id] * .58 + sum / count * .42;
+          }
+          const profileSide = profileDetailSides[id] || 0;
+          if (profileSide) {
+            let profileSum = 0;
+            let profileCount = 0;
+            for (const neighbor of surfaceNeighbors[id]) {
+              if ((profileDetailSides[neighbor] || 0) !== profileSide) continue;
+              profileSum += profileDetailValues[neighbor];
+              profileCount++;
+            }
+            if (profileCount) nextProfile[id] = profileDetailValues[id] * .58 + profileSum / profileCount * .42;
+          }
+        }
+        detailValues.set(next);
+        profileDetailValues.set(nextProfile);
+      }
+      for (let id = 0; id < detailValues.length; id++) {
+        uniquePositions[id * 3 + 2] += detailValues[id];
+        uniquePositions[id * 3] += profileDetailValues[id];
+      }
+      let detailPeak = 0;
+      let detailEnergy = 0;
+      let detailedVertexCount = 0;
+      for (const value of detailValues) {
+        if (Math.abs(value) <= 1e-8) continue;
+        detailPeak = Math.max(detailPeak, Math.abs(value));
+        detailEnergy += value * value;
+        detailedVertexCount++;
+      }
+      for (const value of profileDetailValues) {
+        if (Math.abs(value) <= 1e-8) continue;
+        detailPeak = Math.max(detailPeak, Math.abs(value));
+        detailEnergy += value * value;
+        detailedVertexCount++;
+      }
+      const detailRms = detailedVertexCount ? Math.sqrt(detailEnergy / detailedVertexCount) : 0;
       const positions = [];
       const uvs = [];
       for (const id of triangles) {
@@ -1108,16 +1314,146 @@
       return {
         positions,
         uvs,
-        meta: { mode: "solidVisualHullV43", buildMode: "solidVisualHull", sourceName, cols: gridX, rows: gridY, depthSlices: gridZ, sourceW: imageData.width, sourceH: imageData.height, threshold, darkForeground, smoothPasses, depth, back, voxelCount, uniqueVertices: uniquePositions.length / 3, viewRects, frontMode, backMode, localDepthFromSilhouette: true, edgeSafeSurfaceDetail: true, compactSmoothing: true, closedSurface: true }
+        meta: { mode: "solidVisualHullV45", buildMode: "solidVisualHull", sourceName, cols: gridX, rows: gridY, depthSlices: gridZ, sourceW: imageData.width, sourceH: imageData.height, threshold, darkForeground, smoothPasses: requestedSmoothPasses, detailStrength: resolvedDetailStrength, detailPeak, detailRms, detailedVertexCount, depth, back, voxelCount, uniqueVertices: uniquePositions.length / 3, viewRects, viewLayout: fourViewLayout ? "front-left-right-back" : "front-side-back", independentSideProfiles: fourViewLayout, frontMode, backMode, localDepthFromSilhouette: true, v30SourceReliefRecovery: true, fourSurfaceDetail: true, multiScaleSurfaceDetail: true, sizePreservingSurfaceSmoothing: true, edgeSafeSurfaceDetail: true, compactSmoothing: true, closedSurface: true }
       };
     }
 
-    function createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, darkForeground, buildMode = "heightmap", bodyPreset = "auto", sourceName = "" }) {
+    function transferV30SilhouetteToSolidMesh(solidGeometry, guideGeometry) {
+      const bins = 180;
+      const profile = positions => {
+        let minY = Infinity;
+        let maxY = -Infinity;
+        for (let offset = 0; offset < positions.length; offset += 3) {
+          minY = Math.min(minY, positions[offset + 1]);
+          maxY = Math.max(maxY, positions[offset + 1]);
+        }
+        const rows = Array.from({ length: bins }, () => ({ minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity }));
+        for (let offset = 0; offset < positions.length; offset += 3) {
+          const ny = (maxY - positions[offset + 1]) / Math.max(1e-8, maxY - minY);
+          const row = rows[Math.max(0, Math.min(bins - 1, Math.round(ny * (bins - 1))))];
+          row.minX = Math.min(row.minX, positions[offset]);
+          row.maxX = Math.max(row.maxX, positions[offset]);
+          row.minZ = Math.min(row.minZ, positions[offset + 2]);
+          row.maxZ = Math.max(row.maxZ, positions[offset + 2]);
+        }
+        for (let index = 0; index < bins; index++) {
+          if (Number.isFinite(rows[index].minX)) continue;
+          let distance = 1;
+          while (distance < bins) {
+            const before = rows[index - distance];
+            const after = rows[index + distance];
+            const source = before && Number.isFinite(before.minX) ? before : (after && Number.isFinite(after.minX) ? after : null);
+            if (source) {
+              rows[index] = { ...source };
+              break;
+            }
+            distance++;
+          }
+        }
+        let globalWidth = 0;
+        for (const row of rows) globalWidth = Math.max(globalWidth, row.maxX - row.minX);
+        return { rows, minY, maxY, globalWidth: Math.max(1e-8, globalWidth) };
+      };
+      const solidProfile = profile(solidGeometry.positions);
+      const guideProfile = profile(guideGeometry.positions);
+      const rawGuideWidthRatios = guideProfile.rows.map(row => (row.maxX - row.minX) / guideProfile.globalWidth);
+      const guideWidthRatios = rawGuideWidthRatios.map((value, index) => {
+        let weighted = 0;
+        let weightTotal = 0;
+        const radius = 7;
+        for (let offset = -radius; offset <= radius; offset++) {
+          const sampleIndex = Math.max(0, Math.min(bins - 1, index + offset));
+          const weight = radius + 1 - Math.abs(offset);
+          weighted += rawGuideWidthRatios[sampleIndex] * weight;
+          weightTotal += weight;
+        }
+        return weightTotal ? weighted / weightTotal : value;
+      });
+      const positions = solidGeometry.positions.slice();
+      const bell = (value, center, width) => Math.exp(-Math.pow((value - center) / Math.max(.001, width), 2));
+      const smoothStep = (edge0, edge1, value) => {
+        const t = Math.max(0, Math.min(1, (value - edge0) / Math.max(.001, edge1 - edge0)));
+        return t * t * (3 - 2 * t);
+      };
+      const sampleRows = (rows, ny) => {
+        const position = Math.max(0, Math.min(bins - 1, ny * (bins - 1)));
+        const before = Math.floor(position);
+        const after = Math.min(bins - 1, before + 1);
+        const mix = position - before;
+        const a = rows[before];
+        const b = rows[after];
+        return {
+          minX: a.minX + (b.minX - a.minX) * mix,
+          maxX: a.maxX + (b.maxX - a.maxX) * mix,
+          minZ: a.minZ + (b.minZ - a.minZ) * mix,
+          maxZ: a.maxZ + (b.maxZ - a.maxZ) * mix
+        };
+      };
+      let reshapedVertices = 0;
+      for (let offset = 0; offset < positions.length; offset += 3) {
+        const ny = (solidProfile.maxY - positions[offset + 1]) / Math.max(1e-8, solidProfile.maxY - solidProfile.minY);
+        const rowPosition = Math.max(0, Math.min(bins - 1, ny * (bins - 1)));
+        const rowBefore = Math.floor(rowPosition);
+        const rowAfter = Math.min(bins - 1, rowBefore + 1);
+        const rowMix = rowPosition - rowBefore;
+        const sourceRow = sampleRows(solidProfile.rows, ny);
+        const sourceWidth = sourceRow.maxX - sourceRow.minX;
+        const guideWidthRatio = guideWidthRatios[rowBefore] + (guideWidthRatios[rowAfter] - guideWidthRatios[rowBefore]) * rowMix;
+        if (!(sourceWidth > 1e-8) || !(guideWidthRatio > 0)) continue;
+        const sourceCenter = (sourceRow.minX + sourceRow.maxX) * .5;
+        const targetWidth = solidProfile.globalWidth * guideWidthRatio;
+        const distanceFromCenter = Math.abs(positions[offset] - sourceCenter);
+        const centralBodyWeight = 1 - smoothStep(solidProfile.globalWidth * .105, solidProfile.globalWidth * .175, distanceFromCenter);
+        let widthBlend = ny < .18
+          ? .55 * centralBodyWeight
+          : (ny < .28 ? 0 : (ny < .40 ? smoothStep(.28, .40, ny) * .86 : (ny < .70 ? .86 : .72)));
+        if (ny >= .28 && ny < .40) widthBlend *= centralBodyWeight;
+        if (ny > .965) widthBlend *= .45;
+        const blendedWidth = sourceWidth + (targetWidth - sourceWidth) * widthBlend;
+        positions[offset] = sourceCenter + (positions[offset] - sourceCenter) * Math.max(.58, Math.min(1.55, blendedWidth / sourceWidth));
+
+        // Keep the newer side-view depth and rounded closed topology. Only
+        // restrain chest and hip projection so the V30 guide cannot re-create
+        // its exaggerated breast/butt depth.
+        const chestTrim = bell(ny, .342, .065) * .075 * centralBodyWeight;
+        const hipTrim = bell(ny, .595, .085) * .055;
+        const zCenter = (sourceRow.minZ + sourceRow.maxZ) * .5;
+        positions[offset + 2] = zCenter + (positions[offset + 2] - zCenter) * (1 - chestTrim - hipTrim);
+        reshapedVertices++;
+      }
+      return {
+        positions,
+        uvs: solidGeometry.uvs.slice(),
+        meta: {
+          ...solidGeometry.meta,
+          mode: "continuousV30SilhouetteHybridV47",
+          buildMode: "hybridV47",
+          hybridV47: true,
+          v30SilhouetteGuideOnly: true,
+          continuousSolidTopology: true,
+          reducedChestHipDepth: true,
+          sourceDrivenFaceFingerDetail: true,
+          guideCommit: "4cf2f6f",
+          reshapedVertices,
+          guideTrianglesExcluded: true
+        }
+      };
+    }
+
+    function createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, surfaceDetailStrength = 1, darkForeground, buildMode = "heightmap", bodyPreset = "auto", sourceName = "" }) {
       const viewRects = detectReliefViewRects(imageData, threshold, darkForeground);
       if (buildMode === "solidVisualHull") {
-        return createSolidViewSheetGeometryV43({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, darkForeground, sourceName });
+        return createSolidViewSheetGeometryV44({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, detailStrength: surfaceDetailStrength, darkForeground, sourceName });
       }
-      const isMeshRemake = buildMode === "meshRebuild";
+      if (buildMode === "hybridV47") {
+        const solidGeometry = createSolidViewSheetGeometryV44({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, detailStrength: surfaceDetailStrength, darkForeground, sourceName });
+        const guideGeometry = createReliefGeometryFromViewSheet({ imageData, cols: Math.min(72, cols), rows: Math.min(128, rows), scale, depth, back, threshold, smoothPasses, surfaceDetailStrength, darkForeground, buildMode: "recoveredV30", bodyPreset, sourceName });
+        return transferV30SilhouetteToSolidMesh(solidGeometry, guideGeometry);
+      }
+      const isRecoveredV30 = buildMode === "recoveredV30";
+      const isHybridV46 = buildMode === "hybridV46";
+      const usesV30Silhouette = isRecoveredV30 || isHybridV46;
+      const isMeshRemake = buildMode === "meshRebuild" || usesV30Silhouette;
       if (buildMode === "anatomy") {
         return createMannequinSheetRebuildGeometry({ imageData, viewRects, scale, depth, back, threshold, darkForeground, bodyPreset, sourceName });
       }
@@ -1488,10 +1824,24 @@
           const bc = 1 / (1 + Math.abs(b.center - gridZ * .5));
           return (bw + bc * 5) - (aw + ac * 5);
         })[0] || null;
-        const bodySide = isMeshRemake ? sourceLikeFemaleSideProfile(y) : measuredSide;
+        let bodySide = usesV30Silhouette ? measuredSide : (isMeshRemake ? sourceLikeFemaleSideProfile(y) : measuredSide);
+        if (isHybridV46 && bodySide) {
+          const ny = y / Math.max(1, gridY - 1);
+          const bell = (value, center, width) => Math.exp(-Math.pow((value - center) / Math.max(.001, width), 2));
+          const chestReduction = bell(ny, .342, .072) * .38;
+          const hipReduction = bell(ny, .595, .09) * .12;
+          const radius = Math.max(.75, bodySide.radius * (1 - chestReduction - hipReduction));
+          bodySide = makeRun(
+            Math.max(0, Math.floor(bodySide.center - radius)),
+            Math.min(gridZ - 1, Math.ceil(bodySide.center + radius) - 1),
+            bodySide.role
+          );
+        }
         sideProfiles[y] = bodySide;
         const rawRuns = rowRuns(unionMask, gridX, 0);
-        bodyRuns[y] = useSideBodyScaffold ? sideSilhouetteBodyRuns(y, bodySide) : (isMeshRemake ? sourceLikeFemaleBodyRuns(y) : rawRuns);
+        bodyRuns[y] = useSideBodyScaffold
+          ? sideSilhouetteBodyRuns(y, bodySide)
+          : (usesV30Silhouette ? splitTPoseArmRuns(rawRuns, y) : (isMeshRemake ? sourceLikeFemaleBodyRuns(y) : rawRuns));
       }
       let voxelCount = 0;
       for (let y = 0; y < gridY; y++) {
@@ -1678,7 +2028,7 @@
         addFormEllipsoid(.62, .305, .155, .068, .044, .096, pairedGuideScale);
         addFormEllipsoid(.5, .382, .35, .122, .052, .034, slabGuideScale);
         addFormEllipsoid(.5, .405, .66, .122, .052, .034, slabGuideScale);
-      } else {
+      } else if (!usesV30Silhouette) {
         addFormEllipsoid(.39, .335, .16, .035, .023, .038, .2);
         addFormEllipsoid(.61, .335, .16, .035, .023, .038, .2);
         addFormEllipsoid(.39, .602, .8, .04, .032, .052, .22);
@@ -1865,12 +2215,12 @@
           for (const [x, y, z] of candidates) addVoxel(x, y, z);
         }
       };
-      addTPoseArmTubes();
+      if (!usesV30Silhouette) addTPoseArmTubes();
       fillShortInternalGaps(isMeshRemake ? 1 : (detailedHalfSheet ? 3 : 1));
       closeSkinGaps(isMeshRemake ? 1 : (detailedHalfSheet ? 4 : 1));
       if (isMeshRemake) {
         carveSourceLikeAnatomySeparations();
-        carveSourceLikeStraightLegWaistV38();
+        if (!usesV30Silhouette) carveSourceLikeStraightLegWaistV38();
       } else {
         carveArmBodySeparation();
         carveFormGroove(.5, .305, .105, .03, .064, .096);
@@ -1892,14 +2242,18 @@
         pushTri(a, b, c);
         pushTri(a, c, d);
       };
-      const detailStrength = isMeshRemake ? Math.min(.008, Math.max(.0025, depth * .004)) : Math.min(.035, Math.max(.01, depth * .018));
-      const formStrength = isMeshRemake ? Math.min(.14, Math.max(.055, depth * .096)) : Math.min(.18, Math.max(.055, depth * .135));
+      const detailStrength = isRecoveredV30
+        ? Math.min(.018, Math.max(.006, depth * .009))
+        : (isHybridV46 ? Math.min(.026, Math.max(.009, depth * .014)) : (isMeshRemake ? Math.min(.008, Math.max(.0025, depth * .004)) : Math.min(.035, Math.max(.01, depth * .018))));
+      const formStrength = isRecoveredV30
+        ? Math.min(.125, Math.max(.045, depth * .085))
+        : (isHybridV46 ? Math.min(.105, Math.max(.04, depth * .065)) : (isMeshRemake ? Math.min(.14, Math.max(.055, depth * .096)) : Math.min(.18, Math.max(.055, depth * .135))));
       const detailContrastStrength = 0;
       const centerGrooveStrength = formStrength * .7;
       const halfDepthStrength = formStrength * .18;
       const clampDetail = amount => {
-        const min = isMeshRemake ? -formStrength * .9 : -formStrength * .72;
-        const max = isMeshRemake ? formStrength * 1.18 : formStrength * 1.05;
+        const min = isRecoveredV30 ? -formStrength * 1.05 : (isHybridV46 ? -formStrength * .82 : (isMeshRemake ? -formStrength * .9 : -formStrength * .72));
+        const max = isRecoveredV30 ? formStrength * 1.45 : (isHybridV46 ? formStrength * 1.08 : (isMeshRemake ? formStrength * 1.18 : formStrength * 1.05));
         return Math.max(min, Math.min(max, amount));
       };
       const bell = (value, center, width) => Math.exp(-Math.pow((value - center) / Math.max(.001, width), 2));
@@ -1932,8 +2286,14 @@
         const localContrast = (pixel.luma - localAverage) / 255;
         const signedContrast = darkForeground ? -localContrast : localContrast;
         const sourceTone = isMeshRemake && pixel.a > 24 ? detailFromPixel(pixel) : 0;
-        const sourceToneDetail = isMeshRemake ? Math.max(-.55, Math.min(.72, sourceTone)) * detailStrength * (view === "side" ? .2 : .14) : 0;
-        const sourceEdgeDetail = isMeshRemake ? Math.max(-.55, Math.min(.55, signedContrast * 2.6)) * detailStrength * (view === "side" ? .07 : .045) : 0;
+        const detailNx = info.nx;
+        const detailNy = info.ny;
+        const hybridHeadDetail = detailNy < .205 ? 1 : 0;
+        const hybridHandDetail = detailNy >= .16 && detailNy <= .31 && (detailNx < .12 || detailNx > .88) ? 1 : 0;
+        const hybridTorsoDetail = detailNy >= .25 && detailNy <= .69 ? .18 : .46;
+        const hybridDetailRegion = isHybridV46 ? Math.max(hybridHeadDetail, hybridHandDetail, hybridTorsoDetail) : 1;
+        const sourceToneDetail = isMeshRemake && !isRecoveredV30 ? Math.max(-.55, Math.min(.72, sourceTone)) * detailStrength * (isHybridV46 ? (view === "side" ? .35 : .5) * hybridDetailRegion : (view === "side" ? .2 : .14)) : 0;
+        const sourceEdgeDetail = isMeshRemake && !isRecoveredV30 ? Math.max(-.55, Math.min(.55, signedContrast * 2.6)) * detailStrength * (isHybridV46 ? (view === "side" ? .28 : .38) * Math.max(.5, hybridDetailRegion) : (view === "side" ? .07 : .045)) : 0;
         const absoluteVolume = 0;
         const darkGrooveBoost = 0;
         const nx = view === "side" ? z / Math.max(1, gridZ) : x / Math.max(1, gridX);
@@ -1951,16 +2311,18 @@
         const pairedLobes = Math.max(leftFormLobe, rightFormLobe);
         const breastLowerBand = bell(ny, .383, .024);
         const buttLowerBand = bell(ny, .642, .034);
-        const meshFrontChestVolume = isMeshRemake && view === "front" ? pairedLobes * chestBand * formStrength * .52 : 0;
-        const meshUpperChestFlatten = isMeshRemake && view === "front" ? -bell(nx, .5, .24) * upperChestBand * formStrength * .08 : 0;
-        const meshChestCenterGroove = isMeshRemake && view === "front" ? -bell(nx, .5, .024) * chestBand * formStrength * .22 : 0;
-        const meshUnderBreastGroove = isMeshRemake && view === "front" ? -pairedLobes * breastLowerBand * formStrength * .14 : 0;
-        const meshBackButtVolume = isMeshRemake && view === "back" ? pairedLobes * hipBand * formStrength * .56 : 0;
-        const meshButtCenterGroove = isMeshRemake && view === "back" ? -bell(nx, .5, .03) * hipBand * formStrength * .32 : 0;
-        const meshUnderButtGroove = isMeshRemake && view === "back" ? -pairedLobes * buttLowerBand * formStrength * .16 : 0;
-        const meshPelvisCenterCut = isMeshRemake && (view === "front" || view === "back") ? -bell(nx, .5, .024) * bell(ny, .675, .075) * formStrength * .48 : 0;
-        const meshSideChestVolume = isMeshRemake && view === "side" ? bell(nx, .205, .075) * chestBand * formStrength * .98 : 0;
-        const meshSideButtVolume = isMeshRemake && view === "side" ? bell(nx, .835, .09) * hipBand * formStrength * 1.05 : 0;
+        const meshFrontChestVolume = isMeshRemake && view === "front" ? pairedLobes * chestBand * formStrength * (isRecoveredV30 ? 1.36 : (isHybridV46 ? .42 : .52)) : 0;
+        const meshUpperChestFlatten = isMeshRemake && view === "front" ? -bell(nx, .5, .24) * upperChestBand * formStrength * (isRecoveredV30 ? .52 : (isHybridV46 ? .16 : .08)) : 0;
+        const meshChestCenterGroove = isMeshRemake && view === "front" ? -bell(nx, .5, isRecoveredV30 ? .026 : .024) * chestBand * formStrength * (isRecoveredV30 ? 1.08 : (isHybridV46 ? .38 : .22)) : 0;
+        const meshUnderBreastGroove = isMeshRemake && view === "front" ? -pairedLobes * breastLowerBand * formStrength * (isRecoveredV30 ? .64 : (isHybridV46 ? .24 : .14)) : 0;
+        const meshBackButtVolume = isMeshRemake && view === "back" ? pairedLobes * hipBand * formStrength * (isRecoveredV30 ? 1.58 : (isHybridV46 ? .5 : .56)) : 0;
+        const meshButtCenterGroove = isMeshRemake && view === "back" ? -bell(nx, .5, isRecoveredV30 ? .026 : .03) * hipBand * formStrength * (isRecoveredV30 ? 1.42 : (isHybridV46 ? .48 : .32)) : 0;
+        const meshUnderButtGroove = isMeshRemake && view === "back" ? -pairedLobes * buttLowerBand * formStrength * (isRecoveredV30 ? .64 : (isHybridV46 ? .24 : .16)) : 0;
+        const meshPelvisCenterCut = isMeshRemake && (view === "front" || view === "back") ? -bell(nx, .5, isRecoveredV30 ? .038 : .024) * bell(ny, isRecoveredV30 ? .66 : .675, isRecoveredV30 ? .09 : .075) * formStrength * (isRecoveredV30 ? .95 : (isHybridV46 ? .56 : .48)) : 0;
+        const meshSideChestVolume = isMeshRemake && view === "side" ? bell(nx, .205, isRecoveredV30 ? .085 : .075) * chestBand * formStrength * (isRecoveredV30 ? .82 : (isHybridV46 ? .3 : .98)) : 0;
+        const meshSideButtVolume = isMeshRemake && view === "side" ? bell(nx, isRecoveredV30 ? .82 : .835, isRecoveredV30 ? .10 : .09) * hipBand * formStrength * (isRecoveredV30 ? 1.14 : (isHybridV46 ? .4 : 1.05)) : 0;
+        const hybridChestDepthTrim = isHybridV46 && (view === "front" || view === "back") ? -bell(nx, .5, .29) * chestBand * formStrength * .72 : 0;
+        const hybridHipDepthTrim = isHybridV46 && (view === "front" || view === "back") ? -bell(nx, .5, .31) * hipBand * formStrength * .42 : 0;
         const frontChestVolume = view === "front" ? pairedLobes * chestBand * formStrength * (isMeshRemake ? .18 : .48) : 0;
         const frontRibVolume = view === "front" ? bell(nx, .5, .20) * torsoBand * formStrength * .022 : 0;
         const backShoulderVolume = view === "back" ? bell(nx, .5, .30) * shoulderBand * formStrength * .09 : 0;
@@ -1976,7 +2338,7 @@
         const halfCutValley = halfMode === "full" ? 0 : -halfCutBand * Math.max(backBand, .28) * halfDepthStrength * (scaffoldFace ? .35 : 1);
         const halfOuterRise = halfMode === "full" ? 0 : halfShoulderBand * halfDepthStrength * .12;
         const sourceAlignedDetail = sourceToneDetail + sourceEdgeDetail;
-        const softScaffoldForm = absoluteVolume + darkGrooveBoost + frontChestVolume + frontRibVolume + backShoulderVolume + backHipVolume + meshFrontChestVolume + meshUpperChestFlatten + meshChestCenterGroove + meshUnderBreastGroove + meshBackButtVolume + meshButtCenterGroove + meshUnderButtGroove + meshPelvisCenterCut + meshSideChestVolume + meshSideButtVolume + halfCutValley + halfOuterRise + sourceAlignedDetail;
+        const softScaffoldForm = absoluteVolume + darkGrooveBoost + frontChestVolume + frontRibVolume + backShoulderVolume + backHipVolume + meshFrontChestVolume + meshUpperChestFlatten + meshChestCenterGroove + meshUnderBreastGroove + meshBackButtVolume + meshButtCenterGroove + meshUnderButtGroove + meshPelvisCenterCut + meshSideChestVolume + meshSideButtVolume + hybridChestDepthTrim + hybridHipDepthTrim + halfCutValley + halfOuterRise + sourceAlignedDetail;
         return clampDetail(softScaffoldForm * scaffoldDetailScale + centerGroove);
       };
       const displacePoint = (p, direction, amount) => [
@@ -1993,8 +2355,8 @@
         if (view !== "none") return detailVertex(x, y, z, u, vv, view, direction);
         return { p: point(x, y, z), uv: [u, vv] };
       };
-      const polishLevel = isMeshRemake ? Math.max(1, smoothPasses + 1) : Math.max(1, smoothPasses - 1);
-      const maxPatchSpan = isMeshRemake ? Math.max(2, 6 - Math.min(4, Math.max(1, smoothPasses))) : Math.max(3, 9 - Math.min(6, Math.max(1, smoothPasses)));
+      const polishLevel = usesV30Silhouette ? Math.max(1, smoothPasses - 1) : (isMeshRemake ? Math.max(1, smoothPasses + 1) : Math.max(1, smoothPasses - 1));
+      const maxPatchSpan = usesV30Silhouette ? Math.max(3, 9 - Math.min(6, Math.max(1, smoothPasses))) : (isMeshRemake ? Math.max(2, 6 - Math.min(4, Math.max(1, smoothPasses))) : Math.max(3, 9 - Math.min(6, Math.max(1, smoothPasses))));
       const mix = (a, b, t) => a + (b - a) * t;
       const mixArray = (a, b, t) => a.map((value, index) => mix(value, b[index], t));
       const mixVertex = (a, b, t) => ({ p: mixArray(a.p, b.p, t), uv: mixArray(a.uv, b.uv, t) });
@@ -2148,12 +2510,12 @@
           pushQuadPatch(v(x, y + 1, z, x / gridX, z / gridZ), v(x + w, y + 1, z, (x + w) / gridX, z / gridZ), v(x + w, y + 1, z + h, (x + w) / gridX, (z + h) / gridZ), v(x, y + 1, z + h, x / gridX, (z + h) / gridZ), Math.ceil(w / maxPatchSpan), Math.ceil(h / maxPatchSpan));
         });
       }
-      if (polishLevel > 0) relaxWeldedPositions(isMeshRemake ? Math.min(7, polishLevel + 2) : (useSideBodyScaffold ? Math.min(8, polishLevel + 4) : Math.min(5, polishLevel + 1)), isMeshRemake ? .22 : (useSideBodyScaffold ? .24 : .16));
+      if (polishLevel > 0) relaxWeldedPositions(usesV30Silhouette ? Math.min(isHybridV46 ? 3 : 2, polishLevel) : (isMeshRemake ? Math.min(7, polishLevel + 2) : (useSideBodyScaffold ? Math.min(8, polishLevel + 4) : Math.min(5, polishLevel + 1))), usesV30Silhouette ? (isHybridV46 ? .13 : .1) : (isMeshRemake ? .22 : (useSideBodyScaffold ? .24 : .16)));
       if (positions.length < 9) throw new Error("No sheet foreground was found. Try Threshold or Dark foreground.");
       return {
         positions,
         uvs,
-        meta: { mode: isMeshRemake ? "sourceLikeStraightLegWaistMeshV38" : "viewSheetHeightmapArmTubeSeparationV20", buildMode: isMeshRemake ? "meshRebuild" : buildMode, bodyPreset, sourceName, cols: gridX, rows: gridY, depthSlices: gridZ, sourceW: imageData.width, sourceH: imageData.height, threshold, darkForeground, smoothPasses, polishLevel, depth, back, voxelCount, mergedFaceCount, detailStrength, detailContrastStrength, centerGrooveStrength, formStrength, halfDepthStrength, sourceLikeMeshScale, guidedFormVolumes: !isMeshRemake, sideBodyScaffold: useSideBodyScaffold, tallBodyProportions: !isMeshRemake, wideBodyScaffold: !isMeshRemake, preservedArmSpanGuides: !isMeshRemake, filledScaffoldFaces: !isMeshRemake, strongerArmGuides: !isMeshRemake, closedInternalSkin: !isMeshRemake, calmerScaffoldCarving: !isMeshRemake, armTubeSeparation: !isMeshRemake, controlledLegGap: !isMeshRemake, trimmedHipRuns: !isMeshRemake, sourceLikeSheetMesh: isMeshRemake, splitArmMeshRemake: isMeshRemake, sourceLikeLowerDetailScaleMesh: isMeshRemake, sourceLikeImageAlignedMesh: isMeshRemake, sourceLikeFemaleScaffoldMesh: isMeshRemake, sourceLikeControlledArmMesh: isMeshRemake, sourceLikeProfileAnatomyMesh: isMeshRemake, sourceLikeSoftAnatomyMesh: isMeshRemake, sourceLikeBalancedAnatomyMesh: isMeshRemake, sourceLikeStraightLegWaistMesh: isMeshRemake, frontHalfMode, backHalfMode, viewRects }
+        meta: { mode: isHybridV46 ? "sourceSilhouetteDetailHybridV46" : (isRecoveredV30 ? "sourceLikeLowerDetailScaleMeshV30Recovered" : (isMeshRemake ? "sourceLikeStraightLegWaistMeshV38" : "viewSheetHeightmapArmTubeSeparationV20")), buildMode: isHybridV46 ? "hybridV46" : (isRecoveredV30 ? "recoveredV30" : (isMeshRemake ? "meshRebuild" : buildMode)), bodyPreset, sourceName, cols: gridX, rows: gridY, depthSlices: gridZ, sourceW: imageData.width, sourceH: imageData.height, threshold, darkForeground, smoothPasses, polishLevel, depth, back, voxelCount, mergedFaceCount, detailStrength, detailContrastStrength, centerGrooveStrength, formStrength, halfDepthStrength, sourceLikeMeshScale, recoveredFromCommit: usesV30Silhouette ? "4cf2f6f" : null, recoveredV30: isRecoveredV30, hybridV46: isHybridV46, v30Silhouette: usesV30Silhouette, reducedChestHipDepth: isHybridV46, sourceDrivenFaceFingerDetail: isHybridV46, guidedFormVolumes: !isMeshRemake, sideBodyScaffold: useSideBodyScaffold, tallBodyProportions: !isMeshRemake, wideBodyScaffold: !isMeshRemake, preservedArmSpanGuides: !isMeshRemake, filledScaffoldFaces: !isMeshRemake, strongerArmGuides: !isMeshRemake, closedInternalSkin: !isMeshRemake, calmerScaffoldCarving: !isMeshRemake, armTubeSeparation: !isMeshRemake, controlledLegGap: !isMeshRemake, trimmedHipRuns: !isMeshRemake, sourceLikeSheetMesh: isMeshRemake, splitArmMeshRemake: isMeshRemake, sourceLikeLowerDetailScaleMesh: isMeshRemake, sourceLikeImageAlignedMesh: isMeshRemake && !isRecoveredV30, sourceLikeFemaleScaffoldMesh: isMeshRemake && !usesV30Silhouette, sourceLikeControlledArmMesh: isMeshRemake && !usesV30Silhouette, sourceLikeProfileAnatomyMesh: isMeshRemake && !usesV30Silhouette, sourceLikeSoftAnatomyMesh: isMeshRemake && !usesV30Silhouette, sourceLikeBalancedAnatomyMesh: isMeshRemake && !usesV30Silhouette, sourceLikeStraightLegWaistMesh: isMeshRemake && !usesV30Silhouette, frontHalfMode, backHalfMode, viewRects }
       };
     }
 
@@ -2168,14 +2530,15 @@
       const depth = clampNumber(options.depth, .9, 0, 5);
       const back = clampNumber(options.back, .22, 0, 3);
       const threshold = clampNumber(options.threshold, 70, 0, 255);
-      const smoothPasses = Math.round(clampNumber(options.smoothPasses, 2, 0, 8));
+      const smoothPasses = Math.round(clampNumber(options.smoothPasses, 4, 0, 8));
+      const detailStrength = clampNumber(options.detailStrength, 1, 0, 2);
       const darkForeground = !!options.darkForeground;
       const sourceMode = options.sourceMode || "single";
       const buildMode = options.buildMode || "heightmap";
       const bodyPreset = options.bodyPreset || "auto";
       const sourceName = options.sourceName || "reference image";
       if (sourceMode === "sheet") {
-        return createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, darkForeground, buildMode, bodyPreset, sourceName });
+        return createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, surfaceDetailStrength: detailStrength, darkForeground, buildMode, bodyPreset, sourceName });
       }
       const aspect = sourceW / Math.max(1, sourceH);
       const meshH = scale;

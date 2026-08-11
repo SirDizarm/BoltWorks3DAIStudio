@@ -1,3 +1,5 @@
+import { createGeometry as createDetailedImageMeshGeometry } from "../tools/image-to-mesh/generator.js";
+
 function geometryFromPositions(positions) {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
@@ -3062,7 +3064,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3127,6 +3129,7 @@ function createMesh(spec = {}) {
       triangleCount: Math.max(0, Number(lod.triangleCount) || 0),
       screenCoverage: Math.max(0, Math.min(1, Number(lod.screenCoverage) || 0))
     } : null,
+    minecraft: minecraft && typeof minecraft === "object" ? JSON.parse(JSON.stringify(minecraft)) : null,
     edgeBevelProtectedEdges: Array.isArray(edgeBevelProtectedEdges) ? edgeBevelProtectedEdges.filter(value => typeof value === "string") : [],
     dissolvedSurfaceEdges: Array.isArray(dissolvedSurfaceEdges) ? dissolvedSurfaceEdges.filter(value => typeof value === "string") : []
   };
@@ -3139,7 +3142,9 @@ function createMesh(spec = {}) {
   mesh.scale.fromArray(scale);
   mesh.visible = !hidden;
   mesh.castShadow = true;
-  mesh.receiveShadow = true;
+  // Minecraft cuboids keep casting onto the floor, but disabling received
+  // shadows prevents dense self-shadow acne and also survives project reloads.
+  mesh.receiveShadow = !minecraft;
   if (textureUrl) {
     applyTextureToMesh(mesh, textureUrl, textureName || "Texture", textureFlipY, textureRotation);
   }
@@ -3327,12 +3332,87 @@ function smoothReliefProfile(profile, passes) {
   return current;
 }
 
+// A front/back reference sheet is often cropped tight against one extended
+// arm, cutting the other arm off-frame entirely (confirmed on the sample
+// T-pose sheet: the front and back panels each only contain one full arm).
+// The carve above faithfully reconstructs only what the image shows, which
+// then reconstructs as a lopsided half-body. Rather than requiring a manual
+// mirror step afterward (the previous workflow), pick whichever half of the
+// carved body reaches further from center — the side that was actually
+// captured in frame — and mirror it across the center plane so the output
+// is always one complete, symmetric body.
+function mirrorReliefGeometryToSymmetricHalf(positions, uvs) {
+  const vertexCount = Math.floor(positions.length / 3);
+  let maxLeftReach = 0;
+  let maxRightReach = 0;
+  let leftVertexCount = 0;
+  let rightVertexCount = 0;
+  for (let i = 0; i < vertexCount; i++) {
+    const x = positions[i * 3];
+    if (x < -1e-4) {
+      leftVertexCount++;
+      maxLeftReach = Math.max(maxLeftReach, -x);
+    } else if (x > 1e-4) {
+      rightVertexCount++;
+      maxRightReach = Math.max(maxRightReach, x);
+    }
+  }
+  const keepRight = maxLeftReach !== maxRightReach ? maxRightReach > maxLeftReach : rightVertexCount >= leftVertexCount;
+
+  const keptPositions = [];
+  const keptUvs = [];
+  const triangleCount = Math.floor(vertexCount / 3);
+  for (let t = 0; t < triangleCount; t++) {
+    const base = t * 9;
+    const uvBase = t * 6;
+    // Split by centroid, not "any vertex on this side" — the torso/leg rings
+    // are already centered at x=0, so most of their triangles have at least
+    // one vertex on each side. Filtering by "touches the kept side" kept
+    // almost the whole body both times, and mirroring that duplicated the
+    // entire figure into conjoined twins instead of completing one.
+    const centroidX = (positions[base] + positions[base + 3] + positions[base + 6]) / 3;
+    const belongsToKeptHalf = keepRight ? centroidX >= 0 : centroidX <= 0;
+    if (!belongsToKeptHalf) continue;
+    for (let k = 0; k < 9; k++) keptPositions.push(positions[base + k]);
+    for (let k = 0; k < 6; k++) keptUvs.push(uvs[uvBase + k]);
+  }
+
+  const mirroredPositions = [];
+  const mirroredUvs = [];
+  const keptTriangleCount = Math.floor(keptPositions.length / 9);
+  for (let t = 0; t < keptTriangleCount; t++) {
+    const base = t * 9;
+    const uvBase = t * 6;
+    // Mirroring x flips triangle winding, so vertex order is reversed
+    // (a, c, b instead of a, b, c) to keep outward-facing normals correct.
+    mirroredPositions.push(
+      -keptPositions[base], keptPositions[base + 1], keptPositions[base + 2],
+      -keptPositions[base + 6], keptPositions[base + 7], keptPositions[base + 8],
+      -keptPositions[base + 3], keptPositions[base + 4], keptPositions[base + 5]
+    );
+    mirroredUvs.push(
+      keptUvs[uvBase], keptUvs[uvBase + 1],
+      keptUvs[uvBase + 4], keptUvs[uvBase + 5],
+      keptUvs[uvBase + 2], keptUvs[uvBase + 3]
+    );
+  }
+
+  return {
+    positions: [...keptPositions, ...mirroredPositions],
+    uvs: [...keptUvs, ...mirroredUvs],
+    keptSide: keepRight ? "right" : "left"
+  };
+}
+
 function createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, darkForeground }) {
   const viewRects = detectReliefViewRects(imageData, threshold, darkForeground);
   const [frontRect, sideRect, backRect] = viewRects;
-  const gridX = Math.max(12, Math.min(72, Math.round(cols)));
-  const gridY = Math.max(16, Math.min(128, Math.round(rows)));
-  const gridZ = Math.max(10, Math.min(44, Math.round(gridX * .55)));
+  // Matches the single-view mode's input ceiling (reliefGridXInput/reliefGridYInput,
+  // 8-160 / 8-220 in index.html) instead of an unrelated lower ceiling that used to
+  // silently cap view-sheet detail well below what a caller could actually request.
+  const gridX = Math.max(12, Math.min(160, Math.round(cols)));
+  const gridY = Math.max(16, Math.min(220, Math.round(rows)));
+  const gridZ = Math.max(10, Math.min(88, Math.round(gridX * .55)));
   const meshH = scale;
   const meshW = scale * .52;
   const meshD = Math.max(back, depth, .25) * 2.4;
@@ -3414,6 +3494,38 @@ function createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth
     const largestSide = sideRuns.sort((a, b) => (b.end - b.start) - (a.end - a.start))[0] || null;
     sideProfiles[y] = largestSide;
   }
+  // `point()` below naively maps grid column gridX/2 to mesh-X 0. That only
+  // lands on the body's true centerline if the detected view rect happens to
+  // crop the figure symmetrically — false whenever the sheet is cropped tight
+  // against one outstretched arm (confirmed on the sample T-pose sheet: the
+  // torso sits near one edge of its panel, with the rest of the panel width
+  // taken up by the extended arm). The leg rows aren't affected by that crop,
+  // so they give a robust estimate of where the body actually is; take the
+  // median across the leg region and use that as the center instead of
+  // assuming gridX/2.
+  //
+  // A row's legs can appear as one merged run (feet together) or two
+  // separate runs (feet apart, e.g. a normal standing pose) — using "the
+  // widest run's own center" only handles the merged case; with two
+  // separate runs it locks onto whichever leg happens to be marginally
+  // wider that row instead of the true centerline, which doubled the head
+  // and a leg when first tried on a standing-apart robot reference. Using
+  // the midpoint between the outermost edges of ALL runs in the row handles
+  // both cases: it reduces to a merged run's own center, and finds the true
+  // gap-center between two separate legs.
+  const legCenterSamples = [];
+  for (let y = Math.floor(gridY * .55); y < Math.floor(gridY * .9); y++) {
+    const runs = bodyRuns[y] || [];
+    if (!runs.length) continue;
+    const minStart = Math.min(...runs.map(run => run.start));
+    const maxEnd = Math.max(...runs.map(run => run.end));
+    legCenterSamples.push((minStart + maxEnd) / 2);
+  }
+  legCenterSamples.sort((a, b) => a - b);
+  const bodyCenterGridX = legCenterSamples.length
+    ? legCenterSamples[Math.floor(legCenterSamples.length / 2)]
+    : gridX / 2;
+  const centerFrac = bodyCenterGridX / gridX;
   let voxelCount = 0;
   for (let y = 0; y < gridY; y++) {
     const side = sideProfiles[y];
@@ -3438,7 +3550,7 @@ function createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth
   const positions = [];
   const uvs = [];
   const point = (x, y, z) => [
-    (x / gridX - .5) * meshW,
+    (x / gridX - centerFrac) * meshW,
     (.5 - y / gridY) * meshH,
     (z / gridZ - .5) * meshD
   ];
@@ -3452,39 +3564,17 @@ function createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth
   };
   const detailStrength = Math.min(.22, Math.max(.04, depth * .12));
   const detailContrastStrength = detailStrength * 2.8;
-  const clampDetail = amount => Math.max(-detailStrength * 2.4, Math.min(detailStrength * 1.35, amount));
-  const detailFromPixel = pixel => {
-    const raw = darkForeground
-      ? (threshold - pixel.luma) / Math.max(1, threshold)
-      : (pixel.luma - threshold) / Math.max(1, 255 - threshold);
-    return Math.max(-1, Math.min(1, raw * 2 - .65));
-  };
-  const viewSampleInfo = (view, x, y, z) => {
-    if (view === "front") return { rect: frontRect, nx: x / gridX, ny: y / gridY };
-    if (view === "back") return { rect: backRect, nx: 1 - x / gridX, ny: y / gridY };
-    return { rect: sideRect, nx: z / gridZ, ny: y / gridY };
-  };
-  const detailAmountFor = (view, x, y, z) => {
-    const info = viewSampleInfo(view, x, y, z);
-    const pixel = sampleRect(info.rect, info.nx, info.ny);
-    const radiusX = view === "side" ? 1 / Math.max(12, gridZ) : 1 / Math.max(16, gridX);
-    const radiusY = 1 / Math.max(20, gridY);
-    let total = 0;
-    let count = 0;
-    for (const offset of [[-radiusX, 0], [radiusX, 0], [0, -radiusY], [0, radiusY], [-radiusX, -radiusY], [radiusX, -radiusY], [-radiusX, radiusY], [radiusX, radiusY]]) {
-      const neighbor = sampleRect(info.rect, info.nx + offset[0], info.ny + offset[1]);
-      if (neighbor.a > 24) {
-        total += neighbor.luma;
-        count++;
-      }
-    }
-    const localAverage = count ? total / count : pixel.luma;
-    const localContrast = (pixel.luma - localAverage) / 255;
-    const signedContrast = darkForeground ? -localContrast : localContrast;
-    const absoluteVolume = detailFromPixel(pixel) * detailStrength * .25;
-    const darkGrooveBoost = signedContrast < 0 ? signedContrast * detailContrastStrength * 2.15 : signedContrast * detailContrastStrength * .65;
-    return clampDetail(absoluteVolume + darkGrooveBoost);
-  };
+  // Per-vertex surface detail (sampling the source image directly at each
+  // subdivided vertex, with no spatial pre-filtering) was tried and measured:
+  // rendering it with only the absolute-brightness term and only the local-
+  // contrast term, in isolation, each independently reproduced the same
+  // fuzzy/spiky surface — because at the resolutions this mode now supports,
+  // a single-point sample lands inside the source photo's own per-pixel grain
+  // (compression noise, dither, anti-aliasing), not real shading. The plain
+  // voxel-carved surface (no displacement) was clean by comparison, so
+  // detail stays off until this has a real box/gaussian pre-filter over the
+  // sampled image rather than a handful of unblurred neighbor points.
+  const detailAmountFor = () => 0;
   const displacePoint = (p, direction, amount) => [
     p[0] + direction[0] * amount,
     p[1] + direction[1] * amount,
@@ -3641,30 +3731,34 @@ function createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth
   }
   if (polishLevel > 0) relaxWeldedPositions(Math.min(4, polishLevel), .12);
   if (positions.length < 9) throw new Error("No sheet foreground was found. Try Threshold or Dark foreground.");
+  const symmetric = mirrorReliefGeometryToSymmetricHalf(positions, uvs);
   return {
-    positions,
-    uvs,
-    meta: { mode: "viewSheetOvalHullDetailPolished", cols: gridX, rows: gridY, depthSlices: gridZ, sourceW: imageData.width, sourceH: imageData.height, threshold, darkForeground, smoothPasses, polishLevel, depth, back, voxelCount, mergedFaceCount, detailStrength, detailContrastStrength, viewRects }
+    positions: symmetric.positions,
+    uvs: symmetric.uvs,
+    meta: {
+      mode: "viewSheetOvalHullDetailPolished", cols: gridX, rows: gridY, depthSlices: gridZ, sourceW: imageData.width, sourceH: imageData.height,
+      threshold, darkForeground, smoothPasses, polishLevel, depth, back, voxelCount, mergedFaceCount, detailStrength, detailContrastStrength, viewRects,
+      mirroredFromSide: symmetric.keptSide
+    }
   };
 }
 
-function createReliefGeometryFromImage() {
-  const imageData = reliefImageState.imageData;
-  const image = reliefImageState.image;
-  if (!imageData || !image) throw new Error("Load an image first.");
+function buildReliefGeometry({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, detailStrength = 1, darkForeground, sourceMode = "single", buildMode = "standard", sourceName = "reference image" }) {
+  if (!imageData) throw new Error("No source image data was provided.");
   const sourceW = imageData.width;
   const sourceH = imageData.height;
-  const cols = Math.max(8, Math.round(reliefNumber(els.reliefGridXInput, 56, 8, 160)));
-  const rows = Math.max(8, Math.round(reliefNumber(els.reliefGridYInput, 96, 8, 220)));
-  const scale = reliefNumber(els.reliefScaleInput, 6, .5, 20);
-  const depth = reliefNumber(els.reliefDepthInput, .9, 0, 5);
-  const back = reliefNumber(els.reliefBackInput, .22, 0, 3);
-  const threshold = reliefNumber(els.reliefThresholdInput, 70, 0, 255);
-  const smoothPasses = Math.round(reliefNumber(els.reliefSmoothInput, 2, 0, 8));
-  const darkForeground = !!els.reliefDarkForegroundInput?.checked;
-  const sourceMode = els.reliefSourceModeInput?.value || "single";
   if (sourceMode === "sheet") {
-    return createReliefGeometryFromViewSheet({ imageData, cols, rows, scale, depth, back, threshold, smoothPasses, darkForeground });
+    const detailed = buildMode === "solidVisualHull";
+    const recoveredV30 = buildMode === "recoveredV30";
+    const hybridV46 = buildMode === "hybridV46";
+    const hybridV47 = buildMode === "hybridV47";
+    return createDetailedImageMeshGeometry({
+      imageData,
+      cols: detailed || recoveredV30 || hybridV46 || hybridV47 ? cols : Math.min(cols, 84),
+      rows: detailed || recoveredV30 || hybridV46 || hybridV47 ? rows : Math.min(rows, 144),
+      scale, depth, back, threshold, smoothPasses, detailStrength: detailed || recoveredV30 || hybridV46 || hybridV47 ? detailStrength : detailStrength * .5, darkForeground,
+      sourceMode: "sheet", buildMode: hybridV47 ? "hybridV47" : (hybridV46 ? "hybridV46" : (recoveredV30 ? "recoveredV30" : "solidVisualHull")), sourceName
+    });
   }
   const aspect = sourceW / Math.max(1, sourceH);
   const meshH = scale;
@@ -3737,16 +3831,47 @@ function createReliefGeometryFromImage() {
   };
 }
 
+function createReliefGeometryFromImage() {
+  const imageData = reliefImageState.imageData;
+  const image = reliefImageState.image;
+  if (!imageData || !image) throw new Error("Load an image first.");
+  const cols = Math.max(8, Math.round(reliefNumber(els.reliefGridXInput, 56, 8, 160)));
+  const rows = Math.max(8, Math.round(reliefNumber(els.reliefGridYInput, 96, 8, 220)));
+  const scale = reliefNumber(els.reliefScaleInput, 6, .5, 20);
+  const depth = reliefNumber(els.reliefDepthInput, .9, 0, 5);
+  const back = reliefNumber(els.reliefBackInput, .22, 0, 3);
+  const threshold = reliefNumber(els.reliefThresholdInput, 70, 0, 255);
+  const smoothPasses = 4;
+  const detailStrength = reliefNumber(els.reliefDetailInput, 100, 0, 200) / 100;
+  const darkForeground = !!els.reliefDarkForegroundInput?.checked;
+  const sourceMode = els.reliefSourceModeInput?.value === "sheet" ? "sheet" : "single";
+  const selectedBuildMode = els.reliefBuildModeInput?.value;
+  const buildMode = ["standard", "solidVisualHull", "recoveredV30"].includes(selectedBuildMode) ? selectedBuildMode : "hybridV47";
+  return buildReliefGeometry({
+    imageData, cols, rows, scale, depth, back, threshold, smoothPasses, detailStrength, darkForeground,
+    sourceMode, buildMode, sourceName: reliefImageState.name
+  });
+}
+
+// Shared by the "Load image" UI panel and the MCP referenceMatch.createMesh
+// bridge command, so there is exactly one place that turns image bytes into
+// the ImageData the relief builders consume.
+async function decodeImageDataUrl(dataUrl) {
+  const image = await loadImage(dataUrl);
+  const canvas = readImageToCanvas(image);
+  const imageData = canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
+  return { image, canvas, imageData };
+}
+
 async function loadReliefImageFile(file) {
   if (!file) return;
   const dataUrl = await readFileAsDataUrl(file);
-  const image = await loadImage(dataUrl);
-  const canvas = readImageToCanvas(image);
+  const { image, canvas, imageData } = await decodeImageDataUrl(dataUrl);
   reliefImageState.dataUrl = dataUrl;
   reliefImageState.name = file.name || "reference image";
   reliefImageState.image = image;
   reliefImageState.canvas = canvas;
-  reliefImageState.imageData = canvas.getContext("2d", { willReadFrequently: true }).getImageData(0, 0, canvas.width, canvas.height);
+  reliefImageState.imageData = imageData;
   if (els.reliefImageName) els.reliefImageName.textContent = `${reliefImageState.name} (${canvas.width}x${canvas.height})`;
   log(`Loaded relief source image: ${reliefImageState.name} (${canvas.width} x ${canvas.height}).`);
 }
@@ -3760,13 +3885,21 @@ function createReliefMeshFromLoadedImage() {
       shape: "imageRelief",
       name: `${baseName} relief mesh`,
       geometry: { positions, uvs },
-      color: "#d8d8d8",
-      roughness: .48,
+      color: meta.recoveredV30 || meta.hybridV46 || meta.hybridV47 ? "#f2f4f1" : "#d8d8d8",
+      roughness: meta.recoveredV30 || meta.hybridV46 || meta.hybridV47 ? .72 : .48,
       position: [0, 0, 0]
     }, { record: false });
+    if ((meta.recoveredV30 || meta.hybridV46 || meta.hybridV47) && mesh?.geometry) {
+      mesh.geometry = mergeVertices(mesh.geometry, 1e-4);
+      mesh.geometry.computeVertexNormals();
+      mesh.geometry.computeBoundingSphere();
+      mesh.material.side = THREE.DoubleSide;
+      mesh.material.metalness = 0;
+      mesh.material.needsUpdate = true;
+    }
     mesh.userData.reliefSource = { ...meta, sourceName: reliefImageState.name };
     frameSelected();
-    log(`Created relief mesh from ${reliefImageState.name}: ${positions.length / 9} triangles, grid ${meta.cols} x ${meta.rows}.`);
+    log(`Created image mesh from ${reliefImageState.name}: ${positions.length / 9} triangles, grid ${meta.cols} x ${meta.rows}.`);
   } catch (error) {
     log(`Relief mesh failed: ${error.message}`);
     alert(error.message);

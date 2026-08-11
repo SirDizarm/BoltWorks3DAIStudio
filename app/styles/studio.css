@@ -698,11 +698,11 @@ label {
 .tree {
   flex: 0 0 auto;
   min-height: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
   overflow-y: hidden;
   padding: 8px;
   scrollbar-gutter: stable;
-  --scene-tree-content-width: 520px;
+  --scene-tree-content-width: 100%;
 }
 
 #sceneTree {
@@ -730,7 +730,14 @@ label {
 
 .tree-group {
   min-width: var(--scene-tree-content-width);
-  margin-bottom: 10px;
+  margin-bottom: 4px;
+}
+
+.tree-group-nested {
+  min-width: 0;
+  margin-left: 12px;
+  padding-left: 3px;
+  border-left: 1px solid #29343a;
 }
 
 .tree > .object-row {
@@ -740,15 +747,26 @@ label {
 .tree-group-header {
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) auto auto auto auto;
-  gap: 6px;
+  gap: 4px;
   align-items: center;
-  min-height: 30px;
-  padding: 4px 6px;
-  margin-bottom: 5px;
-  border-radius: 6px;
+  min-height: 28px;
+  padding: 3px 5px;
+  margin-bottom: 3px;
+  border-radius: 4px;
   background: #101417;
   color: var(--muted);
   font-size: 12px;
+}
+
+.tree-group-disclosure {
+  width: 20px;
+  min-width: 20px;
+  min-height: 20px;
+  padding: 0;
+  border-color: #3a474d;
+  color: var(--accent);
+  font-size: 15px;
+  line-height: 18px;
 }
 
 .tree-group-name {
@@ -770,10 +788,18 @@ label {
 }
 
 .group-only-btn,
-.group-hide-btn {
+.group-hide-btn,
+.group-info-btn {
   min-height: 26px;
   padding: 2px 8px;
   font-size: 12px;
+}
+
+.group-info-btn {
+  min-width: 30px;
+  padding-right: 6px;
+  padding-left: 6px;
+  font-weight: 700;
 }
 
 .group-hide-btn.show-hidden {
@@ -928,6 +954,35 @@ label {
   background: #273034;
 }
 
+.reference-viewports-toggle {
+  position: absolute;
+  z-index: 15;
+  top: 50%;
+  right: 255px;
+  width: 22px;
+  min-width: 22px;
+  min-height: 42px;
+  padding: 0;
+  transform: translateY(-50%);
+  border-radius: 5px 0 0 5px;
+  border-color: #46545a;
+  background: rgba(13, 19, 22, .92);
+  color: var(--accent);
+}
+
+.viewport.reference-views-collapsed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.viewport.reference-views-collapsed .reference-viewports {
+  display: none;
+}
+
+.viewport.reference-views-collapsed .reference-viewports-toggle {
+  right: 5px;
+  border-radius: 5px;
+}
+
 .reference-viewport {
   position: relative;
   min-width: 0;
@@ -985,6 +1040,7 @@ label {
 .gameplay-preview-bar span { flex: 1; color: #aab6bd; font-size: 12px; }
 .viewport.work-view-active .reference-viewports { display: none; }
 .viewport.work-view-active { grid-template-columns: minmax(0, 1fr); }
+.viewport.work-view-active .reference-viewports-toggle { display: none; }
 .range-field { display: grid; gap: 4px; margin: 8px 0; }
 
 .viewport canvas {
@@ -2107,8 +2163,483 @@ label {
 }
 .animation-panel .animation-toolbar { flex-wrap: wrap; }
 .animation-frame-readout { display:flex; justify-content:space-between; margin:8px 0 4px; color:var(--muted, #9aa7ad); font-size:11px; }
-.animation-scrubber { width:100%; accent-color:#e1b14b; }
+.animation-scrubber {
+  width: 100%;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  accent-color: #e1b14b;
+}
+
+.animation-scrubber::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(to right, transparent 0 var(--animation-scrubber-thumb-half, 9px), #8a9093 var(--animation-scrubber-thumb-half, 9px) calc(100% - var(--animation-scrubber-thumb-half, 9px)), transparent calc(100% - var(--animation-scrubber-thumb-half, 9px)) 100%);
+}
+
+.animation-scrubber::-webkit-slider-thumb {
+  width: var(--animation-scrubber-thumb-size, 18px);
+  height: var(--animation-scrubber-thumb-size, 18px);
+  margin-top: -7.5px;
+  -webkit-appearance: none;
+  border: 0;
+  border-radius: 50%;
+  background: #e1b14b;
+  cursor: ew-resize;
+}
+
+.animation-scrubber::-moz-range-track {
+  height: 3px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(to right, transparent 0 var(--animation-scrubber-thumb-half, 9px), #8a9093 var(--animation-scrubber-thumb-half, 9px) calc(100% - var(--animation-scrubber-thumb-half, 9px)), transparent calc(100% - var(--animation-scrubber-thumb-half, 9px)) 100%);
+}
+
+.animation-scrubber::-moz-range-thumb {
+  width: var(--animation-scrubber-thumb-size, 18px);
+  height: var(--animation-scrubber-thumb-size, 18px);
+  border: 0;
+  border-radius: 50%;
+  background: #e1b14b;
+  cursor: ew-resize;
+}
 .animation-track-list { display:grid; gap:4px; max-height:180px; overflow:auto; margin:8px 0; padding:5px; border:1px solid var(--line, #293638); border-radius:5px; background:#101617; }
 .animation-track { display:grid; grid-template-columns:minmax(90px, 1fr) 2fr; align-items:center; gap:6px; min-height:25px; font-size:11px; }
 .animation-track > span:first-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:#d8e2df; }
 .animation-track button { min-width:25px; padding:3px 5px; margin:1px; color:#101617; background:#e1b14b; border:0; border-radius:3px; font-size:10px; cursor:pointer; }
+
+/* Dedicated animation workspace and readable dope-sheet timeline. */
+.animator-workspace-bar {
+  display: none;
+}
+
+.app:not(.animator-mode) #animationSection {
+  display: none !important;
+}
+
+.animation-track-list {
+  display: block;
+  padding: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #0b0f11;
+}
+
+.animation-timeline-grid {
+  width: 100%;
+  min-width: 100%;
+  color: #d9e1e4;
+  font-size: 11px;
+}
+
+.animation-timeline-row {
+  display: grid;
+  grid-template-columns: var(--animation-track-label-width, clamp(130px, 14vw, 190px)) minmax(0, 1fr);
+  width: 100%;
+  min-height: 30px;
+  border-bottom: 1px solid #252e33;
+}
+
+.animation-track-name {
+  position: sticky;
+  left: 0;
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  padding: 0 8px;
+  border-right: 1px solid #344047;
+  background: #151a1d;
+}
+
+.animation-track-name button {
+  width: 100%;
+  min-height: 26px;
+  overflow: hidden;
+  padding: 3px 6px 3px calc(6px + var(--bone-depth, 0) * 14px);
+  border: 0;
+  background: transparent;
+  color: #c8d3d6;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.animation-timeline-row.selected .animation-track-name,
+.animation-timeline-row.selected .animation-track-name button {
+  color: #71e2c5;
+  background: #173029;
+}
+
+.animation-timeline-lane {
+  position: relative;
+  min-height: 30px;
+  cursor: ew-resize;
+  background-color: #101518;
+  background-image: linear-gradient(to right, rgba(89, 105, 113, .18) 1px, transparent 1px);
+  background-size: var(--timeline-grid-size, 10%) 100%;
+}
+
+.animation-timeline-row:nth-child(odd) .animation-timeline-lane {
+  background-color: #0d1214;
+}
+
+.animation-timeline-lane::after {
+  content: "";
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  bottom: 0;
+  left: var(--playhead, 0%);
+  width: 2px;
+  transform: translateX(-1px);
+  background: #f04f4f;
+  pointer-events: none;
+}
+
+.animation-key-marker {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  width: 13px;
+  min-width: 13px;
+  height: 13px;
+  min-height: 13px;
+  padding: 0;
+  transform: translate(-50%, -50%) rotate(45deg);
+  border: 1px solid #2a1c05;
+  border-radius: 2px;
+  background: #e1b14b;
+  box-shadow: 0 0 0 1px rgba(255, 220, 130, .2);
+}
+
+.animation-key-marker.current {
+  background: #fff0a5;
+  box-shadow: 0 0 0 2px #f04f4f;
+}
+
+.animation-key-marker span {
+  display: none;
+}
+
+.animation-timeline-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  min-height: 34px;
+  border-bottom-color: #4a555b;
+}
+
+.animation-track-heading {
+  z-index: 9;
+  color: #9ba9ae;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
+.animation-timeline-ruler .animation-timeline-lane {
+  min-height: 34px;
+  background: #1b2226;
+}
+
+.animation-ruler-tick {
+  position: absolute;
+  top: 7px;
+  transform: translateX(-50%);
+  color: #b8c4c8;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.animation-ruler-tick::after {
+  content: "";
+  position: absolute;
+  top: 15px;
+  left: 50%;
+  width: 1px;
+  height: 8px;
+  background: #66747a;
+}
+
+.animation-ruler-tick:first-child {
+  transform: none;
+}
+
+.animation-ruler-tick:first-child::after {
+  left: 0;
+}
+
+.animation-ruler-tick:last-child {
+  transform: translateX(-100%);
+}
+
+.animation-ruler-tick:last-child::after {
+  left: 100%;
+}
+
+.app.animator-mode {
+  grid-template-columns: 220px minmax(0, 1fr) 300px;
+  grid-template-rows: 58px minmax(0, 1fr) clamp(380px, 45vh, 480px);
+  grid-template-areas:
+    "top top top"
+    "left view right"
+    "timeline timeline timeline";
+}
+
+.app.animator-mode .top {
+  flex-wrap: nowrap;
+  min-height: 58px;
+  overflow: hidden;
+}
+
+.app.animator-mode .top > .toolbar-group:not(.workspace-picker):not(.animator-workspace-launcher):not(#toolbarProjectFilesGroup) {
+  display: none !important;
+}
+
+.app.animator-mode .animator-workspace-launcher button {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.app.animator-mode .left > section:not(#sceneTree) {
+  display: none;
+}
+
+.app.animator-mode #sceneTree {
+  flex: 1 1 auto;
+  padding-top: 36px;
+  padding-right: 5px;
+  padding-left: 5px;
+  overflow-x: hidden;
+}
+
+.app.animator-mode .tree-group-count,
+.app.animator-mode .group-hide-btn,
+.app.animator-mode .group-only-btn {
+  display: none;
+}
+
+.app.animator-mode .tree-group-header {
+  grid-template-columns: 20px minmax(0, 1fr) 30px;
+}
+
+.app.animator-mode .object-row {
+  display: none;
+}
+
+.app.animator-mode .tree-group-nested {
+  margin-left: 9px;
+}
+
+.app.animator-mode #sceneTree::before {
+  content: "MODEL / RIG HIERARCHY";
+  position: sticky;
+  top: -36px;
+  z-index: 5;
+  display: block;
+  margin: -36px -12px 8px;
+  padding: 11px 12px;
+  border-bottom: 1px solid var(--line);
+  background: #151a1d;
+  color: #aab7bc;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: .06em;
+}
+
+.app.animator-mode > .right {
+  display: contents;
+}
+
+.app.animator-mode > .right > * {
+  display: none !important;
+}
+
+.app.animator-mode #utilitiesSection,
+.app.animator-mode #utilitiesBody {
+  display: contents !important;
+}
+
+.app.animator-mode #utilitiesSection > .section-header,
+.app.animator-mode #utilitiesBody > * {
+  display: none !important;
+}
+
+.app.animator-mode > #bonePlacementSection {
+  grid-area: right;
+  display: flex !important;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px;
+  border-left: 1px solid var(--line);
+  border-bottom: 0;
+  background: var(--panel);
+  overflow: auto;
+}
+
+.app.animator-mode #bonePlacementSection > .section-body {
+  flex: 0 0 auto;
+  min-height: max-content;
+  overflow: visible;
+}
+
+.app.animator-mode > #animationSection {
+  grid-area: timeline;
+  display: flex !important;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  padding: 0;
+  border-top: 2px solid #465158;
+  border-bottom: 0;
+  background: #111619;
+  overflow: hidden;
+}
+
+.app.animator-mode #animationToggle {
+  display: none;
+}
+
+.app.animator-mode .animator-workspace-bar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border-bottom: 1px solid #39454b;
+  background: #171d20;
+}
+
+.animator-workspace-bar > div {
+  display: grid;
+  min-width: 260px;
+}
+
+.animator-workspace-bar strong {
+  color: #e6bb57;
+  font-size: 12px;
+  letter-spacing: .07em;
+}
+
+.animator-workspace-bar span {
+  color: #929fa4;
+  font-size: 10px;
+}
+
+.animator-workspace-bar label {
+  display: flex;
+  flex: 1 1 260px;
+  align-items: center;
+  gap: 8px;
+  color: #aeb9bd;
+  font-size: 11px;
+}
+
+.animator-workspace-bar select {
+  max-width: 320px;
+}
+
+.app.animator-mode #animationBody {
+  --animation-track-label-width: clamp(130px, 14vw, 190px);
+  --animation-scrubber-thumb-size: 18px;
+  --animation-scrubber-thumb-half: 9px;
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: minmax(460px, 1fr) auto auto;
+  grid-template-rows: auto auto minmax(110px, 1fr) auto auto;
+  grid-template-areas:
+    "controls readout keys"
+    "scrubber scrubber scrubber"
+    "tracks tracks tracks"
+    "sequence sequence sequence"
+    "exports exports exports";
+  gap: 7px 10px;
+  margin: 0;
+  padding: 8px 10px 10px;
+  overflow: hidden;
+}
+
+.app.animator-mode .animation-toolbar { grid-area: controls; }
+.app.animator-mode .animation-frame-readout { grid-area: readout; min-width: 150px; }
+.app.animator-mode .animation-scrubber { grid-area: scrubber; }
+.app.animator-mode .animation-scrubber {
+  width: calc(100% - var(--animation-track-label-width) - 2px + var(--animation-scrubber-thumb-size) - var(--animation-timeline-scrollbar-width, 0px));
+  margin-left: calc(var(--animation-track-label-width) + 1px - var(--animation-scrubber-thumb-half));
+}
+.app.animator-mode .animation-track-list { grid-area: tracks; max-height: none; min-height: 0; margin: 0; }
+.app.animator-mode .animation-key-actions { grid-area: keys; justify-content: flex-end; }
+.app.animator-mode .animation-export-actions { grid-area: exports; }
+.app.animator-mode .animation-sequence-builder { grid-area: sequence; }
+.animation-sequence-builder {
+  display: grid;
+  grid-template-columns: auto minmax(150px, 260px) auto auto auto auto minmax(260px, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border: 1px solid #344047;
+  border-radius: 5px;
+  background: #101619;
+}
+.animation-sequence-builder > strong { color: #f1c65b; white-space: nowrap; }
+.animation-sequence-list { display: flex; min-width: 0; align-items: center; gap: 4px; overflow-x: auto; }
+.animation-sequence-item { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; padding: 2px 4px 2px 7px; border: 1px solid #415057; border-radius: 999px; background: #192125; color: #dbe5e8; }
+.animation-sequence-item button { min-width: 22px; padding: 2px 4px; border: 0; background: transparent; color: #9fb0b6; }
+.animation-sequence-arrow { color: #71e2c5; }
+.app.animator-mode .animation-help { display: none; grid-area: help; max-width: 420px; margin: 0; align-self: center; }
+
+.app.animator-mode .bottom,
+.animator-workspace-active .persistent-notices {
+  display: none !important;
+}
+
+@media (max-width: 1100px) {
+  .app.animator-mode {
+    grid-template-columns: 220px minmax(0, 1fr) 280px;
+  }
+  .app.animator-mode #animationBody {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "controls readout"
+      "scrubber scrubber"
+      "tracks tracks"
+      "keys keys"
+      "sequence sequence"
+      "exports exports"
+      "help help";
+  }
+}
+
+.minecraft-only { display: none !important; }
+body[data-workspace="minecraft"] .minecraft-only { display: flex !important; }
+body[data-workspace="minecraft"] #minecraftSection.minecraft-only { display: block !important; }
+body.animator-workspace-active[data-workspace="minecraft"] .app.animator-mode #utilitiesBody > #minecraftSection.minecraft-only { display: none !important; }
+body[data-workspace="minecraft"] #toolbarModelToolsLauncherGroup,
+body[data-workspace="minecraft"] #toolbarShapeBuilderGroup,
+body[data-workspace="minecraft"] #toolbarSelectionToolsGroup,
+body[data-workspace="minecraft"] #toolbarLineToolsGroup,
+body[data-workspace="minecraft"] #toolbarMarkerToolsGroup,
+body[data-workspace="minecraft"] #toolbarTriEditorGroup,
+body[data-workspace="minecraft"] #toolbarFaceEditGroup,
+body[data-workspace="minecraft"] #modelToolsWindow,
+body[data-workspace="minecraft"] #surfaceEditorWindow,
+body[data-workspace="minecraft"] #outputToolsWindow,
+body[data-workspace="minecraft"] #utilitiesBody > .compact-row,
+body[data-workspace="minecraft"] #environmentSection,
+body[data-workspace="minecraft"] #cameraViewsSection,
+body[data-workspace="minecraft"] #referenceImageSection,
+body[data-workspace="minecraft"] #aiViewerSection,
+body[data-workspace="minecraft"] #gameplayPreviewOpenBtn,
+body[data-workspace="minecraft"] #imageReliefMeshPlugin { display: none !important; }
+body[data-workspace="minecraft"] #addMeshSection button[data-add]:not([data-add="box"]) { display: none; }
+.workspace-picker { border-color: rgba(225,177,75,.55); }
+.workspace-picker select { min-width: 108px; }
+.plugin-ready { color: #40c7a5; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.plugin-list { display: grid; gap: 6px; margin-top: 8px; }
+.plugin-row { display:flex; align-items:center; justify-content:space-between; gap:8px; padding:7px; border:1px solid var(--line); border-radius:6px; background:#101617; }
+.plugin-row div { min-width:0; display:grid; gap:2px; }
+.plugin-row span { color:var(--muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#minecraftBody > button { width:100%; margin-top:8px; }

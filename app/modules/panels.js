@@ -311,6 +311,7 @@ els.unhideAllBtn?.addEventListener("click", () => {
   log(`Showed all ${objects.length} mesh part${objects.length === 1 ? "" : "s"}.`);
 });
 applyPluginAvailability(els);
+initializeMinecraftTools();
 els.addRootBoneBtn?.addEventListener("click", () => addRigBone(false));
 els.addChildBoneBtn?.addEventListener("click", () => addRigBone(true));
 els.deleteBoneBtn?.addEventListener("click", deleteSelectedBone);
@@ -355,15 +356,36 @@ function finishReferenceSurfaceDrag(event) {
 window.addEventListener("pointerup", finishReferenceSurfaceDrag);
 window.addEventListener("pointercancel", finishReferenceSurfaceDrag);
 restoreBoneRig({ bones: [], showGuides: true });
-els.animationToggle?.addEventListener("click", () => els.animationSection.classList.toggle("collapsed"));
-els.animationPlayBtn?.addEventListener("click", () => { animationState.playing = !animationState.playing; animationState.lastTime = 0; updateAnimationPanel(); });
-els.animationStopBtn?.addEventListener("click", () => { animationState.playing = false; animationSetFrame(0); });
+els.animationPlayBtn?.addEventListener("click", () => {
+  if (!animationHasKeys()) { animationState.playing = false; updateAnimationPanel(); log("Add at least one keyed pose before playing the animation."); return; }
+  animationState.playing = !animationState.playing; animationState.lastTime = 0; updateAnimationPanel();
+});
+els.animationStopBtn?.addEventListener("click", () => { if (typeof cancelMinecraftAnimationSequencePreview === "function") cancelMinecraftAnimationSequencePreview(); animationState.playing = false; animationSetFrame(0); });
+els.animationPrevBtn?.addEventListener("click", () => animationSetFrame(animationState.frame - 1));
+els.animationNextBtn?.addEventListener("click", () => animationSetFrame(animationState.frame + 1));
+els.animationResetBtn?.addEventListener("click", () => { animationState.playing = false; animationSetFrame(0); });
 els.animationScrubber?.addEventListener("input", event => animationSetFrame(event.target.value));
 els.animationKeyBtn?.addEventListener("click", keyAnimationPose);
-els.animationClearBtn?.addEventListener("click", () => { animationState.keys = {}; updateAnimationPanel(); });
+els.animationDeleteFrameBtn?.addEventListener("click", deleteAnimationFrameKeys);
+els.animationClearBtn?.addEventListener("click", () => { restoreAnimationBindPose(); animationState.keys = {}; animationState.frame = 0; animationState.playing = false; updateAnimationPanel(); });
 els.animationExportBtn?.addEventListener("click", exportAnimationJson);
+els.animationSheetExportBtn?.addEventListener("click", async () => saveAnimationMotionSheets({
+  view: els.animationSheetViewSelect?.value || "left",
+  frameCount: Number(els.animationSheetFramesInput?.value) || 8,
+  range: els.animationExportRangeSelect?.value || "end"
+}));
+els.animationWebmExportBtn?.addEventListener("click", async () => {
+  try { await exportAnimationWebm({ view: els.animationSheetViewSelect?.value || "left", range: els.animationExportRangeSelect?.value || "end", durationSeconds: Number(els.animationVideoDurationInput?.value) || 6, qualityScale: Number(els.animationVideoQualitySelect?.value) || 1.5, useSequence: !!els.animationUseSequenceInput?.checked, endOnLastClip: els.animationVideoLengthModeSelect?.value === "clips" }); }
+  catch (error) { log(error?.message || "WebM export failed."); }
+});
+els.animationMp4ExportBtn?.addEventListener("click", async () => {
+  try { await exportAnimationMp4({ view: els.animationSheetViewSelect?.value || "left", range: els.animationExportRangeSelect?.value || "end", durationSeconds: Number(els.animationVideoDurationInput?.value) || 6, qualityScale: Number(els.animationVideoQualitySelect?.value) || 1.5, useSequence: !!els.animationUseSequenceInput?.checked, endOnLastClip: els.animationVideoLengthModeSelect?.value === "clips" }); }
+  catch (error) { log(error?.message || "MP4 export failed."); }
+});
+els.referenceViewportsToggleBtn?.addEventListener("click", () => setReferenceViewportsCollapsed(!referenceViewportsCollapsed));
 els.animationFpsInput?.addEventListener("change", event => { animationState.fps = Math.max(1, Math.min(120, Number(event.target.value) || 24)); updateAnimationPanel(); });
 els.animationEndInput?.addEventListener("change", event => { animationState.end = Math.max(1, Math.min(9999, Number(event.target.value) || 48)); animationState.frame = Math.min(animationState.frame, animationState.end); updateAnimationPanel(); });
+els.animationVideoLengthModeSelect?.addEventListener("change", () => { if (els.animationVideoDurationInput) els.animationVideoDurationInput.disabled = els.animationVideoLengthModeSelect.value === "clips"; });
 updateAnimationPanel();
 document.querySelector("#groupBtn").addEventListener("click", groupCheckedParts);
 document.querySelector("#ungroupBtn").addEventListener("click", ungroupParts);
@@ -1508,6 +1530,9 @@ window.ModelerStudio = {
   addCustomCameraView,
   activateCustomCameraView,
   saveQaSheet,
+  saveAnimationMotionSheets,
+  exportAnimationWebm,
+  exportAnimationMp4,
   exportObjParts,
   frameSelected,
   addMarkerFromSelectedTriangle,

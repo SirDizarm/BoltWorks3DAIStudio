@@ -14,6 +14,7 @@ import path from "node:path";
 import vm from "node:vm";
 import { fileURLToPath } from "node:url";
 import { Jimp } from "jimp";
+import { createGeometry as createDetailedImageMeshGeometry } from "./image-to-mesh/generator.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -147,10 +148,23 @@ function renderPositionsToPanel(image, positions, panel, tint) {
   }
 }
 
+function filterTriangles(positions, predicate) {
+  const filtered = [];
+  for (let offset = 0; offset < positions.length; offset += 9) {
+    const center = [
+      (positions[offset] + positions[offset + 3] + positions[offset + 6]) / 3,
+      (positions[offset + 1] + positions[offset + 4] + positions[offset + 7]) / 3,
+      (positions[offset + 2] + positions[offset + 5] + positions[offset + 8]) / 3
+    ];
+    if (predicate(center)) filtered.push(...positions.slice(offset, offset + 9));
+  }
+  return filtered;
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const referencePath = path.resolve(args[0] ?? path.join(root, "samples", "reference", "female_t_pose.png"));
-  const outputPath = path.resolve(args[1] ?? path.join(root, "samples", "reference", "codex-vs-claude-image-to-mesh.png"));
+  const outputPath = path.resolve(args[1] ?? path.join(root, "samples", "reference", "codex-image-to-mesh-comparison.png"));
   if (!fs.existsSync(referencePath)) throw new Error(`Reference image not found: ${referencePath}`);
 
   const sourceImage = await Jimp.read(referencePath);
@@ -160,20 +174,21 @@ async function main() {
   const scale = 6;
   const depth = 0.9;
   const back = 0.22;
+  const qaDetailStrength = Number(process.env.DETAIL_STRENGTH ?? 1);
+  const qaSmoothPasses = Number(process.env.SMOOTH_PASSES ?? 4);
+  const qaBuildMode = process.env.BUILD_MODE || "solidVisualHull";
+  const qaStandardCols = Number(process.env.STANDARD_COLS ?? 84);
+  const qaStandardRows = Number(process.env.STANDARD_ROWS ?? 144);
 
-  // --- OLD: orphaned Codex-era generator, unmodified, read-only (deleted right after this script runs) ---
-  const oldSource = path.join(root, "tools", "image-to-mesh", "generator.js");
-  const oldFns = loadPureFunctions(oldSource, ["detectReliefViewRects", "createMannequinSheetRebuildGeometry"]);
-  const oldViewRects = oldFns.detectReliefViewRects(imageData, threshold, darkForeground);
-  const oldGeometry = oldFns.createMannequinSheetRebuildGeometry({
-    scale, depth, back, threshold, darkForeground, imageData, viewRects: oldViewRects, bodyPreset: "auto", sourceName: path.basename(referencePath)
+  // --- STANDARD: the same sheet-aware hull at a lower editing resolution ---
+  const oldGeometry = createDetailedImageMeshGeometry({
+    imageData, cols: qaStandardCols, rows: qaStandardRows, scale, depth, back, threshold, smoothPasses: qaSmoothPasses, detailStrength: qaDetailStrength * .5,
+    darkForeground, sourceMode: "sheet", buildMode: qaBuildMode, sourceName: path.basename(referencePath)
   });
-
-  // --- NEW: live Image Relief pipeline behind referenceMatch.createMesh ---
-  const newSource = path.join(root, "app", "modules", "meshes.js");
-  const newFns = loadPureFunctions(newSource, ["reliefForegroundCheck", "sampleReliefPixel", "detectReliefViewRects", "mirrorReliefGeometryToSymmetricHalf", "createReliefGeometryFromViewSheet"]);
-  const newGeometry = newFns.createReliefGeometryFromViewSheet({
-    imageData, cols: 128, rows: 200, scale, depth, back, threshold, smoothPasses: 4, darkForeground
+  // --- DETAILED: restored high-resolution closed hull with face/finger relief ---
+  const newGeometry = createDetailedImageMeshGeometry({
+    imageData, cols: 160, rows: 220, scale, depth, back, threshold, smoothPasses: qaSmoothPasses, detailStrength: qaDetailStrength,
+    darkForeground, sourceMode: "sheet", buildMode: "solidVisualHull", sourceName: path.basename(referencePath)
   });
 
   const panelWidth = 640;
@@ -192,11 +207,20 @@ async function main() {
   fs.mkdirSync(path.dirname(outputPath), { recursive: true });
   await image.write(outputPath);
 
+  const detailOutputPath = outputPath.replace(/(\.[^.]+)$/i, "-details$1");
+  const detailImage = new Jimp({ width: 1248, height: 624, color: 0x14161cff });
+  const facePositions = filterTriangles(newGeometry.positions, point => Math.abs(point[0]) < scale * .14 && point[1] > scale * .30);
+  const handPositions = filterTriangles(newGeometry.positions, point => point[0] > scale * .31 && point[1] > scale * .08);
+  renderPositionsToPanel(detailImage, facePositions, { x: 20, y: 20, width: 594, height: 584 }, [120, 176, 224]);
+  renderPositionsToPanel(detailImage, handPositions, { x: 634, y: 20, width: 594, height: 584 }, [120, 176, 224]);
+  await detailImage.write(detailOutputPath);
+
   const oldTriangles = oldGeometry.positions.length / 9;
   const newTriangles = newGeometry.positions.length / 9;
-  console.log(`OLD (Codex, orphaned generator.js): ${oldTriangles.toLocaleString("en-US")} triangles, primitiveParts=${oldGeometry.meta?.primitiveParts ?? "n/a"}`);
-  console.log(`NEW (Claude, live meshes.js relief): ${newTriangles.toLocaleString("en-US")} triangles, voxelCount=${newGeometry.meta?.voxelCount ?? "n/a"}`);
-  console.log(`Comparison image: ${outputPath} (${width}x${height}, left=OLD/Codex, right=NEW/Claude)`);
+  console.log(`STANDARD visual hull: ${oldTriangles.toLocaleString("en-US")} triangles, voxelCount=${oldGeometry.meta?.voxelCount ?? "n/a"}`);
+  console.log(`DETAILED face/finger hull: ${newTriangles.toLocaleString("en-US")} triangles, uniqueVertices=${newGeometry.meta?.uniqueVertices ?? "n/a"}, detailPeak=${Number(newGeometry.meta?.detailPeak || 0).toFixed(5)}, detailedVertices=${newGeometry.meta?.detailedVertexCount ?? 0}`);
+  console.log(`Comparison image: ${outputPath} (${width}x${height}, left=standard, right=detailed)`);
+  console.log(`Face/finger close-up: ${detailOutputPath}`);
 }
 
 main().catch((error) => {

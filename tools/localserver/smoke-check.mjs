@@ -20,14 +20,16 @@ const waitForPing = async () => {
 
 try {
   await waitForPing();
-  const [page, bundle, styles, branding] = await Promise.all([
+  const [page, bundle, styles, branding, mp4Status] = await Promise.all([
     fetch(`http://127.0.0.1:${port}/`),
-    fetch(`http://127.0.0.1:${port}/app/studio-v49.27.0.js`),
+    fetch(`http://127.0.0.1:${port}/app/studio-v49.43.1.js`),
     fetch(`http://127.0.0.1:${port}/app/styles/studio.css`),
-    fetch(`http://127.0.0.1:${port}/app/assets/branding/boltworks-logo.png`)
+    fetch(`http://127.0.0.1:${port}/app/assets/branding/boltworks-logo.png`),
+    fetch(`http://127.0.0.1:${port}/api/video/mp4/status`)
   ]);
   const bundleText = await bundle.text();
-  if (!page.ok || !styles.ok || !branding.ok || !bundle.ok || !bundleText.includes("window.ModelerStudio")) {
+  const mp4StatusJson = await mp4Status.json();
+  if (!page.ok || !styles.ok || !branding.ok || !bundle.ok || !bundleText.includes("window.ModelerStudio") || !mp4Status.ok || mp4StatusJson.localServer !== true || mp4StatusJson.available !== true) {
     throw new Error("Local server did not serve the composed canonical application");
   }
   const shutdown = await fetch(`http://127.0.0.1:${port}/__shutdown`);
@@ -35,6 +37,6 @@ try {
   console.log(`Local server smoke check passed (${bundleText.length} composed bytes).`);
 } finally {
   const timeout = setTimeout(() => child.kill(), 3000);
-  await new Promise(resolve => child.once("exit", resolve));
+  if (child.exitCode === null) await new Promise(resolve => child.once("exit", resolve));
   clearTimeout(timeout);
 }

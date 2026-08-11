@@ -3,6 +3,7 @@ import vm from "node:vm";
 import * as THREE from "three";
 import { studioModuleOrder } from "../app/source-composer.mjs";
 import { createMeshFactory } from "../app/meshes/factory.js";
+import { createGeometry as createDetailedImageMeshGeometry } from "./image-to-mesh/generator.js";
 
 const documentSource = readFileSync(new URL("../index.html", import.meta.url), "utf8");
 const moduleSources = new Map(studioModuleOrder.map(name => [
@@ -13,16 +14,28 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.27.0.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.43.1.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
+const humanWalkCycle = JSON.parse(readFileSync(new URL("../samples/assets/human-walk-rig-smoke.modelerproj", import.meta.url), "utf8"));
+const minecraftRigSmoke = JSON.parse(readFileSync(new URL("../samples/assets/minecraft-rig-smoke.bbmodel", import.meta.url), "utf8"));
 const panelsSource = moduleSources.get("panels") || "";
 const meshesSource = moduleSources.get("meshes") || "";
 const aiViewerSource = moduleSources.get("ai-viewer") || "";
+const minecraftSource = moduleSources.get("minecraft") || "";
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolDockingSource}\n${applicationSource}`;
+
+if (
+  minecraftRigSmoke.meta?.model_format !== "modded_entity"
+  || minecraftRigSmoke.elements?.length !== 2
+  || minecraftRigSmoke.outliner?.[0]?.children?.[1]?.uuid !== "bone-arm"
+  || minecraftRigSmoke.animations?.[0]?.animators?.["bone-arm"]?.keyframes?.length !== 3
+) {
+  throw new Error("The Minecraft smoke fixture must preserve cuboids, nested bones, and animation keys.");
+}
 
 if (!authoringManifest.machineResources?.styleLibraries?.includes("libraries/medieval-house/README.md")) {
   throw new Error("BoltWorksStudioAi manifest must expose the medieval house style library.");
@@ -76,6 +89,69 @@ function functionSource(source, name) {
     if (depth === 0) return source.slice(start, index + 1);
   }
   throw new Error(`Could not isolate ${name} from the mesh module.`);
+}
+
+{
+  const context = { THREE };
+  vm.createContext(context);
+  vm.runInContext([
+    "minecraftVec",
+    "minecraftChildren",
+    "blockbenchAutoFaceUvs",
+    "rotateBlockbenchUvPoint",
+    "blockbenchCubeGeometryData"
+  ].map(name => functionSource(minecraftSource, name)).join("\n"), context);
+  if (context.minecraftVec("6 7 16").join(",") !== "6,7,16" || context.minecraftChildren("cube-uuid ").join("") !== "cube-uuid") {
+    throw new Error("Blockbench space-separated vectors and single-child UUID strings must import intact.");
+  }
+  const geometry = context.blockbenchCubeGeometryData(minecraftRigSmoke.elements[0], 32, 32, true);
+  if (geometry.positions.length !== 108 || geometry.uvs.length !== 72) {
+    throw new Error("Blockbench cuboids must generate six textured faces with per-corner UV coordinates.");
+  }
+  const uniqueUvs = new Set(Array.from(geometry.uvs, value => Number(value).toFixed(4)));
+  if (uniqueUvs.size < 6 || Math.max(...geometry.uvs) >= 1 || Math.min(...geometry.uvs) < 0) {
+    throw new Error("Blockbench face rectangles must map into their atlas regions instead of repeating the full texture.");
+  }
+}
+{
+  const context = {
+    minecraftProject: { sourceName: "raptor-rigged.bbmodel" },
+    minecraftAnimationClips: [{ name: "Idle" }, { name: "Walk" }, { name: "Jump" }],
+    minecraftAnimationSequence: [0, 1, 2, 0],
+    activeMinecraftAnimation: 1,
+    animationState: { fps: 20, end: 24, frame: 6, keys: { "bone-leg": [{ frame: 6, position: [0, 0, 0], rotation: [.4, 0, 0] }] } }
+  };
+  vm.createContext(context);
+  vm.runInContext([
+    "animationSequenceClipIndices",
+    "persistActiveMinecraftAnimationState",
+    "serializeMinecraftWorkspace"
+  ].map(name => functionSource(minecraftSource, name)).join("\n"), context);
+  const saved = context.serializeMinecraftWorkspace();
+  if (saved.clips.length !== 3 || saved.activeAnimation !== 1 || saved.animationSequence?.join(",") !== "0,1,2,0" || saved.clips[1].bwsState?.keys?.["bone-leg"]?.[0]?.frame !== 6) {
+    throw new Error("Minecraft project serialization must retain every clip, the active clip, and its edited keys.");
+  }
+}
+{
+  const context = { THREE, rigBones: [] };
+  context.boneById = id => context.rigBones.find(bone => bone.id === id) || null;
+  vm.createContext(context);
+  vm.runInContext(functionSource(minecraftSource, "resolveBlockbenchBoneRestTransforms"), context);
+  const root = {
+    id: "root", parentId: null,
+    position: new THREE.Vector3(), rotation: new THREE.Vector3(), tail: new THREE.Vector3(),
+    blockbenchSourcePosition: new THREE.Vector3(0, 0, 0), blockbenchLocalRotation: new THREE.Vector3(0, Math.PI / 2, 0)
+  };
+  const child = {
+    id: "child", parentId: "root",
+    position: new THREE.Vector3(), rotation: new THREE.Vector3(), tail: new THREE.Vector3(),
+    blockbenchSourcePosition: new THREE.Vector3(1, 0, 0), blockbenchLocalRotation: new THREE.Vector3()
+  };
+  context.rigBones.push(root, child);
+  context.resolveBlockbenchBoneRestTransforms();
+  if (Math.abs(child.position.z + 1) > 1e-6 || Math.abs(child.position.x) > 1e-6) {
+    throw new Error("Nested Blockbench bone origins must follow their parent rotation in the imported rest pose.");
+  }
 }
 
 {
@@ -895,13 +971,30 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.27.0.js?v=49.27.0"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.43.1.js?v=49.43.1"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
+}
+if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
+  throw new Error("The studio must expose exactly one Timeline / Animator panel.");
+}
+for (const skeletalRequirement of ["new THREE.SkinnedMesh", "new THREE.Skeleton", 'setAttribute("skinIndex"', 'setAttribute("skinWeight"', "applySkinnedPose"]) {
+  if (!applicationSource.includes(skeletalRequirement)) throw new Error(`Missing real skeletal animation requirement: ${skeletalRequirement}`);
+}
+const walkRig = humanWalkCycle.editor?.rigging;
+const requiredWalkBones = ["walk-root", "walk-thigh-l", "walk-shin-l", "walk-foot-l", "walk-thigh-r", "walk-shin-r", "walk-foot-r"];
+if (!walkRig || requiredWalkBones.some(id => !walkRig.bones.some(bone => bone.id === id))) {
+  throw new Error("The human walk sample must contain a complete parented leg skeleton.");
+}
+for (const kneeId of ["walk-shin-l", "walk-shin-r"]) {
+  const keys = walkRig.animation?.keys?.[kneeId] || [];
+  if (keys.length !== 7 || keys.some(key => Number(key.rotation?.[0]) < 0)) {
+    throw new Error(`${kneeId} must use seven forward-flexing walk poses without a reversed knee.`);
+  }
 }
 if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
   throw new Error("Top view must not replace the OrbitControls world-up axis.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.27.0.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.43.1.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -914,7 +1007,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.27.0",
+  "tool-docking.js?v=49.43.1",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1000,7 +1093,7 @@ for (const required of [
   "function addCustomCameraView()",
   "function addPlayerCameraOnSelectedJoint()",
   "bone.position.copy(camera.position)",
-  "joint.layers.disable(0)",
+  "joint.layers.enable(0)",
   "playerAvatar: !!playerAvatar",
   "function lowPolyPlayerAvatarGeometryData()",
   "BoltWorks Player Avatar",
@@ -1085,8 +1178,8 @@ for (const required of [
   "direction: rtl;",
   ".left > * {\n  direction: ltr;",
   ".tree-controls {\n  display: flex;\n  gap: 8px;\n  align-items: center;\n  flex-wrap: wrap;",
-  "--scene-tree-content-width: 520px;",
-  "overflow-x: auto;\n  overflow-y: hidden;",
+  "--scene-tree-content-width: 100%;",
+  "overflow-x: hidden;\n  overflow-y: hidden;",
   "#addMeshBody {\n  overflow: visible;",
   "panelCollapseStoragePrefix",
   "Heart",
@@ -1606,8 +1699,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.27.0 Experimental") || !documentSource.includes("v49.27.0 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.27.0 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.43.1 Experimental") || !documentSource.includes("v49.43.1 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.43.1 version.");
 }
 
 for (const attentionElement of ["aiViewerAttention", "aiViewerAttentionMessage", "aiViewerAttentionDirective"]) {
@@ -1617,14 +1710,150 @@ for (const attentionElement of ["aiViewerAttention", "aiViewerAttentionMessage",
 }
 
 for (const expectedDefault of [
-  'id="reliefGridXInput" type="number" min="8" max="160" step="1" value="56"',
-  'id="reliefGridYInput" type="number" min="8" max="220" step="1" value="96"',
+  'id="reliefGridXInput" type="number" min="8" max="160" step="1" value="160"',
+  'id="reliefGridYInput" type="number" min="8" max="220" step="1" value="220"',
   'id="reliefThresholdInput" type="number" min="0" max="255" step="1" value="70"',
-  'id="reliefSmoothInput" type="number" min="0" max="8" step="1" value="2"',
+  'id="reliefDetailInput" type="number" min="0" max="200" step="5" value="100"',
   '<option value="single">Single height image</option>',
-  '<option value="sheet">View sheet to one model</option>'
+  '<option value="sheet" selected>View sheet to one model</option>',
+  '<option value="hybridV47" selected>Hybrid — continuous mesh + V30 shape</option>',
+  '<option value="recoveredV30">Recovered V30 original</option>',
+  '<option value="solidVisualHull">Four-view detailed human</option>'
 ]) {
   if (!html.includes(expectedDefault)) throw new Error(`Missing detailed view-sheet default: ${expectedDefault}`);
+}
+if (html.includes('id="reliefSmoothInput"') || moduleSources.get("viewport").includes("reliefSmoothInput")) {
+  throw new Error("Image-to-Mesh smoothing must be automatic, not exposed as a user control.");
+}
+if (!meshesSource.includes("const smoothPasses = 4;")) {
+  throw new Error("Image-to-Mesh must retain the verified automatic source-matching surface finish.");
+}
+for (const detailedMeshRequirement of ["createDetailedImageMeshGeometry", 'buildMode === "solidVisualHull"', 'buildMode === "recoveredV30"', 'buildMode === "hybridV47"', "continuousV30SilhouetteHybridV47", "v30SilhouetteGuideOnly", "continuousSolidTopology", "guideTrianglesExcluded", "reducedChestHipDepth", "sourceDrivenFaceFingerDetail", "sourceLikeLowerDetailScaleMeshV30Recovered", "recoveredFromCommit", "solidVisualHullV45", "regionalDetailScale", "v30SourceReliefRecovery", "fourSurfaceDetail", "multiScaleSurfaceDetail", "sizePreservingSurfaceSmoothing"]) {
+  const source = ["continuousV30SilhouetteHybridV47", "v30SilhouetteGuideOnly", "continuousSolidTopology", "guideTrianglesExcluded", "reducedChestHipDepth", "sourceDrivenFaceFingerDetail", "sourceLikeLowerDetailScaleMeshV30Recovered", "recoveredFromCommit", "solidVisualHullV45", "regionalDetailScale", "v30SourceReliefRecovery", "fourSurfaceDetail", "multiScaleSurfaceDetail", "sizePreservingSurfaceSmoothing"].includes(detailedMeshRequirement) ? directBundle : applicationSource;
+  if (!source.includes(detailedMeshRequirement)) throw new Error(`Missing detailed image-to-mesh requirement: ${detailedMeshRequirement}`);
+}
+if (!moduleSources.get("plugins").includes('id: "image-relief-mesh-lab"') || !moduleSources.get("plugins").includes('name: "Image to Mesh"')) {
+  throw new Error("The restored Image-to-Mesh panel must be enabled in the studio UI.");
+}
+for (const minecraftRequirement of [
+  'id="workspaceSelect"',
+  'id="importBbmodelBtn"',
+  'id="minecraftSection"',
+  'id="minecraftExportJavaBtn"',
+  'id="pluginManagerSection"',
+  'id="minecraftAddColorInput"',
+  'id="minecraftOutputColorInput"',
+  'id="minecraftSaveTextureBtn"',
+  'id="minecraftAnimationSelect"'
+]) {
+  if (!html.includes(minecraftRequirement)) throw new Error(`Missing Minecraft/plugin UI requirement: ${minecraftRequirement}`);
+}
+for (const minecraftSourceRequirement of [
+  "importBlockbenchProject",
+  "collectBlockbenchHierarchy",
+  "importBlockbenchAnimation",
+  "activateMinecraftAnimation",
+  "blockbenchWorldRotations",
+  "serializeMinecraftWorkspace",
+  "restoreMinecraftWorkspace",
+  "minecraftObjectsByBone",
+  "generateNeoForgeModelSource",
+  "generateNeoForgeAnimationsSource",
+  "exportNeoForgeJava",
+  "initializeMinecraftTools",
+  'color: "#ffffff", roughness: 1',
+  "textureHasTransparency: !!texture",
+  "mesh.material.transparent = false",
+  "mesh.material.alphaTest = .1",
+  "mesh.receiveShadow = !minecraft",
+  "const flatAxes =",
+  "flatAxes[index]",
+  "THREE.NearestFilter",
+  "tintMinecraftTexture",
+  "textureDataUrl"
+]) {
+  if (!applicationSource.includes(minecraftSourceRequirement)) throw new Error(`Missing Minecraft source requirement: ${minecraftSourceRequirement}`);
+}
+if (!moduleSources.get("import-export").includes("minecraft: serializeMinecraftWorkspace()") || !moduleSources.get("import-export").includes("restoreMinecraftWorkspace(editor.minecraft || null)")) {
+  throw new Error("Saved projects must preserve every named Minecraft animation clip and the active clip.");
+}
+if (!moduleSources.get("rigging").includes("object.quaternion.copy(rotationDelta)") || !moduleSources.get("rigging").includes("boneQuaternion")) {
+  throw new Error("Rigid animation bindings must use quaternion deltas so nested legs cannot wrap into full spins.");
+}
+if (!moduleSources.get("rigging").includes("bone.position.copy(bone.bindPosition)") || !moduleSources.get("rigging").includes("bone.rotation.copy(bone.bindRotation)")) {
+  throw new Error("Animation frame evaluation must restart from the bind pose so reverse scrubbing is absolute and reversible.");
+}
+if (!moduleSources.get("rigging").includes("function prepareAnimationBindingRest()") || !moduleSources.get("rigging").includes("captureAnimationBindingRest()")) {
+  throw new Error("Rigid meshes must capture their binding rest from the true bind skeleton before animation frame zero is applied.");
+}
+if (moduleSources.get("panels").includes('animationToggle?.addEventListener("click"')) {
+  throw new Error("Timeline collapse must use only the shared persisted panel handler, not a second animator-specific toggle.");
+}
+for (const emptyAnimationRequirement of ["function animationHasKeys()", "if (!animationHasKeys())", "Add at least one keyed pose before playing the animation."]) {
+  if (!applicationSource.includes(emptyAnimationRequirement)) throw new Error(`Missing empty-animation safety requirement: ${emptyAnimationRequirement}`);
+}
+if (!moduleSources.get("plugins").includes('kind: "boltworks-plugin"') || !moduleSources.get("plugins").includes("validPluginManifest")) {
+  throw new Error("The studio must expose the manifest-based plugin foundation.");
+}
+{
+  const width = 300;
+  const height = 160;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let pixel = 0; pixel < width * height; pixel++) data[pixel * 4 + 3] = 255;
+  for (const [x0, x1] of [[10, 82], [112, 150], [188, 260]]) {
+    for (let y = 8; y < 152; y++) for (let x = x0; x < x1; x++) {
+      const offset = (y * width + x) * 4;
+      const tone = 205 + ((x + y) % 36);
+      data[offset] = data[offset + 1] = data[offset + 2] = tone;
+    }
+  }
+  const hybrid = createDetailedImageMeshGeometry({
+    imageData: { width, height, data }, sourceMode: "sheet", buildMode: "hybridV47",
+    cols: 56, rows: 96, scale: 6, depth: .9, back: .22, threshold: 70, smoothPasses: 4
+  });
+  if (!hybrid.meta?.hybridV47 || !hybrid.meta?.v30SilhouetteGuideOnly || !hybrid.meta?.continuousSolidTopology || !hybrid.meta?.guideTrianglesExcluded || !hybrid.meta?.reducedChestHipDepth || !hybrid.meta?.sourceDrivenFaceFingerDetail || hybrid.meta?.guideCommit !== "4cf2f6f") {
+    throw new Error("Hybrid Image-to-Mesh must keep continuous solid topology while using V30 only as a silhouette guide.");
+  }
+}
+{
+  const width = 400;
+  const height = 160;
+  const data = new Uint8ClampedArray(width * height * 4);
+  for (let pixel = 0; pixel < width * height; pixel++) data[pixel * 4 + 3] = 255;
+  const fill = (x0, x1, y0 = 8, y1 = 152) => {
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const offset = (y * width + x) * 4;
+      data[offset] = data[offset + 1] = data[offset + 2] = 255;
+    }
+  };
+  fill(10, 90);       // front
+  fill(112, 154);     // left profile: deliberately deeper clothing
+  fill(190, 212);     // right profile: slim side
+  fill(250, 330);     // back
+  const fourView = createDetailedImageMeshGeometry({
+    imageData: { width, height, data }, sourceMode: "sheet", buildMode: "solidVisualHull",
+    cols: 64, rows: 96, scale: 6, depth: .9, back: .22, threshold: 70, smoothPasses: 0
+  });
+  if (fourView.meta?.viewLayout !== "front-left-right-back" || !fourView.meta?.independentSideProfiles || fourView.meta?.viewRects?.length !== 4) {
+    throw new Error("Detailed Image-to-Mesh must detect Front / Left / Right / Back and retain independent side profiles.");
+  }
+  if (!fourView.meta?.v30SourceReliefRecovery || !fourView.meta?.fourSurfaceDetail || !fourView.meta?.multiScaleSurfaceDetail || !(fourView.meta?.detailPeak > 0) || !(fourView.meta?.detailedVertexCount > 0)) {
+    throw new Error("Detailed Image-to-Mesh must apply measurable source-driven surface relief.");
+  }
+  const boundsByHalf = side => {
+    let minZ = Infinity;
+    let maxZ = -Infinity;
+    for (let offset = 0; offset < fourView.positions.length; offset += 3) {
+      const x = fourView.positions[offset];
+      if ((side < 0 && x >= -.5) || (side > 0 && x <= .5)) continue;
+      minZ = Math.min(minZ, fourView.positions[offset + 2]);
+      maxZ = Math.max(maxZ, fourView.positions[offset + 2]);
+    }
+    return maxZ - minZ;
+  };
+  if (!(boundsByHalf(-1) > boundsByHalf(1) + .08)) {
+    throw new Error("Four-view reconstruction must keep asymmetric left/right depth instead of averaging both profiles.");
+  }
 }
 
 for (const moduleName of studioModuleOrder) {
@@ -1662,6 +1891,72 @@ if (!moduleSources.get("import-export").includes("await waitForSceneTextures();"
 }
 if (!documentSource.includes('id="saveQaSheetBtn"') || !moduleSources.get("import-export").includes("async function saveQaSheet()")) {
   throw new Error("The six-view AI QA sheet export must remain available.");
+}
+if (!documentSource.includes('id="animationSheetViewSelect"') || !documentSource.includes('id="animationSheetFramesInput"') || !documentSource.includes('id="animationSheetExportBtn"') || !moduleSources.get("import-export").includes("async function saveAnimationMotionSheets")) {
+  throw new Error("The multi-angle animation motion sheet exporter must remain available.");
+}
+if (!moduleSources.get("import-export").includes("transparent: true, useCurrentZoom: false")) {
+  throw new Error("Animation motion sheets must render with transparent game-ready frames.");
+}
+if (!moduleSources.get("import-export").includes("setCameraToView(viewName") || !moduleSources.get("import-export").includes("renderer.setClearAlpha(0)")) {
+  throw new Error("Transparent animation capture must reapply isolation after camera framing updates the viewport environment.");
+}
+if (!documentSource.includes('id="animationWebmExportBtn"') || !moduleSources.get("import-export").includes("async function exportAnimationWebm")) {
+  throw new Error("The transparent WebM animation exporter must remain available.");
+}
+if (!documentSource.includes('id="animationMp4ExportBtn"') || !moduleSources.get("import-export").includes("async function exportAnimationMp4") || !moduleSources.get("panels").includes("exportAnimationMp4")) {
+  throw new Error("Animation export must provide local-server MP4 conversion.");
+}
+if (!documentSource.includes('id="animationExportRangeSelect"') || !moduleSources.get("import-export").includes("function animationExportEndFrame") || !moduleSources.get("panels").includes("animationExportRangeSelect")) {
+  throw new Error("Animation exports must support current-frame and full-animation ranges.");
+}
+if (!documentSource.includes('id="animatorWorkspaceOpenBtn"') || documentSource.includes('id="animatorWorkspaceCloseBtn"') || !documentSource.includes('id="animatorClipSelect"')) {
+  throw new Error("The dedicated Animator workspace navigation and clip selector must remain available.");
+}
+if (!moduleSources.get("animator-workspace")?.includes("function setAnimatorWorkspace") || !moduleSources.get("rigging").includes("animation-timeline-grid") || !moduleSources.get("rigging").includes("function deleteAnimationFrameKeys")) {
+  throw new Error("The dedicated Animator workspace must provide a readable timeline and frame-key editing.");
+}
+if (!moduleSources.get("animator-workspace")?.includes("setAnimatorWorkspace(!animatorWorkspaceActive)") || !moduleSources.get("animator-workspace")?.includes('"Back to Modeling" : "Animator Workspace"')) {
+  throw new Error("The top Animator Workspace button must toggle both entering and leaving animation mode.");
+}
+if (moduleSources.get("rigging")?.includes("min-width:${timelineWidth}px") || !moduleSources.get("rigging")?.includes("--timeline-grid-size:${timelineGridSize}%") || !styleSource.includes("overflow-x: hidden") || !styleSource.includes("grid-template-columns: var(--animation-track-label-width, clamp(130px, 14vw, 190px)) minmax(0, 1fr)")) {
+  throw new Error("Animator bone tracks must scale to the available screen width without a horizontal scrollbar.");
+}
+if (!styleSource.includes("width: calc(100% - var(--animation-track-label-width) - 2px + var(--animation-scrubber-thumb-size) - var(--animation-timeline-scrollbar-width, 0px))") || !styleSource.includes("margin-left: calc(var(--animation-track-label-width) + 1px - var(--animation-scrubber-thumb-half))") || !styleSource.includes(".animation-scrubber::-webkit-slider-thumb") || !styleSource.includes("padding: 0;\n  border: 0;") || !moduleSources.get("rigging")?.includes("offsetWidth - els.animationTrackList.clientWidth - borderWidth")) {
+  throw new Error("The animation scrubber must line up with the frame lane after the bone-name column.");
+}
+if (moduleSources.get("import-export")?.includes("groupCheck.indeterminate") || !moduleSources.get("import-export")?.includes("tree-group-disclosure") || !moduleSources.get("import-export")?.includes("collapsedSceneGroupIds") || !styleSource.includes(".app.animator-mode .tree-group-count") || !styleSource.includes("grid-template-columns: 220px minmax(0, 1fr) 300px")) {
+  throw new Error("The Animator hierarchy must use compact collapsible groups without marking ancestor groups as selected.");
+}
+if (!moduleSources.get("import-export")?.includes("group-info-btn") || !moduleSources.get("import-export")?.includes("openGroupEditor(record.id)") || !styleSource.includes(".app.animator-mode .object-row") || !styleSource.includes("display: none;")) {
+  throw new Error("Animator hierarchy groups must expose a separate information button without overflowing individual mesh rows.");
+}
+if (!documentSource.includes('id="referenceViewportsToggleBtn"') || !moduleSources.get("import-export")?.includes("function setReferenceViewportsCollapsed") || !moduleSources.get("panels")?.includes("referenceViewportsToggleBtn") || !styleSource.includes(".viewport.reference-views-collapsed")) {
+  throw new Error("The Front and Side reference view column must have a compact collapse arrow.");
+}
+if (!documentSource.includes('id="animationVideoDurationInput"') || !moduleSources.get("import-export")?.includes("Math.max(1, Math.round(videoDurationSeconds * fps))") || !moduleSources.get("panels")?.includes("durationSeconds: Number(els.animationVideoDurationInput?.value) || 6")) {
+  throw new Error("WebM and MP4 animation exports must loop to the selected video duration.");
+}
+if (!documentSource.includes('id="animationSequenceClipSelect"') || !documentSource.includes('id="animationUseSequenceInput"') || !moduleSources.get("minecraft")?.includes("animationSequenceClipIndices") || !moduleSources.get("minecraft")?.includes("previewMinecraftAnimationSequence") || !moduleSources.get("minecraft")?.includes("animationSequence: animationSequenceClipIndices()")) {
+  throw new Error("Connected animation sequences must be editable, previewable, and saved with Minecraft projects.");
+}
+if (!documentSource.includes('id="animationVideoQualitySelect"') || !moduleSources.get("import-export")?.includes("qualityScale = 1.5") || !moduleSources.get("import-export")?.includes("renderer.setPixelRatio(Math.min(4") || !moduleSources.get("import-export")?.includes("renderConnectedAnimationWebm")) {
+  throw new Error("Animation video export must support supersampled high-quality connected sequences.");
+}
+if (!documentSource.includes('id="animationVideoLengthModeSelect"') || !moduleSources.get("import-export")?.includes("endOnLastClip ? plan.length") || !moduleSources.get("panels")?.includes('animationVideoLengthModeSelect?.value === "clips"')) {
+  throw new Error("Video export must support fixed seconds or ending exactly on the final connected clip.");
+}
+if (!moduleSources.get("import-export")?.includes("Math.floor(30000 / Math.max(1, cellWidth))") || !moduleSources.get("import-export")?.includes("sourceFrame % (sheet.columns || sheet.shots.length)")) {
+  throw new Error("High-resolution animation frames must wrap safely before reaching browser canvas width limits.");
+}
+if (!moduleSources.get("rigging")?.includes("function animationJumpLift") || !moduleSources.get("rigging")?.includes("Math.sin(Math.PI * phase)") || !moduleSources.get("rigging")?.includes("bone.position.y += jumpLift")) {
+  throw new Error("Jump clips must lift the root hierarchy through a visible vertical arc.");
+}
+for (const cleanCaptureRequirement of ["surfaceComponentMarker.visible = false", "modelingEdgesOverlay.visible = false", "knifeCutGuideGroup.visible = false", "meshIntegrityGuideGroup.visible = false"]) {
+  if (!moduleSources.get("import-export")?.includes(cleanCaptureRequirement)) throw new Error(`Animation capture must hide editor helper: ${cleanCaptureRequirement}`);
+}
+if (!moduleSources.get("import-export")?.includes("front: new THREE.Vector3(0, .05, -1)") || !moduleSources.get("import-export")?.includes("back: new THREE.Vector3(0, .05, 1)")) {
+  throw new Error("Front and Back animation exports must use the corrected Minecraft-facing orientation.");
 }
 for (const texturePaintControl of [
   'data-texture-tool="pen"',
