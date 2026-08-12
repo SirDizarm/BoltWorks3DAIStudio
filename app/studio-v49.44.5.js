@@ -47714,7 +47714,8 @@ void main() {
         selectedId: selected?.userData?.id || null,
         selectedGroupId: selectedGroupRecordId || null,
         checkedIds: [...checkedIds],
-        activeGroupIds: [...activeGroupIds]
+        activeGroupIds: [...activeGroupIds],
+        rigging: typeof serializeBoneRig === "function" ? serializeBoneRig() : null
       }
     };
   }
@@ -47751,6 +47752,7 @@ void main() {
       selectedGroupRecordId = previous.editor.selectedGroupId && sceneGroupRegistry.has(previous.editor.selectedGroupId) ? previous.editor.selectedGroupId : null;
       selectObject(previous.editor.selectedId ? findObject(previous.editor.selectedId) : null, { keepGroup: true });
     }
+    if (previous.editor?.rigging && typeof restoreBoneRig === "function") restoreBoneRig(previous.editor.rigging);
     isRestoring = false;
     updateUndoButton();
     log("Undo.");
@@ -54216,9 +54218,13 @@ end
     mainBoneRaycaster.setFromCamera(bonePointer, camera);
     return mainBoneRaycaster.intersectObjects([boneJoystickHandle, boneJoystickHit, boneJoystickShaft], false).length > 0;
   }
+  function recordBoneHistory(label) {
+    if (typeof recordHistory === "function" && !(typeof isRestoring !== "undefined" && isRestoring)) recordHistory(label);
+  }
   function beginBoneAimDrag(event) {
     const bone = selectedBone();
     if (!bone) return false;
+    recordBoneHistory("bone rotate");
     const base = (bone.displayPosition || bone.position).clone();
     boneAimDrag = {
       pointerId: event.pointerId,
@@ -54267,7 +54273,10 @@ end
   var boneTransform = new TransformControls(camera, renderer.domElement);
   boneTransform.visible = false;
   boneTransform.setSize(0.9);
-  boneTransform.addEventListener("dragging-changed", (event) => orbit.enabled = !event.value);
+  boneTransform.addEventListener("dragging-changed", (event) => {
+    orbit.enabled = !event.value;
+    if (event.value && selectedBone()) recordBoneHistory("bone transform");
+  });
   boneTransform.addEventListener("objectChange", () => {
     const bone = selectedBone();
     if (!bone || !boneTransform.dragging) return;
@@ -54368,7 +54377,8 @@ end
         tail: bone.tail?.toArray().map(round2) || bone.position.clone().add(new Vector3(0, 0.12, 0)).toArray().map(round2),
         blockbenchUuid: bone.blockbenchUuid || null,
         blockbenchSourcePosition: bone.blockbenchSourcePosition?.toArray().map(round2) || null,
-        blockbenchLocalRotation: bone.blockbenchLocalRotation?.toArray().map(round2) || null
+        blockbenchLocalRotation: bone.blockbenchLocalRotation?.toArray().map(round2) || null,
+        hidden: !!bone.hidden
       })),
       animation: { fps: animationState.fps, end: animationState.end, frame: animationState.frame, keys: animationState.keys }
     };
@@ -54385,7 +54395,8 @@ end
       tail: new Vector3().fromArray(Array.isArray(bone.tail) ? bone.tail : [0, index * 0.1 + 0.12, 0]),
       blockbenchUuid: bone.blockbenchUuid || null,
       blockbenchSourcePosition: Array.isArray(bone.blockbenchSourcePosition) ? new Vector3().fromArray(bone.blockbenchSourcePosition) : null,
-      blockbenchLocalRotation: Array.isArray(bone.blockbenchLocalRotation) ? new Vector3().fromArray(bone.blockbenchLocalRotation) : null
+      blockbenchLocalRotation: Array.isArray(bone.blockbenchLocalRotation) ? new Vector3().fromArray(bone.blockbenchLocalRotation) : null,
+      hidden: !!bone.hidden
     }));
     for (const bone of rigBones) {
       const child = rigBones.find((candidate) => candidate.parentId === bone.id);
@@ -54423,9 +54434,11 @@ end
     if (els.showBonesInput) els.showBonesInput.checked = data.showGuides ?? true;
     setupSkinnedRig();
     if (!activeSkinRuntime) prepareAnimationBindingRest();
+    bonesGlued = !!activeSkinRuntime || objects.some((o) => o.userData?.minecraft?.boneId || o.userData?.minecraftBoneId);
     animationSetFrame(animationState.frame, { render: false });
     rebuildBoneVisuals();
     syncBonePanel();
+    updateGlueButton();
   }
   function animationPoseForBone(bone) {
     return { position: bone.position.toArray(), rotation: bone.rotation.toArray() };
@@ -55005,6 +55018,7 @@ end
   function importBoneStructure(data, fileName = "bone structure") {
     const sourceBones = importedBoneArray(data);
     if (!sourceBones?.length) throw new Error("Bone structure JSON does not contain a non-empty bones array.");
+    recordBoneHistory("import bone structure");
     const coordinateSpace = String(data?.coordinateSpace || data?.rigging?.coordinateSpace || "world").toLowerCase();
     const rotationUnit = String(data?.rotationUnit || data?.rigging?.rotationUnit || "radians").toLowerCase();
     const usedIds = /* @__PURE__ */ new Set();
@@ -55061,6 +55075,7 @@ end
     });
   }
   function addRigBone(asChild) {
+    recordBoneHistory("add bone");
     const parent = asChild ? selectedBone() : null;
     const position = parent ? parent.position.clone().add(new Vector3(0, 1, 0)) : new Vector3(0, rigBones.length ? rigBones.length * 0.25 : 1, 0);
     const bone = {
@@ -55079,6 +55094,7 @@ end
   function deleteSelectedBone() {
     const bone = selectedBone();
     if (!bone) return;
+    recordBoneHistory("delete bone");
     rigBones.forEach((child) => {
       if (child.parentId === bone.id) child.parentId = bone.parentId || null;
     });
@@ -55099,6 +55115,7 @@ end
     boneRigGroup.layers.enable(1);
     boneRigGroup.layers.enable(2);
     for (const bone2 of rigBones) {
+      if (bone2.hidden) continue;
       const guidePosition = bone2.displayPosition || bone2.position;
       const directChild = rigBones.find((candidate) => candidate.parentId === bone2.id);
       const childTail = directChild ? directChild.displayPosition || directChild.position : null;
@@ -55190,11 +55207,33 @@ end
     if (!els.boneList) return;
     els.boneList.innerHTML = "";
     for (const bone2 of rigBones) {
-      const option = document.createElement("option");
-      option.value = bone2.id;
-      option.textContent = bone2.parentId ? `  ${bone2.name}` : bone2.name;
-      option.selected = bone2.id === selectedBoneId;
-      els.boneList.append(option);
+      const row = document.createElement("div");
+      row.className = "bone-row" + (bone2.id === selectedBoneId ? " selected" : "") + (bone2.hidden ? " bone-hidden" : "");
+      row.dataset.boneId = bone2.id;
+      row.setAttribute("role", "option");
+      const name = document.createElement("span");
+      name.className = "bone-name";
+      name.textContent = (bone2.parentId ? "  " : "") + bone2.name;
+      row.append(name);
+      const hideBtn = document.createElement("button");
+      hideBtn.type = "button";
+      hideBtn.className = "bone-hide-btn";
+      hideBtn.title = bone2.hidden ? "Show bone" : "Hide bone";
+      hideBtn.textContent = bone2.hidden ? "\u25E1" : "\u{1F441}";
+      hideBtn.addEventListener("click", (event) => {
+        event.stopPropagation();
+        bone2.hidden = !bone2.hidden;
+        recordBoneHistory(bone2.hidden ? "hide bone" : "show bone");
+        rebuildBoneVisuals();
+        syncBonePanel();
+      });
+      row.append(hideBtn);
+      row.addEventListener("click", () => {
+        selectedBoneId = selectedBoneId === bone2.id ? null : bone2.id;
+        rebuildBoneVisuals();
+        syncBonePanel();
+      });
+      els.boneList.append(row);
     }
     const bone = selectedBone();
     els.boneParentSelect.innerHTML = '<option value="">None (root)</option>';
@@ -55220,6 +55259,7 @@ end
   function applyBonePanelValues() {
     const bone = selectedBone();
     if (!bone) return;
+    recordBoneHistory("bone edit");
     bone.name = els.boneNameInput.value.trim() || bone.name;
     bone.parentId = els.boneParentSelect.value || null;
     bone.position.set(
@@ -55237,6 +55277,7 @@ end
     syncBonePanel();
   }
   function toggleGlueBones() {
+    recordBoneHistory(bonesGlued ? "unglue bones" : "glue bones");
     if (bonesGlued) unglueBonesFromModel();
     else glueBonesToSelected();
   }
@@ -55394,6 +55435,7 @@ end
     selectedBoneId = hit.object.userData.boneId;
     const bone = selectedBone();
     if (!bone) return;
+    recordBoneHistory("bone move");
     if (view === "front") boneDragPlane.setFromNormalAndCoplanarPoint(new Vector3(0, 0, 1), bone.position);
     else boneDragPlane.setFromNormalAndCoplanarPoint(new Vector3(1, 0, 0), bone.position);
     boneRaycaster.ray.intersectPlane(boneDragPlane, boneDragHit);
@@ -56116,7 +56158,7 @@ public final class ${modelName}ClientRegistration {
 }
 `;
     const root = `src/main/java/${packageName.replace(/\./g, "/")}`;
-    const readme = `Generated by BoltWorks 3D AI Studio v49.44.4 for NeoForge 1.21.1.
+    const readme = `Generated by BoltWorks 3D AI Studio v49.44.5 for NeoForge 1.21.1.
 
 1. Copy the Java files into the matching source package.
 2. Replace ModEntities.YOUR_ENTITY in ${modelName}ClientRegistration.java and uncomment the line.
@@ -56584,11 +56626,6 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.boneModeMoveBtn?.addEventListener("click", () => setBoneGizmoToolMode("translate"));
   els.boneModeRotateBtn?.addEventListener("click", () => setBoneGizmoToolMode("rotate"));
   els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
-  els.boneList?.addEventListener("change", () => {
-    selectedBoneId = els.boneList.value || null;
-    rebuildBoneVisuals();
-    syncBonePanel();
-  });
   [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ].forEach((control) => {
     control?.addEventListener("change", applyBonePanelValues);
   });

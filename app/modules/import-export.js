@@ -385,7 +385,8 @@ function cloneSceneState() {
       selectedId: selected?.userData?.id || null,
       selectedGroupId: selectedGroupRecordId || null,
       checkedIds: [...checkedIds],
-      activeGroupIds: [...activeGroupIds]
+      activeGroupIds: [...activeGroupIds],
+      rigging: typeof serializeBoneRig === "function" ? serializeBoneRig() : null
     }
   };
 }
@@ -429,6 +430,8 @@ function undo() {
       : null;
     selectObject(previous.editor.selectedId ? findObject(previous.editor.selectedId) : null, { keepGroup: true });
   }
+  // Undo must restore the rig too (bones are part of the editor snapshot).
+  if (previous.editor?.rigging && typeof restoreBoneRig === "function") restoreBoneRig(previous.editor.rigging);
   isRestoring = false;
   updateUndoButton();
   log("Undo.");
