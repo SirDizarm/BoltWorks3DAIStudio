@@ -55398,11 +55398,14 @@ end
   function fitBoneCamera(referenceCamera, canvasElement, view) {
     const rect = canvasElement.parentElement.getBoundingClientRect();
     const root = rigBones.find((bone) => !boneById(bone.parentId)) || rigBones[0] || null;
-    const center = root ? (root.displayPosition || root.position).clone() : new Vector3(0, 1, 0);
+    const rootPos = root ? root.displayPosition || root.position : new Vector3(0, 1, 0);
     if (!fitBoneCamera.restExtent) {
-      const size = boneRigBounds().getSize(new Vector3());
+      const restBox = boneRigBounds();
+      const size = restBox.getSize(new Vector3());
       fitBoneCamera.restExtent = Math.max(4, size.y * 1.4, size.x * 1.4, size.z * 1.4, size.length() * 0.55);
+      fitBoneCamera.restCenterY = restBox.getCenter(new Vector3()).y;
     }
+    const center = new Vector3(rootPos.x, fitBoneCamera.restCenterY ?? rootPos.y, rootPos.z);
     const extent = fitBoneCamera.restExtent;
     const aspect2 = rect.width / Math.max(1, rect.height);
     const halfHeight = Math.max(extent * 0.5, extent / Math.max(0.1, aspect2) * 0.5);

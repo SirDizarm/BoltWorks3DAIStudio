@@ -1447,15 +1447,17 @@ function fitBoneCamera(referenceCamera, canvasElement, view) {
   // to the model's RESTING bounds so animation (tail/limb movement) does not
   // make the Front/Side view pan and zoom all over the place.
   const root = rigBones.find(bone => !boneById(bone.parentId)) || rigBones[0] || null;
-  // Follow the root bone's CURRENT position so the body stays centered even if
-  // it bobs during animation; only the frame size is frozen (no zoom drift).
-  const center = root ? (root.displayPosition || root.position).clone() : new THREE.Vector3(0, 1, 0);
-  // Capture a stable extent once per rig (reset when a new rig loads), from the
-  // resting pose. Never recapture during playback or on later frames.
+  // Center horizontally on the root bone (so the body stays centered as it
+  // moves), but vertically on the resting bounds so the whole model — head to
+  // feet — stays fully visible in the frame.
+  const rootPos = root ? (root.displayPosition || root.position) : new THREE.Vector3(0, 1, 0);
   if (!fitBoneCamera.restExtent) {
-    const size = boneRigBounds().getSize(new THREE.Vector3());
+    const restBox = boneRigBounds();
+    const size = restBox.getSize(new THREE.Vector3());
     fitBoneCamera.restExtent = Math.max(4, size.y * 1.4, size.x * 1.4, size.z * 1.4, size.length() * .55);
+    fitBoneCamera.restCenterY = restBox.getCenter(new THREE.Vector3()).y;
   }
+  const center = new THREE.Vector3(rootPos.x, fitBoneCamera.restCenterY ?? rootPos.y, rootPos.z);
   const extent = fitBoneCamera.restExtent;
   const aspect = rect.width / Math.max(1, rect.height);
   const halfHeight = Math.max(extent * .5, extent / Math.max(.1, aspect) * .5);
