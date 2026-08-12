@@ -390,7 +390,7 @@ function serializeBoneRig() {
 }
 
 function restoreBoneRig(data = {}) {
-  fitBoneCamera.restSize = null;  // reframe Front/Side views for the new rig
+  fitBoneCamera.restExtent = null;  // reframe Front/Side views for the new rig
   rigBones = (data.bones || []).map((bone, index) => ({
     id: bone.id || freshBoneId(),
     name: bone.name || `Bone ${index + 1}`,
@@ -1032,7 +1032,7 @@ function importedBoneArray(data) {
 }
 
 function importBoneStructure(data, fileName = "bone structure") {
-  fitBoneCamera.restSize = null;  // reframe Front/Side views for the new rig
+  fitBoneCamera.restExtent = null;  // reframe Front/Side views for the new rig
   const sourceBones = importedBoneArray(data);
   if (!sourceBones?.length) throw new Error("Bone structure JSON does not contain a non-empty bones array.");
   recordBoneHistory("import bone structure");
@@ -1443,18 +1443,20 @@ function boneRigBounds() {
 
 function fitBoneCamera(referenceCamera, canvasElement, view) {
   const rect = canvasElement.parentElement.getBoundingClientRect();
-  const box = boneRigBounds();
-  // Center on the root (first) bone — the model's center — and freeze the frame
-  // size to the model's resting bounds, so animation (tail/limb movement) does
-  // not make the Front/Side view pan and zoom all over the place.
+  // Center on the root (first) bone — the model's center. Freeze the frame size
+  // to the model's RESTING bounds so animation (tail/limb movement) does not
+  // make the Front/Side view pan and zoom all over the place.
   const root = rigBones.find(bone => !boneById(bone.parentId)) || rigBones[0] || null;
-  const center = root ? (root.displayPosition || root.position).clone() : box.getCenter(new THREE.Vector3());
-  // Use a stable size from the model's resting bounds, not the live (animated) one.
-  if (!fitBoneCamera.restSize) {
-    const size = box.getSize(new THREE.Vector3());
-    fitBoneCamera.restSize = Math.max(4, size.y * 1.35, (view === "front" ? size.x : size.z) * 1.35, size.length() * .5);
+  // Follow the root bone's CURRENT position so the body stays centered even if
+  // it bobs during animation; only the frame size is frozen (no zoom drift).
+  const center = root ? (root.displayPosition || root.position).clone() : new THREE.Vector3(0, 1, 0);
+  // Capture a stable extent once per rig (reset when a new rig loads), from the
+  // resting pose. Never recapture during playback or on later frames.
+  if (!fitBoneCamera.restExtent) {
+    const size = boneRigBounds().getSize(new THREE.Vector3());
+    fitBoneCamera.restExtent = Math.max(4, size.y * 1.4, size.x * 1.4, size.z * 1.4, size.length() * .55);
   }
-  const extent = fitBoneCamera.restSize;
+  const extent = fitBoneCamera.restExtent;
   const aspect = rect.width / Math.max(1, rect.height);
   const halfHeight = Math.max(extent * .5, extent / Math.max(.1, aspect) * .5);
   const halfWidth = halfHeight * aspect;

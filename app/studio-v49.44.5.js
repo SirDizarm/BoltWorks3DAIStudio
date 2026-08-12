@@ -54384,7 +54384,7 @@ end
     };
   }
   function restoreBoneRig(data = {}) {
-    fitBoneCamera.restSize = null;
+    fitBoneCamera.restExtent = null;
     rigBones = (data.bones || []).map((bone, index) => ({
       id: bone.id || freshBoneId(),
       name: bone.name || `Bone ${index + 1}`,
@@ -55017,7 +55017,7 @@ end
     return null;
   }
   function importBoneStructure(data, fileName = "bone structure") {
-    fitBoneCamera.restSize = null;
+    fitBoneCamera.restExtent = null;
     const sourceBones = importedBoneArray(data);
     if (!sourceBones?.length) throw new Error("Bone structure JSON does not contain a non-empty bones array.");
     recordBoneHistory("import bone structure");
@@ -55397,14 +55397,13 @@ end
   }
   function fitBoneCamera(referenceCamera, canvasElement, view) {
     const rect = canvasElement.parentElement.getBoundingClientRect();
-    const box = boneRigBounds();
     const root = rigBones.find((bone) => !boneById(bone.parentId)) || rigBones[0] || null;
-    const center = root ? (root.displayPosition || root.position).clone() : box.getCenter(new Vector3());
-    if (!fitBoneCamera.restSize) {
-      const size = box.getSize(new Vector3());
-      fitBoneCamera.restSize = Math.max(4, size.y * 1.35, (view === "front" ? size.x : size.z) * 1.35, size.length() * 0.5);
+    const center = root ? (root.displayPosition || root.position).clone() : new Vector3(0, 1, 0);
+    if (!fitBoneCamera.restExtent) {
+      const size = boneRigBounds().getSize(new Vector3());
+      fitBoneCamera.restExtent = Math.max(4, size.y * 1.4, size.x * 1.4, size.z * 1.4, size.length() * 0.55);
     }
-    const extent = fitBoneCamera.restSize;
+    const extent = fitBoneCamera.restExtent;
     const aspect2 = rect.width / Math.max(1, rect.height);
     const halfHeight = Math.max(extent * 0.5, extent / Math.max(0.1, aspect2) * 0.5);
     const halfWidth = halfHeight * aspect2;
@@ -55837,7 +55836,7 @@ end
     sceneGroupRegistry.clear();
     rigBones = [];
     selectedBoneId = null;
-    if (typeof fitBoneCamera === "function") fitBoneCamera.restSize = null;
+    if (typeof fitBoneCamera === "function") fitBoneCamera.restExtent = null;
     const groupMap = /* @__PURE__ */ new Map();
     const cubeParents = /* @__PURE__ */ new Map();
     collectBlockbenchHierarchy(project.outliner, null, groupMap, cubeParents);

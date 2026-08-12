@@ -377,7 +377,7 @@ async function importBlockbenchProject(file) {
   sceneGroupRegistry.clear();
   rigBones = [];
   selectedBoneId = null;
-  if (typeof fitBoneCamera === "function") fitBoneCamera.restSize = null;
+  if (typeof fitBoneCamera === "function") fitBoneCamera.restExtent = null;
   const groupMap = new Map();
   const cubeParents = new Map();
   collectBlockbenchHierarchy(project.outliner, null, groupMap, cubeParents);
