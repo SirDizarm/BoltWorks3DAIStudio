@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.43.1.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.44.3.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -35,6 +35,17 @@ if (
   || minecraftRigSmoke.animations?.[0]?.animators?.["bone-arm"]?.keyframes?.length !== 3
 ) {
   throw new Error("The Minecraft smoke fixture must preserve cuboids, nested bones, and animation keys.");
+}
+
+if (meshesSource.includes("cullCoincidentOpposingMergeTriangles") || meshesSource.includes("culledInternalTriangles")) {
+  throw new Error("Merge Mesh must preserve source triangles instead of heuristically deleting coincident surfaces.");
+}
+
+if (/depthWrite\s*=\s*[^;\n]*textureHasTransparency/.test(meshesSource) || /depthWrite\s*=\s*[^;\n]*textureHasTransparency/.test(readFileSync(new URL("../app/modules/import-export.js", import.meta.url), "utf8"))) {
+  throw new Error("Texture alpha must not disable depth writing; only sub-1 mesh opacity may do that.");
+}
+if (meshesSource.includes('materialRule === "glass" || opacity < .999 || !!mesh.userData?.textureHasTransparency')) {
+  throw new Error("Texture alpha must not force double-sided interior rendering for opaque meshes.");
 }
 
 if (!authoringManifest.machineResources?.styleLibraries?.includes("libraries/medieval-house/README.md")) {
@@ -89,6 +100,51 @@ function functionSource(source, name) {
     if (depth === 0) return source.slice(start, index + 1);
   }
   throw new Error(`Could not isolate ${name} from the mesh module.`);
+}
+
+{
+  const first = { userData: { id: "first" } };
+  const second = { userData: { id: "second" } };
+  const context = {
+    selected: null,
+    selectedGroupRecordId: null,
+    selectedFaces: [],
+    checked: [],
+    active: [],
+    checkedObjects: () => context.checked,
+    activeGroupObjects: () => context.active,
+    selectedFaceMeshes: () => context.faceMeshes || [],
+    groupRecord: id => id ? { id } : null,
+    descendantMeshesForGroup: () => [first, second]
+  };
+  vm.createContext(context);
+  vm.runInContext([
+    "uniqueMeshList",
+    "meshActionCandidates",
+    "resolveSelectionTargets",
+    "singleMeshTarget",
+    "mergeSelectionTargets"
+  ].map(name => functionSource(meshesSource, name)).join("\n"), context);
+
+  context.checked = [first, second];
+  if (context.singleMeshTarget() !== null) {
+    throw new Error("Single-mesh tools must not silently edit the first mesh in a multi-selection.");
+  }
+  context.checked = [first];
+  context.selected = second;
+  if (context.singleMeshTarget() !== second) {
+    throw new Error("Single-mesh tools must prefer the explicitly selected mesh.");
+  }
+  context.selected = null;
+  context.active = [first, second];
+  if (context.mergeSelectionTargets().length !== 2) {
+    throw new Error("Merge Mesh must prefer a complete multi-selection over one stale checked mesh.");
+  }
+  context.active = [];
+  context.selected = second;
+  if (context.mergeSelectionTargets().length !== 2) {
+    throw new Error("Merge Mesh must combine an active mesh with an additional checked mesh.");
+  }
 }
 
 {
@@ -301,6 +357,11 @@ function createSingleTriangleUvHoleFixture() {
     updateAll() {},
     syncSurfaceEditorUi() {},
     updateSurfaceGizmoAttachment() {},
+    resolveSelectionTargets: mode => (
+      mode === "faces"
+        ? [...new Set(context.selectedFaces.map(face => face.mesh).filter(Boolean))]
+        : (context.selected ? [context.selected] : [])
+    ),
     log: (message, details) => messages.push({ message, details })
   };
   vm.createContext(context);
@@ -754,7 +815,9 @@ function createSingleTriangleUvHoleFixture() {
     "decimateAttributeKey",
     "protectedDecimatePlan",
     "lodNormalizedSettings",
-    "buildProtectedLodPlan"
+    "buildProtectedLodPlan",
+    "lodPartLevel",
+    "buildGroupLodPlan"
   ].map(name => functionSource(meshesSource, name)).join("\n"), context);
   const source = new THREE.SphereGeometry(2, 24, 16).toNonIndexed();
   const originalPositions = [...source.getAttribute("position").array];
@@ -793,7 +856,40 @@ function createSingleTriangleUvHoleFixture() {
       reason: plan.reason
     })}`);
   }
+  const cube = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+  const groupPlan = context.buildGroupLodPlan({
+    key: "group:test",
+    groupId: "test",
+    name: "Test Group",
+    meshes: [
+      { name: "Sphere", userData: { id: "sphere" }, geometry: source },
+      { name: "Cube", userData: { id: "cube" }, geometry: cube }
+    ]
+  }, context.lodNormalizedSettings({
+    lod1: 10,
+    lod2: 25,
+    lod3: 65,
+    featureAngle: 50,
+    preserveBoundaries: true,
+    preserveUvSeams: true,
+    preserveMaterials: true,
+    hideGenerated: true
+  }));
+  if (
+    !groupPlan.safe
+    || groupPlan.parts.length !== 2
+    || !groupPlan.levelTriangleCounts.every((count, index) => count < [groupPlan.originalTriangles, ...groupPlan.levelTriangleCounts][index])
+  ) {
+    throw new Error(`Grouped LOD must create complete progressively lighter levels while retaining low-poly parts. ${JSON.stringify({
+      safe: groupPlan.safe,
+      parts: groupPlan.parts.length,
+      counts: [groupPlan.originalTriangles, ...groupPlan.levelTriangleCounts],
+      reason: groupPlan.reason
+    })}`);
+  }
+  groupPlan.parts.forEach(part => part.plan.levels.forEach(level => level.geometry.dispose()));
   plan.levels.forEach(level => level.geometry.dispose());
+  cube.dispose();
   source.dispose();
 }
 
@@ -857,6 +953,11 @@ function createSingleTriangleUvHoleFixture() {
     updateAll() {},
     syncSurfaceEditorUi() {},
     updateSurfaceGizmoAttachment() {},
+    resolveSelectionTargets: mode => (
+      mode === "faces"
+        ? [...new Set(context.selectedFaces.map(face => face.mesh).filter(Boolean))]
+        : (context.selected ? [context.selected] : [])
+    ),
     log: (message, details) => messages.push({ message, details })
   };
   vm.createContext(context);
@@ -971,7 +1072,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.43.1.js?v=49.43.1"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.44.3.js?v=49.44.3"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
@@ -994,7 +1095,7 @@ for (const kneeId of ["walk-shin-l", "walk-shin-r"]) {
 if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
   throw new Error("Top view must not replace the OrbitControls world-up axis.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.43.1.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.44.3.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -1007,7 +1108,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.43.1",
+  "tool-docking.js?v=49.44.3",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1187,6 +1288,11 @@ for (const required of [
   "function additiveSelectionRequested(event)",
   "event?.shiftKey || event?.ctrlKey || event?.metaKey",
   "Multi-select: Shift/Ctrl+click",
+  'addObject({ shape: btn.dataset.add }, { select: true })',
+  "candidates.checked.length === 1",
+  "if (candidates.active.length >= 2) return uniqueMeshList(candidates.active)",
+  "sourceGroupId: typeof lod.sourceGroupId",
+  'key: `group:${record.id}:${groupMeshes.map(mesh => mesh.userData.id).join(",")}`',
   "function mirrorMeshAcrossWorldPlane(mesh, axis, center)",
   "groupBoundsCenter(targets)",
   "parts around their shared ${axis.toUpperCase()} center",
@@ -1216,6 +1322,8 @@ for (const required of [
   "materialRule",
   "createMergedMaterialAtlas",
   "loadMergeTextureImage",
+  "context.rect(x, y, cellSize, cellSize)",
+  "context.clip()",
   "generatedMaterialAtlas",
   "Material Atlas",
   "materialAtlas.mapUv",
@@ -1699,8 +1807,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.43.1 Experimental") || !documentSource.includes("v49.43.1 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.43.1 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.44.3 Experimental") || !documentSource.includes("v49.44.3 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.44.3 version.");
 }
 
 for (const attentionElement of ["aiViewerAttention", "aiViewerAttentionMessage", "aiViewerAttentionDirective"]) {

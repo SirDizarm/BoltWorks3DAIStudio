@@ -246,7 +246,7 @@ function finishTrianglePainting(pointerId = null) {
 }
 
 document.querySelectorAll("[data-add]").forEach(btn => {
-  btn.addEventListener("click", () => addObject({ shape: btn.dataset.add }));
+  btn.addEventListener("click", () => addObject({ shape: btn.dataset.add }, { select: true }));
 });
 
 document.querySelectorAll("[data-mode]").forEach(btn => {

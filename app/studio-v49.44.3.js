@@ -32635,7 +32635,7 @@ void main() {
   var removeDoublesState = { meshId: null, tolerance: null, plan: null };
   var meshStatisticsState = { meshId: null, stats: null, text: "" };
   var decimateState = { meshId: null, settingsKey: "", plan: null };
-  var lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+  var lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
   var uvUnwrapState = { meshId: null, settingsKey: "", plan: null };
   var lastBakedTextureAtlas = { meshId: null, dataUrl: null, fileName: null, atlasSize: 0, sourceTextureUrl: null, sourceTextureName: null };
   var hoveredHoleLoopInfo = null;
@@ -34133,7 +34133,7 @@ void main() {
     const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
     const materialRule = normalizeMaterialRule(mesh.userData?.materialRule || "auto");
     const opacity = Number(mesh.userData?.opacity ?? primaryMeshMaterial(mesh)?.opacity ?? 1);
-    const needsInteriorView = materialRule === "glass" || opacity < 0.999 || !!mesh.userData?.textureHasTransparency;
+    const needsInteriorView = materialRule === "glass" || opacity < 0.999;
     for (const material of materials) {
       if (!material?.isMaterial) continue;
       material.side = needsInteriorView ? DoubleSide : FrontSide;
@@ -34233,7 +34233,7 @@ void main() {
     const materialOpacity = Number(mesh.userData?.opacity ?? mesh.material.opacity ?? 1);
     const textureHasTransparency = !!mesh.userData?.textureHasTransparency;
     mesh.material.transparent = materialOpacity < 0.999 || textureHasTransparency;
-    mesh.material.depthWrite = materialOpacity >= 0.999 && !textureHasTransparency;
+    mesh.material.depthWrite = materialOpacity >= 0.999;
     mesh.material.needsUpdate = true;
     mesh.userData.textureUrl = textureUrl || null;
     mesh.userData.textureName = textureUrl ? textureName : null;
@@ -36082,7 +36082,7 @@ void main() {
     const materialOpacity = Math.max(0.05, Math.min(1, Number(opacity) || 1));
     mesh.material.opacity = materialOpacity;
     mesh.material.transparent = materialOpacity < 0.999 || !!textureHasTransparency;
-    mesh.material.depthWrite = materialOpacity >= 0.999 && !textureHasTransparency;
+    mesh.material.depthWrite = materialOpacity >= 0.999;
     mesh.material.needsUpdate = true;
     mesh.name = name || `${shape} ${defaultOrdinal}`;
     mesh.userData = {
@@ -36126,6 +36126,7 @@ void main() {
         setId: String(lod.setId || ""),
         level: Math.max(0, Number(lod.level) || 0),
         sourceId: String(lod.sourceId || objectId),
+        sourceGroupId: typeof lod.sourceGroupId === "string" && lod.sourceGroupId.trim() ? lod.sourceGroupId.trim() : null,
         reduction: Math.max(0, Number(lod.reduction) || 0),
         triangleCount: Math.max(0, Number(lod.triangleCount) || 0),
         screenCoverage: Math.max(0, Math.min(1, Number(lod.screenCoverage) || 0))
@@ -37074,6 +37075,33 @@ void main() {
       selectedOnly: selected ? [selected] : []
     };
   }
+  function resolveSelectionTargets(mode = "single") {
+    const candidates = meshActionCandidates();
+    const selectedGroup = selectedGroupRecordId && groupRecord(selectedGroupRecordId) ? descendantMeshesForGroup(selectedGroupRecordId) : [];
+    if (mode === "faces") return candidates.faceMeshes;
+    if (mode === "group") return uniqueMeshList(selectedGroup);
+    if (mode === "multiple") {
+      if (candidates.checked.length >= 2) return uniqueMeshList(candidates.checked);
+      if (selectedGroup.length) return uniqueMeshList(selectedGroup);
+      if (candidates.active.length >= 2) return uniqueMeshList(candidates.active);
+      return uniqueMeshList([
+        ...candidates.selectedOnly,
+        ...candidates.checked,
+        ...candidates.active
+      ]);
+    }
+    if (mode === "meshes") {
+      if (candidates.checked.length) return uniqueMeshList(candidates.checked);
+      if (selectedGroup.length) return uniqueMeshList(selectedGroup);
+      if (candidates.active.length) return uniqueMeshList(candidates.active);
+      return uniqueMeshList(candidates.selectedOnly);
+    }
+    if (candidates.faceMeshes.length === 1) return candidates.faceMeshes;
+    if (candidates.selectedOnly.length === 1) return candidates.selectedOnly;
+    if (candidates.checked.length === 1) return candidates.checked;
+    if (candidates.active.length === 1) return candidates.active;
+    return [];
+  }
   function cutterActionSelection() {
     const checked = checkedObjects();
     if (selected && checked.includes(selected) && checked.length >= 2) {
@@ -37094,8 +37122,7 @@ void main() {
     };
   }
   function singleMeshTarget() {
-    const candidates = meshActionCandidates();
-    return candidates.selectedOnly[0] || candidates.faceMeshes[0] || candidates.checked[0] || candidates.active[0] || null;
+    return resolveSelectionTargets("single")[0] || null;
   }
   function pairMeshTargets() {
     const candidates = meshActionCandidates();
@@ -37299,9 +37326,7 @@ void main() {
     log(`${pivotTargets.length > 1 ? "Shared" : "Single-part"} pivot reset to the ${pivotTargets.length > 1 ? "checked-parts" : "selected part"} center.`);
   }
   function textureTargetObjects() {
-    const checked = checkedObjects();
-    if (checked.length) return checked;
-    return selected ? [selected] : [];
+    return resolveSelectionTargets("meshes");
   }
   function pivotManagedObjects() {
     const groupObjects = transformTargetObjects();
@@ -39689,7 +39714,7 @@ void main() {
     return loop;
   }
   function findSelectedMeshHoles({ announce = true, preferredKey = "" } = {}) {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     if (!mesh?.geometry) {
       holeRepairState = { meshId: null, loops: [], index: -1 };
       clearSelectedHoleLoop();
@@ -39826,7 +39851,7 @@ void main() {
     return hadReport;
   }
   function checkSelectedMeshIntegrity({ announce = true } = {}) {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     if (!mesh?.geometry) {
       clearMeshIntegrityReport();
       if (announce) log("Non-manifold Check needs one selected editable mesh.");
@@ -40073,7 +40098,7 @@ void main() {
     syncRemoveDoublesUi("Tolerance changed. Analyze again before removing doubles.");
   }
   function analyzeSelectedMeshDoubles({ announce = true } = {}) {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     if (!mesh?.geometry) {
       removeDoublesState = { meshId: null, tolerance: null, plan: null };
       syncRemoveDoublesUi("Select one editable mesh, then analyze nearby overlapping vertices.");
@@ -40101,7 +40126,7 @@ void main() {
     return plan;
   }
   function removeAnalyzedDoubles() {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     const tolerance = removeDoublesTolerance();
     if (!mesh?.geometry || mesh.userData.id !== removeDoublesState.meshId || tolerance !== removeDoublesState.tolerance) {
       analyzeSelectedMeshDoubles();
@@ -40294,7 +40319,7 @@ void main() {
     if (els.copyMeshStatisticsBtn) els.copyMeshStatisticsBtn.disabled = !meshStatisticsState.text;
   }
   function calculateSelectedMeshStatistics({ announce = true } = {}) {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     if (!mesh?.geometry) {
       meshStatisticsState = { meshId: null, stats: null, text: "" };
       if (els.meshStatisticsStatus) els.meshStatisticsStatus.textContent = "Select one editable mesh, then calculate a read-only geometry report.";
@@ -40413,6 +40438,7 @@ void main() {
     }
     const triangles = [];
     const edgeMap = /* @__PURE__ */ new Map();
+    const triangleIdsByVertex = /* @__PURE__ */ new Map();
     const edgeSignature = (a, b) => a < b ? `${a}|${b}` : `${b}|${a}`;
     for (let offset = 0; offset + 2 < position.count; offset += 3) {
       const ids = [vertexIds[offset], vertexIds[offset + 1], vertexIds[offset + 2]];
@@ -40432,6 +40458,10 @@ void main() {
         materialIndex: materialIndexForTriangle(working, offset / 3)
       };
       triangles.push(record);
+      ids.forEach((id) => {
+        if (!triangleIdsByVertex.has(id)) triangleIdsByVertex.set(id, /* @__PURE__ */ new Set());
+        triangleIdsByVertex.get(id).add(triangleIndex);
+      });
       for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
         const signature = edgeSignature(ids[a], ids[b]);
         if (!edgeMap.has(signature)) edgeMap.set(signature, { ids: [ids[a], ids[b]], entries: [] });
@@ -40470,7 +40500,35 @@ void main() {
         edge.ids.forEach((id) => protectedIds.add(id));
       }
     }
-    const candidates = [...edgeMap.entries()].filter(([signature, edge]) => edge.entries.length === 2 && !protectedEdgeKeys.has(signature) && !protectedIds.has(edge.ids[0]) && !protectedIds.has(edge.ids[1])).map(([, edge]) => ({
+    const neighborsById = new Map(pointById.map((_, id) => [id, /* @__PURE__ */ new Set()]));
+    for (const edge of edgeMap.values()) {
+      neighborsById.get(edge.ids[0]).add(edge.ids[1]);
+      neighborsById.get(edge.ids[1]).add(edge.ids[0]);
+    }
+    const candidateIsLocallySafe = (edge) => {
+      const [firstId, secondId] = edge.ids;
+      const sharedNeighbors = [...neighborsById.get(firstId)].filter((id) => neighborsById.get(secondId).has(id));
+      if (sharedNeighbors.length !== 2) return false;
+      const center = pointById[firstId].clone().add(pointById[secondId]).multiplyScalar(0.5);
+      const affectedTriangles = /* @__PURE__ */ new Set([
+        ...triangleIdsByVertex.get(firstId),
+        ...triangleIdsByVertex.get(secondId)
+      ]);
+      for (const triangleIndex of affectedTriangles) {
+        const triangle = triangles[triangleIndex];
+        const containsFirst = triangle.ids.includes(firstId);
+        const containsSecond = triangle.ids.includes(secondId);
+        if (containsFirst && containsSecond) continue;
+        const points = triangle.ids.map((id) => id === firstId || id === secondId ? center.clone() : pointById[id].clone());
+        const normal = new Vector3().crossVectors(
+          points[1].clone().sub(points[0]),
+          points[2].clone().sub(points[0])
+        );
+        if (normal.lengthSq() <= 1e-12 || normal.normalize().dot(triangle.normal) <= 0.05) return false;
+      }
+      return true;
+    };
+    const candidates = [...edgeMap.entries()].filter(([signature, edge]) => edge.entries.length === 2 && !protectedEdgeKeys.has(signature) && !protectedIds.has(edge.ids[0]) && !protectedIds.has(edge.ids[1]) && candidateIsLocallySafe(edge)).map(([, edge]) => ({
       ids: edge.ids,
       lengthSquared: pointById[edge.ids[0]].distanceToSquared(pointById[edge.ids[1]])
     })).filter((candidate) => candidate.lengthSquared > 1e-12).sort((a, b) => a.lengthSquared - b.lengthSquared);
@@ -40576,7 +40634,7 @@ void main() {
     syncDecimateUi("Settings changed. Analyze again before applying decimation.");
   }
   function analyzeSelectedMeshDecimation({ announce = true } = {}) {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     if (!mesh?.geometry) {
       decimateState = { meshId: null, settingsKey: "", plan: null };
       syncDecimateUi();
@@ -40602,7 +40660,7 @@ void main() {
     return plan;
   }
   function applyAnalyzedDecimation() {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     const settings = decimateSettingsFromUi();
     if (!mesh?.geometry || mesh.userData.id !== decimateState.meshId || decimateSettingsKey(settings) !== decimateState.settingsKey) {
       analyzeSelectedMeshDecimation();
@@ -40688,12 +40746,18 @@ void main() {
     }));
   }
   function disposeLodPlan(plan) {
+    if (plan?.kind === "group") {
+      for (const part of plan.parts || []) {
+        for (const level of part.plan?.levels || []) level.geometry?.dispose?.();
+      }
+      return;
+    }
     for (const level of plan?.levels || []) level.geometry?.dispose?.();
   }
   function buildProtectedLodPlan(source, options = {}) {
     const settings = lodNormalizedSettings(options);
     const sourcePosition = source?.getAttribute?.("position");
-    const originalTriangles = Math.floor((sourcePosition?.count || 0) / 3);
+    const originalTriangles = Math.floor((source?.index?.count || sourcePosition?.count || 0) / 3);
     const levels = [];
     if (originalTriangles < 8) {
       return { settings, originalTriangles, levels, safe: false, reason: "At least eight triangles are needed to create a useful LOD set." };
@@ -40754,26 +40818,76 @@ void main() {
   }
   function invalidateLodGeneratorAnalysis() {
     disposeLodPlan(lodGeneratorState.plan);
-    lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+    lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
     syncLodGeneratorUi("Settings changed. Analyze the LOD set again before generating it.");
   }
+  function lodSelectionTarget() {
+    const groupMeshes = resolveSelectionTargets("group");
+    if (selectedGroupRecordId && groupMeshes.length) {
+      const record = groupRecord(selectedGroupRecordId);
+      return {
+        key: `group:${record.id}:${groupMeshes.map((mesh2) => mesh2.userData.id).join(",")}`,
+        kind: "group",
+        groupId: record.id,
+        name: record.name,
+        meshes: groupMeshes
+      };
+    }
+    const mesh = resolveSelectionTargets("single")[0] || null;
+    return mesh ? {
+      key: `mesh:${mesh.userData.id}`,
+      kind: "mesh",
+      groupId: null,
+      name: mesh.name,
+      meshes: [mesh]
+    } : null;
+  }
+  function lodPartLevel(part, levelIndex) {
+    return part.plan.levels[levelIndex] || part.plan.levels.at(-1) || null;
+  }
+  function buildGroupLodPlan(target, settings) {
+    const parts = target.meshes.map((mesh) => ({
+      meshId: mesh.userData.id,
+      name: mesh.name,
+      originalTriangles: Math.floor((mesh.geometry?.index?.count || mesh.geometry?.getAttribute("position")?.count || 0) / 3),
+      plan: buildProtectedLodPlan(mesh.geometry, settings)
+    }));
+    const originalTriangles = parts.reduce((sum, part) => sum + part.originalTriangles, 0);
+    const levelTriangleCounts = settings.reductions.map((_, levelIndex) => parts.reduce((sum, part) => sum + (lodPartLevel(part, levelIndex)?.triangleCount || part.originalTriangles), 0));
+    const counts = [originalTriangles, ...levelTriangleCounts];
+    const safe = originalTriangles >= 8 && levelTriangleCounts.every((count, index) => count < counts[index]);
+    const reducedParts = parts.filter((part) => part.plan.levels.length).length;
+    return {
+      kind: "group",
+      targetKey: target.key,
+      groupId: target.groupId,
+      name: target.name,
+      settings,
+      parts,
+      originalTriangles,
+      levelTriangleCounts,
+      safe,
+      reason: safe ? `Safe group LOD preview: ${parts.length} separate parts \u2014 ${counts.map((count, index) => `LOD${index} ${count} triangles`).join("; ")}.` : `Could not create three progressively lighter complete group levels. ${reducedParts} of ${parts.length} parts could be reduced safely.`
+    };
+  }
   function analyzeSelectedMeshLodSet({ announce = true } = {}) {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const target = lodSelectionTarget();
     disposeLodPlan(lodGeneratorState.plan);
-    if (!mesh?.geometry) {
-      lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+    if (!target) {
+      lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
       syncLodGeneratorUi();
-      if (announce) log("LOD Generator needs one selected editable mesh.");
+      if (announce) log("LOD Generator needs one selected editable mesh or one selected model group.");
       return null;
     }
     const settings = lodSettingsFromUi();
-    const plan = buildProtectedLodPlan(mesh.geometry, settings);
-    lodGeneratorState = { meshId: mesh.userData.id, settingsKey: lodSettingsKey(settings), plan };
+    const plan = target.kind === "group" ? buildGroupLodPlan(target, settings) : { ...buildProtectedLodPlan(target.meshes[0].geometry, settings), kind: "mesh", targetKey: target.key };
+    lodGeneratorState = { targetKey: target.key, settingsKey: lodSettingsKey(settings), plan };
     syncLodGeneratorUi();
-    if (announce) log(`LOD Generator analysis on ${mesh.name}: ${plan.reason}`, {
+    if (announce) log(`LOD Generator analysis on ${target.name}: ${plan.reason}`, {
       geometryChanged: false,
       originalTriangles: plan.originalTriangles,
-      levels: plan.levels.map((level) => ({
+      parts: target.meshes.length,
+      levels: plan.kind === "group" ? plan.levelTriangleCounts.map((triangles, index) => ({ level: index + 1, triangles })) : plan.levels.map((level) => ({
         level: level.level,
         requestedReductionPercent: level.requestedReduction,
         achievedReductionPercent: Number(level.achievedReduction.toFixed(2)),
@@ -40782,10 +40896,89 @@ void main() {
     });
     return plan;
   }
+  function cloneLodGroupHierarchy(sourceGroupId, level, parentId) {
+    const sourceRoot = groupRecord(sourceGroupId);
+    const groupMap = /* @__PURE__ */ new Map();
+    const cloneBranch = (sourceRecord, cloneParentId, root = false) => {
+      const clone = createSceneGroupRecord({
+        name: uniqueSceneGroupName(root ? `${sourceRoot.name.replace(/\s+LOD0$/i, "")} LOD${level}` : sourceRecord.name),
+        parentId: cloneParentId
+      });
+      groupMap.set(sourceRecord.id, clone.id);
+      for (const child of childGroupRecords(sourceRecord.id)) cloneBranch(child, clone.id);
+      return clone;
+    };
+    return { root: cloneBranch(sourceRoot, parentId, true), groupMap };
+  }
+  function generateAnalyzedGroupLodSet(target, plan, settings) {
+    const sourceGroup = groupRecord(target.groupId);
+    if (!sourceGroup) return [];
+    const setId = `lod-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+    const originalName = sourceGroup.name.replace(/\s+LOD0$/i, "");
+    const lodSetGroup = createSceneGroupRecord({
+      name: uniqueSceneGroupName(`${originalName} LOD Set`),
+      parentId: sourceGroup.parentId || null
+    });
+    sourceGroup.parentId = lodSetGroup.id;
+    sourceGroup.name = uniqueSceneGroupName(`${originalName} LOD0`, { ignoreGroupId: sourceGroup.id });
+    const levelGroups = [1, 2, 3].map((level) => cloneLodGroupHierarchy(sourceGroup.id, level, lodSetGroup.id));
+    const generated = [];
+    const coverage = [0.6, 0.3, 0.12];
+    for (const [partIndex, mesh] of target.meshes.entries()) {
+      const part = plan.parts[partIndex];
+      mesh.userData.lod = {
+        setId,
+        level: 0,
+        sourceId: mesh.userData.id,
+        sourceGroupId: sourceGroup.id,
+        reduction: 0,
+        triangleCount: part.originalTriangles,
+        screenCoverage: 1
+      };
+      for (let levelIndex = 0; levelIndex < 3; levelIndex++) {
+        const level = levelIndex + 1;
+        const reducedLevel = lodPartLevel(part, levelIndex);
+        const geometry = reducedLevel?.geometry || mesh.geometry;
+        const cloneGroupId = levelGroups[levelIndex].groupMap.get(mesh.userData.groupId) || levelGroups[levelIndex].root.id;
+        const cloneGroup = groupRecord(cloneGroupId);
+        const spec = serializeObject(mesh);
+        delete spec.id;
+        spec.shape = "custom";
+        spec.geometry = geometryToData(geometry);
+        spec.name = `${mesh.name.replace(/\s+LOD\d+$/i, "")} LOD${level}`;
+        spec.hidden = settings.hideGenerated;
+        spec.groupId = cloneGroupId;
+        spec.groupName = cloneGroup?.name || null;
+        spec.linkId = null;
+        spec.linkColor = null;
+        spec.liveMirror = null;
+        spec.lod = {
+          setId,
+          level,
+          sourceId: mesh.userData.id,
+          sourceGroupId: sourceGroup.id,
+          reduction: reducedLevel ? Number(reducedLevel.achievedReduction.toFixed(4)) : 0,
+          triangleCount: reducedLevel?.triangleCount || part.originalTriangles,
+          screenCoverage: coverage[levelIndex]
+        };
+        generated.push(addObject(spec, { record: false, select: false, update: false }));
+      }
+    }
+    ensureSceneGroups();
+    ensureModelGroups();
+    selected = null;
+    selectedGroupRecordId = sourceGroup.id;
+    activeGroupIds = descendantMeshesForGroup(sourceGroup.id).map((mesh) => mesh.userData.id);
+    checkedIds.clear();
+    currentTransformTargetKey = "";
+    updateTransformAttachment();
+    updateAll();
+    return [...target.meshes, ...generated];
+  }
   function generateAnalyzedLodSet() {
-    const sourceMesh = normalEditTargetMesh() || singleMeshTarget();
+    const target = lodSelectionTarget();
     const settings = lodSettingsFromUi();
-    if (!sourceMesh?.geometry || sourceMesh.userData.id !== lodGeneratorState.meshId || lodSettingsKey(settings) !== lodGeneratorState.settingsKey) {
+    if (!target || target.key !== lodGeneratorState.targetKey || lodSettingsKey(settings) !== lodGeneratorState.settingsKey) {
       analyzeSelectedMeshLodSet();
       return [];
     }
@@ -40795,6 +40988,22 @@ void main() {
       return [];
     }
     recordHistory("generate LOD set");
+    if (target.kind === "group") {
+      const result = generateAnalyzedGroupLodSet(target, plan, settings);
+      const counts2 = [plan.originalTriangles, ...plan.levelTriangleCounts];
+      disposeLodPlan(plan);
+      lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
+      syncLodGeneratorUi(`Generated ${target.name} as four complete LOD groups with ${target.meshes.length} separate parts per level.`);
+      log(`Generated complete grouped LOD set for ${target.name}.`, {
+        sourceParts: target.meshes.length,
+        triangleCounts: counts2,
+        generatedLevelsHidden: settings.hideGenerated,
+        separatePartsPreserved: true,
+        undoReady: true
+      });
+      return result;
+    }
+    const sourceMesh = target.meshes[0];
     const existingLod = sourceMesh.userData.lod?.level === 0 ? sourceMesh.userData.lod : null;
     const setId = existingLod?.setId || `lod-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     const oldGroupId = sourceMesh.userData.groupId || null;
@@ -40855,7 +41064,7 @@ void main() {
     const counts = [plan.originalTriangles, ...plan.levels.map((level) => level.triangleCount)];
     const generatedSummary = counts.map((count, index) => `LOD${index} ${index === 0 ? "Original" : "Preview"}: ${count} triangles`).join("; ");
     disposeLodPlan(plan);
-    lodGeneratorState = { meshId: null, settingsKey: "", plan: null };
+    lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
     syncLodGeneratorUi(`Generated ${lodGroup.name}: ${counts.length} models total \u2014 ${generatedSummary}. Undo is ready.`);
     log(`Generated protected LOD set ${lodGroup.name}.`, {
       sourcePreservedAs: sourceMesh.name,
@@ -41006,7 +41215,7 @@ void main() {
     const exportCount = exportMode === "all" ? 3 : 1;
     const guideReady = safe;
     const textureSource = currentUvSourceTexture();
-    const activeMesh = textureSource?.mesh || normalEditTargetMesh() || singleMeshTarget();
+    const activeMesh = textureSource?.mesh || resolveSelectionTargets("single")[0] || null;
     const atlasReady = !!lastBakedTextureAtlas.dataUrl && lastBakedTextureAtlas.meshId === activeMesh?.userData.id;
     const textureReady = !!textureSource?.dataUrl;
     const exportReady = (!wantsTexture || textureReady) && (!wantsGuide || guideReady) && (!wantsAtlas || atlasReady);
@@ -41032,7 +41241,7 @@ void main() {
     syncUvUnwrapUi("Settings changed. Analyze the UV layout again before applying it.");
   }
   function analyzeSelectedMeshUvLayout({ announce = true } = {}) {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     disposeUvUnwrapPlan(uvUnwrapState.plan);
     if (!mesh?.geometry) {
       uvUnwrapState = { meshId: null, settingsKey: "", plan: null };
@@ -41048,7 +41257,7 @@ void main() {
     return plan;
   }
   function currentUvUnwrapTarget() {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     const settings = uvUnwrapSettingsFromUi();
     if (!mesh?.geometry || mesh.userData.id !== uvUnwrapState.meshId || uvUnwrapSettingsKey(settings) !== uvUnwrapState.settingsKey) return null;
     return { mesh, settings, plan: uvUnwrapState.plan };
@@ -41286,7 +41495,7 @@ void main() {
     return fileName;
   }
   function exportLastBakedTextureAtlas({ announce = true } = {}) {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     if (!lastBakedTextureAtlas.dataUrl || lastBakedTextureAtlas.meshId !== mesh?.userData.id) {
       syncUvUnwrapUi("Bake a texture atlas before exporting the atlas image.");
       log("Texture Atlas export needs one completed Bake Texture Atlas operation first.");
@@ -41305,7 +41514,7 @@ void main() {
     return lastBakedTextureAtlas.fileName;
   }
   function currentUvSourceTexture() {
-    const mesh = normalEditTargetMesh() || singleMeshTarget();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     if (!mesh) return null;
     const bakedSourceIsCurrent = lastBakedTextureAtlas.meshId === mesh.userData.id && lastBakedTextureAtlas.dataUrl === mesh.userData.textureUrl && lastBakedTextureAtlas.sourceTextureUrl;
     const dataUrl = bakedSourceIsCurrent ? lastBakedTextureAtlas.sourceTextureUrl : mesh.userData.textureUrl;
@@ -41586,7 +41795,7 @@ void main() {
     return geometry;
   }
   function repairFoundHoles({ all = false } = {}) {
-    const mesh = objects.find((candidate) => candidate.userData?.id === holeRepairState.meshId) || normalEditTargetMesh() || singleMeshTarget();
+    const mesh = objects.find((candidate) => candidate.userData?.id === holeRepairState.meshId) || resolveSelectionTargets("single")[0] || null;
     if (!mesh?.geometry) {
       log("Find Holes before repairing a boundary.");
       return null;
@@ -41669,10 +41878,6 @@ void main() {
     });
     return mesh;
   }
-  function normalEditTargetMesh() {
-    if (selectedFace?.mesh?.geometry) return selectedFace.mesh;
-    return selected?.isMesh && selected.geometry ? selected : null;
-  }
   function swapTriangleCorners(geometry, triangleIndex) {
     const second = triangleIndex * 3 + 1;
     const third = second + 1;
@@ -41700,7 +41905,7 @@ void main() {
     return mesh;
   }
   function flipSelectedFaceNormals() {
-    const mesh = normalEditTargetMesh();
+    const mesh = resolveSelectionTargets("faces")[0] || null;
     const faces = mesh ? selectedFaces.filter((face) => face.mesh === mesh) : [];
     const triangleIndices = [...new Set(faces.map((face) => face.faceIndex).filter((index) => Number.isInteger(index) && index >= 0))];
     if (!mesh || !triangleIndices.length) {
@@ -41722,7 +41927,7 @@ void main() {
     });
   }
   function recalculateSelectedMeshNormals() {
-    const mesh = normalEditTargetMesh();
+    const mesh = resolveSelectionTargets("single")[0] || null;
     if (!mesh) {
       log("Recalculate Outside needs one editable mesh selected.");
       return null;
@@ -46543,14 +46748,7 @@ void main() {
     });
   }
   function mergeSelectionTargets() {
-    const checked = checkedObjects();
-    if (checked.length) return uniqueMeshList(checked);
-    if (selectedGroupRecordId && groupRecord(selectedGroupRecordId)) {
-      return uniqueMeshList(descendantMeshesForGroup(selectedGroupRecordId));
-    }
-    const active = activeGroupObjects();
-    if (active.length) return uniqueMeshList(active);
-    return selected ? [selected] : [];
+    return resolveSelectionTargets("multiple");
   }
   function sharedMergeTextureState(meshes) {
     if (!meshes.length) return null;
@@ -46681,6 +46879,9 @@ void main() {
       const x = column * cellSize;
       const y = row * cellSize;
       context.save();
+      context.beginPath();
+      context.rect(x, y, cellSize, cellSize);
+      context.clip();
       context.clearRect(x, y, cellSize, cellSize);
       context.globalCompositeOperation = "source-over";
       if (!surface.image) {
@@ -46766,63 +46967,6 @@ void main() {
       round2(Math.min(1, Math.max(0, v)), 4)
     ];
   }
-  function mergeTrianglePointKey(positions, vertexIndex) {
-    const offset = vertexIndex * 3;
-    const precision = 1e5;
-    return [
-      Math.round(positions[offset] * precision),
-      Math.round(positions[offset + 1] * precision),
-      Math.round(positions[offset + 2] * precision)
-    ].join(",");
-  }
-  function cullCoincidentOpposingMergeTriangles(positions, normals, vertexUvs) {
-    const triangleCount = Math.floor(positions.length / 9);
-    if (triangleCount < 2) return { positions, normals, vertexUvs, removedTriangles: 0 };
-    const keep = new Array(triangleCount).fill(true);
-    const pendingBySurface = /* @__PURE__ */ new Map();
-    const triangleNormal = (triangleIndex) => {
-      const offset = triangleIndex * 9;
-      const a = new Vector3(positions[offset], positions[offset + 1], positions[offset + 2]);
-      const b = new Vector3(positions[offset + 3], positions[offset + 4], positions[offset + 5]);
-      const c = new Vector3(positions[offset + 6], positions[offset + 7], positions[offset + 8]);
-      return new Vector3().crossVectors(b.sub(a), c.sub(a)).normalize();
-    };
-    for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
-      const vertexIndex = triangleIndex * 3;
-      const surfaceKey = [0, 1, 2].map((corner) => mergeTrianglePointKey(positions, vertexIndex + corner)).sort().join("|");
-      const normal = triangleNormal(triangleIndex);
-      const pending = pendingBySurface.get(surfaceKey) || [];
-      const oppositeIndex = pending.findIndex((entry) => entry.normal.dot(normal) < -0.9999);
-      if (oppositeIndex >= 0) {
-        const opposite = pending.splice(oppositeIndex, 1)[0];
-        keep[opposite.triangleIndex] = false;
-        keep[triangleIndex] = false;
-      } else {
-        pending.push({ triangleIndex, normal });
-      }
-      if (pending.length) pendingBySurface.set(surfaceKey, pending);
-      else pendingBySurface.delete(surfaceKey);
-    }
-    const keptPositions = [];
-    const keptNormals = [];
-    const keptVertexUvs = [];
-    for (let triangleIndex = 0; triangleIndex < triangleCount; triangleIndex++) {
-      if (!keep[triangleIndex]) continue;
-      keptPositions.push(...positions.slice(triangleIndex * 9, triangleIndex * 9 + 9));
-      if (normals.length >= triangleIndex * 9 + 9) {
-        keptNormals.push(...normals.slice(triangleIndex * 9, triangleIndex * 9 + 9));
-      }
-      if (vertexUvs.length >= triangleIndex * 3 + 3) {
-        keptVertexUvs.push(...vertexUvs.slice(triangleIndex * 3, triangleIndex * 3 + 3));
-      }
-    }
-    return {
-      positions: keptPositions,
-      normals: keptNormals,
-      vertexUvs: keptVertexUvs,
-      removedTriangles: keep.filter((value) => !value).length
-    };
-  }
   async function mergedMeshSpec(meshes, { name = "Merged Mesh", groupId = null, groupName = null } = {}) {
     if (!meshes.length) return null;
     let positions = [];
@@ -46876,10 +47020,6 @@ void main() {
       }
       geometry2.dispose();
     }
-    const culled = cullCoincidentOpposingMergeTriangles(positions, normals, vertexUvs);
-    positions = culled.positions;
-    normals = culled.normals;
-    vertexUvs = culled.vertexUvs;
     if (positions.length < 9) return null;
     const worldPoints = [];
     for (let index = 0; index < positions.length; index += 3) {
@@ -46946,7 +47086,6 @@ void main() {
       downscaledMergedTextureCount: materialAtlas?.downscaledTextureCount || 0,
       materialAtlasByteSize: materialAtlas?.approximateByteSize || 0,
       materialAtlasDimensionLimit: materialAtlas?.dimensionLimit || 0,
-      culledInternalTriangles: culled.removedTriangles,
       materialAtlasSize: materialAtlas ? [materialAtlas.width, materialAtlas.height] : null,
       materialRule: sameRule,
       groupId,
@@ -47012,7 +47151,6 @@ void main() {
     const downscaledMergedTextureCount = Number(spec.downscaledMergedTextureCount) || 0;
     const materialAtlasByteSize = Number(spec.materialAtlasByteSize) || 0;
     const materialAtlasDimensionLimit = Number(spec.materialAtlasDimensionLimit) || 0;
-    const culledInternalTriangles = Number(spec.culledInternalTriangles) || 0;
     const materialAtlasSize = Array.isArray(spec.materialAtlasSize) ? [...spec.materialAtlasSize] : null;
     delete spec.generatedMaterialAtlas;
     delete spec.mergedMaterialCount;
@@ -47021,7 +47159,6 @@ void main() {
     delete spec.downscaledMergedTextureCount;
     delete spec.materialAtlasByteSize;
     delete spec.materialAtlasDimensionLimit;
-    delete spec.culledInternalTriangles;
     delete spec.materialAtlasSize;
     recordHistory("merge mesh");
     if (generatedMaterialAtlas && spec.textureUrl && spec.textureName) {
@@ -47037,7 +47174,7 @@ void main() {
     cleanupEmptySceneGroups();
     ensureSceneGroups();
     ensureModelGroups();
-    const merged = addObject(spec, { record: false });
+    const merged = addObject(spec, { record: false, select: true, update: false });
     ensureSceneGroups();
     ensureModelGroups();
     checkedIds = /* @__PURE__ */ new Set([merged.userData.id]);
@@ -47045,8 +47182,7 @@ void main() {
     currentTransformTargetKey = "";
     updateTransformAttachment();
     updateAll();
-    const cullingSummary = culledInternalTriangles ? ` Removed ${culledInternalTriangles} hidden internal triangles.` : "";
-    log(`Merged ${targetMeshes.length} meshes into ${merged.name}.${cullingSummary}`, {
+    log(`Merged ${targetMeshes.length} meshes into ${merged.name}.`, {
       keptTexture,
       generatedMaterialAtlas,
       mergedMaterialCount,
@@ -47055,8 +47191,6 @@ void main() {
       downscaledMergedTextureCount,
       materialAtlasApproximateMegabytes: round2(materialAtlasByteSize / (1024 * 1024), 2),
       materialAtlasDimensionLimit,
-      culledInternalTriangles,
-      culledInternalFaces: Math.floor(culledInternalTriangles / 2),
       materialAtlasSize,
       sourceMeshes: targetMeshes.map((mesh) => mesh.name),
       parent: parentRecord?.name || "Root"
@@ -48316,7 +48450,7 @@ void main() {
     selected.material.transparent = opacity < 0.999 || !!selected.userData.textureHasTransparency;
     selected.material.opacity = opacity;
     selected.material.wireframe = false;
-    selected.material.depthWrite = opacity >= 0.999 && !selected.userData.textureHasTransparency;
+    selected.material.depthWrite = opacity >= 0.999;
     selected.material.needsUpdate = true;
     selected.userData.color = normalizedColor;
     selected.userData.roughness = +els.roughInput.value;
@@ -55578,7 +55712,7 @@ public final class ${modelName}ClientRegistration {
 }
 `;
     const root = `src/main/java/${packageName.replace(/\./g, "/")}`;
-    const readme = `Generated by BoltWorks 3D AI Studio v49.43.1 for NeoForge 1.21.1.
+    const readme = `Generated by BoltWorks 3D AI Studio v49.44.3 for NeoForge 1.21.1.
 
 1. Copy the Java files into the matching source package.
 2. Replace ModEntities.YOUR_ENTITY in ${modelName}ClientRegistration.java and uncomment the line.
@@ -55962,7 +56096,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     log(`Finished paint selection.`, { selected: selectedFaces.length });
   }
   document.querySelectorAll("[data-add]").forEach((btn) => {
-    btn.addEventListener("click", () => addObject({ shape: btn.dataset.add }));
+    btn.addEventListener("click", () => addObject({ shape: btn.dataset.add }, { select: true }));
   });
   document.querySelectorAll("[data-mode]").forEach((btn) => {
     btn.addEventListener("click", () => {

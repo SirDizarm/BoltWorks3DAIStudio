@@ -189,6 +189,12 @@
                 "setId": { "type": "string" },
                 "level": { "type": "integer", "minimum": 0 },
                 "sourceId": { "type": "string" },
+                "sourceGroupId": {
+                  "anyOf": [
+                    { "type": "string" },
+                    { "type": "null" }
+                  ]
+                },
                 "reduction": { "type": "number", "minimum": 0, "maximum": 100 },
                 "triangleCount": { "type": "integer", "minimum": 0 },
                 "screenCoverage": { "type": "number", "minimum": 0, "maximum": 1 }

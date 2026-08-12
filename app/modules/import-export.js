@@ -1213,7 +1213,7 @@ function applyInspector({ record = true } = {}) {
   selected.material.transparent = opacity < .999 || !!selected.userData.textureHasTransparency;
   selected.material.opacity = opacity;
   selected.material.wireframe = false;
-  selected.material.depthWrite = opacity >= .999 && !selected.userData.textureHasTransparency;
+  selected.material.depthWrite = opacity >= .999;
   selected.material.needsUpdate = true;
   selected.userData.color = normalizedColor;
   selected.userData.roughness = +els.roughInput.value;
