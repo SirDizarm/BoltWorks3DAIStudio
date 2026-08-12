@@ -390,6 +390,7 @@ function serializeBoneRig() {
 }
 
 function restoreBoneRig(data = {}) {
+  fitBoneCamera.restSize = null;  // reframe Front/Side views for the new rig
   rigBones = (data.bones || []).map((bone, index) => ({
     id: bone.id || freshBoneId(),
     name: bone.name || `Bone ${index + 1}`,
@@ -1031,6 +1032,7 @@ function importedBoneArray(data) {
 }
 
 function importBoneStructure(data, fileName = "bone structure") {
+  fitBoneCamera.restSize = null;  // reframe Front/Side views for the new rig
   const sourceBones = importedBoneArray(data);
   if (!sourceBones?.length) throw new Error("Bone structure JSON does not contain a non-empty bones array.");
   recordBoneHistory("import bone structure");
@@ -1442,12 +1444,19 @@ function boneRigBounds() {
 function fitBoneCamera(referenceCamera, canvasElement, view) {
   const rect = canvasElement.parentElement.getBoundingClientRect();
   const box = boneRigBounds();
-  const center = box.getCenter(new THREE.Vector3());
-  const size = box.getSize(new THREE.Vector3());
+  // Center on the root (first) bone — the model's center — and freeze the frame
+  // size to the model's resting bounds, so animation (tail/limb movement) does
+  // not make the Front/Side view pan and zoom all over the place.
+  const root = rigBones.find(bone => !boneById(bone.parentId)) || rigBones[0] || null;
+  const center = root ? (root.displayPosition || root.position).clone() : box.getCenter(new THREE.Vector3());
+  // Use a stable size from the model's resting bounds, not the live (animated) one.
+  if (!fitBoneCamera.restSize) {
+    const size = box.getSize(new THREE.Vector3());
+    fitBoneCamera.restSize = Math.max(4, size.y * 1.35, (view === "front" ? size.x : size.z) * 1.35, size.length() * .5);
+  }
+  const extent = fitBoneCamera.restSize;
   const aspect = rect.width / Math.max(1, rect.height);
-  const vertical = Math.max(4, size.y * 1.35);
-  const horizontal = Math.max(4, (view === "front" ? size.x : size.z) * 1.35);
-  const halfHeight = Math.max(vertical * .5, horizontal / Math.max(.1, aspect) * .5);
+  const halfHeight = Math.max(extent * .5, extent / Math.max(.1, aspect) * .5);
   const halfWidth = halfHeight * aspect;
   referenceCamera.left = -halfWidth;
   referenceCamera.right = halfWidth;

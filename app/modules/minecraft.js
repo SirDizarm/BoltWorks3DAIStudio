@@ -377,6 +377,7 @@ async function importBlockbenchProject(file) {
   sceneGroupRegistry.clear();
   rigBones = [];
   selectedBoneId = null;
+  if (typeof fitBoneCamera === "function") fitBoneCamera.restSize = null;
   const groupMap = new Map();
   const cubeParents = new Map();
   collectBlockbenchHierarchy(project.outliner, null, groupMap, cubeParents);
@@ -620,7 +621,9 @@ async function exportNeoForgeJava() {
 }
 
 function initializeMinecraftTools() {
-  setWorkspace(localStorage.getItem("boltworks.workspace") || "general", { quiet: true });
+  // Always start on the General 3D tab on a fresh page load (still persists the
+  // user's choice afterwards via localStorage within the session).
+  setWorkspace("general", { quiet: true });
   renderPluginManager();
   els.workspaceSelect?.addEventListener("change", event => setWorkspace(event.target.value));
   const pickBlockbench = () => els.importBbmodelFile?.click();
