@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.44.3.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.44.4.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -46,6 +46,14 @@ if (/depthWrite\s*=\s*[^;\n]*textureHasTransparency/.test(meshesSource) || /dept
 }
 if (meshesSource.includes('materialRule === "glass" || opacity < .999 || !!mesh.userData?.textureHasTransparency')) {
   throw new Error("Texture alpha must not force double-sided interior rendering for opaque meshes.");
+}
+
+const riggingSource = moduleSources.get("rigging") || "";
+if (!riggingSource.includes("syncBoneTransformGizmo") || !riggingSource.includes("pickBoneFromMainPointer") || !riggingSource.includes("new TransformControls(camera, renderer.domElement)")) {
+  throw new Error("Rigging must keep the main-viewport bone TransformControls gizmo and bone picking helpers.");
+}
+if (!(moduleSources.get("panels") || "").includes("pickBoneFromMainPointer") || !(moduleSources.get("panels") || "").includes("selectBoneFromViewport")) {
+  throw new Error("The main canvas pointer handler must let users click bone joints to select and manipulate them.");
 }
 
 if (!authoringManifest.machineResources?.styleLibraries?.includes("libraries/medieval-house/README.md")) {
@@ -1072,7 +1080,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.44.3.js?v=49.44.3"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.44.4.js?v=49.44.4"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
@@ -1095,7 +1103,7 @@ for (const kneeId of ["walk-shin-l", "walk-shin-r"]) {
 if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
   throw new Error("Top view must not replace the OrbitControls world-up axis.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.44.3.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.44.4.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -1108,7 +1116,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.44.3",
+  "tool-docking.js?v=49.44.4",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1807,8 +1815,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.44.3 Experimental") || !documentSource.includes("v49.44.3 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.44.3 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.44.4 Experimental") || !documentSource.includes("v49.44.4 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.44.4 version.");
 }
 
 for (const attentionElement of ["aiViewerAttention", "aiViewerAttentionMessage", "aiViewerAttentionDirective"]) {

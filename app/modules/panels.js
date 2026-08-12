@@ -331,6 +331,9 @@ els.boneAxisFreeBtn?.addEventListener("click", () => setBoneMoveAxis("free"));
 els.boneAxisXBtn?.addEventListener("click", () => setBoneMoveAxis("x"));
 els.boneAxisYBtn?.addEventListener("click", () => setBoneMoveAxis("y"));
 els.boneAxisZBtn?.addEventListener("click", () => setBoneMoveAxis("z"));
+els.boneModeMoveBtn?.addEventListener("click", () => setBoneGizmoToolMode("translate"));
+els.boneModeRotateBtn?.addEventListener("click", () => setBoneGizmoToolMode("rotate"));
+els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
 els.boneList?.addEventListener("change", () => {
   selectedBoneId = els.boneList.value || null;
   rebuildBoneVisuals();
@@ -1245,13 +1248,18 @@ canvas.addEventListener("pointerdown", event => {
   const rect = renderer.domElement.getBoundingClientRect();
   lastCanvasPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  if (event.button !== 0 || transform.dragging || surfaceTransform.dragging) return;
-  if ((transform.visible && transform.axis) || (surfaceTransform.visible && surfaceTransform.axis)) {
+  if (event.button !== 0 || transform.dragging || surfaceTransform.dragging || boneTransform.dragging) return;
+  if ((transform.visible && transform.axis) || (surfaceTransform.visible && surfaceTransform.axis) || (boneTransform.visible && boneTransform.axis)) {
     pendingScenePick = null;
     return;
   }
   if (spaceCameraMode) return;
   pendingScenePick = null;
+  // Grabbing the bone joystick handle starts a precise aim-drag for rotation.
+  if (typeof pickBoneJoystick === "function" && pickBoneJoystick(event)) {
+    beginBoneAimDrag(event);
+    return;
+  }
   if (knifeCutMode) {
     addKnifeCutPointFromHit(hitFromPointerEvent(event));
     return;
@@ -1304,6 +1312,13 @@ canvas.addEventListener("pointerdown", event => {
     pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
     return;
   }
+  if (!facePickMode) {
+    const pickedBoneId = pickBoneFromMainPointer(event);
+    if (pickedBoneId) {
+      selectBoneFromViewport(pickedBoneId);
+      return;
+    }
+  }
   pendingScenePick = {
     pointerId: event.pointerId,
     startClientX: event.clientX,
@@ -1315,6 +1330,7 @@ canvas.addEventListener("pointerdown", event => {
 });
 
 canvas.addEventListener("pointermove", event => {
+  if (typeof moveBoneAimDrag === "function" && boneAimDrag) { moveBoneAimDrag(event); return; }
   const rect = renderer.domElement.getBoundingClientRect();
   lastCanvasPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1343,13 +1359,19 @@ canvas.addEventListener("pointermove", event => {
 });
 
 window.addEventListener("pointerup", event => {
+  if (typeof endBoneAimDrag === "function") endBoneAimDrag(event);
   finishDragPushSession(event.pointerId);
   finishAreaSelection(event);
   finishTrianglePainting(event.pointerId);
   if (pendingScenePick?.pointerId === event.pointerId) {
     const pick = pendingScenePick;
     pendingScenePick = null;
-    if (!pick.dragged && pick.hitObject && !transform.dragging && !surfaceTransform.dragging && !spaceCameraMode) {
+    if (!pick.dragged && pick.hitObject && !transform.dragging && !surfaceTransform.dragging && !boneTransform.dragging && !spaceCameraMode) {
+      if (selectedBoneId) {
+        selectedBoneId = null;
+        rebuildBoneVisuals();
+        syncBonePanel();
+      }
       selectObject(pick.hitObject, { append: pick.append });
     }
   }
@@ -1570,6 +1592,30 @@ window.ModelerStudio = {
     controlLayerMask: surfaceTransform.layers.mask,
     raycasterLayerMask: surfaceTransform.getRaycaster().layers.mask
   }),
+  boneGizmoState: () => ({
+    visible: boneTransform.visible,
+    mode: boneTransform.mode,
+    space: boneTransform.space,
+    dragging: boneTransform.dragging,
+    attached: !!boneTransform.object,
+    selectedBoneId,
+    bones: rigBones.map(bone => ({
+      id: bone.id,
+      name: bone.name,
+      position: bone.position.toArray().map(round),
+      rotation: [bone.rotation.x, bone.rotation.y, bone.rotation.z].map(round)
+    }))
+  }),
+  selectBone: selectBoneFromViewport,
+  rigPose: applyCurrentRigPose,
+  boneGizmoPointer: (type, x, y) => {
+    const pointer = { x, y, button: 0 };
+    if (type === "hover") boneTransform.pointerHover(pointer);
+    else if (type === "down") { boneTransform.pointerHover(pointer); boneTransform.pointerDown(pointer); }
+    else if (type === "move") boneTransform.pointerMove(pointer);
+    else boneTransform.pointerUp(pointer);
+    return { axis: boneTransform.axis, dragging: boneTransform.dragging };
+  },
   selectedTriangles: () => selectedFaces.map(face => ({
     targetId: face.mesh.userData.id,
     targetName: face.mesh.name,

@@ -3988,6 +3988,7 @@ function setTransformMode(mode) {
     transform.setSpace(activeTransformMode === "rotate" ? "local" : "world");
   }
   updateTransformAttachment();
+  syncBoneTransformGizmo();
   els.hudText.textContent = activeTransformMode
     ? `${activeTransformMode[0].toUpperCase()}${activeTransformMode.slice(1)} gizmo active | Click ${activeTransformMode} again to turn it off`
     : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
@@ -16033,6 +16034,7 @@ function removeObject(mesh, { record = true, update = true } = {}) {
   mesh.geometry.dispose();
   mesh.material.dispose();
   if (selected === mesh) selectObject(null);
+  if (typeof pruneBonesForRemovedObjects === "function") pruneBonesForRemovedObjects();
   if (previousLinkId) ensureLinkGroupColors();
   if (previousSceneGroupId) ensureSceneGroups();
   if (update) updateAll();

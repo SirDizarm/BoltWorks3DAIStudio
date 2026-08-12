@@ -69,6 +69,16 @@ let selectedBoneId = null;
 let boneToolMode = null;
 let boneMoveAxis = null;
 let boneDrag = null;
+// Bone-local gizmo mode: "rotate" (default) or "translate". Independent of the
+// mesh toolbar so rotating a bone doesn't require enabling the mesh Move tool.
+let boneGizmoToolMode = "rotate";
+// Whether the bone gizmo is shown at all; the Move/Rotate buttons toggle this
+// off when you click the already-active mode (like the Free/X/Y/Z lock).
+let boneGizmoEnabled = true;
+// Joystick aim-drag state for precise bone rotation.
+let boneAimDrag = null;
+// Whether the rig is glued to the model (bound parts follow the bones live).
+let bonesGlued = false;
 const animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {}, bindingRest: null };
 let activeSkinRuntime = null;
 const boneRaycaster = new THREE.Raycaster();
@@ -77,6 +87,265 @@ boneRaycaster.layers.enable(2);
 const bonePointer = new THREE.Vector2();
 const boneDragPlane = new THREE.Plane();
 const boneDragHit = new THREE.Vector3();
+const mainBoneRaycaster = new THREE.Raycaster();
+
+const boneTransformProxy = new THREE.Object3D();
+boneTransformProxy.name = "Bone Transform Proxy";
+boneTransformProxy.userData.editorHelper = true;
+scene.add(boneTransformProxy);
+
+// Dashed guide rings around the selected bone (one per axis) so the rotation
+// direction is clearly visible in the main view. They follow the proxy.
+const boneRingGuideGroup = new THREE.Group();
+boneRingGuideGroup.name = "Bone Rotation Guide Rings";
+boneRingGuideGroup.userData.editorHelper = true;
+boneRingGuideGroup.visible = false;
+scene.add(boneRingGuideGroup);
+
+function buildBoneRingGuides() {
+  while (boneRingGuideGroup.children.length) {
+    const c = boneRingGuideGroup.children.pop();
+    c.geometry?.dispose?.();
+    c.material?.dispose?.();
+  }
+  const mk = (axis, color) => {
+    const pts = [];
+    const segs = 64, r = .5;
+    for (let i = 0; i <= segs; i += 1) {
+      const a = i / segs * Math.PI * 2;
+      if (axis === "x") pts.push(new THREE.Vector3(0, Math.sin(a) * r, Math.cos(a) * r));
+      else if (axis === "y") pts.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+      else pts.push(new THREE.Vector3(Math.cos(a) * r, Math.sin(a) * r, 0));
+    }
+    const ring = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(pts),
+      new THREE.LineDashedMaterial({ color, depthTest: false, dashSize: .05, gapSize: .03, transparent: true, opacity: .9 })
+    );
+    ring.computeLineDistances();
+    ring.renderOrder = 10003;
+    ring.userData.boneRingGuide = axis;
+    return ring;
+  };
+  boneRingGuideGroup.add(mk("x", 0xe55555), mk("y", 0x69d17d), mk("z", 0x5f8fe8));
+}
+buildBoneRingGuides();
+
+// Joystick handle: a lever sticking out of the parent ball ending in a ball you
+// grab and drag to aim the bone precisely (1:1, no wild spinning).
+const boneJoystickGroup = new THREE.Group();
+boneJoystickGroup.name = "Bone Rotation Joystick";
+boneJoystickGroup.userData.editorHelper = true;
+boneJoystickGroup.visible = false;
+scene.add(boneJoystickGroup);
+
+const boneJoystickShaft = new THREE.Mesh(
+  new THREE.CylinderGeometry(.03, .03, 1, 8),
+  new THREE.MeshBasicMaterial({ color: 0xffd27a, depthTest: false, transparent: true, opacity: .9 })
+);
+boneJoystickShaft.renderOrder = 10004;
+boneJoystickGroup.add(boneJoystickShaft);
+
+const boneJoystickHandle = new THREE.Mesh(
+  new THREE.SphereGeometry(.11, 16, 12),
+  new THREE.MeshBasicMaterial({ color: 0xffd27a, depthTest: false })
+);
+boneJoystickHandle.renderOrder = 10005;
+boneJoystickHandle.userData.boneJoystick = true;
+boneJoystickGroup.add(boneJoystickHandle);
+
+// Larger invisible grab sphere so the handle is easy to click.
+const boneJoystickHit = new THREE.Mesh(
+  new THREE.SphereGeometry(.2, 8, 6),
+  new THREE.MeshBasicMaterial({ visible: false })
+);
+boneJoystickHit.userData.boneJoystick = true;
+boneJoystickGroup.add(boneJoystickHit);
+
+function boneJoystickLength() {
+  return Math.max(.6, boneRigBounds().getSize(new THREE.Vector3()).length() * .06);
+}
+
+function boneAimDir(bone) {
+  // Current aim = direction the bone points (toward its child / tail).
+  const directChild = rigBones.find(candidate => candidate.parentId === bone.id);
+  const tail = directChild ? (directChild.displayPosition || directChild.position) : (bone.displayTail || bone.tail);
+  const base = bone.displayPosition || bone.position;
+  const dir = tail ? tail.clone().sub(base) : new THREE.Vector3(0, 1, 0);
+  return dir.lengthSq() > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 1, 0);
+}
+
+function syncBoneJoystick() {
+  const bone = selectedBone();
+  const show = !!bone && boneRigGroup.visible && boneGizmoEnabled && boneGizmoToolMode === "rotate";
+  boneJoystickGroup.visible = show;
+  if (!show) return;
+  const base = bone.displayPosition || bone.position;
+  // Stick the handle OUT THE BACK of the parent ball (opposite the cone/bone
+  // direction) so it sits in open space and is easy to grab, not buried in the
+  // body being moved.
+  const dir = boneAimDir(bone).negate();
+  const len = boneJoystickLength();
+  boneJoystickGroup.position.copy(base);
+  // Shaft from base to handle.
+  boneJoystickShaft.scale.y = len;
+  boneJoystickShaft.position.copy(dir.clone().multiplyScalar(len / 2));
+  boneJoystickShaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
+  boneJoystickHandle.position.copy(dir.clone().multiplyScalar(len));
+  boneJoystickHit.position.copy(boneJoystickHandle.position);
+}
+
+function pickBoneJoystick(event) {
+  if (!boneJoystickGroup.visible) return false;
+  const rect = renderer.domElement.getBoundingClientRect();
+  bonePointer.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+  bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+  mainBoneRaycaster.setFromCamera(bonePointer, camera);
+  return mainBoneRaycaster.intersectObjects([boneJoystickHandle, boneJoystickHit, boneJoystickShaft], false).length > 0;
+}
+
+function beginBoneAimDrag(event) {
+  const bone = selectedBone();
+  if (!bone) return false;
+  const base = (bone.displayPosition || bone.position).clone();
+  boneAimDrag = {
+    pointerId: event.pointerId,
+    boneId: bone.id,
+    base,
+    startQuat: new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")),
+    // The handle sits on the opposite side from the bone, so rotate relative to
+    // the handle's own start direction (which the cursor grabs).
+    startDir: boneAimDir(bone).negate()
+  };
+  orbit.enabled = false;
+  renderer.domElement.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+  return true;
+}
+
+function moveBoneAimDrag(event) {
+  if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
+  const bone = boneById(boneAimDrag.boneId);
+  if (!bone) return;
+  const rect = renderer.domElement.getBoundingClientRect();
+  bonePointer.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+  bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+  mainBoneRaycaster.setFromCamera(bonePointer, camera);
+  // Orbit around the base at a fixed radius, on the sphere the handle lives on:
+  // project the cursor ray onto the plane through the base facing the camera,
+  // then normalize to a direction. The handle follows the cursor exactly, and
+  // the bone swings by the same rotation as the handle.
+  const camDir = new THREE.Vector3();
+  camera.getWorldDirection(camDir);
+  boneDragPlane.setFromNormalAndCoplanarPoint(camDir, boneAimDrag.base);
+  if (!mainBoneRaycaster.ray.intersectPlane(boneDragPlane, boneDragHit)) return;
+  const handleDir = boneDragHit.clone().sub(boneAimDrag.base);
+  if (handleDir.lengthSq() < 1e-6) return;
+  handleDir.normalize();
+  const delta = new THREE.Quaternion().setFromUnitVectors(boneAimDrag.startDir, handleDir);
+  const worldQuat = delta.clone().multiply(boneAimDrag.startQuat);
+  const e = new THREE.Euler().setFromQuaternion(worldQuat, "XYZ");
+  bone.rotation.set(e.x, e.y, e.z);
+  applyCurrentRigPose();
+  rebuildBoneVisuals();
+  syncBonePanel();
+  event.preventDefault();
+}
+
+function endBoneAimDrag(event) {
+  if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
+  renderer.domElement.releasePointerCapture?.(event.pointerId);
+  boneAimDrag = null;
+  orbit.enabled = true;
+}
+
+const boneTransform = new TransformControls(camera, renderer.domElement);
+boneTransform.visible = false;
+boneTransform.setSize(.9);
+boneTransform.addEventListener("dragging-changed", event => orbit.enabled = !event.value);
+boneTransform.addEventListener("objectChange", () => {
+  const bone = selectedBone();
+  if (!bone || !boneTransform.dragging) return;
+  if (boneTransform.mode === "translate") {
+    bone.position.copy(boneTransformProxy.position);
+  } else {
+    bone.rotation.x = boneTransformProxy.rotation.x;
+    bone.rotation.y = boneTransformProxy.rotation.y;
+    bone.rotation.z = boneTransformProxy.rotation.z;
+  }
+  applyCurrentRigPose();
+  rebuildBoneVisuals();
+  syncBonePanel();
+});
+scene.add(boneTransform);
+
+function boneGizmoMode() {
+  return boneGizmoToolMode === "translate" ? "translate" : "rotate";
+}
+
+function setBoneGizmoToolMode(mode) {
+  const next = mode === "translate" ? "translate" : "rotate";
+  // Clicking the active mode again turns the gizmo off (toggling).
+  if (boneGizmoToolMode === next && boneGizmoEnabled) {
+    boneGizmoEnabled = false;
+  } else {
+    boneGizmoToolMode = next;
+    boneGizmoEnabled = true;
+  }
+  els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
+  els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+  syncBoneTransformGizmo();
+}
+
+function applyBoneAxisLock() {
+  const free = !boneMoveAxis || boneMoveAxis === "free";
+  boneTransform.showX = free || boneMoveAxis === "x";
+  boneTransform.showY = free || boneMoveAxis === "y";
+  boneTransform.showZ = free || boneMoveAxis === "z";
+}
+
+function syncBoneTransformGizmo() {
+  const bone = selectedBone();
+  if (!bone || !boneRigGroup.visible || !boneGizmoEnabled) {
+    if (!boneTransform.dragging) {
+      boneTransform.detach();
+      boneTransform.visible = false;
+    }
+    return;
+  }
+  const mode = boneGizmoMode();
+  boneTransform.setMode(mode);
+  boneTransform.setSpace(mode === "rotate" ? "local" : "world");
+  applyBoneAxisLock();
+  if (!boneTransform.dragging) {
+    boneTransformProxy.position.copy(bone.displayPosition || bone.position);
+    boneTransformProxy.rotation.set(bone.rotation.x, bone.rotation.y, bone.rotation.z);
+    boneTransform.attach(boneTransformProxy);
+    boneTransform.visible = true;
+  }
+  // Dashed axis guide rings removed — the joystick is the rotation control.
+  boneRingGuideGroup.visible = false;
+  syncBoneJoystick();
+}
+
+function pickBoneFromMainPointer(event) {
+  if (!boneRigGroup.visible || !rigBones.length) return null;
+  const rect = renderer.domElement.getBoundingClientRect();
+  bonePointer.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
+  bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+  mainBoneRaycaster.setFromCamera(bonePointer, camera);
+  const hit = mainBoneRaycaster.intersectObjects(boneRigGroup.children.filter(child => child.userData.boneJoint), false)[0];
+  return hit?.object?.userData?.boneId || null;
+}
+
+function selectBoneFromViewport(boneId) {
+  const bone = boneById(boneId);
+  if (!bone) return;
+  selectedBoneId = boneId;
+  if (typeof selectObject === "function") selectObject(null);
+  rebuildBoneVisuals();
+  syncBonePanel();
+  log(`Selected bone: ${bone.name}. Drag the gizmo to ${boneGizmoMode() === "translate" ? "move" : "rotate"} it (Move/Rotate toolbar buttons switch mode).`);
+}
 
 function boneById(id) {
   return rigBones.find(bone => bone.id === id) || null;
@@ -217,6 +486,9 @@ function animationSetFrame(frame, { render = true } = {}) {
   for (const bone of rigBones) {
     bone.position.copy(bone.bindPosition);
     bone.rotation.copy(bone.bindRotation);
+    // The pose pass did not run for this frame; drop stale pose quaternions so
+    // applyAnimationBindings falls back to the freshly resolved world rotation.
+    bone.poseWorldQuaternion = null;
   }
   for (const bone of rigBones) {
     const frames = (animationState.keys[bone.id] || []).slice().sort((a, b) => a.frame - b.frame);
@@ -355,6 +627,7 @@ function setupSkinnedRig() {
   avatar.bind(skeleton);
   avatar.normalizeSkinWeights();
   activeSkinRuntime = { avatar, bones, threeBones, skeleton };
+  if (typeof updateGlueButton === "function") updateGlueButton();
 }
 
 function applySkinnedPose(poses) {
@@ -364,9 +637,13 @@ function applySkinnedPose(poses) {
     const pose = poses.get(bone.id) || { position: bone.bindPosition, rotation: bone.bindRotation };
     const parent = boneById(bone.parentId);
     const parentPose = parent ? poses.get(parent.id) : null;
-    if (parent && threeBones.has(parent.id)) threeBone.position.copy(pose.position).sub(parentPose?.position || parent.bindPosition);
+    const parentQuat = parentPose
+      ? new THREE.Quaternion().setFromEuler(new THREE.Euler(parentPose.rotation.x, parentPose.rotation.y, parentPose.rotation.z, "XYZ"))
+      : new THREE.Quaternion();
+    const worldQuat = parentQuat.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z, "XYZ")));
+    if (parent && threeBones.has(parent.id)) threeBone.position.copy(pose.position).sub(parentPose?.position || parent.bindPosition).applyQuaternion(parentQuat.clone().invert());
     else threeBone.position.copy(pose.position);
-    threeBone.rotation.set(pose.rotation.x, pose.rotation.y, pose.rotation.z, "XYZ");
+    threeBone.quaternion.copy(worldQuat);
   }
   avatar.updateMatrixWorld(true);
   skeleton.update();
@@ -377,12 +654,76 @@ function applySkinnedPose(poses) {
   }
 }
 
+// Resolve the hierarchy so a bone's world transform = its own (user-edited)
+// rotation applied about its position, with children keeping their imported
+// world rotation and only swinging with the parent's CHANGE. This preserves the
+// model's imported pose exactly until the user drags a specific bone.
+function poseBoneWithChildren(bone, visited = new Set(), resolved = new Map()) {
+  if (resolved.has(`${bone.id}:pos`)) return resolved.get(bone.id);
+  if (visited.has(bone.id)) return new THREE.Quaternion();
+  visited.add(bone.id);
+
+  const bindPos = bone.bindPosition || bone.position.clone();
+  const bindRotE = bone.bindRotation || bone.rotation;
+  const parent = boneById(bone.parentId);
+  // Parent's ACCUMULATED change (own delta premultiplied by all ancestors').
+  const parentDelta = parent ? poseBoneWithChildren(parent, visited, resolved).clone() : new THREE.Quaternion();
+  // Rest-pose WORLD rotation. Blockbench bones store LOCAL rest rotations (ZYX
+  // order), so compose them onto the parent's rest world rotation; other bones
+  // already keep world-space bind rotations. Live bone.rotation is world-space
+  // (the hierarchy resolve and the gizmos both write world values), so the delta
+  // must be measured against the world rest rotation — comparing against the
+  // local bind rotation invents a phantom delta for every bone under a rotated
+  // ancestor and swings unrelated parts (e.g. right leg/jaw when posing left hip).
+  const bindLocalQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(bindRotE.x, bindRotE.y, bindRotE.z, bone.blockbenchLocalRotation ? "ZYX" : "XYZ"));
+  const parentRestWorldQuat = (parent && resolved.get(`${parent.id}:restWorldQuat`)) || new THREE.Quaternion();
+  const restWorldQuat = bone.blockbenchLocalRotation
+    ? parentRestWorldQuat.clone().multiply(bindLocalQuat)
+    : bindLocalQuat;
+  // How much the user has rotated this bone away from its imported pose.
+  const curQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
+  const deltaQuat = curQuat.clone().multiply(restWorldQuat.clone().invert());
+  let worldPos = bindPos.clone();
+  let worldQuat = curQuat.clone();
+  if (parent) {
+    const parentBindPos = resolved.get(`${parent.id}:bindPos`)?.clone() || parent.bindPosition?.clone() || parent.position.clone();
+    const parentPos = resolved.get(`${parent.id}:pos`)?.clone() || parentBindPos.clone();
+    const restOffset = bindPos.clone().sub(parentBindPos);                        // imported offset
+    worldPos = parentPos.clone().add(restOffset.applyQuaternion(parentDelta));    // swing with ancestors' change
+    worldQuat = parentDelta.clone().multiply(curQuat);                            // keep own rotation, add ancestors' swing
+    bone.position.copy(worldPos);
+  }
+  if (!bone.tail) bone.tail = bone.position.clone().add(new THREE.Vector3(0, .12, 0));
+  bone.tailOffset = bone.tailOffset || (bone.bindTail ? bone.bindTail.clone().sub(bindPos) : bone.tail.clone().sub(bindPos));
+  bone.tail.copy(worldPos).add(bone.tailOffset.clone().applyQuaternion(worldQuat));
+  // Accumulated delta = parentDelta * deltaQuat (order matters).
+  const accumulatedDelta = parentDelta.clone().multiply(deltaQuat);
+  bone.poseWorldQuaternion = worldQuat.clone();   // consumed by applyAnimationBindings
+  resolved.set(bone.id, accumulatedDelta);
+  resolved.set(`${bone.id}:pos`, worldPos);
+  resolved.set(`${bone.id}:bindPos`, bindPos);
+  resolved.set(`${bone.id}:worldQuat`, worldQuat);
+  resolved.set(`${bone.id}:restWorldQuat`, restWorldQuat);
+  return accumulatedDelta;
+}
+
+function poseRigHierarchy() {
+  const visited = new Set();
+  const resolved = new Map();
+  rigBones.forEach(bone => poseBoneWithChildren(bone, visited, resolved));
+}
+
 function applyCurrentRigPose() {
-  if (!activeSkinRuntime) return;
-  applySkinnedPose(new Map(rigBones.map(bone => [bone.id, {
-    position: bone.position.clone(),
-    rotation: bone.rotation.clone()
-  }])));
+  poseRigHierarchy();
+  if (activeSkinRuntime) {
+    applySkinnedPose(new Map(rigBones.map(bone => [bone.id, {
+      position: bone.position.clone(),
+      rotation: bone.rotation.clone()
+    }])));
+  }
+  // Move rigidly-bound model parts (e.g. Minecraft cuboids) with their bones
+  // whenever a rig is glued, so dragging a bone reposes the actual model live.
+  if (bonesGlued) applyAnimationBindings();
 }
 function resolveAnimatedBoneHierarchy() {
   const visiting = new Set();
@@ -425,6 +766,10 @@ function captureAnimationBindingRest() {
   const bindings = collectAnimationBindings();
   animationState.bindingRest = new Map();
   if (!bindings.length) return;
+  // Re-resolve the pose so bone.position and bone.poseWorldQuaternion reflect the
+  // CURRENT bone.rotation values; otherwise a stale poseWorldQuaternion (or one
+  // left over from an animation scrub) is captured as the rest orientation.
+  poseRigHierarchy();
   const grouped = new Map();
   for (const binding of bindings) {
     const id = binding.object.userData?.id;
@@ -438,7 +783,7 @@ function captureAnimationBindingRest() {
   for (const { bone, object } of rigidBindings) {
     animationState.bindingRest.set(`rigid:${bone.id}:${object.userData?.id || object.uuid}`, {
       object, bonePosition: bone.position.clone(), boneRotation: bone.rotation.clone(),
-      boneQuaternion: new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")),
+      boneQuaternion: (bone.poseWorldQuaternion || new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"))).clone(),
       objectPosition: object.position.clone(), objectRotation: object.rotation.clone(), objectQuaternion: object.quaternion.clone()
     });
   }
@@ -475,7 +820,11 @@ function applyAnimationBindings() {
   for (const { bone, object } of rigidBindings) {
     const rest = animationState.bindingRest.get(`rigid:${bone.id}:${object.userData?.id || object.uuid}`);
     if (!rest) continue;
-    const currentBoneQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
+    // poseWorldQuaternion includes all ancestors' accumulated swing; bone.rotation
+    // is only this bone's local value and would leave descendants unrotated.
+    const currentBoneQuaternion = bone.poseWorldQuaternion
+      ? bone.poseWorldQuaternion.clone()
+      : new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
     const restBoneQuaternion = rest.boneQuaternion || new THREE.Quaternion().setFromEuler(new THREE.Euler(rest.boneRotation.x, rest.boneRotation.y, rest.boneRotation.z, "XYZ"));
     const rotationDelta = currentBoneQuaternion.multiply(restBoneQuaternion.clone().invert());
     object.position.copy(rest.objectPosition).sub(rest.bonePosition).applyQuaternion(rotationDelta).add(bone.position);
@@ -773,11 +1122,21 @@ function rebuildBoneVisuals() {
   boneRigGroup.layers.enable(2);
   for (const bone of rigBones) {
     const guidePosition = bone.displayPosition || bone.position;
-    const guideTail = bone.displayTail || bone.tail || bone.position.clone().add(new THREE.Vector3(0, .12, 0));
+    const directChild = rigBones.find(candidate => candidate.parentId === bone.id);
+    const childTail = directChild ? (directChild.displayPosition || directChild.position) : null;
+    const guideTail = childTail || bone.displayTail || bone.tail || bone.position.clone().add(new THREE.Vector3(0, .12, 0));
     const selectedGuide = bone.id === selectedBoneId;
+    const jointColor = selectedGuide ? 0xffc547 : 0xd8d8d8;
+    const boneVector = guideTail.clone().sub(guidePosition);
+    const boneLength = boneVector.length();
+    const childBone = rigBones.find(candidate => boneById(candidate.parentId)?.id === bone.id);
+    const jointRadius = selectedGuide ? .11 : .085;
+    // Parent joint = sphere (yellow in your sketch). The cone above is the
+    // child; its tip meets the next parent sphere, so the chain reads
+    // sphere → cone → sphere with no gaps.
     const joint = new THREE.Mesh(
-      new THREE.SphereGeometry(selectedGuide ? .055 : .035, 14, 10),
-      new THREE.MeshBasicMaterial({ color: selectedGuide ? 0xffc547 : 0x40c7a5, depthTest: false })
+      new THREE.SphereGeometry(jointRadius, 16, 12),
+      new THREE.MeshStandardMaterial({ color: jointColor, depthTest: true, roughness: .6, metalness: 0 })
     );
     joint.position.copy(guidePosition);
     joint.renderOrder = 10000;
@@ -787,19 +1146,42 @@ function rebuildBoneVisuals() {
     joint.layers.enable(1);
     joint.layers.enable(2);
     boneRigGroup.add(joint);
-    const geometry = new THREE.BufferGeometry().setFromPoints([guidePosition, guideTail]);
-    {
-      const line = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: 0xe1b14b, depthTest: false }));
-      line.renderOrder = 9999;
-      line.userData.boneId = bone.id;
-      line.layers.enable(0);
-      line.layers.enable(1);
-      line.layers.enable(2);
-      boneRigGroup.add(line);
+    const hitProxy = new THREE.Mesh(
+      new THREE.SphereGeometry(.16, 8, 6),
+      new THREE.MeshBasicMaterial({ visible: false })
+    );
+    hitProxy.position.copy(guidePosition);
+    hitProxy.userData.boneId = bone.id;
+    hitProxy.userData.boneJoint = true;
+    hitProxy.layers.enable(0);
+    hitProxy.layers.enable(1);
+    hitProxy.layers.enable(2);
+    boneRigGroup.add(hitProxy);
+    if (boneLength > .01) {
+      const direction = boneVector.clone().normalize();
+      // Parent = ball. Child = the cone: flat base connected to the parent's
+      // ball, point aimed at the child's end. The next ball (if a bone attaches
+      // there) is placed at that point, so the chain reads ball → cone → ball.
+      const coneRadius = Math.min(Math.max(boneLength * .18, .06), .22);
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(coneRadius, boneLength, 12, 1, false),
+        new THREE.MeshStandardMaterial({ color: selectedGuide ? 0xffc547 : 0x9aa7ad, depthTest: true, roughness: .8, metalness: 0 })
+      );
+      cone.position.copy(guidePosition).add(boneVector.clone().multiplyScalar(.5));
+      cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+      cone.renderOrder = 9998;
+      cone.userData.boneId = bone.id;
+      cone.layers.enable(0);
+      cone.layers.enable(1);
+      cone.layers.enable(2);
+      boneRigGroup.add(cone);
     }
   }
   const bone = selectedBone();
   if (bone && visible) addSelectedBoneGizmos(bone);
+  syncBoneTransformGizmo();
+  syncBoneJoystick();
+  syncBoneJoystick();
 }
 
 function setObjectLayer(object, layer) {
@@ -823,41 +1205,7 @@ function addSelectedBoneGizmos(bone) {
     });
     return;
   }
-  if (boneToolMode !== "rotate") return;
-  const segments = 64;
-  const radius = size * .72;
-  const frontPoints = [];
-  const sidePoints = [];
-  for (let index = 0; index <= segments; index += 1) {
-    const angle = index / segments * Math.PI * 2;
-    frontPoints.push(new THREE.Vector3(
-      bone.position.x + Math.cos(angle) * radius,
-      bone.position.y + Math.sin(angle) * radius,
-      bone.position.z
-    ));
-    sidePoints.push(new THREE.Vector3(
-      bone.position.x,
-      bone.position.y + Math.sin(angle) * radius,
-      bone.position.z + Math.cos(angle) * radius
-    ));
-  }
-  const frontRing = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(frontPoints),
-    new THREE.LineBasicMaterial({ color: 0x5f8fe8, depthTest: false })
-  );
-  const sideRing = new THREE.Line(
-    new THREE.BufferGeometry().setFromPoints(sidePoints),
-    new THREE.LineBasicMaterial({ color: 0xe55555, depthTest: false })
-  );
-  frontRing.layers.enable(0);
-  frontRing.layers.enable(1);
-  sideRing.layers.enable(0);
-  sideRing.layers.enable(2);
-  frontRing.renderOrder = 10001;
-  sideRing.renderOrder = 10001;
-  frontRing.userData.boneGizmo = true;
-  sideRing.userData.boneGizmo = true;
-  boneRigGroup.add(frontRing, sideRing);
+  // Dotted rotation rings removed — the joystick handle is the rotate control.
 }
 
 function setBoneMoveAxis(axis) {
@@ -867,6 +1215,7 @@ function setBoneMoveAxis(axis) {
   els.boneAxisXBtn?.classList.toggle("active", boneMoveAxis === "x");
   els.boneAxisYBtn?.classList.toggle("active", boneMoveAxis === "y");
   els.boneAxisZBtn?.classList.toggle("active", boneMoveAxis === "z");
+  applyBoneAxisLock();
   rebuildBoneVisuals();
 }
 
@@ -920,6 +1269,123 @@ function applyBonePanelValues() {
   applyCurrentRigPose();
   rebuildBoneVisuals();
   syncBonePanel();
+}
+
+// ---- Glue / unglue bone rig to the model -------------------------------
+// Gluing captures the current pose as the rest pose and makes every bound part
+// (Minecraft cuboids via minecraftBoneId, or a selected skinned mesh) follow
+// the bones live as you drag them. Ungluing freezes the model in place so you
+// can reposition the rig freely.
+function skinnedAvatar() {
+  return activeSkinRuntime?.avatar || null;
+}
+
+function toggleGlueBones() {
+  if (bonesGlued) unglueBonesFromModel();
+  else glueBonesToSelected();
+}
+
+function glueBonesToSelected() {
+  if (!rigBones.length) { log("Add or import bones first."); return; }
+  // Minecraft-style models already bind parts via minecraftBoneId.
+  const hasPartBindings = objects.some(o => o.userData?.minecraft?.boneId || o.userData?.minecraftBoneId);
+  if (hasPartBindings) {
+    // Capture the rest pose from the CURRENT bone/object arrangement BEFORE any
+    // hierarchy resolve, so gluing never shifts parts from their imported pose.
+    captureAnimationBindingRest();
+    bonesGlued = true;
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateGlueButton();
+    log(`Glued the rig to the model. Drag a bone and its parts follow.`);
+    return;
+  }
+  // Generic single-mesh skinning path.
+  const target = selected && selected.geometry?.getAttribute?.("position") ? selected : null;
+  if (!target) { log("Select the model mesh first, then click Glue Bone to Model."); return; }
+  const targetId = target.userData?.id || target.name;
+  rigBones.forEach(bone => {
+    bone.avatarObjectId = targetId;
+    bone.bindPosition = bone.position.clone();
+    bone.bindRotation = bone.rotation.clone();
+    bone.bindTail = (bone.tail || bone.position.clone().add(new THREE.Vector3(0, .12, 0))).clone();
+  });
+  setupSkinnedRig();
+  if (activeSkinRuntime) {
+    bonesGlued = true;
+    applyCurrentRigPose();
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateGlueButton();
+    log(`Glued ${rigBones.length} bones to "${target.name || targetId}". The model now follows the rig.`);
+  } else {
+    log("Could not glue: no Minecraft bone parts found and the selected mesh needs at least 2 bones.");
+  }
+}
+
+function unglueBonesFromModel() {
+  bonesGlued = false;
+  if (activeSkinRuntime) {
+    const avatar = activeSkinRuntime.avatar;
+    const plain = new THREE.Mesh(avatar.geometry.clone(), avatar.material);
+    plain.name = avatar.name;
+    plain.position.copy(avatar.position);
+    plain.quaternion.copy(avatar.quaternion);
+    plain.scale.copy(avatar.scale);
+    plain.visible = avatar.visible;
+    plain.castShadow = avatar.castShadow;
+    plain.receiveShadow = avatar.receiveShadow;
+    plain.renderOrder = avatar.renderOrder;
+    plain.userData = { ...avatar.userData };
+    delete plain.userData.skeletalRig;
+    plain.geometry.deleteAttribute("skinIndex");
+    plain.geometry.deleteAttribute("skinWeight");
+    const objectIndex = objects.indexOf(avatar);
+    scene.remove(avatar);
+    scene.add(plain);
+    if (objectIndex >= 0) objects[objectIndex] = plain;
+    if (selected === avatar) selected = plain;
+    activeSkinRuntime = null;
+  }
+  rigBones.forEach(bone => {
+    bone.avatarObjectId = null;
+    bone.displayPosition = null;
+    bone.displayTail = null;
+  });
+  rebuildBoneVisuals();
+  syncBonePanel();
+  updateGlueButton();
+  log("Unglued the rig from the model. You can now move bones freely.");
+}
+
+function updateGlueButton() {
+  if (els.glueBoneBtn) els.glueBoneBtn.textContent = bonesGlued ? "Unglue Bone from Model" : "Glue Bone to Model";
+  els.glueBoneBtn?.classList.toggle("active", bonesGlued);
+}
+
+// Called whenever scene objects are removed: drop bones that no longer have any
+// bound part left, so a deleted model doesn't leave a floating skeleton behind.
+function pruneBonesForRemovedObjects() {
+  if (!rigBones.length) return;
+  const minecraftBoneIds = new Set();
+  for (const object of objects) {
+    const boneId = object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
+    if (boneId) minecraftBoneIds.add(boneId);
+  }
+  const before = rigBones.length;
+  if (minecraftBoneIds.size) {
+    rigBones = rigBones.filter(bone => minecraftBoneIds.has(bone.id));
+    rigBones.forEach(bone => { if (bone.parentId && !boneById(bone.parentId)) bone.parentId = null; });
+  } else {
+    rigBones = [];
+  }
+  if (rigBones.length !== before) {
+    if (selectedBoneId && !boneById(selectedBoneId)) selectedBoneId = rigBones[0]?.id || null;
+    if (!rigBones.length) { bonesGlued = false; activeSkinRuntime = null; }
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateGlueButton();
+  }
 }
 
 function boneRigBounds() {

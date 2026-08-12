@@ -21608,6 +21608,24 @@ void main() {
       return this;
     }
   };
+  var LineDashedMaterial = class extends LineBasicMaterial {
+    constructor(parameters) {
+      super();
+      this.isLineDashedMaterial = true;
+      this.type = "LineDashedMaterial";
+      this.scale = 1;
+      this.dashSize = 3;
+      this.gapSize = 1;
+      this.setValues(parameters);
+    }
+    copy(source) {
+      super.copy(source);
+      this.scale = source.scale;
+      this.dashSize = source.dashSize;
+      this.gapSize = source.gapSize;
+      return this;
+    }
+  };
   function convertArray(array, type, forceClone) {
     if (!array || // let 'undefined' and 'null' pass
     !forceClone && array.constructor === type) return array;
@@ -32795,6 +32813,9 @@ void main() {
     boneAxisXBtn: document.querySelector("#boneAxisXBtn"),
     boneAxisYBtn: document.querySelector("#boneAxisYBtn"),
     boneAxisZBtn: document.querySelector("#boneAxisZBtn"),
+    boneModeMoveBtn: document.querySelector("#boneModeMoveBtn"),
+    boneModeRotateBtn: document.querySelector("#boneModeRotateBtn"),
+    glueBoneBtn: document.querySelector("#glueBoneBtn"),
     selectedBoneLabel: document.querySelector("#selectedBoneLabel"),
     addRootBoneBtn: document.querySelector("#addRootBoneBtn"),
     addChildBoneBtn: document.querySelector("#addChildBoneBtn"),
@@ -36454,6 +36475,7 @@ void main() {
       transform.setSpace(activeTransformMode === "rotate" ? "local" : "world");
     }
     updateTransformAttachment();
+    syncBoneTransformGizmo();
     els.hudText.textContent = activeTransformMode ? `${activeTransformMode[0].toUpperCase()}${activeTransformMode.slice(1)} gizmo active | Click ${activeTransformMode} again to turn it off` : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
   }
   function setDragPushMode(enabled, { silent = false } = {}) {
@@ -47278,6 +47300,7 @@ void main() {
     mesh.geometry.dispose();
     mesh.material.dispose();
     if (selected === mesh) selectObject(null);
+    if (typeof pruneBonesForRemovedObjects === "function") pruneBonesForRemovedObjects();
     if (previousLinkId) ensureLinkGroupColors();
     if (previousSceneGroupId) ensureSceneGroups();
     if (update) updateAll();
@@ -51954,6 +51977,7 @@ end
     const oldGridLabelsVisible = gridLabelGroup.visible;
     const oldBoneRigVisible = boneRigGroup.visible;
     const oldBoneGridAxisVisible = boneGridAxisGroup.visible;
+    const oldBoneTransformVisible = boneTransform.visible;
     const oldSceneBackground = scene.background;
     const oldSceneFog = scene.fog;
     const oldClearAlpha = renderer.getClearAlpha();
@@ -51962,6 +51986,7 @@ end
     const oldStudioFloorVisible = studioFloor.visible;
     const oldPixelRatio = renderer.getPixelRatio();
     transform.visible = false;
+    boneTransform.visible = false;
     faceMarker.visible = false;
     surfaceComponentMarker.visible = false;
     modelingEdgesOverlay.visible = false;
@@ -52021,6 +52046,7 @@ end
     };
     if (download2) downloadDataUrl(shot.fileName, dataUrl);
     transform.visible = oldTransformVisible;
+    boneTransform.visible = oldBoneTransformVisible;
     faceMarker.visible = oldFaceMarkerVisible;
     surfaceComponentMarker.visible = oldSurfaceComponentMarkerVisible;
     modelingEdgesOverlay.visible = oldModelingEdgesOverlayVisible;
@@ -52657,6 +52683,7 @@ end
     const oldFloorVisible = floor.visible;
     const oldStudioFloorVisible = studioFloor.visible;
     const oldTransformVisible = transform.visible;
+    const oldBoneTransformVisible = boneTransform.visible;
     const oldFaceMarkerVisible = faceMarker.visible;
     const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
     const oldOpeningPickGuideVisible = openingPickGuideGroup.visible;
@@ -52668,6 +52695,7 @@ end
     const spriteObjects = visibleSpriteObjects();
     suppressViewportEnvironment = true;
     transform.visible = false;
+    boneTransform.visible = false;
     faceMarker.visible = false;
     selectionOutlineGroup.visible = false;
     openingPickGuideGroup.visible = false;
@@ -52714,6 +52742,7 @@ end
     floor.visible = oldFloorVisible;
     studioFloor.visible = oldStudioFloorVisible;
     transform.visible = oldTransformVisible;
+    boneTransform.visible = oldBoneTransformVisible;
     faceMarker.visible = oldFaceMarkerVisible;
     selectionOutlineGroup.visible = oldSelectionOutlineVisible;
     openingPickGuideGroup.visible = oldOpeningPickGuideVisible;
@@ -54081,6 +54110,10 @@ end
   var boneToolMode = null;
   var boneMoveAxis = null;
   var boneDrag = null;
+  var boneGizmoToolMode = "rotate";
+  var boneGizmoEnabled = true;
+  var boneAimDrag = null;
+  var bonesGlued = false;
   var animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {}, bindingRest: null };
   var activeSkinRuntime = null;
   var boneRaycaster = new Raycaster();
@@ -54089,6 +54122,228 @@ end
   var bonePointer = new Vector2();
   var boneDragPlane = new Plane();
   var boneDragHit = new Vector3();
+  var mainBoneRaycaster = new Raycaster();
+  var boneTransformProxy = new Object3D();
+  boneTransformProxy.name = "Bone Transform Proxy";
+  boneTransformProxy.userData.editorHelper = true;
+  scene.add(boneTransformProxy);
+  var boneRingGuideGroup = new Group();
+  boneRingGuideGroup.name = "Bone Rotation Guide Rings";
+  boneRingGuideGroup.userData.editorHelper = true;
+  boneRingGuideGroup.visible = false;
+  scene.add(boneRingGuideGroup);
+  function buildBoneRingGuides() {
+    while (boneRingGuideGroup.children.length) {
+      const c = boneRingGuideGroup.children.pop();
+      c.geometry?.dispose?.();
+      c.material?.dispose?.();
+    }
+    const mk = (axis, color) => {
+      const pts = [];
+      const segs = 64, r = 0.5;
+      for (let i = 0; i <= segs; i += 1) {
+        const a = i / segs * Math.PI * 2;
+        if (axis === "x") pts.push(new Vector3(0, Math.sin(a) * r, Math.cos(a) * r));
+        else if (axis === "y") pts.push(new Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
+        else pts.push(new Vector3(Math.cos(a) * r, Math.sin(a) * r, 0));
+      }
+      const ring = new Line(
+        new BufferGeometry().setFromPoints(pts),
+        new LineDashedMaterial({ color, depthTest: false, dashSize: 0.05, gapSize: 0.03, transparent: true, opacity: 0.9 })
+      );
+      ring.computeLineDistances();
+      ring.renderOrder = 10003;
+      ring.userData.boneRingGuide = axis;
+      return ring;
+    };
+    boneRingGuideGroup.add(mk("x", 15029589), mk("y", 6934909), mk("z", 6262760));
+  }
+  buildBoneRingGuides();
+  var boneJoystickGroup = new Group();
+  boneJoystickGroup.name = "Bone Rotation Joystick";
+  boneJoystickGroup.userData.editorHelper = true;
+  boneJoystickGroup.visible = false;
+  scene.add(boneJoystickGroup);
+  var boneJoystickShaft = new Mesh(
+    new CylinderGeometry(0.03, 0.03, 1, 8),
+    new MeshBasicMaterial({ color: 16765562, depthTest: false, transparent: true, opacity: 0.9 })
+  );
+  boneJoystickShaft.renderOrder = 10004;
+  boneJoystickGroup.add(boneJoystickShaft);
+  var boneJoystickHandle = new Mesh(
+    new SphereGeometry(0.11, 16, 12),
+    new MeshBasicMaterial({ color: 16765562, depthTest: false })
+  );
+  boneJoystickHandle.renderOrder = 10005;
+  boneJoystickHandle.userData.boneJoystick = true;
+  boneJoystickGroup.add(boneJoystickHandle);
+  var boneJoystickHit = new Mesh(
+    new SphereGeometry(0.2, 8, 6),
+    new MeshBasicMaterial({ visible: false })
+  );
+  boneJoystickHit.userData.boneJoystick = true;
+  boneJoystickGroup.add(boneJoystickHit);
+  function boneJoystickLength() {
+    return Math.max(0.6, boneRigBounds().getSize(new Vector3()).length() * 0.06);
+  }
+  function boneAimDir(bone) {
+    const directChild = rigBones.find((candidate) => candidate.parentId === bone.id);
+    const tail = directChild ? directChild.displayPosition || directChild.position : bone.displayTail || bone.tail;
+    const base = bone.displayPosition || bone.position;
+    const dir = tail ? tail.clone().sub(base) : new Vector3(0, 1, 0);
+    return dir.lengthSq() > 1e-6 ? dir.normalize() : new Vector3(0, 1, 0);
+  }
+  function syncBoneJoystick() {
+    const bone = selectedBone();
+    const show = !!bone && boneRigGroup.visible && boneGizmoEnabled && boneGizmoToolMode === "rotate";
+    boneJoystickGroup.visible = show;
+    if (!show) return;
+    const base = bone.displayPosition || bone.position;
+    const dir = boneAimDir(bone).negate();
+    const len = boneJoystickLength();
+    boneJoystickGroup.position.copy(base);
+    boneJoystickShaft.scale.y = len;
+    boneJoystickShaft.position.copy(dir.clone().multiplyScalar(len / 2));
+    boneJoystickShaft.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir);
+    boneJoystickHandle.position.copy(dir.clone().multiplyScalar(len));
+    boneJoystickHit.position.copy(boneJoystickHandle.position);
+  }
+  function pickBoneJoystick(event) {
+    if (!boneJoystickGroup.visible) return false;
+    const rect = renderer.domElement.getBoundingClientRect();
+    bonePointer.x = (event.clientX - rect.left) / Math.max(1, rect.width) * 2 - 1;
+    bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+    mainBoneRaycaster.setFromCamera(bonePointer, camera);
+    return mainBoneRaycaster.intersectObjects([boneJoystickHandle, boneJoystickHit, boneJoystickShaft], false).length > 0;
+  }
+  function beginBoneAimDrag(event) {
+    const bone = selectedBone();
+    if (!bone) return false;
+    const base = (bone.displayPosition || bone.position).clone();
+    boneAimDrag = {
+      pointerId: event.pointerId,
+      boneId: bone.id,
+      base,
+      startQuat: new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")),
+      // The handle sits on the opposite side from the bone, so rotate relative to
+      // the handle's own start direction (which the cursor grabs).
+      startDir: boneAimDir(bone).negate()
+    };
+    orbit.enabled = false;
+    renderer.domElement.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    return true;
+  }
+  function moveBoneAimDrag(event) {
+    if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
+    const bone = boneById(boneAimDrag.boneId);
+    if (!bone) return;
+    const rect = renderer.domElement.getBoundingClientRect();
+    bonePointer.x = (event.clientX - rect.left) / Math.max(1, rect.width) * 2 - 1;
+    bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+    mainBoneRaycaster.setFromCamera(bonePointer, camera);
+    const camDir = new Vector3();
+    camera.getWorldDirection(camDir);
+    boneDragPlane.setFromNormalAndCoplanarPoint(camDir, boneAimDrag.base);
+    if (!mainBoneRaycaster.ray.intersectPlane(boneDragPlane, boneDragHit)) return;
+    const handleDir = boneDragHit.clone().sub(boneAimDrag.base);
+    if (handleDir.lengthSq() < 1e-6) return;
+    handleDir.normalize();
+    const delta = new Quaternion().setFromUnitVectors(boneAimDrag.startDir, handleDir);
+    const worldQuat = delta.clone().multiply(boneAimDrag.startQuat);
+    const e = new Euler().setFromQuaternion(worldQuat, "XYZ");
+    bone.rotation.set(e.x, e.y, e.z);
+    applyCurrentRigPose();
+    rebuildBoneVisuals();
+    syncBonePanel();
+    event.preventDefault();
+  }
+  function endBoneAimDrag(event) {
+    if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
+    renderer.domElement.releasePointerCapture?.(event.pointerId);
+    boneAimDrag = null;
+    orbit.enabled = true;
+  }
+  var boneTransform = new TransformControls(camera, renderer.domElement);
+  boneTransform.visible = false;
+  boneTransform.setSize(0.9);
+  boneTransform.addEventListener("dragging-changed", (event) => orbit.enabled = !event.value);
+  boneTransform.addEventListener("objectChange", () => {
+    const bone = selectedBone();
+    if (!bone || !boneTransform.dragging) return;
+    if (boneTransform.mode === "translate") {
+      bone.position.copy(boneTransformProxy.position);
+    } else {
+      bone.rotation.x = boneTransformProxy.rotation.x;
+      bone.rotation.y = boneTransformProxy.rotation.y;
+      bone.rotation.z = boneTransformProxy.rotation.z;
+    }
+    applyCurrentRigPose();
+    rebuildBoneVisuals();
+    syncBonePanel();
+  });
+  scene.add(boneTransform);
+  function boneGizmoMode() {
+    return boneGizmoToolMode === "translate" ? "translate" : "rotate";
+  }
+  function setBoneGizmoToolMode(mode) {
+    const next = mode === "translate" ? "translate" : "rotate";
+    if (boneGizmoToolMode === next && boneGizmoEnabled) {
+      boneGizmoEnabled = false;
+    } else {
+      boneGizmoToolMode = next;
+      boneGizmoEnabled = true;
+    }
+    els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
+    els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+    syncBoneTransformGizmo();
+  }
+  function applyBoneAxisLock() {
+    const free = !boneMoveAxis || boneMoveAxis === "free";
+    boneTransform.showX = free || boneMoveAxis === "x";
+    boneTransform.showY = free || boneMoveAxis === "y";
+    boneTransform.showZ = free || boneMoveAxis === "z";
+  }
+  function syncBoneTransformGizmo() {
+    const bone = selectedBone();
+    if (!bone || !boneRigGroup.visible || !boneGizmoEnabled) {
+      if (!boneTransform.dragging) {
+        boneTransform.detach();
+        boneTransform.visible = false;
+      }
+      return;
+    }
+    const mode = boneGizmoMode();
+    boneTransform.setMode(mode);
+    boneTransform.setSpace(mode === "rotate" ? "local" : "world");
+    applyBoneAxisLock();
+    if (!boneTransform.dragging) {
+      boneTransformProxy.position.copy(bone.displayPosition || bone.position);
+      boneTransformProxy.rotation.set(bone.rotation.x, bone.rotation.y, bone.rotation.z);
+      boneTransform.attach(boneTransformProxy);
+      boneTransform.visible = true;
+    }
+    boneRingGuideGroup.visible = false;
+    syncBoneJoystick();
+  }
+  function pickBoneFromMainPointer(event) {
+    if (!boneRigGroup.visible || !rigBones.length) return null;
+    const rect = renderer.domElement.getBoundingClientRect();
+    bonePointer.x = (event.clientX - rect.left) / Math.max(1, rect.width) * 2 - 1;
+    bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
+    mainBoneRaycaster.setFromCamera(bonePointer, camera);
+    const hit = mainBoneRaycaster.intersectObjects(boneRigGroup.children.filter((child) => child.userData.boneJoint), false)[0];
+    return hit?.object?.userData?.boneId || null;
+  }
+  function selectBoneFromViewport(boneId) {
+    const bone = boneById(boneId);
+    if (!bone) return;
+    selectedBoneId = boneId;
+    if (typeof selectObject === "function") selectObject(null);
+    rebuildBoneVisuals();
+    syncBonePanel();
+    log(`Selected bone: ${bone.name}. Drag the gizmo to ${boneGizmoMode() === "translate" ? "move" : "rotate"} it (Move/Rotate toolbar buttons switch mode).`);
+  }
   function boneById(id) {
     return rigBones.find((bone) => bone.id === id) || null;
   }
@@ -54226,6 +54481,7 @@ end
     for (const bone of rigBones) {
       bone.position.copy(bone.bindPosition);
       bone.rotation.copy(bone.bindRotation);
+      bone.poseWorldQuaternion = null;
     }
     for (const bone of rigBones) {
       const frames = (animationState.keys[bone.id] || []).slice().sort((a2, b2) => a2.frame - b2.frame);
@@ -54368,6 +54624,7 @@ end
     avatar.bind(skeleton);
     avatar.normalizeSkinWeights();
     activeSkinRuntime = { avatar, bones, threeBones, skeleton };
+    if (typeof updateGlueButton === "function") updateGlueButton();
   }
   function applySkinnedPose(poses) {
     const { avatar, bones, threeBones, skeleton } = activeSkinRuntime;
@@ -54376,9 +54633,11 @@ end
       const pose = poses.get(bone.id) || { position: bone.bindPosition, rotation: bone.bindRotation };
       const parent = boneById(bone.parentId);
       const parentPose = parent ? poses.get(parent.id) : null;
-      if (parent && threeBones.has(parent.id)) threeBone.position.copy(pose.position).sub(parentPose?.position || parent.bindPosition);
+      const parentQuat = parentPose ? new Quaternion().setFromEuler(new Euler(parentPose.rotation.x, parentPose.rotation.y, parentPose.rotation.z, "XYZ")) : new Quaternion();
+      const worldQuat = parentQuat.clone().multiply(new Quaternion().setFromEuler(new Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z, "XYZ")));
+      if (parent && threeBones.has(parent.id)) threeBone.position.copy(pose.position).sub(parentPose?.position || parent.bindPosition).applyQuaternion(parentQuat.clone().invert());
       else threeBone.position.copy(pose.position);
-      threeBone.rotation.set(pose.rotation.x, pose.rotation.y, pose.rotation.z, "XYZ");
+      threeBone.quaternion.copy(worldQuat);
     }
     avatar.updateMatrixWorld(true);
     skeleton.update();
@@ -54388,12 +54647,55 @@ end
       bone.displayTail = threeBone.localToWorld(bone.bindTail.clone().sub(bone.bindPosition));
     }
   }
+  function poseBoneWithChildren(bone, visited = /* @__PURE__ */ new Set(), resolved = /* @__PURE__ */ new Map()) {
+    if (resolved.has(`${bone.id}:pos`)) return resolved.get(bone.id);
+    if (visited.has(bone.id)) return new Quaternion();
+    visited.add(bone.id);
+    const bindPos = bone.bindPosition || bone.position.clone();
+    const bindRotE = bone.bindRotation || bone.rotation;
+    const parent = boneById(bone.parentId);
+    const parentDelta = parent ? poseBoneWithChildren(parent, visited, resolved).clone() : new Quaternion();
+    const bindLocalQuat = new Quaternion().setFromEuler(new Euler(bindRotE.x, bindRotE.y, bindRotE.z, bone.blockbenchLocalRotation ? "ZYX" : "XYZ"));
+    const parentRestWorldQuat = parent && resolved.get(`${parent.id}:restWorldQuat`) || new Quaternion();
+    const restWorldQuat = bone.blockbenchLocalRotation ? parentRestWorldQuat.clone().multiply(bindLocalQuat) : bindLocalQuat;
+    const curQuat = new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
+    const deltaQuat = curQuat.clone().multiply(restWorldQuat.clone().invert());
+    let worldPos = bindPos.clone();
+    let worldQuat = curQuat.clone();
+    if (parent) {
+      const parentBindPos = resolved.get(`${parent.id}:bindPos`)?.clone() || parent.bindPosition?.clone() || parent.position.clone();
+      const parentPos = resolved.get(`${parent.id}:pos`)?.clone() || parentBindPos.clone();
+      const restOffset = bindPos.clone().sub(parentBindPos);
+      worldPos = parentPos.clone().add(restOffset.applyQuaternion(parentDelta));
+      worldQuat = parentDelta.clone().multiply(curQuat);
+      bone.position.copy(worldPos);
+    }
+    if (!bone.tail) bone.tail = bone.position.clone().add(new Vector3(0, 0.12, 0));
+    bone.tailOffset = bone.tailOffset || (bone.bindTail ? bone.bindTail.clone().sub(bindPos) : bone.tail.clone().sub(bindPos));
+    bone.tail.copy(worldPos).add(bone.tailOffset.clone().applyQuaternion(worldQuat));
+    const accumulatedDelta = parentDelta.clone().multiply(deltaQuat);
+    bone.poseWorldQuaternion = worldQuat.clone();
+    resolved.set(bone.id, accumulatedDelta);
+    resolved.set(`${bone.id}:pos`, worldPos);
+    resolved.set(`${bone.id}:bindPos`, bindPos);
+    resolved.set(`${bone.id}:worldQuat`, worldQuat);
+    resolved.set(`${bone.id}:restWorldQuat`, restWorldQuat);
+    return accumulatedDelta;
+  }
+  function poseRigHierarchy() {
+    const visited = /* @__PURE__ */ new Set();
+    const resolved = /* @__PURE__ */ new Map();
+    rigBones.forEach((bone) => poseBoneWithChildren(bone, visited, resolved));
+  }
   function applyCurrentRigPose() {
-    if (!activeSkinRuntime) return;
-    applySkinnedPose(new Map(rigBones.map((bone) => [bone.id, {
-      position: bone.position.clone(),
-      rotation: bone.rotation.clone()
-    }])));
+    poseRigHierarchy();
+    if (activeSkinRuntime) {
+      applySkinnedPose(new Map(rigBones.map((bone) => [bone.id, {
+        position: bone.position.clone(),
+        rotation: bone.rotation.clone()
+      }])));
+    }
+    if (bonesGlued) applyAnimationBindings();
   }
   function resolveAnimatedBoneHierarchy() {
     const visiting = /* @__PURE__ */ new Set();
@@ -54438,6 +54740,7 @@ end
     const bindings = collectAnimationBindings();
     animationState.bindingRest = /* @__PURE__ */ new Map();
     if (!bindings.length) return;
+    poseRigHierarchy();
     const grouped = /* @__PURE__ */ new Map();
     for (const binding of bindings) {
       const id = binding.object.userData?.id;
@@ -54453,7 +54756,7 @@ end
         object,
         bonePosition: bone.position.clone(),
         boneRotation: bone.rotation.clone(),
-        boneQuaternion: new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")),
+        boneQuaternion: (bone.poseWorldQuaternion || new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"))).clone(),
         objectPosition: object.position.clone(),
         objectRotation: object.rotation.clone(),
         objectQuaternion: object.quaternion.clone()
@@ -54490,7 +54793,7 @@ end
     for (const { bone, object } of rigidBindings) {
       const rest = animationState.bindingRest.get(`rigid:${bone.id}:${object.userData?.id || object.uuid}`);
       if (!rest) continue;
-      const currentBoneQuaternion = new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
+      const currentBoneQuaternion = bone.poseWorldQuaternion ? bone.poseWorldQuaternion.clone() : new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
       const restBoneQuaternion = rest.boneQuaternion || new Quaternion().setFromEuler(new Euler(rest.boneRotation.x, rest.boneRotation.y, rest.boneRotation.z, "XYZ"));
       const rotationDelta = currentBoneQuaternion.multiply(restBoneQuaternion.clone().invert());
       object.position.copy(rest.objectPosition).sub(rest.bonePosition).applyQuaternion(rotationDelta).add(bone.position);
@@ -54797,11 +55100,18 @@ end
     boneRigGroup.layers.enable(2);
     for (const bone2 of rigBones) {
       const guidePosition = bone2.displayPosition || bone2.position;
-      const guideTail = bone2.displayTail || bone2.tail || bone2.position.clone().add(new Vector3(0, 0.12, 0));
+      const directChild = rigBones.find((candidate) => candidate.parentId === bone2.id);
+      const childTail = directChild ? directChild.displayPosition || directChild.position : null;
+      const guideTail = childTail || bone2.displayTail || bone2.tail || bone2.position.clone().add(new Vector3(0, 0.12, 0));
       const selectedGuide = bone2.id === selectedBoneId;
+      const jointColor = selectedGuide ? 16762183 : 14211288;
+      const boneVector = guideTail.clone().sub(guidePosition);
+      const boneLength = boneVector.length();
+      const childBone = rigBones.find((candidate) => boneById(candidate.parentId)?.id === bone2.id);
+      const jointRadius = selectedGuide ? 0.11 : 0.085;
       const joint = new Mesh(
-        new SphereGeometry(selectedGuide ? 0.055 : 0.035, 14, 10),
-        new MeshBasicMaterial({ color: selectedGuide ? 16762183 : 4245413, depthTest: false })
+        new SphereGeometry(jointRadius, 16, 12),
+        new MeshStandardMaterial({ color: jointColor, depthTest: true, roughness: 0.6, metalness: 0 })
       );
       joint.position.copy(guidePosition);
       joint.renderOrder = 1e4;
@@ -54811,19 +55121,39 @@ end
       joint.layers.enable(1);
       joint.layers.enable(2);
       boneRigGroup.add(joint);
-      const geometry = new BufferGeometry().setFromPoints([guidePosition, guideTail]);
-      {
-        const line = new Line(geometry, new LineBasicMaterial({ color: 14790987, depthTest: false }));
-        line.renderOrder = 9999;
-        line.userData.boneId = bone2.id;
-        line.layers.enable(0);
-        line.layers.enable(1);
-        line.layers.enable(2);
-        boneRigGroup.add(line);
+      const hitProxy = new Mesh(
+        new SphereGeometry(0.16, 8, 6),
+        new MeshBasicMaterial({ visible: false })
+      );
+      hitProxy.position.copy(guidePosition);
+      hitProxy.userData.boneId = bone2.id;
+      hitProxy.userData.boneJoint = true;
+      hitProxy.layers.enable(0);
+      hitProxy.layers.enable(1);
+      hitProxy.layers.enable(2);
+      boneRigGroup.add(hitProxy);
+      if (boneLength > 0.01) {
+        const direction = boneVector.clone().normalize();
+        const coneRadius = Math.min(Math.max(boneLength * 0.18, 0.06), 0.22);
+        const cone = new Mesh(
+          new ConeGeometry(coneRadius, boneLength, 12, 1, false),
+          new MeshStandardMaterial({ color: selectedGuide ? 16762183 : 10135469, depthTest: true, roughness: 0.8, metalness: 0 })
+        );
+        cone.position.copy(guidePosition).add(boneVector.clone().multiplyScalar(0.5));
+        cone.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction);
+        cone.renderOrder = 9998;
+        cone.userData.boneId = bone2.id;
+        cone.layers.enable(0);
+        cone.layers.enable(1);
+        cone.layers.enable(2);
+        boneRigGroup.add(cone);
       }
     }
     const bone = selectedBone();
     if (bone && visible) addSelectedBoneGizmos(bone);
+    syncBoneTransformGizmo();
+    syncBoneJoystick();
+    syncBoneJoystick();
   }
   function setObjectLayer(object, layer) {
     object.traverse?.((child) => child.layers.set(layer));
@@ -54845,41 +55175,6 @@ end
       });
       return;
     }
-    if (boneToolMode !== "rotate") return;
-    const segments = 64;
-    const radius = size * 0.72;
-    const frontPoints = [];
-    const sidePoints = [];
-    for (let index = 0; index <= segments; index += 1) {
-      const angle = index / segments * Math.PI * 2;
-      frontPoints.push(new Vector3(
-        bone.position.x + Math.cos(angle) * radius,
-        bone.position.y + Math.sin(angle) * radius,
-        bone.position.z
-      ));
-      sidePoints.push(new Vector3(
-        bone.position.x,
-        bone.position.y + Math.sin(angle) * radius,
-        bone.position.z + Math.cos(angle) * radius
-      ));
-    }
-    const frontRing = new Line(
-      new BufferGeometry().setFromPoints(frontPoints),
-      new LineBasicMaterial({ color: 6262760, depthTest: false })
-    );
-    const sideRing = new Line(
-      new BufferGeometry().setFromPoints(sidePoints),
-      new LineBasicMaterial({ color: 15029589, depthTest: false })
-    );
-    frontRing.layers.enable(0);
-    frontRing.layers.enable(1);
-    sideRing.layers.enable(0);
-    sideRing.layers.enable(2);
-    frontRing.renderOrder = 10001;
-    sideRing.renderOrder = 10001;
-    frontRing.userData.boneGizmo = true;
-    sideRing.userData.boneGizmo = true;
-    boneRigGroup.add(frontRing, sideRing);
   }
   function setBoneMoveAxis(axis) {
     boneMoveAxis = boneMoveAxis === axis ? null : axis;
@@ -54888,6 +55183,7 @@ end
     els.boneAxisXBtn?.classList.toggle("active", boneMoveAxis === "x");
     els.boneAxisYBtn?.classList.toggle("active", boneMoveAxis === "y");
     els.boneAxisZBtn?.classList.toggle("active", boneMoveAxis === "z");
+    applyBoneAxisLock();
     rebuildBoneVisuals();
   }
   function syncBonePanel() {
@@ -54939,6 +55235,114 @@ end
     applyCurrentRigPose();
     rebuildBoneVisuals();
     syncBonePanel();
+  }
+  function toggleGlueBones() {
+    if (bonesGlued) unglueBonesFromModel();
+    else glueBonesToSelected();
+  }
+  function glueBonesToSelected() {
+    if (!rigBones.length) {
+      log("Add or import bones first.");
+      return;
+    }
+    const hasPartBindings = objects.some((o) => o.userData?.minecraft?.boneId || o.userData?.minecraftBoneId);
+    if (hasPartBindings) {
+      captureAnimationBindingRest();
+      bonesGlued = true;
+      rebuildBoneVisuals();
+      syncBonePanel();
+      updateGlueButton();
+      log(`Glued the rig to the model. Drag a bone and its parts follow.`);
+      return;
+    }
+    const target = selected && selected.geometry?.getAttribute?.("position") ? selected : null;
+    if (!target) {
+      log("Select the model mesh first, then click Glue Bone to Model.");
+      return;
+    }
+    const targetId = target.userData?.id || target.name;
+    rigBones.forEach((bone) => {
+      bone.avatarObjectId = targetId;
+      bone.bindPosition = bone.position.clone();
+      bone.bindRotation = bone.rotation.clone();
+      bone.bindTail = (bone.tail || bone.position.clone().add(new Vector3(0, 0.12, 0))).clone();
+    });
+    setupSkinnedRig();
+    if (activeSkinRuntime) {
+      bonesGlued = true;
+      applyCurrentRigPose();
+      rebuildBoneVisuals();
+      syncBonePanel();
+      updateGlueButton();
+      log(`Glued ${rigBones.length} bones to "${target.name || targetId}". The model now follows the rig.`);
+    } else {
+      log("Could not glue: no Minecraft bone parts found and the selected mesh needs at least 2 bones.");
+    }
+  }
+  function unglueBonesFromModel() {
+    bonesGlued = false;
+    if (activeSkinRuntime) {
+      const avatar = activeSkinRuntime.avatar;
+      const plain = new Mesh(avatar.geometry.clone(), avatar.material);
+      plain.name = avatar.name;
+      plain.position.copy(avatar.position);
+      plain.quaternion.copy(avatar.quaternion);
+      plain.scale.copy(avatar.scale);
+      plain.visible = avatar.visible;
+      plain.castShadow = avatar.castShadow;
+      plain.receiveShadow = avatar.receiveShadow;
+      plain.renderOrder = avatar.renderOrder;
+      plain.userData = { ...avatar.userData };
+      delete plain.userData.skeletalRig;
+      plain.geometry.deleteAttribute("skinIndex");
+      plain.geometry.deleteAttribute("skinWeight");
+      const objectIndex = objects.indexOf(avatar);
+      scene.remove(avatar);
+      scene.add(plain);
+      if (objectIndex >= 0) objects[objectIndex] = plain;
+      if (selected === avatar) selected = plain;
+      activeSkinRuntime = null;
+    }
+    rigBones.forEach((bone) => {
+      bone.avatarObjectId = null;
+      bone.displayPosition = null;
+      bone.displayTail = null;
+    });
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateGlueButton();
+    log("Unglued the rig from the model. You can now move bones freely.");
+  }
+  function updateGlueButton() {
+    if (els.glueBoneBtn) els.glueBoneBtn.textContent = bonesGlued ? "Unglue Bone from Model" : "Glue Bone to Model";
+    els.glueBoneBtn?.classList.toggle("active", bonesGlued);
+  }
+  function pruneBonesForRemovedObjects() {
+    if (!rigBones.length) return;
+    const minecraftBoneIds = /* @__PURE__ */ new Set();
+    for (const object of objects) {
+      const boneId = object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
+      if (boneId) minecraftBoneIds.add(boneId);
+    }
+    const before = rigBones.length;
+    if (minecraftBoneIds.size) {
+      rigBones = rigBones.filter((bone) => minecraftBoneIds.has(bone.id));
+      rigBones.forEach((bone) => {
+        if (bone.parentId && !boneById(bone.parentId)) bone.parentId = null;
+      });
+    } else {
+      rigBones = [];
+    }
+    if (rigBones.length !== before) {
+      if (selectedBoneId && !boneById(selectedBoneId)) selectedBoneId = rigBones[0]?.id || null;
+      if (!rigBones.length) {
+        bonesGlued = false;
+        activeSkinRuntime = null;
+      }
+      rebuildBoneVisuals();
+      syncBonePanel();
+      updateGlueButton();
+    }
   }
   function boneRigBounds() {
     const box = new Box3();
@@ -55712,7 +56116,7 @@ public final class ${modelName}ClientRegistration {
 }
 `;
     const root = `src/main/java/${packageName.replace(/\./g, "/")}`;
-    const readme = `Generated by BoltWorks 3D AI Studio v49.44.3 for NeoForge 1.21.1.
+    const readme = `Generated by BoltWorks 3D AI Studio v49.44.4 for NeoForge 1.21.1.
 
 1. Copy the Java files into the matching source package.
 2. Replace ModEntities.YOUR_ENTITY in ${modelName}ClientRegistration.java and uncomment the line.
@@ -56177,6 +56581,9 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.boneAxisXBtn?.addEventListener("click", () => setBoneMoveAxis("x"));
   els.boneAxisYBtn?.addEventListener("click", () => setBoneMoveAxis("y"));
   els.boneAxisZBtn?.addEventListener("click", () => setBoneMoveAxis("z"));
+  els.boneModeMoveBtn?.addEventListener("click", () => setBoneGizmoToolMode("translate"));
+  els.boneModeRotateBtn?.addEventListener("click", () => setBoneGizmoToolMode("rotate"));
+  els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
   els.boneList?.addEventListener("change", () => {
     selectedBoneId = els.boneList.value || null;
     rebuildBoneVisuals();
@@ -57110,13 +57517,17 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     const rect = renderer.domElement.getBoundingClientRect();
     lastCanvasPointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
     lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-    if (event.button !== 0 || transform.dragging || surfaceTransform.dragging) return;
-    if (transform.visible && transform.axis || surfaceTransform.visible && surfaceTransform.axis) {
+    if (event.button !== 0 || transform.dragging || surfaceTransform.dragging || boneTransform.dragging) return;
+    if (transform.visible && transform.axis || surfaceTransform.visible && surfaceTransform.axis || boneTransform.visible && boneTransform.axis) {
       pendingScenePick = null;
       return;
     }
     if (spaceCameraMode) return;
     pendingScenePick = null;
+    if (typeof pickBoneJoystick === "function" && pickBoneJoystick(event)) {
+      beginBoneAimDrag(event);
+      return;
+    }
     if (knifeCutMode) {
       addKnifeCutPointFromHit(hitFromPointerEvent(event));
       return;
@@ -57168,6 +57579,13 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
       pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
       return;
     }
+    if (!facePickMode) {
+      const pickedBoneId = pickBoneFromMainPointer(event);
+      if (pickedBoneId) {
+        selectBoneFromViewport(pickedBoneId);
+        return;
+      }
+    }
     pendingScenePick = {
       pointerId: event.pointerId,
       startClientX: event.clientX,
@@ -57178,6 +57596,10 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     };
   });
   canvas.addEventListener("pointermove", (event) => {
+    if (typeof moveBoneAimDrag === "function" && boneAimDrag) {
+      moveBoneAimDrag(event);
+      return;
+    }
     const rect = renderer.domElement.getBoundingClientRect();
     lastCanvasPointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
     lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -57205,13 +57627,19 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     paintTriangleFromPointer(event);
   });
   window.addEventListener("pointerup", (event) => {
+    if (typeof endBoneAimDrag === "function") endBoneAimDrag(event);
     finishDragPushSession(event.pointerId);
     finishAreaSelection(event);
     finishTrianglePainting(event.pointerId);
     if (pendingScenePick?.pointerId === event.pointerId) {
       const pick = pendingScenePick;
       pendingScenePick = null;
-      if (!pick.dragged && pick.hitObject && !transform.dragging && !surfaceTransform.dragging && !spaceCameraMode) {
+      if (!pick.dragged && pick.hitObject && !transform.dragging && !surfaceTransform.dragging && !boneTransform.dragging && !spaceCameraMode) {
+        if (selectedBoneId) {
+          selectedBoneId = null;
+          rebuildBoneVisuals();
+          syncBonePanel();
+        }
         selectObject(pick.hitObject, { append: pick.append });
       }
     }
@@ -57427,6 +57855,32 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
       controlLayerMask: surfaceTransform.layers.mask,
       raycasterLayerMask: surfaceTransform.getRaycaster().layers.mask
     }),
+    boneGizmoState: () => ({
+      visible: boneTransform.visible,
+      mode: boneTransform.mode,
+      space: boneTransform.space,
+      dragging: boneTransform.dragging,
+      attached: !!boneTransform.object,
+      selectedBoneId,
+      bones: rigBones.map((bone) => ({
+        id: bone.id,
+        name: bone.name,
+        position: bone.position.toArray().map(round2),
+        rotation: [bone.rotation.x, bone.rotation.y, bone.rotation.z].map(round2)
+      }))
+    }),
+    selectBone: selectBoneFromViewport,
+    rigPose: applyCurrentRigPose,
+    boneGizmoPointer: (type, x, y) => {
+      const pointer2 = { x, y, button: 0 };
+      if (type === "hover") boneTransform.pointerHover(pointer2);
+      else if (type === "down") {
+        boneTransform.pointerHover(pointer2);
+        boneTransform.pointerDown(pointer2);
+      } else if (type === "move") boneTransform.pointerMove(pointer2);
+      else boneTransform.pointerUp(pointer2);
+      return { axis: boneTransform.axis, dragging: boneTransform.dragging };
+    },
     selectedTriangles: () => selectedFaces.map((face) => ({
       targetId: face.mesh.userData.id,
       targetName: face.mesh.name,

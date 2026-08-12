@@ -4936,6 +4936,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   const oldGridLabelsVisible = gridLabelGroup.visible;
   const oldBoneRigVisible = boneRigGroup.visible;
   const oldBoneGridAxisVisible = boneGridAxisGroup.visible;
+  const oldBoneTransformVisible = boneTransform.visible;
   const oldSceneBackground = scene.background;
   const oldSceneFog = scene.fog;
   const oldClearAlpha = renderer.getClearAlpha();
@@ -4945,6 +4946,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   const oldPixelRatio = renderer.getPixelRatio();
 
   transform.visible = false;
+  boneTransform.visible = false;
   faceMarker.visible = false;
   surfaceComponentMarker.visible = false;
   modelingEdgesOverlay.visible = false;
@@ -5006,6 +5008,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   if (download) downloadDataUrl(shot.fileName, dataUrl);
 
   transform.visible = oldTransformVisible;
+  boneTransform.visible = oldBoneTransformVisible;
   faceMarker.visible = oldFaceMarkerVisible;
   surfaceComponentMarker.visible = oldSurfaceComponentMarkerVisible;
   modelingEdgesOverlay.visible = oldModelingEdgesOverlayVisible;
@@ -5672,6 +5675,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   const oldFloorVisible = floor.visible;
   const oldStudioFloorVisible = studioFloor.visible;
   const oldTransformVisible = transform.visible;
+  const oldBoneTransformVisible = boneTransform.visible;
   const oldFaceMarkerVisible = faceMarker.visible;
   const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
   const oldOpeningPickGuideVisible = openingPickGuideGroup.visible;
@@ -5684,6 +5688,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   const spriteObjects = visibleSpriteObjects();
   suppressViewportEnvironment = true;
   transform.visible = false;
+  boneTransform.visible = false;
   faceMarker.visible = false;
   selectionOutlineGroup.visible = false;
   openingPickGuideGroup.visible = false;
@@ -5733,6 +5738,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   floor.visible = oldFloorVisible;
   studioFloor.visible = oldStudioFloorVisible;
   transform.visible = oldTransformVisible;
+  boneTransform.visible = oldBoneTransformVisible;
   faceMarker.visible = oldFaceMarkerVisible;
   selectionOutlineGroup.visible = oldSelectionOutlineVisible;
   openingPickGuideGroup.visible = oldOpeningPickGuideVisible;
