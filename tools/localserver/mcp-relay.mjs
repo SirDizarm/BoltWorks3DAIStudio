@@ -561,7 +561,7 @@ export function createMcpRelay(options = {}) {
     if (workSession && (workSession.status === "running" || workSession.status === "paused")) {
       throw workSessionError("WORK_SESSION_ACTIVE", "Stop the current timed work session before starting another one.");
     }
-    const goal = cleanText(params?.goal, MAX_WORK_SESSION_GOAL_LENGTH, "goal", { required: true });
+    const goal = cleanText(params?.goal, MAX_WORK_SESSION_GOAL_LENGTH, "goal") || "Untitled BoltWorks work session";
     const unlimited = params?.unlimited === true;
     const rawDuration = unlimited
       ? null

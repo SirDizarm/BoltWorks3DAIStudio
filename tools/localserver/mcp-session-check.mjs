@@ -225,8 +225,9 @@ try {
   assert(dispatchedAfterExpiryRead.status === 200 && dispatchedAfterExpiryRead.value.id === readableAfterExpiry.value.id, "Post-expiry read command was not dispatched.");
   assert((await complete(readableAfterExpiry.value.id, 9)).status === 200, "Post-expiry read command could not complete.");
 
-  const unlimited = await submit("work_session.start", { goal: "Verify an unlimited work session.", unlimited: true });
+  const unlimited = await submit("work_session.start", { goal: "", unlimited: true });
   assert(unlimited.status === 202 && unlimited.value.result.session.status === "running", "Unlimited session did not start.");
+  assert(unlimited.value.result.session.goal === "Untitled BoltWorks work session", "Empty session goal did not receive the default label.");
   assert(unlimited.value.result.session.unlimited === true, "Unlimited session did not expose unlimited mode.");
   assert(unlimited.value.result.session.deadlineAt === 0, "Unlimited session unexpectedly has a deadline.");
   const unlimitedMutation = await submit("object.rotate", { id: "unlimited-target" });

@@ -186,7 +186,9 @@
     if (!els.aiViewerTimer) return;
     const status = normalizedStatus(viewer.session?.status);
     if (viewer.session?.unlimited === true) {
-      els.aiViewerTimer.textContent = "Unlimited";
+      els.aiViewerTimer.textContent = "∞";
+      els.aiViewerTimer.title = "No automatic time limit";
+      els.aiViewerTimer.setAttribute("aria-label", "No automatic time limit");
       els.aiViewerTimer.dateTime = "";
       els.aiViewerTimer.dataset.state = viewer.connection === "connected" ? status : "error";
       return;
@@ -418,14 +420,15 @@
 
   function startSession() {
     const goal = String(els.aiViewerGoalInput?.value || "").trim();
-    const minutes = Math.max(1, Math.min(1440, Math.round(finiteNumber(els.aiViewerDurationInput?.value, 15))));
-    if (!goal) {
-      els.aiViewerGoalInput?.focus();
-      if (els.aiViewerCurrentAction) els.aiViewerCurrentAction.textContent = "Enter a concrete goal before starting the timer.";
-      return;
-    }
-    if (els.aiViewerDurationInput) els.aiViewerDurationInput.value = String(minutes);
-    sessionAction("start", { goal, durationMs: minutes * 60 * 1000 });
+    const durationText = String(els.aiViewerDurationInput?.value ?? "").trim();
+    const unlimited = durationText === "";
+    const minutes = unlimited
+      ? null
+      : Math.max(1, Math.min(1440, Math.round(finiteNumber(durationText, 15))));
+    if (els.aiViewerDurationInput && !unlimited) els.aiViewerDurationInput.value = String(minutes);
+    sessionAction("start", unlimited
+      ? { goal, unlimited: true }
+      : { goal, durationMs: minutes * 60 * 1000 });
   }
 
   function downloadBlob(blob, fileName) {

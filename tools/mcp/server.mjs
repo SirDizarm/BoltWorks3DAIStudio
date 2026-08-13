@@ -126,7 +126,7 @@ async function createServer() {
   title: "Start BoltWorks work session",
   description: "Start an authoritative AI work session. By default it is timed; set unlimited to start a session with no time limit. Once started, editor mutations require the active session and stop automatically when it is paused or stopped.",
   inputSchema: z.object({
-    goal: z.string().trim().min(1).max(2_000).describe("Concrete outcome to pursue during this timed session."),
+    goal: z.string().trim().max(2_000).default("").describe("Optional concrete outcome to pursue during this session."),
     durationSeconds: z.number().int().min(1).max(86_400).default(900),
     unlimited: z.boolean().default(false).describe("Start without an automatic time limit.")
   }),
