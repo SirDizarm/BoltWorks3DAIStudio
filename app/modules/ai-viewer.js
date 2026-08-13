@@ -419,7 +419,8 @@
   }
 
   function startSession() {
-    const goal = String(els.aiViewerGoalInput?.value || "").trim();
+    const enteredGoal = String(els.aiViewerGoalInput?.value || "").trim();
+    const goal = enteredGoal || "Untitled BoltWorks work session";
     const durationText = String(els.aiViewerDurationInput?.value ?? "").trim();
     const unlimited = durationText === "";
     const minutes = unlimited
