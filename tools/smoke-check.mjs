@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.47.2.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.47.3.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1107,7 +1107,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.47.2.js?v=49.47.2"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.47.3.js?v=49.47.3"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
@@ -1130,7 +1130,7 @@ for (const kneeId of ["walk-shin-l", "walk-shin-r"]) {
 if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
   throw new Error("Top view must not replace the OrbitControls world-up axis.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.47.2.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.47.3.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -1143,7 +1143,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.47.2",
+  "tool-docking.js?v=49.47.3",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1860,8 +1860,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.47.2 Experimental") || !documentSource.includes("v49.47.2 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.47.2 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.47.3 Experimental") || !documentSource.includes("v49.47.3 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.47.3 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2225,6 +2225,10 @@ if (!moduleSources.get("viewport")?.includes("frontBoneCamera.position.set(0, 0,
 }
 if (!moduleSources.get("rigging")?.includes("referenceCamera.position.set(center.x, center.y, center.z - 100)")) {
   throw new Error("Fitting the Front X/Y reference camera must preserve the canonical front direction.");
+}
+if (!moduleSources.get("meshes")?.includes('case "front":\n        mesh.position.set(0, labelY, -halfSize - offset)')
+  || !moduleSources.get("meshes")?.includes('case "back":\n        mesh.position.set(0, labelY, halfSize + offset)')) {
+  throw new Error("FRONT and BACK floor labels must match the corrected canonical model facing.");
 }
 if (!html.includes('id="flat2dLookInput"') || !moduleSources.get("panels")?.includes("function setFlat2dLook") || !moduleSources.get("panels")?.includes("new THREE.MeshBasicMaterial")) {
   throw new Error("Flat 2D Look must provide a visible toggle and unlit model rendering.");

@@ -768,11 +768,11 @@ function updateGridLabels() {
     mesh.rotation.set(-Math.PI / 2, 0, 0);
     switch (mesh.userData.axis) {
       case "front":
-        mesh.position.set(0, labelY, halfSize + offset);
-        mesh.rotation.z = Math.PI;
+        mesh.position.set(0, labelY, -halfSize - offset);
         break;
       case "back":
-        mesh.position.set(0, labelY, -halfSize - offset);
+        mesh.position.set(0, labelY, halfSize + offset);
+        mesh.rotation.z = Math.PI;
         break;
       case "left":
         mesh.position.set(-halfSize - offset, labelY, 0);
