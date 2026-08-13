@@ -4813,12 +4813,12 @@ function restoreCustomCameraViews(cameraState = {}) {
 }
 
 const screenshotViewDirections = {
-  front: new THREE.Vector3(0, .05, -1),
-  back: new THREE.Vector3(0, .05, 1),
-  left: new THREE.Vector3(-1, .05, 0),
-  right: new THREE.Vector3(1, .05, 0),
-  side: new THREE.Vector3(1, .05, 0),
-  top: new THREE.Vector3(0, 1, .001),
+  front: new THREE.Vector3(0, 0, -1),
+  back: new THREE.Vector3(0, 0, 1),
+  left: new THREE.Vector3(-1, 0, 0),
+  right: new THREE.Vector3(1, 0, 0),
+  side: new THREE.Vector3(1, 0, 0),
+  top: new THREE.Vector3(0, 1, 0),
   iso: new THREE.Vector3(.78, .52, .92),
   "front-left": new THREE.Vector3(-.78, .35, -.92),
   "front-right": new THREE.Vector3(.78, .35, -.92),
@@ -4854,7 +4854,10 @@ function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = n
   orbit.target.copy(center);
   camera.lookAt(center);
   camera.updateProjectionMatrix();
+  const dampingWasEnabled = orbit.enableDamping;
+  orbit.enableDamping = false;
   orbit.update();
+  orbit.enableDamping = dampingWasEnabled;
 }
 
 const workViewAxisLabels = {
@@ -5094,11 +5097,9 @@ function previewShotView(viewName = "iso") {
   orbit.enabled = true;
   syncPlayerAvatarVisibility(null);
   renderCustomCameraMarkers();
-  const currentDistance = camera.position.distanceTo(orbit.target);
-  setCameraToView(viewName, {
-    useCurrentZoom: els.useCurrentZoomInShotsInput?.checked ?? true,
-    currentDistance
-  });
+  // View buttons are absolute presets. Repeated clicks must resolve to the
+  // same centered camera instead of inheriting distance from the last view.
+  setCameraToView(viewName, { useCurrentZoom: false });
   log(`Previewing ${viewName} shot framing.`);
 }
 

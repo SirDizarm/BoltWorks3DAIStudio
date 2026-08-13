@@ -1655,7 +1655,10 @@ function fitBoneCamera(referenceCamera, canvasElement, view) {
   referenceCamera.top = halfHeight;
   referenceCamera.bottom = -halfHeight;
   if (view === "front") {
-    referenceCamera.position.set(center.x, center.y, center.z + 100);
+    // Keep this identical to Front Work/export: imported Minecraft models face
+    // toward -Z, so +Z is their back. This function runs whenever the reference
+    // view is fitted and must not reverse the canonical front direction.
+    referenceCamera.position.set(center.x, center.y, center.z - 100);
     referenceCamera.up.set(0, 1, 0);
   } else {
     referenceCamera.position.set(center.x + 100, center.y, center.z);

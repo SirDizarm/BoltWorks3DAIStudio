@@ -122,6 +122,93 @@ function resize() {
   resizeGameplayPreview();
 }
 
+const flat2dOriginalMaterials = new Map();
+
+function flat2dMaterial(source) {
+  if (!source) return source;
+  const material = new THREE.MeshBasicMaterial({
+    color: source.color?.clone?.() || new THREE.Color(0xffffff),
+    map: source.map || null,
+    alphaMap: source.alphaMap || null,
+    transparent: !!source.transparent,
+    opacity: source.opacity ?? 1,
+    alphaTest: source.alphaTest ?? 0,
+    side: source.side,
+    depthTest: source.depthTest,
+    depthWrite: source.depthWrite,
+    vertexColors: !!source.vertexColors,
+    wireframe: !!source.wireframe,
+    toneMapped: false
+  });
+  material.name = `${source.name || "Material"} · Flat 2D`;
+  material.userData = { ...(source.userData || {}), flat2dPreview: true };
+  return material;
+}
+
+function syncFlat2dLook() {
+  const enabled = !!els.flat2dLookInput?.checked;
+  for (const object of objects) {
+    if (!object?.isMesh) continue;
+    if (enabled && !flat2dOriginalMaterials.has(object)) {
+      flat2dOriginalMaterials.set(object, {
+        material: object.material,
+        castShadow: object.castShadow,
+        receiveShadow: object.receiveShadow
+      });
+      object.material = Array.isArray(object.material)
+        ? object.material.map(flat2dMaterial)
+        : flat2dMaterial(object.material);
+    } else if (enabled && flat2dOriginalMaterials.has(object)) {
+      const saved = flat2dOriginalMaterials.get(object);
+      const original = saved.material;
+      const originals = Array.isArray(original) ? original : [original];
+      const flats = Array.isArray(object.material) ? object.material : [object.material];
+      if (!flats.every(material => material?.userData?.flat2dPreview)) {
+        saved.material = object.material;
+        object.material = Array.isArray(object.material)
+          ? object.material.map(flat2dMaterial)
+          : flat2dMaterial(object.material);
+      } else {
+        flats.forEach((material, index) => {
+          const source = originals[index] || originals[0];
+          if (!source) return;
+          // Inspector and texture-editor changes are applied to the live flat
+          // material. Mirror those shared properties back to the saved 3D
+          // material so toggling this preview never loses an edit.
+          source.map = material.map || null;
+          source.alphaMap = material.alphaMap || null;
+          if (source.color && material.color) source.color.copy(material.color);
+          source.transparent = !!material.transparent;
+          source.opacity = material.opacity ?? 1;
+          source.alphaTest = material.alphaTest ?? 0;
+          source.needsUpdate = true;
+        });
+      }
+    } else if (!enabled && flat2dOriginalMaterials.has(object)) {
+      const flatMaterial = object.material;
+      const original = flat2dOriginalMaterials.get(object);
+      object.material = original.material;
+      object.castShadow = original.castShadow;
+      object.receiveShadow = original.receiveShadow;
+      flat2dOriginalMaterials.delete(object);
+      (Array.isArray(flatMaterial) ? flatMaterial : [flatMaterial]).forEach(material => material?.dispose?.());
+    }
+    if (enabled) {
+      object.castShadow = false;
+      object.receiveShadow = false;
+    }
+  }
+  renderer.shadowMap.enabled = !enabled;
+}
+
+function setFlat2dLook(enabled, { quiet = false } = {}) {
+  if (els.flat2dLookInput) els.flat2dLookInput.checked = !!enabled;
+  syncFlat2dLook();
+  if (!quiet) log(enabled
+    ? "Flat 2D Look enabled. Textures now render without lighting or shadows, including animation exports."
+    : "Flat 2D Look disabled. Normal 3D lighting and shadows restored.");
+}
+
 function animate() {
   requestAnimationFrame(animate);
   const frameTime = performance.now();
@@ -129,6 +216,7 @@ function animate() {
   gameplayLastFrame = frameTime;
   updateAnimation(gameplayDelta);
   resize();
+  syncFlat2dLook();
   syncLiveMirrorPreview();
   boneGridAxisGroup.visible = !!els.showGridInput?.checked;
   syncActiveJointCamera();
@@ -618,6 +706,7 @@ els.resetZoomBtn.addEventListener("click", () => {
   frameSelected();
   log("Viewer zoom reset by framing the current model.");
 });
+els.flat2dLookInput?.addEventListener("change", event => setFlat2dLook(event.target.checked));
 els.reliefImageBtn?.addEventListener("click", () => els.reliefImageFile?.click());
 els.reliefImageFile?.addEventListener("change", async event => {
   try {

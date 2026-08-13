@@ -40,7 +40,8 @@ let activeWorkView = null;
 let savedWorkViewCamera = null;
 
 const frontBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
-frontBoneCamera.position.set(0, 0, 100);
+// Match the canonical Front work/export view: the model faces toward -Z.
+frontBoneCamera.position.set(0, 0, -100);
 frontBoneCamera.lookAt(0, 0, 0);
 frontBoneCamera.layers.enable(1);
 const sideBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
@@ -996,6 +997,7 @@ const els = {
   saveIsoPngBtn: document.querySelector("#saveIsoPngBtn"),
   saveQaSheetBtn: document.querySelector("#saveQaSheetBtn"),
   resetZoomBtn: document.querySelector("#resetZoomBtn"),
+  flat2dLookInput: document.querySelector("#flat2dLookInput"),
   hudText: document.querySelector("#hudText")
 };
 

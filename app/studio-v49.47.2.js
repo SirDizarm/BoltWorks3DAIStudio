@@ -32317,7 +32317,7 @@ void main() {
   var activeWorkView = null;
   var savedWorkViewCamera = null;
   var frontBoneCamera = new OrthographicCamera(-5, 5, 5, -5, 0.01, 1e4);
-  frontBoneCamera.position.set(0, 0, 100);
+  frontBoneCamera.position.set(0, 0, -100);
   frontBoneCamera.lookAt(0, 0, 0);
   frontBoneCamera.layers.enable(1);
   var sideBoneCamera = new OrthographicCamera(-5, 5, 5, -5, 0.01, 1e4);
@@ -33244,6 +33244,7 @@ void main() {
     saveIsoPngBtn: document.querySelector("#saveIsoPngBtn"),
     saveQaSheetBtn: document.querySelector("#saveQaSheetBtn"),
     resetZoomBtn: document.querySelector("#resetZoomBtn"),
+    flat2dLookInput: document.querySelector("#flat2dLookInput"),
     hudText: document.querySelector("#hudText")
   };
   var textureEditorState = {
@@ -52107,12 +52108,12 @@ end
     renderCustomCameraViews();
   }
   var screenshotViewDirections = {
-    front: new Vector3(0, 0.05, -1),
-    back: new Vector3(0, 0.05, 1),
-    left: new Vector3(-1, 0.05, 0),
-    right: new Vector3(1, 0.05, 0),
-    side: new Vector3(1, 0.05, 0),
-    top: new Vector3(0, 1, 1e-3),
+    front: new Vector3(0, 0, -1),
+    back: new Vector3(0, 0, 1),
+    left: new Vector3(-1, 0, 0),
+    right: new Vector3(1, 0, 0),
+    side: new Vector3(1, 0, 0),
+    top: new Vector3(0, 1, 0),
     iso: new Vector3(0.78, 0.52, 0.92),
     "front-left": new Vector3(-0.78, 0.35, -0.92),
     "front-right": new Vector3(0.78, 0.35, -0.92),
@@ -52146,7 +52147,10 @@ end
     orbit.target.copy(center);
     camera.lookAt(center);
     camera.updateProjectionMatrix();
+    const dampingWasEnabled = orbit.enableDamping;
+    orbit.enableDamping = false;
     orbit.update();
+    orbit.enableDamping = dampingWasEnabled;
   }
   var workViewAxisLabels = {
     front: "Front view: X \u2194 horizontal \xB7 Y \u2195 vertical (Z hidden)",
@@ -52372,11 +52376,7 @@ end
     orbit.enabled = true;
     syncPlayerAvatarVisibility(null);
     renderCustomCameraMarkers();
-    const currentDistance = camera.position.distanceTo(orbit.target);
-    setCameraToView(viewName, {
-      useCurrentZoom: els.useCurrentZoomInShotsInput?.checked ?? true,
-      currentDistance
-    });
+    setCameraToView(viewName, { useCurrentZoom: false });
     log(`Previewing ${viewName} shot framing.`);
   }
   function previewIsoOrReference() {
@@ -55830,7 +55830,7 @@ end
     referenceCamera.top = halfHeight;
     referenceCamera.bottom = -halfHeight;
     if (view === "front") {
-      referenceCamera.position.set(center.x, center.y, center.z + 100);
+      referenceCamera.position.set(center.x, center.y, center.z - 100);
       referenceCamera.up.set(0, 1, 0);
     } else {
       referenceCamera.position.set(center.x + 100, center.y, center.z);
@@ -57052,6 +57052,80 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     resizeReferenceRenderer(sideBoneRenderer, sideBoneCamera, sideBoneCanvas, "side");
     resizeGameplayPreview();
   }
+  var flat2dOriginalMaterials = /* @__PURE__ */ new Map();
+  function flat2dMaterial(source) {
+    if (!source) return source;
+    const material = new MeshBasicMaterial({
+      color: source.color?.clone?.() || new Color(16777215),
+      map: source.map || null,
+      alphaMap: source.alphaMap || null,
+      transparent: !!source.transparent,
+      opacity: source.opacity ?? 1,
+      alphaTest: source.alphaTest ?? 0,
+      side: source.side,
+      depthTest: source.depthTest,
+      depthWrite: source.depthWrite,
+      vertexColors: !!source.vertexColors,
+      wireframe: !!source.wireframe,
+      toneMapped: false
+    });
+    material.name = `${source.name || "Material"} \xB7 Flat 2D`;
+    material.userData = { ...source.userData || {}, flat2dPreview: true };
+    return material;
+  }
+  function syncFlat2dLook() {
+    const enabled = !!els.flat2dLookInput?.checked;
+    for (const object of objects) {
+      if (!object?.isMesh) continue;
+      if (enabled && !flat2dOriginalMaterials.has(object)) {
+        flat2dOriginalMaterials.set(object, {
+          material: object.material,
+          castShadow: object.castShadow,
+          receiveShadow: object.receiveShadow
+        });
+        object.material = Array.isArray(object.material) ? object.material.map(flat2dMaterial) : flat2dMaterial(object.material);
+      } else if (enabled && flat2dOriginalMaterials.has(object)) {
+        const saved = flat2dOriginalMaterials.get(object);
+        const original = saved.material;
+        const originals = Array.isArray(original) ? original : [original];
+        const flats = Array.isArray(object.material) ? object.material : [object.material];
+        if (!flats.every((material) => material?.userData?.flat2dPreview)) {
+          saved.material = object.material;
+          object.material = Array.isArray(object.material) ? object.material.map(flat2dMaterial) : flat2dMaterial(object.material);
+        } else {
+          flats.forEach((material, index) => {
+            const source = originals[index] || originals[0];
+            if (!source) return;
+            source.map = material.map || null;
+            source.alphaMap = material.alphaMap || null;
+            if (source.color && material.color) source.color.copy(material.color);
+            source.transparent = !!material.transparent;
+            source.opacity = material.opacity ?? 1;
+            source.alphaTest = material.alphaTest ?? 0;
+            source.needsUpdate = true;
+          });
+        }
+      } else if (!enabled && flat2dOriginalMaterials.has(object)) {
+        const flatMaterial = object.material;
+        const original = flat2dOriginalMaterials.get(object);
+        object.material = original.material;
+        object.castShadow = original.castShadow;
+        object.receiveShadow = original.receiveShadow;
+        flat2dOriginalMaterials.delete(object);
+        (Array.isArray(flatMaterial) ? flatMaterial : [flatMaterial]).forEach((material) => material?.dispose?.());
+      }
+      if (enabled) {
+        object.castShadow = false;
+        object.receiveShadow = false;
+      }
+    }
+    renderer.shadowMap.enabled = !enabled;
+  }
+  function setFlat2dLook(enabled, { quiet = false } = {}) {
+    if (els.flat2dLookInput) els.flat2dLookInput.checked = !!enabled;
+    syncFlat2dLook();
+    if (!quiet) log(enabled ? "Flat 2D Look enabled. Textures now render without lighting or shadows, including animation exports." : "Flat 2D Look disabled. Normal 3D lighting and shadows restored.");
+  }
   function animate() {
     requestAnimationFrame(animate);
     const frameTime = performance.now();
@@ -57059,6 +57133,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     gameplayLastFrame = frameTime;
     updateAnimation(gameplayDelta);
     resize();
+    syncFlat2dLook();
     syncLiveMirrorPreview();
     boneGridAxisGroup.visible = !!els.showGridInput?.checked;
     syncActiveJointCamera();
@@ -57566,6 +57641,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     frameSelected();
     log("Viewer zoom reset by framing the current model.");
   });
+  els.flat2dLookInput?.addEventListener("change", (event) => setFlat2dLook(event.target.checked));
   els.reliefImageBtn?.addEventListener("click", () => els.reliefImageFile?.click());
   els.reliefImageFile?.addEventListener("change", async (event) => {
     try {

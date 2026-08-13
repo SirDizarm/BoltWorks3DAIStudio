@@ -20,13 +20,13 @@ const mcpSessionFile = process.env.BWS_MCP_SESSION_FILE
 // headroom above the relay's previous 4 MB default, while staying under its
 // 16 MB hard cap.
 const mcpRelay = createMcpRelay({ token: process.env.BWS_MCP_TOKEN, maxBodyBytes: 12 * 1024 * 1024 });
-const studioSource = await buildStudioBundle({ outfile: join(root, "app", "studio-v49.47.1.js") });
+const studioSource = await buildStudioBundle({ outfile: join(root, "app", "studio-v49.47.2.js") });
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
   if (await handleVideoExport({ pathname: url.pathname, request, response })) return;
   if (handleHostApi({ pathname: url.pathname, request, response, server, pendingProjectFile, mcpRelay, url })) return;
-  if (url.pathname === "/app/studio-v49.47.1.js") {
+  if (url.pathname === "/app/studio-v49.47.2.js") {
     response.writeHead(200, {
       "content-type": "text/javascript; charset=utf-8",
       "cache-control": "no-store"
