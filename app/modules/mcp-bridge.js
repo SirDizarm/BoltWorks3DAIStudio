@@ -594,6 +594,7 @@ function mcpBridgeValidateWorkSession(command, method) {
       status: session.status
     });
   }
+  if (session.unlimited === true) return;
   const deadlineAt = typeof session.deadlineAt === "number"
     ? session.deadlineAt
     : Date.parse(String(session.deadlineAt || ""));

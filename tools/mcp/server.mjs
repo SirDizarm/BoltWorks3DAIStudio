@@ -33,6 +33,45 @@ function referenceImageFileToDataUrl(imagePath) {
 
 const jsonObject = z.record(z.string(), z.unknown());
 const exactId = z.string().trim().min(1).max(128);
+const vector3 = z.tuple([z.number(), z.number(), z.number()]).describe(
+  "Exactly three finite numbers: [x, y, z]. Rotation values are degrees."
+);
+const nonZeroScale3 = vector3.refine(
+  (value) => value.every((component) => Math.abs(component) >= 0.000001),
+  "Scale components cannot be zero."
+);
+const hexColor = z.string().regex(/^#[0-9a-f]{6}$/i).describe("Color in #RRGGBB format, for example #40C7A5.");
+const createObjectSpec = z.object({
+  id: exactId.optional().describe("Optional immutable object ID. Omit it to let BoltWorks generate one."),
+  shape: z.enum([
+    "box", "sphere", "cylinder", "cone", "torus", "panel", "wedge", "hollowBox", "tube",
+    "curvedPanel", "ring", "arch", "hemisphere", "dome", "capsule", "pyramid", "prism",
+    "tetrahedron", "pyramidFrustum", "facetedBallLow", "facetedBallMedium", "facetedBallHigh",
+    "heart", "stair"
+  ]).default("box").describe("Primitive shape. Shape dimensions always come from scale; do not use height, radius, radiusTop, or radiusBottom."),
+  name: z.string().trim().min(1).max(256).optional(),
+  position: vector3.optional().describe("World position [x, y, z]. Defaults to [0, 0.5, 0]."),
+  rotation: vector3.optional().describe("Euler rotation [x, y, z] in degrees."),
+  scale: nonZeroScale3.optional().describe("Object dimensions as [x, y, z]. For a cylinder, y is its height and x/z are its diameter scales."),
+  color: hexColor.optional().describe("Base object color. The field name is color, not baseColor."),
+  roughness: z.number().min(0).max(1).optional(),
+  opacity: z.number().min(0.05).max(1).optional(),
+  materialRule: z.string().trim().min(1).max(64).optional(),
+  hidden: z.boolean().optional(),
+  groupId: z.string().trim().max(256).nullable().optional(),
+  groupName: z.string().trim().max(256).nullable().optional(),
+  linkId: z.string().trim().max(256).nullable().optional(),
+  linkColor: z.string().trim().max(256).nullable().optional(),
+  bevel: z.number().min(0).max(100_000).optional(),
+  depth: z.number().min(0).max(100_000).optional(),
+  direction: z.string().trim().max(256).nullable().optional(),
+  pivot: vector3.nullable().optional(),
+  playerAvatar: z.boolean().optional(),
+  playerHeadOffset: vector3.nullable().optional(),
+  geometry: jsonObject.optional()
+}).strict().describe(
+  "One editable BoltWorks object. Example: {\"shape\":\"cylinder\",\"name\":\"Body\",\"position\":[0,1,0],\"rotation\":[0,0,0],\"scale\":[1,2,1],\"color\":\"#40C7A5\"}."
+);
 const expectedRevision = z.number().int().nonnegative().optional().describe(
   "Optional scene revision used for optimistic concurrency. The write is rejected if the scene changed after it was inspected."
 );
@@ -84,17 +123,21 @@ async function createServer() {
     server,
     "bws_start_work_session",
     {
-      title: "Start timed BoltWorks work session",
-      description: "Start an authoritative timed AI work session. Once started, editor mutations require the active session and stop automatically when it is paused, stopped, or expired.",
-      inputSchema: z.object({
-        goal: z.string().trim().min(1).max(2_000).describe("Concrete outcome to pursue during this timed session."),
-        durationSeconds: z.number().int().min(1).max(86_400).default(900)
-      }),
+  title: "Start BoltWorks work session",
+  description: "Start an authoritative AI work session. By default it is timed; set unlimited to start a session with no time limit. Once started, editor mutations require the active session and stop automatically when it is paused or stopped.",
+  inputSchema: z.object({
+    goal: z.string().trim().min(1).max(2_000).describe("Concrete outcome to pursue during this timed session."),
+    durationSeconds: z.number().int().min(1).max(86_400).default(900),
+    unlimited: z.boolean().default(false).describe("Start without an automatic time limit.")
+  }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }
     },
     "work_session.start",
-    ({ goal, durationSeconds }) => ({ goal, durationMs: durationSeconds * 1_000 })
-  );
+  ({ goal, durationSeconds, unlimited }) => ({
+    goal,
+    ...(unlimited ? { unlimited: true } : { durationMs: durationSeconds * 1_000 })
+  })
+);
 
   registerRelayTool(
     server,
@@ -183,9 +226,9 @@ async function createServer() {
     "bws_create_objects",
     {
       title: "Create BoltWorks objects",
-      description: "Create one or more editable scene objects. Inspect capabilities and the scene first; include expectedRevision for safe collaborative writes.",
+      description: "Create one or more editable scene objects. Pass one object with an objects array; each item uses shape, position [x,y,z], rotation in degrees, scale [x,y,z], and color #RRGGBB. Primitive dimensions are controlled only by scale: never send height/radius/radiusTop/baseColor. Inspect capabilities and the scene first; include expectedRevision for safe collaborative writes.",
       inputSchema: z.object({
-        objects: z.array(jsonObject).min(1).max(MAX_OBJECTS_PER_CALL),
+        objects: z.array(createObjectSpec).min(1).max(MAX_OBJECTS_PER_CALL).describe("Editable objects to create. This field must be an array inside the tool argument object, not a top-level array."),
         expectedRevision
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false }

@@ -225,6 +225,21 @@ try {
   assert(dispatchedAfterExpiryRead.status === 200 && dispatchedAfterExpiryRead.value.id === readableAfterExpiry.value.id, "Post-expiry read command was not dispatched.");
   assert((await complete(readableAfterExpiry.value.id, 9)).status === 200, "Post-expiry read command could not complete.");
 
+  const unlimited = await submit("work_session.start", { goal: "Verify an unlimited work session.", unlimited: true });
+  assert(unlimited.status === 202 && unlimited.value.result.session.status === "running", "Unlimited session did not start.");
+  assert(unlimited.value.result.session.unlimited === true, "Unlimited session did not expose unlimited mode.");
+  assert(unlimited.value.result.session.deadlineAt === 0, "Unlimited session unexpectedly has a deadline.");
+  const unlimitedMutation = await submit("object.rotate", { id: "unlimited-target" });
+  assert(unlimitedMutation.status === 202, "Unlimited-session mutation was not queued.");
+  const unlimitedDispatch = await nextCommand();
+  assert(unlimitedDispatch.status === 200 && unlimitedDispatch.value.workSession?.unlimited === true, "Unlimited-session context was not dispatched.");
+  assert((await complete(unlimitedMutation.value.id, 10)).status === 200, "Unlimited-session mutation could not complete.");
+  await sleep(120);
+  const stillUnlimited = await request("/__modeler/mcp/session", { browser: true });
+  assert(stillUnlimited.status === 200 && stillUnlimited.value.session?.status === "running" && stillUnlimited.value.session?.unlimited === true, "Unlimited session expired unexpectedly.");
+  const stoppedUnlimited = await sessionAction("stop", { reason: "Unlimited-session check complete" });
+  assert(stoppedUnlimited.status === 200 && stoppedUnlimited.value.session.status === "stopped", "Unlimited session could not be stopped.");
+
   const regressionFailures = [];
   const expectRegression = (condition, message) => {
     if (!condition) regressionFailures.push(message);

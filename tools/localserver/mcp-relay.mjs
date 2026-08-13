@@ -266,6 +266,7 @@ export function createMcpRelay(options = {}) {
 
   function sessionRemainingMs(session, at = now()) {
     if (!session || session.status === "stopped" || session.status === "expired") return 0;
+    if (session.unlimited === true) return Number.POSITIVE_INFINITY;
     const referenceAt = session.status === "paused" ? session.pausedAt : at;
     return Math.max(0, session.deadlineAt - referenceAt);
   }
@@ -300,6 +301,7 @@ export function createMcpRelay(options = {}) {
       id: session.id,
       goal: session.goal,
       status: session.status,
+      unlimited: session.unlimited === true,
       durationMs: session.durationMs,
       startedAt: session.startedAt,
       deadlineAt: session.deadlineAt,
@@ -414,7 +416,8 @@ export function createMcpRelay(options = {}) {
         client: "BoltWorks MCP work session"
       },
       timing: {
-        budgetMs: session.durationMs,
+        budgetMs: session.unlimited === true ? null : session.durationMs,
+        unlimited: session.unlimited === true,
         startedAt: isoTimestamp(session.startedAt),
         deadlineAt: isoTimestamp(session.deadlineAt),
         endedAt: isoTimestamp(session.endedAt),
@@ -489,7 +492,7 @@ export function createMcpRelay(options = {}) {
   }
 
   function expireWorkSession(at = now()) {
-    if (!workSession || workSession.status !== "running" || at < workSession.deadlineAt) return false;
+    if (!workSession || workSession.unlimited === true || workSession.status !== "running" || at < workSession.deadlineAt) return false;
     clearWorkSessionExpiryTimer();
     const expiryAt = workSession.deadlineAt;
     workSession.status = "expired";
@@ -518,7 +521,7 @@ export function createMcpRelay(options = {}) {
 
   function scheduleWorkSessionExpiry() {
     clearWorkSessionExpiryTimer();
-    if (!workSession || workSession.status !== "running" || closed) return;
+    if (!workSession || workSession.unlimited === true || workSession.status !== "running" || closed) return;
     const delayMs = Math.max(0, workSession.deadlineAt - now());
     workSessionExpiryTimer = scheduleTimeout(() => {
       workSessionExpiryTimer = null;
@@ -559,8 +562,11 @@ export function createMcpRelay(options = {}) {
       throw workSessionError("WORK_SESSION_ACTIVE", "Stop the current timed work session before starting another one.");
     }
     const goal = cleanText(params?.goal, MAX_WORK_SESSION_GOAL_LENGTH, "goal", { required: true });
-    const rawDuration = params?.durationMs === undefined ? DEFAULT_WORK_SESSION_DURATION_MS : Number(params.durationMs);
-    if (!Number.isInteger(rawDuration) || rawDuration < minWorkSessionDurationMs || rawDuration > MAX_WORK_SESSION_DURATION_MS) {
+    const unlimited = params?.unlimited === true;
+    const rawDuration = unlimited
+      ? null
+      : (params?.durationMs === undefined ? DEFAULT_WORK_SESSION_DURATION_MS : Number(params.durationMs));
+    if (!unlimited && (!Number.isInteger(rawDuration) || rawDuration < minWorkSessionDurationMs || rawDuration > MAX_WORK_SESSION_DURATION_MS)) {
       throw workSessionError(
         "INVALID_WORK_SESSION_INPUT",
         `durationMs must be an integer between ${minWorkSessionDurationMs} and ${MAX_WORK_SESSION_DURATION_MS}.`,
@@ -573,9 +579,10 @@ export function createMcpRelay(options = {}) {
       id: randomUUID(),
       goal,
       status: "running",
+      unlimited,
       durationMs: rawDuration,
       startedAt,
-      deadlineAt: startedAt + rawDuration,
+      deadlineAt: unlimited ? 0 : startedAt + rawDuration,
       pausedAt: 0,
       endedAt: 0,
       totalPausedMs: 0,
@@ -600,7 +607,7 @@ export function createMcpRelay(options = {}) {
     };
     appendSessionEvent("session.started", actor, {
       label: "Timed work session started",
-      details: { goal, durationMs: rawDuration, deadlineAt: workSession.deadlineAt }
+      details: { goal, unlimited, ...(unlimited ? {} : { durationMs: rawDuration, deadlineAt: workSession.deadlineAt }) }
     }, startedAt);
     scheduleWorkSessionExpiry();
     return sessionResponse();
@@ -642,7 +649,7 @@ export function createMcpRelay(options = {}) {
     const at = now();
     const pausedDurationMs = Math.max(0, at - session.pausedAt);
     session.totalPausedMs += pausedDurationMs;
-    session.deadlineAt += pausedDurationMs;
+    if (!session.unlimited) session.deadlineAt += pausedDurationMs;
     session.pausedAt = 0;
     session.status = "running";
     session.generation += 1;
@@ -662,7 +669,7 @@ export function createMcpRelay(options = {}) {
       throw workSessionError("WORK_SESSION_NOT_ACTIVE", `Cannot extend a work session while it is ${session.status}.`);
     }
     const extendMs = Number(params?.extendMs);
-    if (!Number.isInteger(extendMs) || extendMs < minWorkSessionDurationMs || session.durationMs + extendMs > MAX_WORK_SESSION_DURATION_MS) {
+    if (session.unlimited || !Number.isInteger(extendMs) || extendMs < minWorkSessionDurationMs || session.durationMs + extendMs > MAX_WORK_SESSION_DURATION_MS) {
       throw workSessionError(
         "INVALID_WORK_SESSION_INPUT",
         `extendMs must be an integer of at least ${minWorkSessionDurationMs}, and total duration cannot exceed ${MAX_WORK_SESSION_DURATION_MS}.`,
@@ -811,14 +818,15 @@ export function createMcpRelay(options = {}) {
         message: "The timed work-session context changed before this command was dispatched."
       };
     }
-    if (at >= workSession.deadlineAt) {
+    if (!workSession.unlimited && at >= workSession.deadlineAt) {
       refreshWorkSession(at);
       return {
         code: "WORK_SESSION_EXPIRED",
         message: "The timed work session expired before this command was dispatched."
       };
     }
-    command.workSession.deadlineAt = workSession.deadlineAt;
+    command.workSession.unlimited = workSession.unlimited === true;
+    command.workSession.deadlineAt = workSession.unlimited ? null : workSession.deadlineAt;
     return null;
   }
 
@@ -1021,7 +1029,8 @@ export function createMcpRelay(options = {}) {
             id: workSession.id,
             generation: workSession.generation,
             status: "running",
-            deadlineAt: workSession.deadlineAt
+            unlimited: workSession.unlimited === true,
+            deadlineAt: workSession.unlimited ? null : workSession.deadlineAt
           };
         }
 

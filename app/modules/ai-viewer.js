@@ -185,6 +185,12 @@
   function renderTimer() {
     if (!els.aiViewerTimer) return;
     const status = normalizedStatus(viewer.session?.status);
+    if (viewer.session?.unlimited === true) {
+      els.aiViewerTimer.textContent = "Unlimited";
+      els.aiViewerTimer.dateTime = "";
+      els.aiViewerTimer.dataset.state = viewer.connection === "connected" ? status : "error";
+      return;
+    }
     const remaining = currentRemainingMs();
     els.aiViewerTimer.textContent = formatDuration(remaining);
     els.aiViewerTimer.dateTime = isoDuration(remaining);
