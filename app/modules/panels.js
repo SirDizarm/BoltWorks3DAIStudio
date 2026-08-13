@@ -455,6 +455,7 @@ function setOutputToolsOpen(open = true) {
 function setCameraControlsOpen(open = true) {
   if (!els.cameraViewsSection) return;
   if (open) {
+    if (document.body.classList.contains("animator-workspace-active") && typeof setAnimatorWorkspace === "function") setAnimatorWorkspace(false);
     setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, false);
     setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, false);
   }
@@ -844,26 +845,26 @@ els.importObjBtn.addEventListener("click", () => els.importObjFile.click());
 els.importObjFolderBtn.addEventListener("click", () => els.importObjFolderFile.click());
 document.querySelector("#importDaeBtn").addEventListener("click", () => els.importDaeFile.click());
 els.textureBtn.addEventListener("click", () => {
-  const targets = textureTargetObjects();
-  if (!targets.length) {
-    log("Select or check one or more parts before adding a texture.");
-    return;
-  }
-  if (textureLibrary.size) {
-    const opening = els.textureLibraryPanel.hidden;
-    setTextureLibraryPanelOpen(opening);
-    if (opening) {
-      const currentName = currentTextureLibraryName();
-      if (currentName && textureLibrary.has(currentName)) els.textureLibrarySelect.value = currentName;
-      log("Texture Library opened. Pick a stored texture or import a new one.");
-    }
-    return;
-  }
+  setTextureLibraryPanelOpen(true);
+  const currentName = currentTextureLibraryName();
+  if (currentName && textureLibrary.has(currentName)) els.textureLibrarySelect.value = currentName;
+  // This is deliberately a direct file action. Repeated clicks must always
+  // allow another image instead of merely opening/closing the library panel.
+  els.textureFile.value = "";
   els.textureFile.click();
 });
 els.textureEditorBtn.addEventListener("click", openTextureEditor);
 els.applyLibraryTextureBtn.addEventListener("click", applySelectedLibraryTexture);
-els.importLibraryTextureBtn.addEventListener("click", () => els.textureFile.click());
+els.addLibraryTextureBtn?.addEventListener("click", () => {
+  els.textureFile.value = "";
+  els.textureFile.click();
+});
+els.loadTextureLibraryUrlBtn?.addEventListener("click", applyTextureLibraryUrl);
+els.textureLibraryUrlInput?.addEventListener("keydown", event => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  applyTextureLibraryUrl();
+});
 els.textureLibrarySelect?.addEventListener("change", syncTextureRobloxIdInput);
 els.textureRobloxIdInput?.addEventListener("input", () => {
   syncCurrentTextureRobloxId({ writeInput: false });
@@ -919,18 +920,30 @@ els.rotateTextureBtn.addEventListener("click", () => {
 els.textureFile.addEventListener("change", async event => {
   const file = event.target.files?.[0];
   const targets = textureTargetObjects();
-  if (!file || !targets.length) return;
+  if (!file) return;
   try {
-    recordHistory("add texture");
+    if (targets.length) recordHistory("add texture");
     const dataUrl = await readFileAsDataUrl(file);
     const libraryName = registerTextureAsset(file.name, dataUrl);
     refreshTextureLibraryUi();
     setTextureLibraryPanelOpen(true);
     if (libraryName && textureLibrary.has(libraryName)) els.textureLibrarySelect.value = libraryName;
-    for (const mesh of targets) applyTextureToMesh(mesh, dataUrl, libraryName || file.name, true, 0);
-    syncInspector();
-    updateAll();
-    log(`Added texture ${libraryName || file.name} to ${targets.length} part${targets.length === 1 ? "" : "s"} and stored it in the project library.`);
+    if (targets.length) {
+      for (const mesh of targets) {
+        applyTextureToMesh(
+          mesh,
+          dataUrl,
+          libraryName || file.name,
+          mesh.userData.textureFlipY ?? true,
+          mesh.userData.textureRotation || 0
+        );
+      }
+      syncInspector();
+      updateAll();
+      log(`Added texture ${libraryName || file.name} to ${targets.length} part${targets.length === 1 ? "" : "s"} and stored it in the project library.`);
+    } else {
+      log(`Added texture ${libraryName || file.name} to the project library. It is ready to use when a model part is selected.`);
+    }
   } catch (error) {
     log(`Texture import failed: ${error.message}`);
   }
@@ -941,6 +954,25 @@ els.textureEditorApplyBtn.addEventListener("click", applyTextureEditorChanges);
 els.textureEditorResetBtn.addEventListener("click", resetTextureEditorCanvas);
 els.textureEditorUndoBtn.addEventListener("click", undoTextureEditorPaint);
 [els.textureEditorShowUv, els.textureEditorSelectedOnly].forEach(input => input.addEventListener("change", renderTextureEditor));
+[els.textureEditorPixelPen].forEach(input => input?.addEventListener("change", () => {
+  if (els.textureEditorBrushSize) els.textureEditorBrushSize.disabled = textureEditorState.tool === "pen" && input.checked;
+  renderTextureEditorBrushPreview();
+  renderTextureEditor();
+}));
+els.textureEditorPartSelect?.addEventListener("change", event => {
+  switchTextureEditorPart(event.target.value).catch(error => log(`Could not switch texture part: ${error.message}`));
+});
+els.textureEditorLoadUrlBtn?.addEventListener("click", () => loadTextureEditorTextureUrl());
+els.textureEditorTextureUrl?.addEventListener("keydown", event => {
+  if (event.key !== "Enter") return;
+  event.preventDefault();
+  loadTextureEditorTextureUrl();
+});
+els.textureEditorChooseFileBtn?.addEventListener("click", () => els.textureEditorTextureFile?.click());
+els.textureEditorTextureFile?.addEventListener("change", event => {
+  loadTextureEditorTextureFile(event.target.files?.[0]);
+  event.target.value = "";
+});
 [els.textureEditorColor, els.textureEditorChannelValue, els.textureEditorBrushSize, els.textureEditorHardness, els.textureEditorOpacity, els.textureEditorHammerRadius].forEach(input => input.addEventListener("input", () => {
   syncTextureEditorChannelValueUi();
   renderTextureEditorBrushPreview();

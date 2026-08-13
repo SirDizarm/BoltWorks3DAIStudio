@@ -19,6 +19,7 @@ function serializeObject(mesh) {
     hidden: !!mesh.userData.hidden,
     groupId: mesh.userData.groupId || null,
     groupName: mesh.userData.groupName || null,
+    rigBoneId: mesh.userData.rigBoneId || null,
     linkColor: mesh.userData.linkColor || null,
     textureUrl: mesh.userData.textureUrl || null,
     textureName: mesh.userData.textureName || null,
@@ -585,14 +586,22 @@ function applyProjectEditorState(editor = {}) {
   restoreMinecraftWorkspace(editor.minecraft || null);
   restoreCustomCameraViews(editor.cameraViews || {});
 
-  const selectedMesh = editor.selectedId ? findObject(editor.selectedId) : null;
-  selectObject(selectedMesh, { keepGroup: true });
+  // A freshly opened model starts in a neutral inspection state. Saved model
+  // data still retains its rig and transforms, but transient editor choices
+  // (selected part, visible guides and active Rotate/Move/Scale gizmo) do not
+  // cover the model as soon as it opens.
+  checkedIds.clear();
+  activeGroupIds = [];
+  selectedGroupRecordId = null;
+  selectObject(null);
+  selectedBoneId = null;
+  if (els.showBonesInput) els.showBonesInput.checked = false;
+  rebuildBoneVisuals();
+  syncBonePanel();
 
-  const requestedMode = ["translate", "rotate", "scale"].includes(editor.activeTransformMode) ? editor.activeTransformMode : null;
   activeTransformMode = null;
   document.querySelectorAll("[data-mode]").forEach(btn => btn.classList.remove("active"));
-  if (requestedMode) setTransformMode(requestedMode);
-  else updateTransformAttachment();
+  updateTransformAttachment();
 
   const cameraPosition = view.cameraPosition;
   const orbitTarget = view.orbitTarget;
@@ -1073,7 +1082,18 @@ function syncInspector() {
   const groupMode = pivotTargets.length > 0 && transform.object === groupPivot;
   const disabled = !selected && !groupMode;
   if (els.goToSelectedMeshBtn) els.goToSelectedMeshBtn.disabled = !selected;
-  for (const input of document.querySelectorAll(".props input, .props button, .props select")) input.disabled = disabled;
+  const alwaysAvailableTextureControls = new Set([
+    els.textureBtn,
+    els.addLibraryTextureBtn,
+    els.textureFile,
+    els.textureLibrarySelect,
+    els.textureLibraryUrlInput,
+    els.loadTextureLibraryUrlBtn
+  ].filter(Boolean));
+  for (const input of document.querySelectorAll(".props input, .props button, .props select")) {
+    if (alwaysAvailableTextureControls.has(input)) continue;
+    input.disabled = disabled;
+  }
   if (groupMode) {
     syncTextureButtonLabel();
     const label = pivotTargets.length > 1 ? `${pivotEditMode ? "Pivot" : "Group"} (${pivotTargets.length} parts)` : `${pivotEditMode ? "Pivot" : "Part"} (${pivotTargets[0].name})`;

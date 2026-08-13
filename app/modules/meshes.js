@@ -593,7 +593,10 @@ function refreshTextureLibraryUi() {
     else els.textureLibrarySelect.selectedIndex = 0;
   }
   els.textureLibraryCount.textContent = `${entries.length} stored`;
-  els.applyLibraryTextureBtn.disabled = entries.length === 0;
+  const targets = textureTargetObjects();
+  const hasExplicitTargets = resolveSelectionTargets("meshes").length > 0;
+  els.applyLibraryTextureBtn.disabled = entries.length === 0 || targets.length === 0;
+  els.applyLibraryTextureBtn.textContent = hasExplicitTargets ? "Use Selected" : "Use on Model";
   syncTextureRobloxIdInput();
 }
 
@@ -980,6 +983,24 @@ function maybeApplyTextureDisplayColor(mesh, image) {
   mesh.userData.textureDisplayColor = `#${sampled.getHexString()}`;
 }
 
+function syncMinecraftTextureRendering(mesh) {
+  if (!mesh?.userData?.minecraft) return;
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  for (const material of materials) {
+    if (!material?.isMaterial) continue;
+    if (material.map) {
+      material.map.magFilter = THREE.NearestFilter;
+      material.map.minFilter = THREE.NearestFilter;
+      material.map.generateMipmaps = false;
+      material.map.needsUpdate = true;
+    }
+    material.transparent = false;
+    material.alphaTest = .1;
+    material.depthWrite = true;
+    material.needsUpdate = true;
+  }
+}
+
 function applyTextureToMesh(mesh, textureUrl, textureName = "Texture", textureFlipY = true, textureRotation = 0) {
   if (!mesh) return;
   if (mesh.material.map) mesh.material.map.dispose();
@@ -1009,6 +1030,7 @@ function applyTextureToMesh(mesh, textureUrl, textureName = "Texture", textureFl
     : "";
   mesh.userData.textureFlipY = textureUrl ? textureFlipY : true;
   mesh.userData.textureRotation = textureUrl ? normalizeTextureRotation(textureRotation) : 0;
+  syncMinecraftTextureRendering(mesh);
   for (const channel of ["roughness", "metalness", "emissive"]) {
     const config = materialTextureChannels[channel];
     const channelTexture = mesh.material[config.mapKey];
@@ -1111,6 +1133,29 @@ function textureEditorMesh() {
 
 function selectedTextureEditorMesh() {
   return selected && selected.userData.textureUrl && selected.geometry?.getAttribute("uv") ? selected : null;
+}
+
+function textureEditorPartMeshes() {
+  return objects.filter(mesh => mesh?.userData?.textureUrl && mesh.geometry?.getAttribute("uv"));
+}
+
+function syncTextureEditorPartSelect() {
+  if (!els.textureEditorPartSelect) return;
+  const parts = textureEditorPartMeshes();
+  const labels = new Map();
+  els.textureEditorPartSelect.replaceChildren(...parts.map(mesh => {
+    const option = document.createElement("option");
+    option.value = mesh.userData.id;
+    const boneName = typeof boneById === "function" ? boneById(mesh.userData.minecraft?.boneId || mesh.userData.minecraftBoneId)?.name : "";
+    const groupName = mesh.userData.groupName || (typeof groupRecord === "function" ? groupRecord(mesh.userData.groupId)?.name : "");
+    const baseLabel = [boneName || groupName, mesh.name || "Unnamed part"].filter(Boolean).join(" / ");
+    const duplicate = (labels.get(baseLabel) || 0) + 1;
+    labels.set(baseLabel, duplicate);
+    option.textContent = duplicate > 1 ? `${baseLabel} (${duplicate})` : baseLabel;
+    return option;
+  }));
+  els.textureEditorPartSelect.value = textureEditorState.meshId || "";
+  els.textureEditorPartSelect.disabled = parts.length < 2;
 }
 
 function syncTextureEditorButton() {
@@ -1261,7 +1306,7 @@ function textureEditorCursor(tool = "none") {
 
 function syncTextureEditorToolSettings(tool = "none") {
   const visibleSettings = {
-    pen: ["color", "channelValue", "size", "opacity"],
+    pen: ["color", "channelValue", "size", "pixelPen", "opacity"],
     brush: ["color", "channelValue", "size", "hardness", "opacity"],
     spray: ["color", "channelValue", "size", "opacity"],
     eraser: ["size", "hardness", "opacity"],
@@ -1284,6 +1329,7 @@ function syncTextureEditorToolSettings(tool = "none") {
         : true;
     control.hidden = !visibleSettings.includes(setting) || !channelAllowsSetting;
   }
+  if (els.textureEditorBrushSize) els.textureEditorBrushSize.disabled = tool === "pen" && !!els.textureEditorPixelPen?.checked;
   if (els.textureEditorIdleHint) els.textureEditorIdleHint.hidden = tool !== "none";
 }
 
@@ -1585,7 +1631,9 @@ function textureEditorClipToSelection(context, source) {
 }
 
 function textureEditorClipToActiveMask(context, mesh, source, triangles = null) {
-  textureEditorClipToTriangles(context, triangles || textureEditorMaskTriangles(mesh), source);
+  if (els.textureEditorSelectedOnly?.checked) {
+    textureEditorClipToTriangles(context, triangles || textureEditorMaskTriangles(mesh), source);
+  }
   textureEditorClipToSelection(context, source);
 }
 
@@ -1762,11 +1810,13 @@ function syncTextureEditorChannelValueUi() {
 }
 
 function textureEditorBrushSettings() {
+  const pixelPerfect = textureEditorState.tool === "pen" && !!els.textureEditorPixelPen?.checked;
   return {
-    size: Math.max(1, Math.min(256, Number(els.textureEditorBrushSize.value) || 12)),
+    size: pixelPerfect ? 1 : Math.max(1, Math.min(256, Number(els.textureEditorBrushSize.value) || 12)),
     hardness: Math.max(0, Math.min(1, (Number(els.textureEditorHardness.value) || 0) / 100)),
     opacity: Math.max(.01, Math.min(1, (Number(els.textureEditorOpacity.value) || 100) / 100)),
-    color: textureEditorChannelPaintColor()
+    color: textureEditorChannelPaintColor(),
+    pixelPerfect
   };
 }
 
@@ -1789,13 +1839,21 @@ function stampTextureEditorBrush(context, point, settings, erasing = false) {
   context.restore();
 }
 
+function textureEditorPenStampRect(point, settings) {
+  const size = Math.max(1, Math.round(settings.pixelPerfect ? 1 : settings.size));
+  return {
+    left: Math.floor(point.x - (size - 1) / 2),
+    top: Math.floor(point.y - (size - 1) / 2),
+    size
+  };
+}
+
 function stampTextureEditorPen(context, point, settings) {
   context.save();
   context.globalAlpha = settings.opacity;
   context.fillStyle = settings.color;
-  context.beginPath();
-  context.arc(point.x, point.y, Math.max(.5, settings.size * .5), 0, Math.PI * 2);
-  context.fill();
+  const stamp = textureEditorPenStampRect(point, settings);
+  context.fillRect(stamp.left, stamp.top, stamp.size, stamp.size);
   context.restore();
 }
 
@@ -1831,30 +1889,41 @@ function renderTextureEditorBrushPreview() {
   const context = canvas.getContext("2d");
   const settings = textureEditorBrushSettings();
   const tool = textureEditorState.tool || "none";
-  context.clearRect(0, 0, canvas.width, canvas.height);
-  context.fillStyle = "#10171c";
-  context.fillRect(0, 0, canvas.width, canvas.height);
-  context.strokeStyle = "rgba(255,255,255,.08)";
-  for (let x = 0; x < canvas.width; x += 9) {
-    context.beginPath(); context.moveTo(x, 0); context.lineTo(x, canvas.height); context.stroke();
+  const nativeHeight = Math.max(11, Math.min(96, Math.ceil(settings.size) + 6));
+  const nativeWidth = Math.max(25, Math.round(nativeHeight * (canvas.width / canvas.height)));
+  const preview = document.createElement("canvas");
+  preview.width = nativeWidth;
+  preview.height = nativeHeight;
+  const previewContext = preview.getContext("2d");
+  const checkerSize = 1;
+  for (let y = 0; y < nativeHeight; y += checkerSize) {
+    for (let x = 0; x < nativeWidth; x += checkerSize) {
+      previewContext.fillStyle = (x + y) % 2 ? "#182126" : "#10171c";
+      previewContext.fillRect(x, y, checkerSize, checkerSize);
+    }
   }
-  const previewSize = Math.max(3, Math.min(42, 3 + settings.size / 6));
-  const center = { x: canvas.width / 2, y: canvas.height / 2 };
-  if (tool === "spray") {
-    const previewSettings = { ...settings, size: previewSize * 2, opacity: 1 };
-    stampTextureEditorSpray(context, center, previewSettings);
-  } else if (["pen", "brush", "eraser"].includes(tool)) {
-    const previewSettings = { ...settings, size: previewSize * 2, hardness: tool === "pen" ? 1 : settings.hardness, opacity: 1 };
-    if (tool === "pen") stampTextureEditorPen(context, center, previewSettings);
-    else stampTextureEditorBrush(context, center, previewSettings, false);
-    context.strokeStyle = tool === "eraser" ? "#f4a8b8" : "rgba(255,255,255,.85)";
-    context.lineWidth = 1;
-    context.beginPath(); context.arc(center.x, center.y, previewSize, 0, Math.PI * 2); context.stroke();
-  } else {
+  const center = { x: Math.floor(nativeWidth / 2) + .5, y: Math.floor(nativeHeight / 2) + .5 };
+  if (tool === "spray") stampTextureEditorSpray(previewContext, center, settings);
+  else if (tool === "pen") stampTextureEditorPen(previewContext, center, settings);
+  else if (tool === "brush" || tool === "eraser") stampTextureEditorBrush(previewContext, center, settings, false);
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.imageSmoothingEnabled = false;
+  context.drawImage(preview, 0, 0, canvas.width, canvas.height);
+  if (!["pen", "brush", "spray", "eraser"].includes(tool)) {
+    context.fillStyle = "rgba(10,15,18,.88)";
+    context.fillRect(0, 0, canvas.width, canvas.height);
     context.fillStyle = "#aebbc4";
     context.font = "12px sans-serif";
     context.textAlign = "center";
-    context.fillText(tool === "fill" ? "UV island" : tool === "hammer" ? "Impact radius" : tool === "pan" ? "Drag canvas" : "Sample color", center.x, center.y + 4);
+    context.fillText(tool === "fill" ? "UV island" : tool === "hammer" ? "Impact radius" : tool === "pan" ? "Drag canvas" : "Sample color", canvas.width / 2, canvas.height / 2 + 4);
+  }
+  if (els.textureEditorPreviewLabel) {
+    const sizeLabel = `${Math.round(settings.size)} px`;
+    els.textureEditorPreviewLabel.textContent = tool === "pen"
+      ? `Exact preview: ${sizeLabel} hard square`
+      : tool === "brush"
+        ? `Exact preview: ${sizeLabel} soft brush`
+        : `Tool Preview: ${sizeLabel}`;
   }
 }
 
@@ -1916,18 +1985,39 @@ function syncTextureEditorPointerPreview(event) {
     return;
   }
   const rect = canvas.getBoundingClientRect();
-  const cssX = event.clientX - rect.left;
-  const cssY = event.clientY - rect.top;
-  const sourceDiameter = tool === "hammer"
-    ? Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48)) * 2
-    : Math.max(1, Number(els.textureEditorBrushSize.value) || 12);
-  const internalDiameter = (sourceDiameter / Math.max(1, source.width)) * drawRect.width;
-  const cssDiameter = Math.max(4, internalDiameter * (rect.width / Math.max(1, canvas.width)));
+  const cssScaleX = rect.width / Math.max(1, canvas.width);
+  const cssScaleY = rect.height / Math.max(1, canvas.height);
+  const sourceScaleX = drawRect.width / Math.max(1, source.width);
+  const sourceScaleY = drawRect.height / Math.max(1, source.height);
+  const settings = textureEditorBrushSettings();
+  let internalLeft;
+  let internalTop;
+  let internalWidth;
+  let internalHeight;
+  if (tool === "pen") {
+    // Use the exact same integer-pixel rectangle as the paint stamp. This keeps
+    // the pointer feedback locked to the pixels that will actually be changed.
+    const stamp = textureEditorPenStampRect(sourcePoint, settings);
+    internalLeft = drawRect.left + stamp.left * sourceScaleX;
+    internalTop = drawRect.top + stamp.top * sourceScaleY;
+    internalWidth = stamp.size * sourceScaleX;
+    internalHeight = stamp.size * sourceScaleY;
+  } else {
+    const sourceDiameter = tool === "hammer"
+      ? Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48)) * 2
+      : Math.max(1, Number(els.textureEditorBrushSize.value) || 12);
+    const internalCenterX = drawRect.left + sourcePoint.x * sourceScaleX;
+    const internalCenterY = drawRect.top + sourcePoint.y * sourceScaleY;
+    internalWidth = sourceDiameter * sourceScaleX;
+    internalHeight = sourceDiameter * sourceScaleY;
+    internalLeft = internalCenterX - internalWidth / 2;
+    internalTop = internalCenterY - internalHeight / 2;
+  }
   preview.className = `texture-editor-pointer-preview ${tool}`;
   preview.style.display = "block";
-  preview.style.width = `${cssDiameter}px`;
-  preview.style.height = `${cssDiameter}px`;
-  preview.style.transform = `translate3d(${cssX - cssDiameter / 2}px, ${cssY - cssDiameter / 2}px, 0)`;
+  preview.style.width = `${Math.max(1, internalWidth * cssScaleX)}px`;
+  preview.style.height = `${Math.max(1, internalHeight * cssScaleY)}px`;
+  preview.style.transform = `translate3d(${internalLeft * cssScaleX}px, ${internalTop * cssScaleY}px, 0)`;
 }
 
 function requestTextureEditorRender() {
@@ -1997,6 +2087,7 @@ function renderTextureEditor() {
   canvas.width = Math.max(1, Math.round(displayRect.width));
   canvas.height = Math.max(1, Math.round(displayRect.height));
   const context = canvas.getContext("2d");
+  context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, canvas.width, canvas.height);
   const baseRect = fitTextureRect(source.width, source.height, canvas.width, canvas.height);
   const zoom = textureEditorState.zoom || 1;
@@ -2011,12 +2102,13 @@ function renderTextureEditor() {
 
   const allTriangles = uvTrianglesForMesh(mesh);
   const selectedTriangles = selectedUvTrianglesForMesh(mesh);
-  const onlySelected = !!els.textureEditorSelectedOnly.checked && selectedTriangles.length;
+  const isolatedTriangles = selectedTriangles.length ? selectedTriangles : allTriangles;
+  const onlySelected = !!els.textureEditorSelectedOnly.checked && isolatedTriangles.length;
   if (onlySelected) {
-    context.fillStyle = "rgba(0, 0, 0, 0.55)";
+    context.fillStyle = "#0b1013";
     context.fillRect(drawRect.left, drawRect.top, drawRect.width, drawRect.height);
     context.save();
-    textureEditorTrianglesPath(context, selectedTriangles, drawRect.width, drawRect.height, drawRect.left, drawRect.top);
+    textureEditorTrianglesPath(context, isolatedTriangles, drawRect.width, drawRect.height, drawRect.left, drawRect.top);
     context.clip();
     context.drawImage(source, drawRect.left, drawRect.top, drawRect.width, drawRect.height);
     context.restore();
@@ -2116,8 +2208,10 @@ function renderTextureEditor() {
   }
 
   els.textureEditorInfo.textContent = selectedTriangles.length
-    ? `${onlySelected ? "Isolating" : "Showing"} ${selectedTriangles.length} selected triangle${selectedTriangles.length === 1 ? "" : "s"} on ${mesh.name}.`
-    : `No triangles selected on ${mesh.name} yet, so tools affect the visible UV area.`;
+    ? `${onlySelected ? "Isolating" : "Showing"} ${selectedTriangles.length} selected UV triangle${selectedTriangles.length === 1 ? "" : "s"} on ${mesh.name}.`
+    : onlySelected
+      ? `Isolating every UV island used by ${mesh.name}; all other texture areas are hidden and protected.`
+      : `Showing the full texture for ${mesh.name}; painting is still clipped to this part's UV islands.`;
   if (els.textureEditorZoomValue) els.textureEditorZoomValue.textContent = `${Math.round(zoom * 100)}%`;
   syncTextureEditorSelectionUi();
   renderTextureEditorBrushPreview();
@@ -2221,8 +2315,10 @@ function applyGlassBreakEffect(point) {
   const context = source.getContext("2d", { willReadFrequently: true });
   const radius = Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48));
   context.save();
-  textureEditorTrianglesPath(context, maskTriangles, source.width, source.height);
-  context.clip();
+  if (els.textureEditorSelectedOnly?.checked) {
+    textureEditorTrianglesPath(context, maskTriangles, source.width, source.height);
+    context.clip();
+  }
   textureEditorClipToSelection(context, source);
   for (const effectPoint of textureEditorSymmetryPoints(point, source)) {
     const hitCount = 1 + Math.floor(Math.random() * 2);
@@ -2355,8 +2451,137 @@ function syncTextureEditorChannelUi(channel) {
   }
   if (els.textureEditorChannelInfo) els.textureEditorChannelInfo.textContent = config.info;
   if (els.textureEditorApplyBtn) els.textureEditorApplyBtn.textContent = `Apply ${config.label}`;
+  if (els.textureEditorBaseColorSource) els.textureEditorBaseColorSource.hidden = normalized !== "baseColor";
   syncTextureEditorChannelValueUi();
   syncTextureEditorToolSettings(textureEditorState.tool);
+}
+
+function textureEditorRemoteTextureName(url) {
+  try {
+    const parsed = new URL(url);
+    const fileName = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).at(-1) || "remote-texture.png");
+    return /\.(png|jpe?g|webp|gif|bmp)$/i.test(fileName) ? fileName : `${fileName}.png`;
+  } catch {
+    return "remote-texture.png";
+  }
+}
+
+async function replaceTextureEditorBaseColor(dataUrl, textureName) {
+  const mesh = textureEditorMesh();
+  if (!mesh || !dataUrl) return;
+  recordHistory("replace texture in editor");
+  const registeredName = registerTextureAsset(textureName || "Texture", dataUrl, { replace: true }) || textureName || "Texture";
+  textureEditorDrafts.delete(textureEditorDraftKey(mesh.userData.id, "baseColor"));
+  applyTextureToMesh(mesh, dataUrl, registeredName, mesh.userData.textureFlipY ?? true, mesh.userData.textureRotation || 0);
+  await loadTextureEditorChannel(mesh, "baseColor");
+  refreshTextureLibraryUi();
+  syncInspector();
+  updateAll();
+  renderTextureEditor();
+  if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = `Loaded ${registeredName}.`;
+  log(`Replaced ${mesh.name}'s Base Color texture with ${registeredName}.`);
+}
+
+async function loadTextureEditorTextureUrl() {
+  const value = String(els.textureEditorTextureUrl?.value || "").trim();
+  if (!value) {
+    if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Paste an image URL first.";
+    return;
+  }
+  let parsed;
+  try {
+    parsed = new URL(value);
+    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+  } catch {
+    if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Use a complete http:// or https:// image URL.";
+    return;
+  }
+  const button = els.textureEditorLoadUrlBtn;
+  if (button) button.disabled = true;
+  if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Loading texture...";
+  try {
+    const response = await fetch(parsed.href, { mode: "cors", credentials: "omit" });
+    if (!response.ok) throw new Error(`Image server returned ${response.status}.`);
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) throw new Error("The URL did not return an image.");
+    await replaceTextureEditorBaseColor(await readFileAsDataUrl(blob), textureEditorRemoteTextureName(parsed.href));
+  } catch (error) {
+    const message = error?.message || "The image host blocked browser access.";
+    if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = `Could not load URL: ${message}`;
+    log(`Texture URL import failed: ${message}`);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function applyTextureLibraryUrl() {
+  const targets = textureTargetObjects();
+  const status = els.textureLibraryUrlStatus;
+  if (!targets.length) {
+    if (status) status.textContent = "Select or check one or more parts first.";
+    log("Select or check one or more parts before applying a texture URL.");
+    return;
+  }
+  const value = String(els.textureLibraryUrlInput?.value || "").trim();
+  if (!value) {
+    if (status) status.textContent = "Paste an image URL first.";
+    return;
+  }
+  let parsed;
+  try {
+    parsed = new URL(value);
+    if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+  } catch {
+    if (status) status.textContent = "Use a complete http:// or https:// image URL.";
+    return;
+  }
+  const button = els.loadTextureLibraryUrlBtn;
+  if (button) button.disabled = true;
+  if (status) status.textContent = "Loading texture...";
+  try {
+    const response = await fetch(parsed.href, { mode: "cors", credentials: "omit" });
+    if (!response.ok) throw new Error(`Image server returned ${response.status}.`);
+    const blob = await response.blob();
+    if (!blob.type.startsWith("image/")) throw new Error("The URL did not return an image.");
+    const dataUrl = await readFileAsDataUrl(blob);
+    const sourceName = textureEditorRemoteTextureName(parsed.href);
+    const storedName = registerTextureAsset(sourceName, dataUrl, { replace: true }) || sourceName;
+    recordHistory("apply texture from URL");
+    for (const mesh of targets) {
+      applyTextureToMesh(
+        mesh,
+        dataUrl,
+        storedName,
+        mesh.userData.textureFlipY ?? true,
+        mesh.userData.textureRotation || 0
+      );
+    }
+    refreshTextureLibraryUi();
+    if (textureLibrary.has(storedName)) els.textureLibrarySelect.value = storedName;
+    syncTextureRobloxIdInput();
+    syncInspector();
+    updateAll();
+    if (status) status.textContent = `Applied ${storedName} to ${targets.length} part${targets.length === 1 ? "" : "s"}.`;
+    log(`Applied URL texture ${storedName} to ${targets.length} part${targets.length === 1 ? "" : "s"}.`);
+  } catch (error) {
+    const message = error?.message || "The image host blocked browser access.";
+    if (status) status.textContent = `Could not load URL: ${message}`;
+    log(`Texture Library URL import failed: ${message}`);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+async function loadTextureEditorTextureFile(file) {
+  if (!file) return;
+  if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Loading image...";
+  try {
+    await replaceTextureEditorBaseColor(await readFileAsDataUrl(file), file.name || "Texture");
+  } catch (error) {
+    const message = error?.message || "Could not read the image.";
+    if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = message;
+    log(`Texture replacement failed: ${message}`);
+  }
 }
 
 async function loadTextureEditorChannel(mesh, channel = "baseColor") {
@@ -2435,6 +2660,7 @@ async function loadTextureEditorChannel(mesh, channel = "baseColor") {
       : 100);
   }
   els.textureEditorMeshName.textContent = `${mesh.name} - ${channelData.config.label}`;
+  syncTextureEditorPartSelect();
   syncTextureEditorChannelUi(channelData.channel);
   setTextureEditorTool(textureEditorState.tool);
   setTextureEditorSymmetry(textureEditorState.symmetry);
@@ -2442,6 +2668,19 @@ async function loadTextureEditorChannel(mesh, channel = "baseColor") {
   updateTextureEditorResetButton();
   renderTextureEditorLayerUi();
   renderTextureEditor();
+}
+
+async function switchTextureEditorPart(meshId) {
+  if (!textureEditorState.open || meshId === textureEditorState.meshId) return;
+  const mesh = findObject(meshId);
+  if (!mesh?.userData?.textureUrl || !mesh.geometry?.getAttribute("uv")) return;
+  const activeChannel = textureEditorState.channel;
+  const activeTool = textureEditorState.tool || "brush";
+  const activeSymmetry = textureEditorState.symmetry || "none";
+  persistTextureEditorDraft();
+  await loadTextureEditorChannel(mesh, activeChannel);
+  setTextureEditorTool(activeTool);
+  setTextureEditorSymmetry(activeSymmetry);
 }
 
 async function switchTextureEditorChannel(channel) {
@@ -3066,7 +3305,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3112,6 +3351,7 @@ function createMesh(spec = {}) {
     linkColor: typeof linkColor === "string" && linkColor.trim() ? linkColor.trim() : null,
     groupId: typeof groupId === "string" && groupId.trim() ? groupId.trim() : null,
     groupName: typeof groupName === "string" && groupName.trim() ? groupName.trim() : null,
+    rigBoneId: typeof rigBoneId === "string" && rigBoneId.trim() ? rigBoneId.trim() : null,
     bevel,
     depth,
     direction,
@@ -3154,6 +3394,7 @@ function createMesh(spec = {}) {
   if (roughnessTextureUrl) applyMaterialTextureChannel(mesh, "roughness", roughnessTextureUrl, roughnessTextureName);
   if (metalnessTextureUrl) applyMaterialTextureChannel(mesh, "metalness", metalnessTextureUrl, metalnessTextureName);
   if (emissiveTextureUrl) applyMaterialTextureChannel(mesh, "emissive", emissiveTextureUrl, emissiveTextureName);
+  syncMinecraftTextureRendering(mesh);
   syncMeshRenderCulling(mesh);
   return mesh;
 }
@@ -4999,7 +5240,8 @@ function centerSharedPivot() {
 }
 
 function textureTargetObjects() {
-  return resolveSelectionTargets("meshes");
+  const selectedTargets = resolveSelectionTargets("meshes");
+  return selectedTargets.length ? selectedTargets : [...objects];
 }
 
 function pivotManagedObjects() {
@@ -5010,12 +5252,25 @@ function pivotManagedObjects() {
 
 function syncTextureButtonLabel() {
   const targets = textureTargetObjects();
-  const hasTexture = targets.length > 0 && targets.every(mesh => !!mesh.userData.textureUrl);
+  const hasExplicitTargets = resolveSelectionTargets("meshes").length > 0;
   const hasAnyTexture = targets.some(mesh => !!mesh.userData.textureUrl);
-  els.textureBtn.textContent = hasTexture ? "Change Texture" : "Add Texture";
-  els.textureBtn.title = hasTexture
-    ? "Open the texture library or import a replacement texture for the selected part or checked parts"
-    : "Open the texture library or add a texture image to the selected part or checked parts";
+  // Group selection is a valid texture target even though there is no single
+  // selected mesh. The inspector's general group mode disables its controls,
+  // so explicitly restore this bulk action whenever the group has mesh parts.
+  // The texture library is useful even before a mesh is selected (or before a
+  // model exists), so its entry points must never be locked by selection state.
+  els.textureBtn.disabled = false;
+  if (els.addLibraryTextureBtn) {
+    els.addLibraryTextureBtn.disabled = false;
+    els.addLibraryTextureBtn.title = hasExplicitTargets
+      ? "Choose an image file for the selected parts"
+      : (targets.length ? "Choose an image file for the whole model" : "Add an image to the project Texture Library");
+  }
+  els.textureBtn.textContent = "Add Texture";
+  const targetLabel = hasExplicitTargets
+    ? (targets.length === 1 ? "the selected part" : `all ${targets.length} selected group parts`)
+    : (targets.length ? `the whole model (${targets.length} parts)` : "the project Texture Library");
+  els.textureBtn.title = `Choose another image and add it to ${targetLabel}`;
   els.saveTextureImageBtn.disabled = !hasAnyTexture;
   els.saveTextureImageBtn.title = hasAnyTexture
     ? "Save each unique texture used by the selected part or checked parts"
@@ -5085,7 +5340,15 @@ function applySelectedLibraryTexture() {
     return;
   }
   recordHistory("apply library texture");
-  for (const mesh of targets) applyTextureToMesh(mesh, entry.dataUrl, entry.name, true, 0);
+  for (const mesh of targets) {
+    applyTextureToMesh(
+      mesh,
+      entry.dataUrl,
+      entry.name,
+      mesh.userData.textureFlipY ?? true,
+      mesh.userData.textureRotation || 0
+    );
+  }
   syncInspector();
   updateAll();
   log(`Applied stored texture ${entry.name} to ${targets.length} part${targets.length === 1 ? "" : "s"}.`);

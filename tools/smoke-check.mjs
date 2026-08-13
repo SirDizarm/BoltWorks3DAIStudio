@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.44.5.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.47.1.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -215,6 +215,33 @@ function functionSource(source, name) {
   context.resolveBlockbenchBoneRestTransforms();
   if (Math.abs(child.position.z + 1) > 1e-6 || Math.abs(child.position.x) > 1e-6) {
     throw new Error("Nested Blockbench bone origins must follow their parent rotation in the imported rest pose.");
+  }
+}
+
+{
+  const context = { THREE, rigBones: [] };
+  context.boneById = id => context.rigBones.find(bone => bone.id === id) || null;
+  vm.createContext(context);
+  vm.runInContext([
+    "poseBoneWithChildren",
+    "poseRigHierarchy"
+  ].map(name => functionSource(riggingSource, name)).join("\n"), context);
+  const root = {
+    id: "root", parentId: null,
+    position: new THREE.Vector3(0, 2, 0), bindPosition: new THREE.Vector3(0, 1, 0),
+    rotation: new THREE.Vector3(), bindRotation: new THREE.Vector3(),
+    tail: new THREE.Vector3(0, 2.25, 0), bindTail: new THREE.Vector3(0, 1.25, 0), tailOffset: new THREE.Vector3(0, .25, 0)
+  };
+  const child = {
+    id: "child", parentId: "root",
+    position: new THREE.Vector3(1, 2, 0), bindPosition: new THREE.Vector3(1, 2, 0),
+    rotation: new THREE.Vector3(), bindRotation: new THREE.Vector3(),
+    tail: new THREE.Vector3(1, 2.25, 0), bindTail: new THREE.Vector3(1, 2.25, 0), tailOffset: new THREE.Vector3(0, .25, 0)
+  };
+  context.rigBones.push(root, child);
+  context.poseRigHierarchy();
+  if (Math.abs(root.position.y - 2) > 1e-6 || Math.abs(child.position.y - 3) > 1e-6) {
+    throw new Error("Animated root translation must move the complete child hierarchy without separating model parts.");
   }
 }
 
@@ -1080,7 +1107,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.44.5.js?v=49.44.5"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.47.1.js?v=49.47.1"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
@@ -1103,7 +1130,7 @@ for (const kneeId of ["walk-shin-l", "walk-shin-r"]) {
 if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
   throw new Error("Top view must not replace the OrbitControls world-up axis.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.44.5.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.47.1.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -1116,7 +1143,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.44.5",
+  "tool-docking.js?v=49.47.1",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1459,6 +1486,20 @@ for (const required of [
   "selectedFaces",
   "selectedTriangles",
   "activeTransformMode",
+  "textureLibraryUrlInput",
+  "loadTextureLibraryUrlBtn",
+  "addLibraryTextureBtn",
+  "applyTextureLibraryUrl",
+  "selectedTargets.length ? selectedTargets : [...objects]",
+  "Use on Model",
+  "els.textureBtn.disabled = false",
+  "els.addLibraryTextureBtn.disabled = false",
+  "alwaysAvailableTextureControls",
+  "els.textureFile,",
+  "els.textureBtn.textContent = \"Add Texture\"",
+  "els.textureFile.value = \"\"",
+  "Added texture ${libraryName || file.name} to the project library",
+  "if (els.showBonesInput) els.showBonesInput.checked = false",
   "setTransformMode",
   "updateTransformAttachment",
   "flipSelectedParts",
@@ -1723,6 +1764,10 @@ for (const required of [
   "makeGeometryDataForShape",
   "textureInfoFromMaterial",
   "applyTextureToMesh",
+  "syncMinecraftTextureRendering",
+  "material.map.magFilter = THREE.NearestFilter",
+  "material.map.minFilter = THREE.NearestFilter",
+  "material.map.generateMipmaps = false",
   "textureUrl",
   "textureBtn",
   "rotateTextureBtn",
@@ -1815,8 +1860,59 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.44.5 Experimental") || !documentSource.includes("v49.44.5 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.44.5 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.47.1 Experimental") || !documentSource.includes("v49.47.1 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.47.1 version.");
+}
+
+if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
+  throw new Error("Minecraft and animator workspaces must expose dedicated Undo and Camera Controls toolbar groups.");
+}
+if (!styleSource.includes(":not(#toolbarCameraControlsLauncherGroup):not(#toolbarUndoGroup)")) {
+  throw new Error("Animator workspace must keep Undo and Camera Controls visible.");
+}
+if (!moduleSources.get("meshes").includes('context.imageSmoothingEnabled = false;') || !styleSource.includes("image-rendering: pixelated;")) {
+  throw new Error("The texture editor must preserve crisp Minecraft pixels while zooming.");
+}
+for (const textureEditorFeature of [
+  'id="textureEditorPartSelect"',
+  'id="textureEditorPixelPen"',
+  "function switchTextureEditorPart(meshId)",
+  "const isolatedTriangles = selectedTriangles.length ? selectedTriangles : allTriangles;"
+]) {
+  if (!html.includes(textureEditorFeature)) throw new Error(`Missing texture editor part/pixel/isolation feature: ${textureEditorFeature}`);
+}
+for (const exactPaintPreviewFeature of [
+  "function textureEditorPenStampRect(point, settings)",
+  "const size = Math.max(1, Math.round(settings.pixelPerfect ? 1 : settings.size));",
+  "context.fillRect(stamp.left, stamp.top, stamp.size, stamp.size);",
+  "const stamp = textureEditorPenStampRect(sourcePoint, settings);",
+  "internalLeft = drawRect.left + stamp.left * sourceScaleX;",
+  "const preview = document.createElement(\"canvas\");",
+  "context.imageSmoothingEnabled = false;",
+  "Exact preview: ${sizeLabel} hard square",
+  "Exact preview: ${sizeLabel} soft brush"
+]) {
+  if (!moduleSources.get("meshes").includes(exactPaintPreviewFeature)) throw new Error(`Missing exact pen/brush preview behavior: ${exactPaintPreviewFeature}`);
+}
+for (const fullTexturePaintFeature of [
+  'id="textureEditorTextureUrl"',
+  'id="textureEditorLoadUrlBtn"',
+  'id="textureEditorChooseFileBtn"',
+  'id="textureEditorTextureFile"',
+  "async function loadTextureEditorTextureUrl()",
+  "async function replaceTextureEditorBaseColor(dataUrl, textureName)",
+  "if (els.textureEditorSelectedOnly?.checked) {"
+]) {
+  if (!html.includes(fullTexturePaintFeature)) throw new Error(`Missing full-texture/URL paint feature: ${fullTexturePaintFeature}`);
+}
+if (!styleSource.includes("grid-template-rows: auto auto auto auto minmax(0, 1fr) auto;") || !styleSource.includes("min-height: 44px;")) {
+  throw new Error("The texture editor must reserve a visible row for its paint-tool controls.");
+}
+if (!styleSource.includes("grid-template-rows: auto auto minmax(44px, 1fr);") || !styleSource.includes("height: min(96vh, 1000px);")) {
+  throw new Error("The texture editor must reserve visible, scrollable space for Layers.");
+}
+if (styleSource.includes('body[data-workspace="minecraft"] #cameraViewsSection,')) {
+  throw new Error("Minecraft workspace must not hide Camera Controls.");
 }
 
 for (const attentionElement of ["aiViewerAttention", "aiViewerAttentionMessage", "aiViewerAttentionDirective"]) {
@@ -1860,7 +1956,9 @@ for (const minecraftRequirement of [
   'id="minecraftAddColorInput"',
   'id="minecraftOutputColorInput"',
   'id="minecraftSaveTextureBtn"',
-  'id="minecraftAnimationSelect"'
+  'id="minecraftAnimationSelect"',
+  'id="minecraftPlayerRigBtn"',
+  'id="minecraftPlayerRigStatus"'
 ]) {
   if (!html.includes(minecraftRequirement)) throw new Error(`Missing Minecraft/plugin UI requirement: ${minecraftRequirement}`);
 }
@@ -1872,6 +1970,18 @@ for (const minecraftSourceRequirement of [
   "blockbenchWorldRotations",
   "serializeMinecraftWorkspace",
   "restoreMinecraftWorkspace",
+  "minecraftPlayerRigBoneMap",
+  "minecraftPlayerAnimationPresets",
+  "addMinecraftPlayerRigAnimations",
+  'clip("Idle"',
+  'clip("Walk"',
+  'clip("Run"',
+  'clip("Sprint"',
+  'clip("Jump"',
+  'clip("Fight"',
+  'clip("Block"',
+  'clip("Crawl"',
+  'clip("Swim"',
   "minecraftObjectsByBone",
   "generateNeoForgeModelSource",
   "generateNeoForgeAnimationsSource",
@@ -1879,8 +1989,8 @@ for (const minecraftSourceRequirement of [
   "initializeMinecraftTools",
   'color: "#ffffff", roughness: 1',
   "textureHasTransparency: !!texture",
-  "mesh.material.transparent = false",
-  "mesh.material.alphaTest = .1",
+  "material.transparent = false",
+  "material.alphaTest = .1",
   "mesh.receiveShadow = !minecraft",
   "const flatAxes =",
   "flatAxes[index]",
@@ -1889,6 +1999,17 @@ for (const minecraftSourceRequirement of [
   "textureDataUrl"
 ]) {
   if (!applicationSource.includes(minecraftSourceRequirement)) throw new Error(`Missing Minecraft source requirement: ${minecraftSourceRequirement}`);
+}
+if ((moduleSources.get("meshes").match(/syncMinecraftTextureRendering\(mesh\);/g) || []).length < 2) {
+  throw new Error("Minecraft pixel filtering must be reapplied when textured meshes are created or restored by Undo.");
+}
+for (const skinImportRequirement of [
+  "function expandBlockbenchSkinProject(project)",
+  "project.skin_model || \"steve\"",
+  "group(\"right-arm\", \"right_arm\"",
+  "Built the ${parsedProject.skin_model || \"steve\"} body"
+]) {
+  if (!moduleSources.get("minecraft").includes(skinImportRequirement)) throw new Error(`Missing Blockbench skin import requirement: ${skinImportRequirement}`);
 }
 if (!moduleSources.get("import-export").includes("minecraft: serializeMinecraftWorkspace()") || !moduleSources.get("import-export").includes("restoreMinecraftWorkspace(editor.minecraft || null)")) {
   throw new Error("Saved projects must preserve every named Minecraft animation clip and the active clip.");
@@ -1899,8 +2020,33 @@ if (!moduleSources.get("rigging").includes("object.quaternion.copy(rotationDelta
 if (!moduleSources.get("rigging").includes("bone.position.copy(bone.bindPosition)") || !moduleSources.get("rigging").includes("bone.rotation.copy(bone.bindRotation)")) {
   throw new Error("Animation frame evaluation must restart from the bind pose so reverse scrubbing is absolute and reversible.");
 }
+if (moduleSources.get("rigging").includes("function resolveAnimatedBoneHierarchy()")) {
+  throw new Error("Animation playback must not reinterpret the editor's world-space rotations through a second hierarchy evaluator.");
+}
+for (const rotationConsistencyRequirement of [
+  "poseRigHierarchy();",
+  "bindingRest: serializeAnimationBindingRest()",
+  "restoreSerializedAnimationBindingRest(data.animation?.bindingRest)",
+  "rebuildMinecraftAnimationBindingRest()",
+  "Undo/project snapshots already contain the exact live mesh and bone pose",
+  "bindPosition: bone.bindPosition?.toArray()",
+  "bindRotation: bone.bindRotation?.toArray()"
+]) {
+  if (!moduleSources.get("rigging").includes(rotationConsistencyRequirement)) throw new Error(`Missing animation/Undo rotation consistency requirement: ${rotationConsistencyRequirement}`);
+}
 if (!moduleSources.get("rigging").includes("function prepareAnimationBindingRest()") || !moduleSources.get("rigging").includes("captureAnimationBindingRest()")) {
   throw new Error("Rigid meshes must capture their binding rest from the true bind skeleton before animation frame zero is applied.");
+}
+for (const glueRestRequirement of [
+  "function initializeBoneRestState(",
+  "function captureRigBindPose()",
+  "if (!bonesGlued && !activeSkinRuntime)",
+  "object.userData.rigBoneId = closestBone.id"
+]) {
+  if (!moduleSources.get("rigging").includes(glueRestRequirement)) throw new Error(`Missing stable bone-glue requirement: ${glueRestRequirement}`);
+}
+if (!moduleSources.get("import-export").includes("rigBoneId: mesh.userData.rigBoneId || null") || !moduleSources.get("meshes").includes("rigBoneId: typeof rigBoneId")) {
+  throw new Error("Custom rigid bone glue assignments must survive project save and load.");
 }
 if (moduleSources.get("panels").includes('animationToggle?.addEventListener("click"')) {
   throw new Error("Timeline collapse must use only the shared persisted panel handler, not a second animator-specific toggle.");
@@ -2065,7 +2211,7 @@ if (!documentSource.includes('id="animationVideoLengthModeSelect"') || !moduleSo
 if (!moduleSources.get("import-export")?.includes("Math.floor(30000 / Math.max(1, cellWidth))") || !moduleSources.get("import-export")?.includes("sourceFrame % (sheet.columns || sheet.shots.length)")) {
   throw new Error("High-resolution animation frames must wrap safely before reaching browser canvas width limits.");
 }
-if (!moduleSources.get("rigging")?.includes("function animationJumpLift") || !moduleSources.get("rigging")?.includes("Math.sin(Math.PI * phase)") || !moduleSources.get("rigging")?.includes("bone.position.y += jumpLift")) {
+if (!moduleSources.get("rigging")?.includes("function animationJumpLift") || !moduleSources.get("rigging")?.includes("Math.sin(Math.PI * phase)") || !moduleSources.get("rigging")?.includes("rigBones.filter(candidate => !candidate.parentId)") || !moduleSources.get("rigging")?.includes("pose.position.y += jumpLift")) {
   throw new Error("Jump clips must lift the root hierarchy through a visible vertical arc.");
 }
 for (const cleanCaptureRequirement of ["surfaceComponentMarker.visible = false", "modelingEdgesOverlay.visible = false", "knifeCutGuideGroup.visible = false", "meshIntegrityGuideGroup.visible = false"]) {
@@ -2132,7 +2278,7 @@ if (!documentSource.includes('<div class="texture-editor-workspace">') ||
 for (const layerSidebarStyle of [
   ".texture-editor-workspace {",
   "grid-template-columns: minmax(0, 1fr) 220px;",
-  "grid-template-rows: auto auto minmax(0, 1fr);",
+  "grid-template-rows: auto auto minmax(44px, 1fr);",
   "overflow-y: auto;"
 ]) {
   if (!styleSource.includes(layerSidebarStyle)) throw new Error(`M20 vertical layer sidebar style is missing: ${layerSidebarStyle}`);

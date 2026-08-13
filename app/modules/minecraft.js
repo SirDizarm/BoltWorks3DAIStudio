@@ -133,6 +133,46 @@ function blockbenchCubeGeometryData(element, textureWidth, textureHeight, boxUv 
   return { positions, uvs };
 }
 
+function expandBlockbenchSkinProject(project) {
+  if (String(project?.meta?.model_format || "").toLowerCase() !== "skin") return project;
+  if (Array.isArray(project.elements) && project.elements.length && Array.isArray(project.outliner) && project.outliner.length) return project;
+  const slim = String(project.skin_model || "steve").toLowerCase() === "alex";
+  const armWidth = slim ? 3 : 4;
+  const ids = {};
+  const elements = [];
+  const cube = (id, name, from, to, uvOffset, { inflate = 0, mirrorUv = false, origin = null } = {}) => {
+    const uuid = `bws-skin-cube-${id}`;
+    ids[id] = uuid;
+    elements.push({
+      uuid, type: "cube", name, from, to, origin: origin || from.map((value, axis) => (value + to[axis]) / 2),
+      uv_offset: uvOffset, inflate, mirror_uv: mirrorUv
+    });
+    return uuid;
+  };
+  const baseAndLayer = (id, name, from, to, baseUv, layerUv, options = {}) => [
+    cube(id, name, from, to, baseUv, options),
+    cube(`${id}-layer`, `${name} Outer Layer`, from, to, layerUv, { ...options, inflate: .25 })
+  ];
+  const body = baseAndLayer("body", "Body", [-4, 12, -2], [4, 24, 2], [16, 16], [16, 32], { origin: [0, 12, 0] });
+  const head = baseAndLayer("head", "Head", [-4, 24, -4], [4, 32, 4], [0, 0], [32, 0], { origin: [0, 24, 0] });
+  const rightArmFrom = [-4 - armWidth, 12, -2], rightArmTo = [-4, 24, 2];
+  const leftArmFrom = [4, 12, -2], leftArmTo = [4 + armWidth, 24, 2];
+  const rightArm = baseAndLayer("right-arm", "Right Arm", rightArmFrom, rightArmTo, [40, 16], [40, 32], { origin: [-4, 22, 0] });
+  const leftArm = baseAndLayer("left-arm", "Left Arm", leftArmFrom, leftArmTo, [32, 48], [48, 48], { origin: [4, 22, 0] });
+  const rightLeg = baseAndLayer("right-leg", "Right Leg", [-4, 0, -2], [0, 12, 2], [0, 16], [0, 32], { origin: [-2, 12, 0] });
+  const leftLeg = baseAndLayer("left-leg", "Left Leg", [0, 0, -2], [4, 12, 2], [16, 48], [0, 48], { origin: [2, 12, 0] });
+  const group = (id, name, origin, children) => ({ uuid: `bws-skin-group-${id}`, name, origin, rotation: [0, 0, 0], children });
+  const outliner = [group("body", "body", [0, 12, 0], [
+    ...body,
+    group("head", "head", [0, 24, 0], head),
+    group("right-arm", "right_arm", [-4, 22, 0], rightArm),
+    group("left-arm", "left_arm", [4, 22, 0], leftArm),
+    group("right-leg", "right_leg", [-2, 12, 0], rightLeg),
+    group("left-leg", "left_leg", [2, 12, 0], leftLeg)
+  ])];
+  return { ...project, elements, outliner, box_uv: true, meta: { ...(project.meta || {}), box_uv: true } };
+}
+
 function collectBlockbenchHierarchy(outliner, parentBoneId, groupMap, cubeParents, parentGroupId = null) {
   for (const node of minecraftChildren(outliner)) {
     if (typeof node === "string") { cubeParents.set(node, { boneId: parentBoneId, groupId: parentGroupId }); continue; }
@@ -239,6 +279,173 @@ function refreshMinecraftAnimationSelect() {
   if (minecraftAnimationClips.length) els.minecraftAnimationSelect.value = String(activeMinecraftAnimation);
   if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();
   renderMinecraftAnimationSequence();
+  syncMinecraftPlayerRigPresetUi();
+}
+
+function minecraftPlayerBoneKey(name) {
+  return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function minecraftPlayerRigBoneMap() {
+  const aliases = {
+    body: ["body", "torso"],
+    head: ["head"],
+    leftArm: ["leftarm", "armleft", "larm"],
+    rightArm: ["rightarm", "armright", "rarm"],
+    leftLeg: ["leftleg", "legleft", "lleg"],
+    rightLeg: ["rightleg", "legright", "rleg"]
+  };
+  const byName = new Map(rigBones.map(bone => [minecraftPlayerBoneKey(bone.name), bone]));
+  return Object.fromEntries(Object.entries(aliases).map(([role, names]) => [
+    role,
+    names.map(name => byName.get(name)).find(Boolean) || null
+  ]));
+}
+
+function minecraftPlayerRigMissingBones() {
+  const bones = minecraftPlayerRigBoneMap();
+  return Object.entries(bones).filter(([, bone]) => !bone).map(([role]) => role);
+}
+
+function syncMinecraftPlayerRigPresetUi() {
+  if (!els.minecraftPlayerRigBtn) return;
+  const missing = minecraftPlayerRigMissingBones();
+  const ready = rigBones.length > 0 && missing.length === 0;
+  els.minecraftPlayerRigBtn.disabled = !ready;
+  els.minecraftPlayerRigBtn.title = ready
+    ? "Add or refresh the standard Minecraft player animation clips"
+    : `Player rig needs body, head, left/right arms, and left/right legs${missing.length ? ` (missing ${missing.join(", ")})` : ""}`;
+  if (els.minecraftPlayerRigStatus && !els.minecraftPlayerRigStatus.dataset.result) {
+    els.minecraftPlayerRigStatus.textContent = ready
+      ? "Ready for normal (Steve) and slim (Alex) player models."
+      : "Import a normal or slim Minecraft player model first.";
+  }
+}
+
+function minecraftPlayerAnimationClip(name, end, loop, bones, tracks) {
+  const keys = {};
+  for (const [role, frames] of Object.entries(tracks)) {
+    const bone = bones[role];
+    if (!bone) continue;
+    keys[bone.id] = frames.map(([frame, rotationDegrees = [0, 0, 0], positionPixels = [0, 0, 0]]) => ({
+      frame,
+      position: bone.bindPosition.toArray().map((value, axis) => value + (Number(positionPixels[axis]) || 0) * MINECRAFT_UNIT),
+      rotation: bone.bindRotation.toArray().map((value, axis) => value + THREE.MathUtils.degToRad(Number(rotationDegrees[axis]) || 0))
+    }));
+  }
+  return {
+    name,
+    length: end / 20,
+    loop,
+    bwsPreset: "minecraft-player-v2",
+    bwsState: { fps: 20, end, frame: 0, keys }
+  };
+}
+
+function minecraftPlayerAnimationPresets() {
+  const bones = minecraftPlayerRigBoneMap();
+  const clip = (name, end, loop, tracks) => minecraftPlayerAnimationClip(name, end, loop, bones, tracks);
+  return [
+    clip("Idle", 40, "loop", {
+      body: [[0, [0, -1, 0], [0, 0, 0]], [10, [1, 0, .6], [0, .18, 0]], [20, [0, 1, 0], [0, .28, 0]], [30, [-1, 0, -.6], [0, .18, 0]], [40, [0, -1, 0], [0, 0, 0]]],
+      head: [[0, [-1, -5, 0]], [10, [-2, -1, 0]], [20, [-1, 4, 0]], [30, [1, 0, 0]], [40, [-1, -5, 0]]],
+      leftArm: [[0, [2, 0, -2]], [10, [0, 1, -2]], [20, [-2, 0, -1]], [30, [0, -1, -2]], [40, [2, 0, -2]]],
+      rightArm: [[0, [-2, 0, 2]], [10, [0, -1, 2]], [20, [2, 0, 1]], [30, [0, 1, 2]], [40, [-2, 0, 2]]]
+    }),
+    clip("Walk", 24, "loop", {
+      body: [[0, [-1, 0, 0], [0, 0, 0]], [6, [-2, 1, .8], [0, .32, 0]], [12, [-1, 0, 0], [0, 0, 0]], [18, [-2, -1, -.8], [0, .32, 0]], [24, [-1, 0, 0], [0, 0, 0]]],
+      head: [[0, [-1, 0, 0]], [6, [-1, -2, 0]], [12, [-1, 0, 0]], [18, [-1, 2, 0]], [24, [-1, 0, 0]]],
+      leftLeg: [[0, [0, 0, 0]], [6, [-34, 0, 0]], [12, [0, 0, 0]], [18, [32, 0, 0]], [24, [0, 0, 0]]],
+      rightLeg: [[0, [0, 0, 0]], [6, [32, 0, 0]], [12, [0, 0, 0]], [18, [-34, 0, 0]], [24, [0, 0, 0]]],
+      leftArm: [[0, [0, 0, -2]], [6, [27, 0, -2]], [12, [0, 0, -2]], [18, [-27, 0, -2]], [24, [0, 0, -2]]],
+      rightArm: [[0, [0, 0, 2]], [6, [-27, 0, 2]], [12, [0, 0, 2]], [18, [27, 0, 2]], [24, [0, 0, 2]]]
+    }),
+    clip("Run", 16, "loop", {
+      body: [[0, [-7, 0, 0], [0, 0, 0]], [4, [-9, 1, 1], [0, .55, 0]], [8, [-7, 0, 0], [0, 0, 0]], [12, [-9, -1, -1], [0, .55, 0]], [16, [-7, 0, 0], [0, 0, 0]]],
+      head: [[0, [-4, 0, 0]], [4, [-5, -2, 0]], [8, [-4, 0, 0]], [12, [-5, 2, 0]], [16, [-4, 0, 0]]],
+      leftLeg: [[0, [0, 0, 0]], [4, [-47, 0, 0]], [8, [0, 0, 0]], [12, [45, 0, 0]], [16, [0, 0, 0]]],
+      rightLeg: [[0, [0, 0, 0]], [4, [45, 0, 0]], [8, [0, 0, 0]], [12, [-47, 0, 0]], [16, [0, 0, 0]]],
+      leftArm: [[0, [0, 0, -3]], [4, [42, 0, -4]], [8, [0, 0, -3]], [12, [-42, 0, -4]], [16, [0, 0, -3]]],
+      rightArm: [[0, [0, 0, 3]], [4, [-42, 0, 4]], [8, [0, 0, 3]], [12, [42, 0, 4]], [16, [0, 0, 3]]]
+    }),
+    clip("Sprint", 12, "loop", {
+      body: [[0, [-14, 0, 0], [0, 0, 0]], [3, [-17, 1, 1.2], [0, .7, 0]], [6, [-14, 0, 0], [0, 0, 0]], [9, [-17, -1, -1.2], [0, .7, 0]], [12, [-14, 0, 0], [0, 0, 0]]],
+      head: [[0, [-8, 0, 0]], [3, [-10, -2, 0]], [6, [-8, 0, 0]], [9, [-10, 2, 0]], [12, [-8, 0, 0]]],
+      leftLeg: [[0, [0, 0, 0]], [3, [-56, 0, 0]], [6, [0, 0, 0]], [9, [54, 0, 0]], [12, [0, 0, 0]]],
+      rightLeg: [[0, [0, 0, 0]], [3, [54, 0, 0]], [6, [0, 0, 0]], [9, [-56, 0, 0]], [12, [0, 0, 0]]],
+      leftArm: [[0, [-12, 0, -5]], [3, [48, 0, -6]], [6, [-12, 0, -5]], [9, [-58, 0, -6]], [12, [-12, 0, -5]]],
+      rightArm: [[0, [-12, 0, 5]], [3, [-58, 0, 6]], [6, [-12, 0, 5]], [9, [48, 0, 6]], [12, [-12, 0, 5]]]
+    }),
+    clip("Jump", 20, "once", {
+      body: [[0, [-8, 0, 0]], [4, [-2, 0, 0]], [10, [4, 0, 0]], [16, [-4, 0, 0]], [20, [0, 0, 0]]],
+      head: [[0, [-4, 0, 0]], [4, [-8, 0, 0]], [10, [4, 0, 0]], [16, [-3, 0, 0]], [20, [0, 0, 0]]],
+      leftLeg: [[0, [18, 0, 2]], [4, [-18, 0, 2]], [10, [28, 0, 4]], [16, [16, 0, 2]], [20, [0, 0, 0]]],
+      rightLeg: [[0, [18, 0, -2]], [4, [16, 0, -2]], [10, [34, 0, -4]], [16, [16, 0, -2]], [20, [0, 0, 0]]],
+      leftArm: [[0, [18, 0, -4]], [4, [48, 0, -7]], [10, [88, 0, -8]], [16, [28, 0, -5]], [20, [0, 0, -2]]],
+      rightArm: [[0, [18, 0, 4]], [4, [48, 0, 7]], [10, [88, 0, 8]], [16, [28, 0, 5]], [20, [0, 0, 2]]]
+    }),
+    clip("Fight", 20, "loop", {
+      body: [[0, [4, -12, 0]], [4, [5, -18, 0]], [7, [3, 18, 0]], [10, [4, -10, 0]], [14, [5, 18, 0]], [17, [3, -18, 0]], [20, [4, -12, 0]]],
+      head: [[0, [-2, 10, 0]], [7, [-2, -12, 0]], [14, [-2, 12, 0]], [20, [-2, 10, 0]]],
+      leftLeg: [[0, [12, 0, 2]], [10, [8, 0, 2]], [20, [12, 0, 2]]],
+      rightLeg: [[0, [-16, 0, -2]], [10, [-12, 0, -2]], [20, [-16, 0, -2]]],
+      rightArm: [[0, [42, -18, 14]], [4, [65, -24, 10]], [7, [104, 4, 2]], [10, [38, -16, 14]], [20, [42, -18, 14]]],
+      leftArm: [[0, [52, 18, -14]], [10, [48, 16, -14]], [14, [68, 24, -10]], [17, [104, -4, -2]], [20, [52, 18, -14]]]
+    }),
+    clip("Block", 20, "once", {
+      body: [[0, [0, 0, 0]], [4, [5, -14, 0]], [16, [5, -14, 0]], [20, [0, 0, 0]]],
+      head: [[0, [0, 0, 0]], [4, [-3, 12, 0]], [16, [-3, 12, 0]], [20, [0, 0, 0]]],
+      leftLeg: [[0, [0, 0, 0]], [4, [10, 0, 2]], [16, [10, 0, 2]], [20, [0, 0, 0]]],
+      rightLeg: [[0, [0, 0, 0]], [4, [-14, 0, -2]], [16, [-14, 0, -2]], [20, [0, 0, 0]]],
+      leftArm: [[0, [0, 0, -2]], [4, [72, 18, -28]], [16, [72, 18, -28]], [20, [0, 0, -2]]],
+      rightArm: [[0, [0, 0, 2]], [4, [88, -12, 20]], [16, [88, -12, 20]], [20, [0, 0, 2]]]
+    }),
+    clip("Crawl", 24, "loop", {
+      body: [[0, [-82, 0, 0], [0, -5.5, 0]], [6, [-84, 0, .8], [0, -5.2, 0]], [12, [-82, 0, 0], [0, -5.5, 0]], [18, [-84, 0, -.8], [0, -5.2, 0]], [24, [-82, 0, 0], [0, -5.5, 0]]],
+      head: [[0, [24, 0, 0]], [6, [18, -3, 0]], [12, [24, 0, 0]], [18, [18, 3, 0]], [24, [24, 0, 0]]],
+      leftArm: [[0, [-18, 0, -8]], [6, [42, 0, -6]], [12, [-18, 0, -8]], [18, [-48, 0, -5]], [24, [-18, 0, -8]]],
+      rightArm: [[0, [-18, 0, 8]], [6, [-48, 0, 5]], [12, [-18, 0, 8]], [18, [42, 0, 6]], [24, [-18, 0, 8]]],
+      leftLeg: [[0, [12, 0, 2]], [6, [-24, 0, 2]], [12, [12, 0, 2]], [18, [28, 0, 2]], [24, [12, 0, 2]]],
+      rightLeg: [[0, [12, 0, -2]], [6, [28, 0, -2]], [12, [12, 0, -2]], [18, [-24, 0, -2]], [24, [12, 0, -2]]]
+    }),
+    clip("Swim", 32, "loop", {
+      body: [[0, [-88, 0, 0], [0, -3.5, 0]], [8, [-90, -2, .6], [0, -3.2, 0]], [16, [-88, 0, 0], [0, -3.5, 0]], [24, [-90, 2, -.6], [0, -3.2, 0]], [32, [-88, 0, 0], [0, -3.5, 0]]],
+      head: [[0, [28, 0, 0]], [8, [24, -8, 0]], [16, [28, 0, 0]], [24, [24, 8, 0]], [32, [28, 0, 0]]],
+      leftArm: [[0, [88, 0, -10]], [8, [32, 0, -18]], [16, [-48, 0, -10]], [24, [32, 0, -5]], [32, [88, 0, -10]]],
+      rightArm: [[0, [-48, 0, 10]], [8, [32, 0, 5]], [16, [88, 0, 10]], [24, [32, 0, 18]], [32, [-48, 0, 10]]],
+      leftLeg: [[0, [18, 0, 1]], [8, [-18, 0, 1]], [16, [18, 0, 1]], [24, [-18, 0, 1]], [32, [18, 0, 1]]],
+      rightLeg: [[0, [-18, 0, -1]], [8, [18, 0, -1]], [16, [-18, 0, -1]], [24, [18, 0, -1]], [32, [-18, 0, -1]]]
+    })
+  ];
+}
+
+function addMinecraftPlayerRigAnimations() {
+  const missing = minecraftPlayerRigMissingBones();
+  if (missing.length) {
+    log(`Player animation preset needs body, head, both arms, and both legs. Missing: ${missing.join(", ")}.`);
+    syncMinecraftPlayerRigPresetUi();
+    return 0;
+  }
+  persistActiveMinecraftAnimationState();
+  if (typeof recordHistory === "function") recordHistory("add Minecraft player rig animations");
+  const presets = minecraftPlayerAnimationPresets();
+  minecraftAnimationClips = minecraftAnimationClips.filter(clip => !["minecraft-player-v1", "minecraft-player-v2"].includes(clip.bwsPreset));
+  const firstPresetIndex = minecraftAnimationClips.length;
+  minecraftAnimationClips.push(...presets);
+  activeMinecraftAnimation = firstPresetIndex;
+  minecraftAnimationSequence = [];
+  minecraftAnimationBoneIds = new Map(rigBones.filter(bone => bone.blockbenchUuid).map(bone => [bone.blockbenchUuid, bone.id]));
+  activateMinecraftAnimation(activeMinecraftAnimation, { quiet: true, preserveCurrent: false });
+  if (els.minecraftPlayerRigStatus) {
+    els.minecraftPlayerRigStatus.dataset.result = "ready";
+    els.minecraftPlayerRigStatus.textContent = `${presets.length} player animations ready for normal and slim models.`;
+  }
+  if (els.minecraftImportStatus) {
+    els.minecraftImportStatus.textContent = `${objects.length} cubes · ${rigBones.length} bones · ${presets.length} player animations`;
+  }
+  updateAll();
+  log(`Added ${presets.length} Minecraft player animations: ${presets.map(clip => clip.name).join(", ")}. Existing custom clips were kept.`);
+  return presets.length;
 }
 
 function animationSequenceClipIndices() {
@@ -370,8 +577,10 @@ function blockbenchBindTransform(point, element, boneId) {
 }
 
 async function importBlockbenchProject(file) {
-  const project = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
-  if (!Array.isArray(project.elements) || !Array.isArray(project.outliner)) throw new Error("This .bbmodel has no Blockbench elements/outliner data.");
+  const parsedProject = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
+  const project = expandBlockbenchSkinProject(parsedProject);
+  if (!Array.isArray(project.elements) || !Array.isArray(project.outliner)) throw new Error("This .bbmodel has no Blockbench elements/outliner data and is not a supported Minecraft Skin project.");
+  if (els.minecraftPlayerRigStatus) delete els.minecraftPlayerRigStatus.dataset.result;
   recordHistory("import Blockbench model");
   clearObjects({ record: false });
   sceneGroupRegistry.clear();
@@ -413,16 +622,7 @@ async function importBlockbenchProject(file) {
       textureUrl: texture?.dataUrl || null, textureName, textureFlipY: false, textureHasTransparency: !!texture,
       minecraft: { blockbenchUuid: element.uuid || null, boneId: parentInfo.boneId || null, from, to, origin: minecraftVec(element.origin, centerPixels), rotation: minecraftVec(element.rotation), inflate, flatAxes, uvOffset: Array.isArray(element.uv_offset) ? element.uv_offset : null, faces: element.faces || null }
     }, { record: false, update: false });
-    if (mesh.material?.map) {
-      mesh.material.map.magFilter = THREE.NearestFilter;
-      mesh.material.map.minFilter = THREE.NearestFilter;
-      mesh.material.map.generateMipmaps = false;
-      mesh.material.map.needsUpdate = true;
-      mesh.material.transparent = false;
-      mesh.material.alphaTest = .1;
-      mesh.material.depthWrite = true;
-      mesh.material.needsUpdate = true;
-    }
+    syncMinecraftTextureRendering(mesh);
     mesh.userData.minecraftBoneId = parentInfo.boneId || null;
     cubes++;
   }
@@ -449,10 +649,23 @@ async function importBlockbenchProject(file) {
   animationState.bindingRest = null;
   restoreBoneRig(serializeBoneRig());
   refreshMinecraftAnimationSelect();
-  selectObject(objects[0] || null);
-  updateAll(); frameSelected(); setWorkspace("minecraft", { quiet: true });
+  frameSelected();
+  setWorkspace("minecraft", { quiet: true });
+  checkedIds.clear();
+  activeGroupIds = [];
+  selectedGroupRecordId = null;
+  selectObject(null);
+  selectedBoneId = null;
+  if (els.showBonesInput) els.showBonesInput.checked = false;
+  activeTransformMode = null;
+  document.querySelectorAll("[data-mode]").forEach(btn => btn.classList.remove("active"));
+  updateTransformAttachment();
+  rebuildBoneVisuals();
+  syncBonePanel();
+  updateAll();
   if (els.minecraftImportStatus) els.minecraftImportStatus.textContent = `${cubes} cubes · ${rigBones.length} bones · ${keys} keys`;
-  log(`Imported ${file.name}: ${cubes} Minecraft cuboids, ${rigBones.length} bones, and ${keys} animation keys.${skipped ? ` Skipped ${skipped} non-cuboid element(s).` : ""}`);
+  const skinNote = String(parsedProject.meta?.model_format || "").toLowerCase() === "skin" ? ` Built the ${parsedProject.skin_model || "steve"} body from its Minecraft skin data.` : "";
+  log(`Imported ${file.name}: ${cubes} Minecraft cuboids, ${rigBones.length} bones, and ${keys} animation keys.${skinNote}${skipped ? ` Skipped ${skipped} non-cuboid element(s).` : ""}`);
 }
 
 function minecraftObjectsByBone() {
@@ -604,7 +817,7 @@ async function exportNeoForgeJava() {
   const renderer = `package ${packageName};\n\nimport net.minecraft.client.renderer.entity.EntityRendererProvider;\nimport net.minecraft.client.renderer.entity.MobRenderer;\nimport net.minecraft.resources.ResourceLocation;\nimport ${entityClass};\n\npublic class ${modelName}Renderer extends MobRenderer<${entitySimple}, ${modelName}<${entitySimple}>> {\n    private static final ResourceLocation TEXTURE = ResourceLocation.fromNamespaceAndPath("${modId}", "${texturePath}");\n    public ${modelName}Renderer(EntityRendererProvider.Context context) { super(context, new ${modelName}<>(context.bakeLayer(${modelName}.LAYER_LOCATION)), 0.5F); }\n    @Override public ResourceLocation getTextureLocation(${entitySimple} entity) { return TEXTURE; }\n}\n`;
   const registration = `package ${packageName};\n\nimport net.neoforged.api.distmarker.Dist;\nimport net.neoforged.bus.api.SubscribeEvent;\nimport net.neoforged.fml.common.EventBusSubscriber;\nimport net.neoforged.neoforge.client.event.EntityRenderersEvent;\n// Replace YOUR_ENTITY with your DeferredHolder/RegistryObject.\n\n@EventBusSubscriber(modid = "${modId}", bus = EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)\npublic final class ${modelName}ClientRegistration {\n    @SubscribeEvent public static void registerLayers(EntityRenderersEvent.RegisterLayerDefinitions event) { event.registerLayerDefinition(${modelName}.LAYER_LOCATION, ${modelName}::createBodyLayer); }\n    @SubscribeEvent public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {\n        // event.registerEntityRenderer(ModEntities.YOUR_ENTITY.get(), ${modelName}Renderer::new);\n    }\n}\n`;
   const root = `src/main/java/${packageName.replace(/\./g, "/")}`;
-  const readme = `Generated by BoltWorks 3D AI Studio v49.44.5 for NeoForge 1.21.1.\n\n1. Copy the Java files into the matching source package.\n2. Replace ModEntities.YOUR_ENTITY in ${modelName}ClientRegistration.java and uncomment the line.\n3. The selected original or colored texture is included at src/main/resources/assets/${modId}/${texturePath}.\n4. Connect the named constants in ${modelName}Animations (such as IDLE, WALK, RUN, SPRINT, JUMP, and CHEW) to your entity AnimationState fields in setupAnim.\n\nSource model: ${minecraftProject.sourceName || "BWS scene"}\n`;
+  const readme = `Generated by BoltWorks 3D AI Studio v49.46.4 for NeoForge 1.21.1.\n\n1. Copy the Java files into the matching source package.\n2. Replace ModEntities.YOUR_ENTITY in ${modelName}ClientRegistration.java and uncomment the line.\n3. The selected original or colored texture is included at src/main/resources/assets/${modId}/${texturePath}.\n4. Connect the named constants in ${modelName}Animations (such as IDLE, WALK, RUN, SPRINT, JUMP, and CHEW) to your entity AnimationState fields in setupAnim.\n\nSource model: ${minecraftProject.sourceName || "BWS scene"}\n`;
   const entries = [
     { name: `${root}/${modelName}.java`, data: generateNeoForgeModelSource(options) },
     { name: `${root}/${modelName}Animations.java`, data: generateNeoForgeAnimationsSource(options) },
@@ -629,6 +842,7 @@ function initializeMinecraftTools() {
   const pickBlockbench = () => els.importBbmodelFile?.click();
   els.importBbmodelBtn?.addEventListener("click", pickBlockbench);
   els.minecraftImportBtn?.addEventListener("click", pickBlockbench);
+  els.minecraftPlayerRigBtn?.addEventListener("click", addMinecraftPlayerRigAnimations);
   els.minecraftAnimationSelect?.addEventListener("change", event => {
     activateMinecraftAnimation(event.target.value);
     if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();

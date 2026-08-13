@@ -32873,6 +32873,8 @@ void main() {
     minecraftToggle: document.querySelector("#minecraftToggle"),
     minecraftImportBtn: document.querySelector("#minecraftImportBtn"),
     minecraftImportStatus: document.querySelector("#minecraftImportStatus"),
+    minecraftPlayerRigBtn: document.querySelector("#minecraftPlayerRigBtn"),
+    minecraftPlayerRigStatus: document.querySelector("#minecraftPlayerRigStatus"),
     minecraftAnimationSelect: document.querySelector("#minecraftAnimationSelect"),
     minecraftLoaderSelect: document.querySelector("#minecraftLoaderSelect"),
     minecraftModIdInput: document.querySelector("#minecraftModIdInput"),
@@ -33112,14 +33114,18 @@ void main() {
     textureLibraryPanel: document.querySelector("#textureLibraryPanel"),
     textureLibraryCount: document.querySelector("#textureLibraryCount"),
     textureLibrarySelect: document.querySelector("#textureLibrarySelect"),
+    textureLibraryUrlInput: document.querySelector("#textureLibraryUrlInput"),
+    loadTextureLibraryUrlBtn: document.querySelector("#loadTextureLibraryUrlBtn"),
+    addLibraryTextureBtn: document.querySelector("#addLibraryTextureBtn"),
+    textureLibraryUrlStatus: document.querySelector("#textureLibraryUrlStatus"),
     textureRobloxIdRow: document.querySelector("#textureRobloxIdRow"),
     textureRobloxIdInput: document.querySelector("#textureRobloxIdInput"),
     applyLibraryTextureBtn: document.querySelector("#applyLibraryTextureBtn"),
-    importLibraryTextureBtn: document.querySelector("#importLibraryTextureBtn"),
     textureEditorModal: document.querySelector("#textureEditorModal"),
     textureEditorCanvas: document.querySelector("#textureEditorCanvas"),
     textureEditorPointerPreview: document.querySelector("#textureEditorPointerPreview"),
     textureEditorMeshName: document.querySelector("#textureEditorMeshName"),
+    textureEditorPartSelect: document.querySelector("#textureEditorPartSelect"),
     textureEditorInfo: document.querySelector("#textureEditorInfo"),
     textureEditorCloseBtn: document.querySelector("#textureEditorCloseBtn"),
     textureEditorApplyBtn: document.querySelector("#textureEditorApplyBtn"),
@@ -33141,12 +33147,20 @@ void main() {
     textureEditorChannelValueLabel: document.querySelector("#textureEditorChannelValueLabel"),
     textureEditorChannelValueOutput: document.querySelector("#textureEditorChannelValueOutput"),
     textureEditorBrushSize: document.querySelector("#textureEditorBrushSize"),
+    textureEditorPixelPen: document.querySelector("#textureEditorPixelPen"),
     textureEditorBrushPreview: document.querySelector("#textureEditorBrushPreview"),
+    textureEditorPreviewLabel: document.querySelector("#textureEditorPreviewLabel"),
     textureEditorHardness: document.querySelector("#textureEditorHardness"),
     textureEditorOpacity: document.querySelector("#textureEditorOpacity"),
     textureEditorHammerRadius: document.querySelector("#textureEditorHammerRadius"),
     textureEditorShowUv: document.querySelector("#textureEditorShowUv"),
     textureEditorSelectedOnly: document.querySelector("#textureEditorSelectedOnly"),
+    textureEditorBaseColorSource: document.querySelector("#textureEditorBaseColorSource"),
+    textureEditorTextureUrl: document.querySelector("#textureEditorTextureUrl"),
+    textureEditorLoadUrlBtn: document.querySelector("#textureEditorLoadUrlBtn"),
+    textureEditorChooseFileBtn: document.querySelector("#textureEditorChooseFileBtn"),
+    textureEditorTextureFile: document.querySelector("#textureEditorTextureFile"),
+    textureEditorTextureStatus: document.querySelector("#textureEditorTextureStatus"),
     textureEditorUndoBtn: document.querySelector("#textureEditorUndoBtn"),
     textureEditorZoomOutBtn: document.querySelector("#textureEditorZoomOutBtn"),
     textureEditorZoomResetBtn: document.querySelector("#textureEditorZoomResetBtn"),
@@ -33908,7 +33922,10 @@ void main() {
       else els.textureLibrarySelect.selectedIndex = 0;
     }
     els.textureLibraryCount.textContent = `${entries.length} stored`;
-    els.applyLibraryTextureBtn.disabled = entries.length === 0;
+    const targets = textureTargetObjects();
+    const hasExplicitTargets = resolveSelectionTargets("meshes").length > 0;
+    els.applyLibraryTextureBtn.disabled = entries.length === 0 || targets.length === 0;
+    els.applyLibraryTextureBtn.textContent = hasExplicitTargets ? "Use Selected" : "Use on Model";
     syncTextureRobloxIdInput();
   }
   function setTextureLibraryPanelOpen(open) {
@@ -34237,6 +34254,23 @@ void main() {
     if (!sampled) return;
     mesh.userData.textureDisplayColor = `#${sampled.getHexString()}`;
   }
+  function syncMinecraftTextureRendering(mesh) {
+    if (!mesh?.userData?.minecraft) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      if (!material?.isMaterial) continue;
+      if (material.map) {
+        material.map.magFilter = NearestFilter;
+        material.map.minFilter = NearestFilter;
+        material.map.generateMipmaps = false;
+        material.map.needsUpdate = true;
+      }
+      material.transparent = false;
+      material.alphaTest = 0.1;
+      material.depthWrite = true;
+      material.needsUpdate = true;
+    }
+  }
   function applyTextureToMesh(mesh, textureUrl, textureName = "Texture", textureFlipY = true, textureRotation = 0) {
     if (!mesh) return;
     if (mesh.material.map) mesh.material.map.dispose();
@@ -34262,6 +34296,7 @@ void main() {
     mesh.userData.textureRobloxAssetId = textureUrl ? normalizeRobloxAssetId(libraryEntry?.robloxAssetId || mesh.userData.textureRobloxAssetId || "") : "";
     mesh.userData.textureFlipY = textureUrl ? textureFlipY : true;
     mesh.userData.textureRotation = textureUrl ? normalizeTextureRotation(textureRotation) : 0;
+    syncMinecraftTextureRendering(mesh);
     for (const channel of ["roughness", "metalness", "emissive"]) {
       const config = materialTextureChannels[channel];
       const channelTexture = mesh.material[config.mapKey];
@@ -34355,6 +34390,27 @@ void main() {
   }
   function selectedTextureEditorMesh() {
     return selected && selected.userData.textureUrl && selected.geometry?.getAttribute("uv") ? selected : null;
+  }
+  function textureEditorPartMeshes() {
+    return objects.filter((mesh) => mesh?.userData?.textureUrl && mesh.geometry?.getAttribute("uv"));
+  }
+  function syncTextureEditorPartSelect() {
+    if (!els.textureEditorPartSelect) return;
+    const parts = textureEditorPartMeshes();
+    const labels = /* @__PURE__ */ new Map();
+    els.textureEditorPartSelect.replaceChildren(...parts.map((mesh) => {
+      const option = document.createElement("option");
+      option.value = mesh.userData.id;
+      const boneName = typeof boneById === "function" ? boneById(mesh.userData.minecraft?.boneId || mesh.userData.minecraftBoneId)?.name : "";
+      const groupName = mesh.userData.groupName || (typeof groupRecord === "function" ? groupRecord(mesh.userData.groupId)?.name : "");
+      const baseLabel = [boneName || groupName, mesh.name || "Unnamed part"].filter(Boolean).join(" / ");
+      const duplicate = (labels.get(baseLabel) || 0) + 1;
+      labels.set(baseLabel, duplicate);
+      option.textContent = duplicate > 1 ? `${baseLabel} (${duplicate})` : baseLabel;
+      return option;
+    }));
+    els.textureEditorPartSelect.value = textureEditorState.meshId || "";
+    els.textureEditorPartSelect.disabled = parts.length < 2;
   }
   function syncTextureEditorButton() {
     const mesh = selectedTextureEditorMesh();
@@ -34457,7 +34513,7 @@ void main() {
   }
   function syncTextureEditorToolSettings(tool = "none") {
     const visibleSettings = {
-      pen: ["color", "channelValue", "size", "opacity"],
+      pen: ["color", "channelValue", "size", "pixelPen", "opacity"],
       brush: ["color", "channelValue", "size", "hardness", "opacity"],
       spray: ["color", "channelValue", "size", "opacity"],
       eraser: ["size", "hardness", "opacity"],
@@ -34476,6 +34532,7 @@ void main() {
       const channelAllowsSetting = setting === "color" ? channel === "baseColor" || channel === "emissive" : setting === "channelValue" ? channel !== "baseColor" : true;
       control.hidden = !visibleSettings.includes(setting) || !channelAllowsSetting;
     }
+    if (els.textureEditorBrushSize) els.textureEditorBrushSize.disabled = tool === "pen" && !!els.textureEditorPixelPen?.checked;
     if (els.textureEditorIdleHint) els.textureEditorIdleHint.hidden = tool !== "none";
   }
   function setTextureEditorTool(tool = "none") {
@@ -34748,7 +34805,9 @@ void main() {
     if (textureEditorSelectionPath(context, textureEditorState.selection)) context.clip();
   }
   function textureEditorClipToActiveMask(context, mesh, source, triangles = null) {
-    textureEditorClipToTriangles(context, triangles || textureEditorMaskTriangles(mesh), source);
+    if (els.textureEditorSelectedOnly?.checked) {
+      textureEditorClipToTriangles(context, triangles || textureEditorMaskTriangles(mesh), source);
+    }
     textureEditorClipToSelection(context, source);
   }
   function syncTextureEditorSelectionUi() {
@@ -34901,11 +34960,13 @@ void main() {
     }
   }
   function textureEditorBrushSettings() {
+    const pixelPerfect = textureEditorState.tool === "pen" && !!els.textureEditorPixelPen?.checked;
     return {
-      size: Math.max(1, Math.min(256, Number(els.textureEditorBrushSize.value) || 12)),
+      size: pixelPerfect ? 1 : Math.max(1, Math.min(256, Number(els.textureEditorBrushSize.value) || 12)),
       hardness: Math.max(0, Math.min(1, (Number(els.textureEditorHardness.value) || 0) / 100)),
       opacity: Math.max(0.01, Math.min(1, (Number(els.textureEditorOpacity.value) || 100) / 100)),
-      color: textureEditorChannelPaintColor()
+      color: textureEditorChannelPaintColor(),
+      pixelPerfect
     };
   }
   function stampTextureEditorBrush(context, point, settings, erasing = false) {
@@ -34926,13 +34987,20 @@ void main() {
     context.fill();
     context.restore();
   }
+  function textureEditorPenStampRect(point, settings) {
+    const size = Math.max(1, Math.round(settings.pixelPerfect ? 1 : settings.size));
+    return {
+      left: Math.floor(point.x - (size - 1) / 2),
+      top: Math.floor(point.y - (size - 1) / 2),
+      size
+    };
+  }
   function stampTextureEditorPen(context, point, settings) {
     context.save();
     context.globalAlpha = settings.opacity;
     context.fillStyle = settings.color;
-    context.beginPath();
-    context.arc(point.x, point.y, Math.max(0.5, settings.size * 0.5), 0, Math.PI * 2);
-    context.fill();
+    const stamp = textureEditorPenStampRect(point, settings);
+    context.fillRect(stamp.left, stamp.top, stamp.size, stamp.size);
     context.restore();
   }
   function textureEditorSprayDots(settings) {
@@ -34965,35 +35033,37 @@ void main() {
     const context = canvas2.getContext("2d");
     const settings = textureEditorBrushSettings();
     const tool = textureEditorState.tool || "none";
-    context.clearRect(0, 0, canvas2.width, canvas2.height);
-    context.fillStyle = "#10171c";
-    context.fillRect(0, 0, canvas2.width, canvas2.height);
-    context.strokeStyle = "rgba(255,255,255,.08)";
-    for (let x = 0; x < canvas2.width; x += 9) {
-      context.beginPath();
-      context.moveTo(x, 0);
-      context.lineTo(x, canvas2.height);
-      context.stroke();
+    const nativeHeight = Math.max(11, Math.min(96, Math.ceil(settings.size) + 6));
+    const nativeWidth = Math.max(25, Math.round(nativeHeight * (canvas2.width / canvas2.height)));
+    const preview = document.createElement("canvas");
+    preview.width = nativeWidth;
+    preview.height = nativeHeight;
+    const previewContext = preview.getContext("2d");
+    const checkerSize = 1;
+    for (let y = 0; y < nativeHeight; y += checkerSize) {
+      for (let x = 0; x < nativeWidth; x += checkerSize) {
+        previewContext.fillStyle = (x + y) % 2 ? "#182126" : "#10171c";
+        previewContext.fillRect(x, y, checkerSize, checkerSize);
+      }
     }
-    const previewSize = Math.max(3, Math.min(42, 3 + settings.size / 6));
-    const center = { x: canvas2.width / 2, y: canvas2.height / 2 };
-    if (tool === "spray") {
-      const previewSettings = { ...settings, size: previewSize * 2, opacity: 1 };
-      stampTextureEditorSpray(context, center, previewSettings);
-    } else if (["pen", "brush", "eraser"].includes(tool)) {
-      const previewSettings = { ...settings, size: previewSize * 2, hardness: tool === "pen" ? 1 : settings.hardness, opacity: 1 };
-      if (tool === "pen") stampTextureEditorPen(context, center, previewSettings);
-      else stampTextureEditorBrush(context, center, previewSettings, false);
-      context.strokeStyle = tool === "eraser" ? "#f4a8b8" : "rgba(255,255,255,.85)";
-      context.lineWidth = 1;
-      context.beginPath();
-      context.arc(center.x, center.y, previewSize, 0, Math.PI * 2);
-      context.stroke();
-    } else {
+    const center = { x: Math.floor(nativeWidth / 2) + 0.5, y: Math.floor(nativeHeight / 2) + 0.5 };
+    if (tool === "spray") stampTextureEditorSpray(previewContext, center, settings);
+    else if (tool === "pen") stampTextureEditorPen(previewContext, center, settings);
+    else if (tool === "brush" || tool === "eraser") stampTextureEditorBrush(previewContext, center, settings, false);
+    context.clearRect(0, 0, canvas2.width, canvas2.height);
+    context.imageSmoothingEnabled = false;
+    context.drawImage(preview, 0, 0, canvas2.width, canvas2.height);
+    if (!["pen", "brush", "spray", "eraser"].includes(tool)) {
+      context.fillStyle = "rgba(10,15,18,.88)";
+      context.fillRect(0, 0, canvas2.width, canvas2.height);
       context.fillStyle = "#aebbc4";
       context.font = "12px sans-serif";
       context.textAlign = "center";
-      context.fillText(tool === "fill" ? "UV island" : tool === "hammer" ? "Impact radius" : tool === "pan" ? "Drag canvas" : "Sample color", center.x, center.y + 4);
+      context.fillText(tool === "fill" ? "UV island" : tool === "hammer" ? "Impact radius" : tool === "pan" ? "Drag canvas" : "Sample color", canvas2.width / 2, canvas2.height / 2 + 4);
+    }
+    if (els.textureEditorPreviewLabel) {
+      const sizeLabel = `${Math.round(settings.size)} px`;
+      els.textureEditorPreviewLabel.textContent = tool === "pen" ? `Exact preview: ${sizeLabel} hard square` : tool === "brush" ? `Exact preview: ${sizeLabel} soft brush` : `Tool Preview: ${sizeLabel}`;
     }
   }
   function fitTextureRect(sourceWidth, sourceHeight, targetWidth, targetHeight) {
@@ -35050,16 +35120,35 @@ void main() {
       return;
     }
     const rect = canvas2.getBoundingClientRect();
-    const cssX = event.clientX - rect.left;
-    const cssY = event.clientY - rect.top;
-    const sourceDiameter = tool === "hammer" ? Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48)) * 2 : Math.max(1, Number(els.textureEditorBrushSize.value) || 12);
-    const internalDiameter = sourceDiameter / Math.max(1, source.width) * drawRect.width;
-    const cssDiameter = Math.max(4, internalDiameter * (rect.width / Math.max(1, canvas2.width)));
+    const cssScaleX = rect.width / Math.max(1, canvas2.width);
+    const cssScaleY = rect.height / Math.max(1, canvas2.height);
+    const sourceScaleX = drawRect.width / Math.max(1, source.width);
+    const sourceScaleY = drawRect.height / Math.max(1, source.height);
+    const settings = textureEditorBrushSettings();
+    let internalLeft;
+    let internalTop;
+    let internalWidth;
+    let internalHeight;
+    if (tool === "pen") {
+      const stamp = textureEditorPenStampRect(sourcePoint, settings);
+      internalLeft = drawRect.left + stamp.left * sourceScaleX;
+      internalTop = drawRect.top + stamp.top * sourceScaleY;
+      internalWidth = stamp.size * sourceScaleX;
+      internalHeight = stamp.size * sourceScaleY;
+    } else {
+      const sourceDiameter = tool === "hammer" ? Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48)) * 2 : Math.max(1, Number(els.textureEditorBrushSize.value) || 12);
+      const internalCenterX = drawRect.left + sourcePoint.x * sourceScaleX;
+      const internalCenterY = drawRect.top + sourcePoint.y * sourceScaleY;
+      internalWidth = sourceDiameter * sourceScaleX;
+      internalHeight = sourceDiameter * sourceScaleY;
+      internalLeft = internalCenterX - internalWidth / 2;
+      internalTop = internalCenterY - internalHeight / 2;
+    }
     preview.className = `texture-editor-pointer-preview ${tool}`;
     preview.style.display = "block";
-    preview.style.width = `${cssDiameter}px`;
-    preview.style.height = `${cssDiameter}px`;
-    preview.style.transform = `translate3d(${cssX - cssDiameter / 2}px, ${cssY - cssDiameter / 2}px, 0)`;
+    preview.style.width = `${Math.max(1, internalWidth * cssScaleX)}px`;
+    preview.style.height = `${Math.max(1, internalHeight * cssScaleY)}px`;
+    preview.style.transform = `translate3d(${internalLeft * cssScaleX}px, ${internalTop * cssScaleY}px, 0)`;
   }
   function requestTextureEditorRender() {
     if (textureEditorState.renderFrame) return;
@@ -35120,6 +35209,7 @@ void main() {
     canvas2.width = Math.max(1, Math.round(displayRect.width));
     canvas2.height = Math.max(1, Math.round(displayRect.height));
     const context = canvas2.getContext("2d");
+    context.imageSmoothingEnabled = false;
     context.clearRect(0, 0, canvas2.width, canvas2.height);
     const baseRect = fitTextureRect(source.width, source.height, canvas2.width, canvas2.height);
     const zoom = textureEditorState.zoom || 1;
@@ -35133,12 +35223,13 @@ void main() {
     context.drawImage(source, drawRect.left, drawRect.top, drawRect.width, drawRect.height);
     const allTriangles = uvTrianglesForMesh(mesh);
     const selectedTriangles = selectedUvTrianglesForMesh(mesh);
-    const onlySelected = !!els.textureEditorSelectedOnly.checked && selectedTriangles.length;
+    const isolatedTriangles = selectedTriangles.length ? selectedTriangles : allTriangles;
+    const onlySelected = !!els.textureEditorSelectedOnly.checked && isolatedTriangles.length;
     if (onlySelected) {
-      context.fillStyle = "rgba(0, 0, 0, 0.55)";
+      context.fillStyle = "#0b1013";
       context.fillRect(drawRect.left, drawRect.top, drawRect.width, drawRect.height);
       context.save();
-      textureEditorTrianglesPath(context, selectedTriangles, drawRect.width, drawRect.height, drawRect.left, drawRect.top);
+      textureEditorTrianglesPath(context, isolatedTriangles, drawRect.width, drawRect.height, drawRect.left, drawRect.top);
       context.clip();
       context.drawImage(source, drawRect.left, drawRect.top, drawRect.width, drawRect.height);
       context.restore();
@@ -35230,7 +35321,7 @@ void main() {
       }
       context.restore();
     }
-    els.textureEditorInfo.textContent = selectedTriangles.length ? `${onlySelected ? "Isolating" : "Showing"} ${selectedTriangles.length} selected triangle${selectedTriangles.length === 1 ? "" : "s"} on ${mesh.name}.` : `No triangles selected on ${mesh.name} yet, so tools affect the visible UV area.`;
+    els.textureEditorInfo.textContent = selectedTriangles.length ? `${onlySelected ? "Isolating" : "Showing"} ${selectedTriangles.length} selected UV triangle${selectedTriangles.length === 1 ? "" : "s"} on ${mesh.name}.` : onlySelected ? `Isolating every UV island used by ${mesh.name}; all other texture areas are hidden and protected.` : `Showing the full texture for ${mesh.name}; painting is still clipped to this part's UV islands.`;
     if (els.textureEditorZoomValue) els.textureEditorZoomValue.textContent = `${Math.round(zoom * 100)}%`;
     syncTextureEditorSelectionUi();
     renderTextureEditorBrushPreview();
@@ -35325,8 +35416,10 @@ void main() {
     const context = source.getContext("2d", { willReadFrequently: true });
     const radius = Math.max(4, Math.min(512, Number(els.textureEditorHammerRadius.value) || 48));
     context.save();
-    textureEditorTrianglesPath(context, maskTriangles, source.width, source.height);
-    context.clip();
+    if (els.textureEditorSelectedOnly?.checked) {
+      textureEditorTrianglesPath(context, maskTriangles, source.width, source.height);
+      context.clip();
+    }
     textureEditorClipToSelection(context, source);
     for (const effectPoint of textureEditorSymmetryPoints(point, source)) {
       const hitCount = 1 + Math.floor(Math.random() * 2);
@@ -35450,8 +35543,132 @@ void main() {
     }
     if (els.textureEditorChannelInfo) els.textureEditorChannelInfo.textContent = config.info;
     if (els.textureEditorApplyBtn) els.textureEditorApplyBtn.textContent = `Apply ${config.label}`;
+    if (els.textureEditorBaseColorSource) els.textureEditorBaseColorSource.hidden = normalized !== "baseColor";
     syncTextureEditorChannelValueUi();
     syncTextureEditorToolSettings(textureEditorState.tool);
+  }
+  function textureEditorRemoteTextureName(url) {
+    try {
+      const parsed = new URL(url);
+      const fileName = decodeURIComponent(parsed.pathname.split("/").filter(Boolean).at(-1) || "remote-texture.png");
+      return /\.(png|jpe?g|webp|gif|bmp)$/i.test(fileName) ? fileName : `${fileName}.png`;
+    } catch {
+      return "remote-texture.png";
+    }
+  }
+  async function replaceTextureEditorBaseColor(dataUrl, textureName) {
+    const mesh = textureEditorMesh();
+    if (!mesh || !dataUrl) return;
+    recordHistory("replace texture in editor");
+    const registeredName = registerTextureAsset(textureName || "Texture", dataUrl, { replace: true }) || textureName || "Texture";
+    textureEditorDrafts.delete(textureEditorDraftKey(mesh.userData.id, "baseColor"));
+    applyTextureToMesh(mesh, dataUrl, registeredName, mesh.userData.textureFlipY ?? true, mesh.userData.textureRotation || 0);
+    await loadTextureEditorChannel(mesh, "baseColor");
+    refreshTextureLibraryUi();
+    syncInspector();
+    updateAll();
+    renderTextureEditor();
+    if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = `Loaded ${registeredName}.`;
+    log(`Replaced ${mesh.name}'s Base Color texture with ${registeredName}.`);
+  }
+  async function loadTextureEditorTextureUrl() {
+    const value = String(els.textureEditorTextureUrl?.value || "").trim();
+    if (!value) {
+      if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Paste an image URL first.";
+      return;
+    }
+    let parsed;
+    try {
+      parsed = new URL(value);
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+    } catch {
+      if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Use a complete http:// or https:// image URL.";
+      return;
+    }
+    const button = els.textureEditorLoadUrlBtn;
+    if (button) button.disabled = true;
+    if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Loading texture...";
+    try {
+      const response = await fetch(parsed.href, { mode: "cors", credentials: "omit" });
+      if (!response.ok) throw new Error(`Image server returned ${response.status}.`);
+      const blob = await response.blob();
+      if (!blob.type.startsWith("image/")) throw new Error("The URL did not return an image.");
+      await replaceTextureEditorBaseColor(await readFileAsDataUrl(blob), textureEditorRemoteTextureName(parsed.href));
+    } catch (error) {
+      const message = error?.message || "The image host blocked browser access.";
+      if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = `Could not load URL: ${message}`;
+      log(`Texture URL import failed: ${message}`);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+  async function applyTextureLibraryUrl() {
+    const targets = textureTargetObjects();
+    const status = els.textureLibraryUrlStatus;
+    if (!targets.length) {
+      if (status) status.textContent = "Select or check one or more parts first.";
+      log("Select or check one or more parts before applying a texture URL.");
+      return;
+    }
+    const value = String(els.textureLibraryUrlInput?.value || "").trim();
+    if (!value) {
+      if (status) status.textContent = "Paste an image URL first.";
+      return;
+    }
+    let parsed;
+    try {
+      parsed = new URL(value);
+      if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
+    } catch {
+      if (status) status.textContent = "Use a complete http:// or https:// image URL.";
+      return;
+    }
+    const button = els.loadTextureLibraryUrlBtn;
+    if (button) button.disabled = true;
+    if (status) status.textContent = "Loading texture...";
+    try {
+      const response = await fetch(parsed.href, { mode: "cors", credentials: "omit" });
+      if (!response.ok) throw new Error(`Image server returned ${response.status}.`);
+      const blob = await response.blob();
+      if (!blob.type.startsWith("image/")) throw new Error("The URL did not return an image.");
+      const dataUrl = await readFileAsDataUrl(blob);
+      const sourceName = textureEditorRemoteTextureName(parsed.href);
+      const storedName = registerTextureAsset(sourceName, dataUrl, { replace: true }) || sourceName;
+      recordHistory("apply texture from URL");
+      for (const mesh of targets) {
+        applyTextureToMesh(
+          mesh,
+          dataUrl,
+          storedName,
+          mesh.userData.textureFlipY ?? true,
+          mesh.userData.textureRotation || 0
+        );
+      }
+      refreshTextureLibraryUi();
+      if (textureLibrary.has(storedName)) els.textureLibrarySelect.value = storedName;
+      syncTextureRobloxIdInput();
+      syncInspector();
+      updateAll();
+      if (status) status.textContent = `Applied ${storedName} to ${targets.length} part${targets.length === 1 ? "" : "s"}.`;
+      log(`Applied URL texture ${storedName} to ${targets.length} part${targets.length === 1 ? "" : "s"}.`);
+    } catch (error) {
+      const message = error?.message || "The image host blocked browser access.";
+      if (status) status.textContent = `Could not load URL: ${message}`;
+      log(`Texture Library URL import failed: ${message}`);
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+  async function loadTextureEditorTextureFile(file) {
+    if (!file) return;
+    if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Loading image...";
+    try {
+      await replaceTextureEditorBaseColor(await readFileAsDataUrl(file), file.name || "Texture");
+    } catch (error) {
+      const message = error?.message || "Could not read the image.";
+      if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = message;
+      log(`Texture replacement failed: ${message}`);
+    }
   }
   async function loadTextureEditorChannel(mesh, channel = "baseColor") {
     const channelData = materialTextureChannelData(mesh, channel);
@@ -35509,6 +35726,7 @@ void main() {
       els.textureEditorChannelValue.value = String(draftMatchesTexture && Number.isFinite(Number(draft?.channelValue)) ? Number(draft.channelValue) : 100);
     }
     els.textureEditorMeshName.textContent = `${mesh.name} - ${channelData.config.label}`;
+    syncTextureEditorPartSelect();
     syncTextureEditorChannelUi(channelData.channel);
     setTextureEditorTool(textureEditorState.tool);
     setTextureEditorSymmetry(textureEditorState.symmetry);
@@ -35516,6 +35734,18 @@ void main() {
     updateTextureEditorResetButton();
     renderTextureEditorLayerUi();
     renderTextureEditor();
+  }
+  async function switchTextureEditorPart(meshId) {
+    if (!textureEditorState.open || meshId === textureEditorState.meshId) return;
+    const mesh = findObject(meshId);
+    if (!mesh?.userData?.textureUrl || !mesh.geometry?.getAttribute("uv")) return;
+    const activeChannel = textureEditorState.channel;
+    const activeTool = textureEditorState.tool || "brush";
+    const activeSymmetry = textureEditorState.symmetry || "none";
+    persistTextureEditorDraft();
+    await loadTextureEditorChannel(mesh, activeChannel);
+    setTextureEditorTool(activeTool);
+    setTextureEditorSymmetry(activeSymmetry);
   }
   async function switchTextureEditorChannel(channel) {
     if (!textureEditorState.open) return;
@@ -36086,7 +36316,7 @@ void main() {
     };
   }
   function createMesh(spec = {}) {
-    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+    let { id = null, shape = "box", geometry, name, position = [0, 0.5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = 0.6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
     shape = normalizeShapeName(shape);
     const defaultOrdinal = idCounter;
     const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -36132,6 +36362,7 @@ void main() {
       linkColor: typeof linkColor === "string" && linkColor.trim() ? linkColor.trim() : null,
       groupId: typeof groupId === "string" && groupId.trim() ? groupId.trim() : null,
       groupName: typeof groupName === "string" && groupName.trim() ? groupName.trim() : null,
+      rigBoneId: typeof rigBoneId === "string" && rigBoneId.trim() ? rigBoneId.trim() : null,
       bevel,
       depth,
       direction,
@@ -36172,6 +36403,7 @@ void main() {
     if (roughnessTextureUrl) applyMaterialTextureChannel(mesh, "roughness", roughnessTextureUrl, roughnessTextureName);
     if (metalnessTextureUrl) applyMaterialTextureChannel(mesh, "metalness", metalnessTextureUrl, metalnessTextureName);
     if (emissiveTextureUrl) applyMaterialTextureChannel(mesh, "emissive", emissiveTextureUrl, emissiveTextureName);
+    syncMinecraftTextureRendering(mesh);
     syncMeshRenderCulling(mesh);
     return mesh;
   }
@@ -37348,7 +37580,8 @@ void main() {
     log(`${pivotTargets.length > 1 ? "Shared" : "Single-part"} pivot reset to the ${pivotTargets.length > 1 ? "checked-parts" : "selected part"} center.`);
   }
   function textureTargetObjects() {
-    return resolveSelectionTargets("meshes");
+    const selectedTargets = resolveSelectionTargets("meshes");
+    return selectedTargets.length ? selectedTargets : [...objects];
   }
   function pivotManagedObjects() {
     const groupObjects = transformTargetObjects();
@@ -37357,10 +37590,16 @@ void main() {
   }
   function syncTextureButtonLabel() {
     const targets = textureTargetObjects();
-    const hasTexture = targets.length > 0 && targets.every((mesh) => !!mesh.userData.textureUrl);
+    const hasExplicitTargets = resolveSelectionTargets("meshes").length > 0;
     const hasAnyTexture = targets.some((mesh) => !!mesh.userData.textureUrl);
-    els.textureBtn.textContent = hasTexture ? "Change Texture" : "Add Texture";
-    els.textureBtn.title = hasTexture ? "Open the texture library or import a replacement texture for the selected part or checked parts" : "Open the texture library or add a texture image to the selected part or checked parts";
+    els.textureBtn.disabled = false;
+    if (els.addLibraryTextureBtn) {
+      els.addLibraryTextureBtn.disabled = false;
+      els.addLibraryTextureBtn.title = hasExplicitTargets ? "Choose an image file for the selected parts" : targets.length ? "Choose an image file for the whole model" : "Add an image to the project Texture Library";
+    }
+    els.textureBtn.textContent = "Add Texture";
+    const targetLabel = hasExplicitTargets ? targets.length === 1 ? "the selected part" : `all ${targets.length} selected group parts` : targets.length ? `the whole model (${targets.length} parts)` : "the project Texture Library";
+    els.textureBtn.title = `Choose another image and add it to ${targetLabel}`;
     els.saveTextureImageBtn.disabled = !hasAnyTexture;
     els.saveTextureImageBtn.title = hasAnyTexture ? "Save each unique texture used by the selected part or checked parts" : "Select one or more textured parts before saving an image";
     refreshTextureLibraryUi();
@@ -37425,7 +37664,15 @@ void main() {
       return;
     }
     recordHistory("apply library texture");
-    for (const mesh of targets) applyTextureToMesh(mesh, entry.dataUrl, entry.name, true, 0);
+    for (const mesh of targets) {
+      applyTextureToMesh(
+        mesh,
+        entry.dataUrl,
+        entry.name,
+        mesh.userData.textureFlipY ?? true,
+        mesh.userData.textureRotation || 0
+      );
+    }
     syncInspector();
     updateAll();
     log(`Applied stored texture ${entry.name} to ${targets.length} part${targets.length === 1 ? "" : "s"}.`);
@@ -47372,6 +47619,7 @@ void main() {
       hidden: !!mesh.userData.hidden,
       groupId: mesh.userData.groupId || null,
       groupName: mesh.userData.groupName || null,
+      rigBoneId: mesh.userData.rigBoneId || null,
       linkColor: mesh.userData.linkColor || null,
       textureUrl: mesh.userData.textureUrl || null,
       textureName: mesh.userData.textureName || null,
@@ -47891,13 +48139,17 @@ void main() {
     restoreBoneRig(editor.rigging || {});
     restoreMinecraftWorkspace(editor.minecraft || null);
     restoreCustomCameraViews(editor.cameraViews || {});
-    const selectedMesh = editor.selectedId ? findObject(editor.selectedId) : null;
-    selectObject(selectedMesh, { keepGroup: true });
-    const requestedMode = ["translate", "rotate", "scale"].includes(editor.activeTransformMode) ? editor.activeTransformMode : null;
+    checkedIds.clear();
+    activeGroupIds = [];
+    selectedGroupRecordId = null;
+    selectObject(null);
+    selectedBoneId = null;
+    if (els.showBonesInput) els.showBonesInput.checked = false;
+    rebuildBoneVisuals();
+    syncBonePanel();
     activeTransformMode = null;
     document.querySelectorAll("[data-mode]").forEach((btn) => btn.classList.remove("active"));
-    if (requestedMode) setTransformMode(requestedMode);
-    else updateTransformAttachment();
+    updateTransformAttachment();
     const cameraPosition = view.cameraPosition;
     const orbitTarget = view.orbitTarget;
     const cameraUp = view.cameraUp;
@@ -48336,7 +48588,18 @@ void main() {
     const groupMode = pivotTargets.length > 0 && transform.object === groupPivot;
     const disabled = !selected && !groupMode;
     if (els.goToSelectedMeshBtn) els.goToSelectedMeshBtn.disabled = !selected;
-    for (const input of document.querySelectorAll(".props input, .props button, .props select")) input.disabled = disabled;
+    const alwaysAvailableTextureControls = new Set([
+      els.textureBtn,
+      els.addLibraryTextureBtn,
+      els.textureFile,
+      els.textureLibrarySelect,
+      els.textureLibraryUrlInput,
+      els.loadTextureLibraryUrlBtn
+    ].filter(Boolean));
+    for (const input of document.querySelectorAll(".props input, .props button, .props select")) {
+      if (alwaysAvailableTextureControls.has(input)) continue;
+      input.disabled = disabled;
+    }
     if (groupMode) {
       syncTextureButtonLabel();
       const label = pivotTargets.length > 1 ? `${pivotEditMode ? "Pivot" : "Group"} (${pivotTargets.length} parts)` : `${pivotEditMode ? "Pivot" : "Part"} (${pivotTargets[0].name})`;
@@ -54359,6 +54622,32 @@ end
   function selectedBone() {
     return boneById(selectedBoneId);
   }
+  function initializeBoneRestState(bone, { capture = false } = {}) {
+    if (!bone) return bone;
+    if (!bone.tail) bone.tail = bone.position.clone().add(new Vector3(0, 0.12, 0));
+    if (capture || !bone.bindPosition) bone.bindPosition = bone.position.clone();
+    if (capture || !bone.bindRotation) bone.bindRotation = bone.rotation.clone();
+    if (capture || !bone.bindTail) bone.bindTail = bone.tail.clone();
+    bone.tailOffset = bone.bindTail.clone().sub(bone.bindPosition);
+    if (bone.tailOffset.lengthSq() < 1e-6) {
+      bone.tailOffset.set(0, 0.12, 0);
+      bone.bindTail.copy(bone.bindPosition).add(bone.tailOffset);
+      bone.tail.copy(bone.bindTail);
+    }
+    const parent = boneById(bone.parentId);
+    bone.restLocalPosition = parent ? bone.bindPosition.clone().sub(parent.bindPosition || parent.position) : bone.bindPosition.clone();
+    return bone;
+  }
+  function captureRigBindPose() {
+    rigBones.forEach((bone) => {
+      if (!bone.tail) bone.tail = bone.position.clone().add(new Vector3(0, 0.12, 0));
+      bone.bindPosition = bone.position.clone();
+      bone.bindRotation = bone.rotation.clone();
+      bone.bindTail = bone.tail.clone();
+    });
+    rigBones.forEach((bone) => initializeBoneRestState(bone));
+    animationState.bindingRest = null;
+  }
   function freshBoneId() {
     return `bone-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
   }
@@ -54375,12 +54664,22 @@ end
         position: bone.position.toArray().map(round2),
         rotation: bone.rotation.toArray().map(round2),
         tail: bone.tail?.toArray().map(round2) || bone.position.clone().add(new Vector3(0, 0.12, 0)).toArray().map(round2),
+        bindPosition: bone.bindPosition?.toArray().map(round2) || null,
+        bindRotation: bone.bindRotation?.toArray().map(round2) || null,
+        bindTail: bone.bindTail?.toArray().map(round2) || null,
+        tailOffset: bone.tailOffset?.toArray().map(round2) || null,
         blockbenchUuid: bone.blockbenchUuid || null,
         blockbenchSourcePosition: bone.blockbenchSourcePosition?.toArray().map(round2) || null,
         blockbenchLocalRotation: bone.blockbenchLocalRotation?.toArray().map(round2) || null,
         hidden: !!bone.hidden
       })),
-      animation: { fps: animationState.fps, end: animationState.end, frame: animationState.frame, keys: animationState.keys }
+      animation: {
+        fps: animationState.fps,
+        end: animationState.end,
+        frame: animationState.frame,
+        keys: animationState.keys,
+        bindingRest: serializeAnimationBindingRest()
+      }
     };
   }
   function restoreBoneRig(data = {}) {
@@ -54400,13 +54699,14 @@ end
       hidden: !!bone.hidden
     }));
     for (const bone of rigBones) {
+      const sourceBone = data.bones?.find((candidate) => candidate.id === bone.id) || {};
       const child = rigBones.find((candidate) => candidate.parentId === bone.id);
-      if (!Array.isArray(data.bones?.find((candidate) => candidate.id === bone.id)?.tail) && child) bone.tail.copy(child.position);
+      if (!Array.isArray(sourceBone.tail) && child) bone.tail.copy(child.position);
       if (bone.tail.distanceTo(bone.position) < 1e-3) bone.tail.copy(bone.position).add(new Vector3(0, 0.12, 0));
-      bone.tailOffset = bone.tail.clone().sub(bone.position);
-      bone.bindPosition = bone.position.clone();
-      bone.bindRotation = bone.blockbenchLocalRotation?.clone() || bone.rotation.clone();
-      if (bone.blockbenchLocalRotation) bone.rotation.copy(bone.bindRotation);
+      bone.bindPosition = Array.isArray(sourceBone.bindPosition) ? new Vector3().fromArray(sourceBone.bindPosition) : bone.position.clone();
+      bone.bindRotation = Array.isArray(sourceBone.bindRotation) ? new Vector3().fromArray(sourceBone.bindRotation) : bone.blockbenchLocalRotation?.clone() || bone.rotation.clone();
+      bone.bindTail = Array.isArray(sourceBone.bindTail) ? new Vector3().fromArray(sourceBone.bindTail) : bone.tail.clone();
+      bone.tailOffset = Array.isArray(sourceBone.tailOffset) ? new Vector3().fromArray(sourceBone.tailOffset) : bone.bindTail.clone().sub(bone.bindPosition);
     }
     const blockbenchWorldRotations = /* @__PURE__ */ new Map();
     const resolveBlockbenchRest = (bone) => {
@@ -54434,9 +54734,19 @@ end
     animationState.bindingRest = null;
     if (els.showBonesInput) els.showBonesInput.checked = data.showGuides ?? true;
     setupSkinnedRig();
-    if (!activeSkinRuntime) prepareAnimationBindingRest();
-    bonesGlued = !!activeSkinRuntime || objects.some((o) => o.userData?.minecraft?.boneId || o.userData?.minecraftBoneId);
-    animationSetFrame(animationState.frame, { render: false });
+    bonesGlued = !!activeSkinRuntime || objects.some((o) => o.userData?.rigBoneId || o.userData?.minecraft?.boneId || o.userData?.minecraftBoneId);
+    if (!activeSkinRuntime) {
+      animationState.bindingRest = restoreSerializedAnimationBindingRest(data.animation?.bindingRest) || rebuildMinecraftAnimationBindingRest();
+    }
+    if (animationState.bindingRest) {
+      poseRigHierarchy();
+    } else if (animationHasKeys()) {
+      if (!activeSkinRuntime && !animationState.bindingRest) prepareAnimationBindingRest();
+      animationSetFrame(animationState.frame, { render: false });
+    } else {
+      poseRigHierarchy();
+      if (bonesGlued && !activeSkinRuntime && !animationState.bindingRest) captureAnimationBindingRest();
+    }
     rebuildBoneVisuals();
     syncBonePanel();
     updateGlueButton();
@@ -54526,7 +54836,7 @@ end
     }
     if (activeSkinRuntime) applySkinnedPose(poses);
     else {
-      resolveAnimatedBoneHierarchy();
+      poseRigHierarchy();
       rigBones.forEach((bone) => bone.tail.copy(bone.position).add(bone.tailOffset.clone().applyEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"))));
       applyAnimationBindings();
     }
@@ -54666,6 +54976,7 @@ end
     if (visited.has(bone.id)) return new Quaternion();
     visited.add(bone.id);
     const bindPos = bone.bindPosition || bone.position.clone();
+    const keyedPositionOffset = bone.position.clone().sub(bindPos);
     const bindRotE = bone.bindRotation || bone.rotation;
     const parent = boneById(bone.parentId);
     const parentDelta = parent ? poseBoneWithChildren(parent, visited, resolved).clone() : new Quaternion();
@@ -54674,15 +54985,15 @@ end
     const restWorldQuat = bone.blockbenchLocalRotation ? parentRestWorldQuat.clone().multiply(bindLocalQuat) : bindLocalQuat;
     const curQuat = new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
     const deltaQuat = curQuat.clone().multiply(restWorldQuat.clone().invert());
-    let worldPos = bindPos.clone();
+    let worldPos = bindPos.clone().add(keyedPositionOffset);
     let worldQuat = curQuat.clone();
     if (parent) {
       const parentBindPos = resolved.get(`${parent.id}:bindPos`)?.clone() || parent.bindPosition?.clone() || parent.position.clone();
       const parentPos = resolved.get(`${parent.id}:pos`)?.clone() || parentBindPos.clone();
       const restOffset = bindPos.clone().sub(parentBindPos);
-      worldPos = parentPos.clone().add(restOffset.applyQuaternion(parentDelta));
-      worldQuat = parentDelta.clone().multiply(curQuat);
+      worldPos = parentPos.clone().add(restOffset.applyQuaternion(parentDelta)).add(keyedPositionOffset.applyQuaternion(parentDelta));
       bone.position.copy(worldPos);
+      worldQuat = parentDelta.clone().multiply(curQuat);
     }
     if (!bone.tail) bone.tail = bone.position.clone().add(new Vector3(0, 0.12, 0));
     bone.tailOffset = bone.tailOffset || (bone.bindTail ? bone.bindTail.clone().sub(bindPos) : bone.tail.clone().sub(bindPos));
@@ -54702,6 +55013,10 @@ end
     rigBones.forEach((bone) => poseBoneWithChildren(bone, visited, resolved));
   }
   function applyCurrentRigPose() {
+    if (!bonesGlued && !activeSkinRuntime) {
+      rigBones.forEach((bone) => initializeBoneRestState(bone));
+      return;
+    }
     poseRigHierarchy();
     if (activeSkinRuntime) {
       applySkinnedPose(new Map(rigBones.map((bone) => [bone.id, {
@@ -54711,40 +55026,10 @@ end
     }
     if (bonesGlued) applyAnimationBindings();
   }
-  function resolveAnimatedBoneHierarchy() {
-    const visiting = /* @__PURE__ */ new Set();
-    const resolved = /* @__PURE__ */ new Set();
-    const resolve = (bone) => {
-      if (resolved.has(bone.id)) return;
-      if (visiting.has(bone.id)) {
-        bone.parentId = null;
-        return;
-      }
-      visiting.add(bone.id);
-      const parent = boneById(bone.parentId);
-      if (parent) {
-        resolve(parent);
-        if (bone.blockbenchLocalRotation && parent.blockbenchLocalRotation) {
-          const parentWorld = new Quaternion().setFromEuler(new Euler(parent.rotation.x, parent.rotation.y, parent.rotation.z, "XYZ"));
-          bone.position.copy(parent.position).add(bone.restLocalPosition.clone().applyQuaternion(parentWorld));
-          const local = new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "ZYX"));
-          const world = parentWorld.multiply(local);
-          const worldEuler = new Euler().setFromQuaternion(world, "XYZ");
-          bone.rotation.set(worldEuler.x, worldEuler.y, worldEuler.z);
-        } else {
-          bone.position.copy(parent.position).add(bone.restLocalPosition.clone().applyEuler(new Euler(parent.rotation.x, parent.rotation.y, parent.rotation.z, "XYZ")));
-          bone.rotation.add(parent.rotation);
-        }
-      }
-      visiting.delete(bone.id);
-      resolved.add(bone.id);
-    };
-    rigBones.forEach(resolve);
-  }
   function collectAnimationBindings() {
     const bindings = rigBones.filter((bone) => bone.avatarObjectId && typeof findObject === "function").map((bone) => ({ bone, object: findObject(bone.avatarObjectId) })).filter((item) => item.object);
     for (const object of objects) {
-      const boneId = object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
+      const boneId = object.userData?.rigBoneId || object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
       const bone = boneById(boneId);
       if (bone) bindings.push({ bone, object });
     }
@@ -54777,12 +55062,96 @@ end
       });
     }
   }
+  function serializeAnimationBindingRest() {
+    if (!(animationState.bindingRest instanceof Map)) return [];
+    const entries = [];
+    for (const [key2, rest] of animationState.bindingRest) {
+      if (!String(key2).startsWith("rigid:") || !rest?.object) continue;
+      entries.push({
+        key: key2,
+        objectId: rest.object.userData?.id || null,
+        bonePosition: rest.bonePosition?.toArray() || null,
+        boneRotation: rest.boneRotation?.toArray() || null,
+        boneQuaternion: rest.boneQuaternion?.toArray() || null,
+        objectPosition: rest.objectPosition?.toArray() || null,
+        objectRotation: rest.objectRotation?.toArray() || null,
+        objectQuaternion: rest.objectQuaternion?.toArray() || null
+      });
+    }
+    return entries;
+  }
+  function restoreSerializedAnimationBindingRest(entries) {
+    if (!Array.isArray(entries) || !entries.length || typeof findObject !== "function") return null;
+    const restored = /* @__PURE__ */ new Map();
+    for (const entry of entries) {
+      const object = entry?.objectId ? findObject(entry.objectId) : null;
+      if (!object || typeof entry.key !== "string") continue;
+      restored.set(entry.key, {
+        object,
+        bonePosition: new Vector3().fromArray(entry.bonePosition || [0, 0, 0]),
+        boneRotation: new Vector3().fromArray(entry.boneRotation || [0, 0, 0]),
+        boneQuaternion: new Quaternion().fromArray(entry.boneQuaternion || [0, 0, 0, 1]),
+        objectPosition: new Vector3().fromArray(entry.objectPosition || object.position.toArray()),
+        objectRotation: new Euler().fromArray(entry.objectRotation || object.rotation.toArray()),
+        objectQuaternion: new Quaternion().fromArray(entry.objectQuaternion || object.quaternion.toArray())
+      });
+    }
+    return restored.size ? restored : null;
+  }
+  function rebuildMinecraftAnimationBindingRest() {
+    if (typeof blockbenchBindTransform !== "function") return null;
+    const bindings = collectAnimationBindings().filter(({ object }) => object.userData?.minecraft);
+    if (!bindings.length) return null;
+    const livePose = new Map(rigBones.map((bone) => [bone.id, {
+      position: bone.position.clone(),
+      rotation: bone.rotation.clone()
+    }]));
+    for (const bone of rigBones) {
+      bone.position.copy(bone.bindPosition);
+      bone.rotation.copy(bone.bindRotation);
+      bone.poseWorldQuaternion = null;
+    }
+    poseRigHierarchy();
+    const restored = /* @__PURE__ */ new Map();
+    for (const { bone, object } of bindings) {
+      const data = object.userData.minecraft;
+      if (!Array.isArray(data.from) || !Array.isArray(data.to)) continue;
+      const centerPixels = data.to.map((value, index) => (Number(value) + Number(data.from[index])) / 2);
+      const bindTransform = blockbenchBindTransform(centerPixels, {
+        origin: data.origin,
+        rotation: data.rotation
+      }, data.boneId || object.userData.minecraftBoneId);
+      const objectRotation = new Euler(
+        MathUtils.degToRad(bindTransform.rotation[0] || 0),
+        MathUtils.degToRad(bindTransform.rotation[1] || 0),
+        MathUtils.degToRad(bindTransform.rotation[2] || 0),
+        "XYZ"
+      );
+      restored.set(`rigid:${bone.id}:${object.userData?.id || object.uuid}`, {
+        object,
+        bonePosition: bone.position.clone(),
+        boneRotation: bone.rotation.clone(),
+        boneQuaternion: (bone.poseWorldQuaternion || new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"))).clone(),
+        objectPosition: new Vector3().fromArray(bindTransform.position),
+        objectRotation,
+        objectQuaternion: new Quaternion().setFromEuler(objectRotation)
+      });
+    }
+    for (const bone of rigBones) {
+      const live = livePose.get(bone.id);
+      if (!live) continue;
+      bone.position.copy(live.position);
+      bone.rotation.copy(live.rotation);
+    }
+    poseRigHierarchy();
+    return restored.size ? restored : null;
+  }
   function prepareAnimationBindingRest() {
     for (const bone of rigBones) {
       bone.position.copy(bone.bindPosition);
       bone.rotation.copy(bone.bindRotation);
     }
-    resolveAnimatedBoneHierarchy();
+    poseRigHierarchy();
     captureAnimationBindingRest();
   }
   function applyAnimationBindings() {
@@ -55068,6 +55437,11 @@ end
       imported.forEach(resolveWorldPosition);
     }
     rigBones = imported;
+    rigBones.forEach((bone) => {
+      const child = rigBones.find((candidate) => candidate.parentId === bone.id);
+      bone.tail = child?.position?.clone() || bone.position.clone().add(new Vector3(0, 0.12, 0));
+    });
+    rigBones.forEach((bone) => initializeBoneRestState(bone, { capture: true }));
     selectedBoneId = rigBones[0].id;
     rebuildBoneVisuals();
     syncBonePanel();
@@ -55079,15 +55453,19 @@ end
   function addRigBone(asChild) {
     recordBoneHistory("add bone");
     const parent = asChild ? selectedBone() : null;
-    const position = parent ? parent.position.clone().add(new Vector3(0, 1, 0)) : new Vector3(0, rigBones.length ? rigBones.length * 0.25 : 1, 0);
+    const position = parent ? parent.tail?.clone() || parent.position.clone().add(new Vector3(0, 0.25, 0)) : new Vector3(0, rigBones.length ? rigBones.length * 0.25 : 1, 0);
+    const parentDirection = parent?.tail ? parent.tail.clone().sub(parent.position).normalize() : new Vector3(0, 1, 0);
+    const boneLength = Math.max(0.12, parent?.tail?.distanceTo(parent.position) || 0.25);
     const bone = {
       id: freshBoneId(),
       name: parent ? `${parent.name} Child` : `Bone ${rigBones.length + 1}`,
       parentId: parent?.id || null,
       position,
-      rotation: new Vector3()
+      rotation: new Vector3(),
+      tail: position.clone().add(parentDirection.multiplyScalar(boneLength))
     };
     rigBones.push(bone);
+    initializeBoneRestState(bone, { capture: true });
     selectedBoneId = bone.id;
     rebuildBoneVisuals();
     syncBonePanel();
@@ -55288,7 +55666,42 @@ end
       log("Add or import bones first.");
       return;
     }
-    const hasPartBindings = objects.some((o) => o.userData?.minecraft?.boneId || o.userData?.minecraftBoneId);
+    captureRigBindPose();
+    const groupTargets = selectedGroupRecordId && typeof descendantMeshesForGroup === "function" ? descendantMeshesForGroup(selectedGroupRecordId) : typeof activeGroupObjects === "function" ? activeGroupObjects() : [];
+    if (groupTargets.length > 1) {
+      const targetsByGroup = /* @__PURE__ */ new Map();
+      for (const object of groupTargets) {
+        const key2 = object.userData?.groupId || `object:${object.userData?.id || object.uuid}`;
+        if (!targetsByGroup.has(key2)) targetsByGroup.set(key2, []);
+        targetsByGroup.get(key2).push(object);
+      }
+      for (const targets of targetsByGroup.values()) {
+        const bounds = new Box3();
+        targets.forEach((object) => bounds.expandByObject(object));
+        const centre = bounds.getCenter(new Vector3());
+        let closestBone = rigBones[0];
+        let closestDistance = Infinity;
+        for (const bone of rigBones) {
+          const tail = bone.bindTail || bone.tail || bone.bindPosition.clone().add(new Vector3(0, 0.12, 0));
+          const distance = pointSegmentDistanceSquared(centre, bone.bindPosition, tail);
+          if (distance < closestDistance) {
+            closestDistance = distance;
+            closestBone = bone;
+          }
+        }
+        targets.forEach((object) => {
+          object.userData.rigBoneId = closestBone.id;
+        });
+      }
+      captureAnimationBindingRest();
+      bonesGlued = true;
+      rebuildBoneVisuals();
+      syncBonePanel();
+      updateGlueButton();
+      log(`Glued ${groupTargets.length} model parts to ${rigBones.length} placed bones. Groups now follow their nearest bone.`);
+      return;
+    }
+    const hasPartBindings = objects.some((o) => o.userData?.rigBoneId || o.userData?.minecraft?.boneId || o.userData?.minecraftBoneId);
     if (hasPartBindings) {
       captureAnimationBindingRest();
       bonesGlued = true;
@@ -55298,7 +55711,8 @@ end
       log(`Glued the rig to the model. Drag a bone and its parts follow.`);
       return;
     }
-    const target = selected && selected.geometry?.getAttribute?.("position") ? selected : null;
+    const targetCandidate = selected || groupTargets[0] || null;
+    const target = targetCandidate?.geometry?.getAttribute?.("position") ? targetCandidate : null;
     if (!target) {
       log("Select the model mesh first, then click Glue Bone to Model.");
       return;
@@ -55306,9 +55720,6 @@ end
     const targetId = target.userData?.id || target.name;
     rigBones.forEach((bone) => {
       bone.avatarObjectId = targetId;
-      bone.bindPosition = bone.position.clone();
-      bone.bindRotation = bone.rotation.clone();
-      bone.bindTail = (bone.tail || bone.position.clone().add(new Vector3(0, 0.12, 0))).clone();
     });
     setupSkinnedRig();
     if (activeSkinRuntime) {
@@ -55324,6 +55735,10 @@ end
   }
   function unglueBonesFromModel() {
     bonesGlued = false;
+    animationState.bindingRest = null;
+    objects.forEach((object) => {
+      if (object.userData) delete object.userData.rigBoneId;
+    });
     if (activeSkinRuntime) {
       const avatar = activeSkinRuntime.avatar;
       const plain = new Mesh(avatar.geometry.clone(), avatar.material);
@@ -55364,7 +55779,7 @@ end
     if (!rigBones.length) return;
     const minecraftBoneIds = /* @__PURE__ */ new Set();
     for (const object of objects) {
-      const boneId = object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
+      const boneId = object.userData?.rigBoneId || object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
       if (boneId) minecraftBoneIds.add(boneId);
     }
     const before = rigBones.length;
@@ -55606,6 +56021,52 @@ end
     base.dispose();
     return { positions, uvs };
   }
+  function expandBlockbenchSkinProject(project) {
+    if (String(project?.meta?.model_format || "").toLowerCase() !== "skin") return project;
+    if (Array.isArray(project.elements) && project.elements.length && Array.isArray(project.outliner) && project.outliner.length) return project;
+    const slim = String(project.skin_model || "steve").toLowerCase() === "alex";
+    const armWidth = slim ? 3 : 4;
+    const ids = {};
+    const elements = [];
+    const cube = (id, name, from, to, uvOffset, { inflate = 0, mirrorUv = false, origin = null } = {}) => {
+      const uuid = `bws-skin-cube-${id}`;
+      ids[id] = uuid;
+      elements.push({
+        uuid,
+        type: "cube",
+        name,
+        from,
+        to,
+        origin: origin || from.map((value, axis) => (value + to[axis]) / 2),
+        uv_offset: uvOffset,
+        inflate,
+        mirror_uv: mirrorUv
+      });
+      return uuid;
+    };
+    const baseAndLayer = (id, name, from, to, baseUv, layerUv, options = {}) => [
+      cube(id, name, from, to, baseUv, options),
+      cube(`${id}-layer`, `${name} Outer Layer`, from, to, layerUv, { ...options, inflate: 0.25 })
+    ];
+    const body = baseAndLayer("body", "Body", [-4, 12, -2], [4, 24, 2], [16, 16], [16, 32], { origin: [0, 12, 0] });
+    const head = baseAndLayer("head", "Head", [-4, 24, -4], [4, 32, 4], [0, 0], [32, 0], { origin: [0, 24, 0] });
+    const rightArmFrom = [-4 - armWidth, 12, -2], rightArmTo = [-4, 24, 2];
+    const leftArmFrom = [4, 12, -2], leftArmTo = [4 + armWidth, 24, 2];
+    const rightArm = baseAndLayer("right-arm", "Right Arm", rightArmFrom, rightArmTo, [40, 16], [40, 32], { origin: [-4, 22, 0] });
+    const leftArm = baseAndLayer("left-arm", "Left Arm", leftArmFrom, leftArmTo, [32, 48], [48, 48], { origin: [4, 22, 0] });
+    const rightLeg = baseAndLayer("right-leg", "Right Leg", [-4, 0, -2], [0, 12, 2], [0, 16], [0, 32], { origin: [-2, 12, 0] });
+    const leftLeg = baseAndLayer("left-leg", "Left Leg", [0, 0, -2], [4, 12, 2], [16, 48], [0, 48], { origin: [2, 12, 0] });
+    const group = (id, name, origin, children) => ({ uuid: `bws-skin-group-${id}`, name, origin, rotation: [0, 0, 0], children });
+    const outliner = [group("body", "body", [0, 12, 0], [
+      ...body,
+      group("head", "head", [0, 24, 0], head),
+      group("right-arm", "right_arm", [-4, 22, 0], rightArm),
+      group("left-arm", "left_arm", [4, 22, 0], leftArm),
+      group("right-leg", "right_leg", [-2, 12, 0], rightLeg),
+      group("left-leg", "left_leg", [2, 12, 0], leftLeg)
+    ])];
+    return { ...project, elements, outliner, box_uv: true, meta: { ...project.meta || {}, box_uv: true } };
+  }
   function collectBlockbenchHierarchy(outliner, parentBoneId, groupMap, cubeParents, parentGroupId = null) {
     for (const node of minecraftChildren(outliner)) {
       if (typeof node === "string") {
@@ -55715,6 +56176,162 @@ end
     if (minecraftAnimationClips.length) els.minecraftAnimationSelect.value = String(activeMinecraftAnimation);
     if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();
     renderMinecraftAnimationSequence();
+    syncMinecraftPlayerRigPresetUi();
+  }
+  function minecraftPlayerBoneKey(name) {
+    return String(name || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+  function minecraftPlayerRigBoneMap() {
+    const aliases = {
+      body: ["body", "torso"],
+      head: ["head"],
+      leftArm: ["leftarm", "armleft", "larm"],
+      rightArm: ["rightarm", "armright", "rarm"],
+      leftLeg: ["leftleg", "legleft", "lleg"],
+      rightLeg: ["rightleg", "legright", "rleg"]
+    };
+    const byName = new Map(rigBones.map((bone) => [minecraftPlayerBoneKey(bone.name), bone]));
+    return Object.fromEntries(Object.entries(aliases).map(([role, names]) => [
+      role,
+      names.map((name) => byName.get(name)).find(Boolean) || null
+    ]));
+  }
+  function minecraftPlayerRigMissingBones() {
+    const bones = minecraftPlayerRigBoneMap();
+    return Object.entries(bones).filter(([, bone]) => !bone).map(([role]) => role);
+  }
+  function syncMinecraftPlayerRigPresetUi() {
+    if (!els.minecraftPlayerRigBtn) return;
+    const missing = minecraftPlayerRigMissingBones();
+    const ready = rigBones.length > 0 && missing.length === 0;
+    els.minecraftPlayerRigBtn.disabled = !ready;
+    els.minecraftPlayerRigBtn.title = ready ? "Add or refresh the standard Minecraft player animation clips" : `Player rig needs body, head, left/right arms, and left/right legs${missing.length ? ` (missing ${missing.join(", ")})` : ""}`;
+    if (els.minecraftPlayerRigStatus && !els.minecraftPlayerRigStatus.dataset.result) {
+      els.minecraftPlayerRigStatus.textContent = ready ? "Ready for normal (Steve) and slim (Alex) player models." : "Import a normal or slim Minecraft player model first.";
+    }
+  }
+  function minecraftPlayerAnimationClip(name, end, loop, bones, tracks) {
+    const keys = {};
+    for (const [role, frames] of Object.entries(tracks)) {
+      const bone = bones[role];
+      if (!bone) continue;
+      keys[bone.id] = frames.map(([frame, rotationDegrees = [0, 0, 0], positionPixels = [0, 0, 0]]) => ({
+        frame,
+        position: bone.bindPosition.toArray().map((value, axis) => value + (Number(positionPixels[axis]) || 0) * MINECRAFT_UNIT),
+        rotation: bone.bindRotation.toArray().map((value, axis) => value + MathUtils.degToRad(Number(rotationDegrees[axis]) || 0))
+      }));
+    }
+    return {
+      name,
+      length: end / 20,
+      loop,
+      bwsPreset: "minecraft-player-v2",
+      bwsState: { fps: 20, end, frame: 0, keys }
+    };
+  }
+  function minecraftPlayerAnimationPresets() {
+    const bones = minecraftPlayerRigBoneMap();
+    const clip = (name, end, loop, tracks) => minecraftPlayerAnimationClip(name, end, loop, bones, tracks);
+    return [
+      clip("Idle", 40, "loop", {
+        body: [[0, [0, -1, 0], [0, 0, 0]], [10, [1, 0, 0.6], [0, 0.18, 0]], [20, [0, 1, 0], [0, 0.28, 0]], [30, [-1, 0, -0.6], [0, 0.18, 0]], [40, [0, -1, 0], [0, 0, 0]]],
+        head: [[0, [-1, -5, 0]], [10, [-2, -1, 0]], [20, [-1, 4, 0]], [30, [1, 0, 0]], [40, [-1, -5, 0]]],
+        leftArm: [[0, [2, 0, -2]], [10, [0, 1, -2]], [20, [-2, 0, -1]], [30, [0, -1, -2]], [40, [2, 0, -2]]],
+        rightArm: [[0, [-2, 0, 2]], [10, [0, -1, 2]], [20, [2, 0, 1]], [30, [0, 1, 2]], [40, [-2, 0, 2]]]
+      }),
+      clip("Walk", 24, "loop", {
+        body: [[0, [-1, 0, 0], [0, 0, 0]], [6, [-2, 1, 0.8], [0, 0.32, 0]], [12, [-1, 0, 0], [0, 0, 0]], [18, [-2, -1, -0.8], [0, 0.32, 0]], [24, [-1, 0, 0], [0, 0, 0]]],
+        head: [[0, [-1, 0, 0]], [6, [-1, -2, 0]], [12, [-1, 0, 0]], [18, [-1, 2, 0]], [24, [-1, 0, 0]]],
+        leftLeg: [[0, [0, 0, 0]], [6, [-34, 0, 0]], [12, [0, 0, 0]], [18, [32, 0, 0]], [24, [0, 0, 0]]],
+        rightLeg: [[0, [0, 0, 0]], [6, [32, 0, 0]], [12, [0, 0, 0]], [18, [-34, 0, 0]], [24, [0, 0, 0]]],
+        leftArm: [[0, [0, 0, -2]], [6, [27, 0, -2]], [12, [0, 0, -2]], [18, [-27, 0, -2]], [24, [0, 0, -2]]],
+        rightArm: [[0, [0, 0, 2]], [6, [-27, 0, 2]], [12, [0, 0, 2]], [18, [27, 0, 2]], [24, [0, 0, 2]]]
+      }),
+      clip("Run", 16, "loop", {
+        body: [[0, [-7, 0, 0], [0, 0, 0]], [4, [-9, 1, 1], [0, 0.55, 0]], [8, [-7, 0, 0], [0, 0, 0]], [12, [-9, -1, -1], [0, 0.55, 0]], [16, [-7, 0, 0], [0, 0, 0]]],
+        head: [[0, [-4, 0, 0]], [4, [-5, -2, 0]], [8, [-4, 0, 0]], [12, [-5, 2, 0]], [16, [-4, 0, 0]]],
+        leftLeg: [[0, [0, 0, 0]], [4, [-47, 0, 0]], [8, [0, 0, 0]], [12, [45, 0, 0]], [16, [0, 0, 0]]],
+        rightLeg: [[0, [0, 0, 0]], [4, [45, 0, 0]], [8, [0, 0, 0]], [12, [-47, 0, 0]], [16, [0, 0, 0]]],
+        leftArm: [[0, [0, 0, -3]], [4, [42, 0, -4]], [8, [0, 0, -3]], [12, [-42, 0, -4]], [16, [0, 0, -3]]],
+        rightArm: [[0, [0, 0, 3]], [4, [-42, 0, 4]], [8, [0, 0, 3]], [12, [42, 0, 4]], [16, [0, 0, 3]]]
+      }),
+      clip("Sprint", 12, "loop", {
+        body: [[0, [-14, 0, 0], [0, 0, 0]], [3, [-17, 1, 1.2], [0, 0.7, 0]], [6, [-14, 0, 0], [0, 0, 0]], [9, [-17, -1, -1.2], [0, 0.7, 0]], [12, [-14, 0, 0], [0, 0, 0]]],
+        head: [[0, [-8, 0, 0]], [3, [-10, -2, 0]], [6, [-8, 0, 0]], [9, [-10, 2, 0]], [12, [-8, 0, 0]]],
+        leftLeg: [[0, [0, 0, 0]], [3, [-56, 0, 0]], [6, [0, 0, 0]], [9, [54, 0, 0]], [12, [0, 0, 0]]],
+        rightLeg: [[0, [0, 0, 0]], [3, [54, 0, 0]], [6, [0, 0, 0]], [9, [-56, 0, 0]], [12, [0, 0, 0]]],
+        leftArm: [[0, [-12, 0, -5]], [3, [48, 0, -6]], [6, [-12, 0, -5]], [9, [-58, 0, -6]], [12, [-12, 0, -5]]],
+        rightArm: [[0, [-12, 0, 5]], [3, [-58, 0, 6]], [6, [-12, 0, 5]], [9, [48, 0, 6]], [12, [-12, 0, 5]]]
+      }),
+      clip("Jump", 20, "once", {
+        body: [[0, [-8, 0, 0]], [4, [-2, 0, 0]], [10, [4, 0, 0]], [16, [-4, 0, 0]], [20, [0, 0, 0]]],
+        head: [[0, [-4, 0, 0]], [4, [-8, 0, 0]], [10, [4, 0, 0]], [16, [-3, 0, 0]], [20, [0, 0, 0]]],
+        leftLeg: [[0, [18, 0, 2]], [4, [-18, 0, 2]], [10, [28, 0, 4]], [16, [16, 0, 2]], [20, [0, 0, 0]]],
+        rightLeg: [[0, [18, 0, -2]], [4, [16, 0, -2]], [10, [34, 0, -4]], [16, [16, 0, -2]], [20, [0, 0, 0]]],
+        leftArm: [[0, [18, 0, -4]], [4, [48, 0, -7]], [10, [88, 0, -8]], [16, [28, 0, -5]], [20, [0, 0, -2]]],
+        rightArm: [[0, [18, 0, 4]], [4, [48, 0, 7]], [10, [88, 0, 8]], [16, [28, 0, 5]], [20, [0, 0, 2]]]
+      }),
+      clip("Fight", 20, "loop", {
+        body: [[0, [4, -12, 0]], [4, [5, -18, 0]], [7, [3, 18, 0]], [10, [4, -10, 0]], [14, [5, 18, 0]], [17, [3, -18, 0]], [20, [4, -12, 0]]],
+        head: [[0, [-2, 10, 0]], [7, [-2, -12, 0]], [14, [-2, 12, 0]], [20, [-2, 10, 0]]],
+        leftLeg: [[0, [12, 0, 2]], [10, [8, 0, 2]], [20, [12, 0, 2]]],
+        rightLeg: [[0, [-16, 0, -2]], [10, [-12, 0, -2]], [20, [-16, 0, -2]]],
+        rightArm: [[0, [42, -18, 14]], [4, [65, -24, 10]], [7, [104, 4, 2]], [10, [38, -16, 14]], [20, [42, -18, 14]]],
+        leftArm: [[0, [52, 18, -14]], [10, [48, 16, -14]], [14, [68, 24, -10]], [17, [104, -4, -2]], [20, [52, 18, -14]]]
+      }),
+      clip("Block", 20, "once", {
+        body: [[0, [0, 0, 0]], [4, [5, -14, 0]], [16, [5, -14, 0]], [20, [0, 0, 0]]],
+        head: [[0, [0, 0, 0]], [4, [-3, 12, 0]], [16, [-3, 12, 0]], [20, [0, 0, 0]]],
+        leftLeg: [[0, [0, 0, 0]], [4, [10, 0, 2]], [16, [10, 0, 2]], [20, [0, 0, 0]]],
+        rightLeg: [[0, [0, 0, 0]], [4, [-14, 0, -2]], [16, [-14, 0, -2]], [20, [0, 0, 0]]],
+        leftArm: [[0, [0, 0, -2]], [4, [72, 18, -28]], [16, [72, 18, -28]], [20, [0, 0, -2]]],
+        rightArm: [[0, [0, 0, 2]], [4, [88, -12, 20]], [16, [88, -12, 20]], [20, [0, 0, 2]]]
+      }),
+      clip("Crawl", 24, "loop", {
+        body: [[0, [-82, 0, 0], [0, -5.5, 0]], [6, [-84, 0, 0.8], [0, -5.2, 0]], [12, [-82, 0, 0], [0, -5.5, 0]], [18, [-84, 0, -0.8], [0, -5.2, 0]], [24, [-82, 0, 0], [0, -5.5, 0]]],
+        head: [[0, [24, 0, 0]], [6, [18, -3, 0]], [12, [24, 0, 0]], [18, [18, 3, 0]], [24, [24, 0, 0]]],
+        leftArm: [[0, [-18, 0, -8]], [6, [42, 0, -6]], [12, [-18, 0, -8]], [18, [-48, 0, -5]], [24, [-18, 0, -8]]],
+        rightArm: [[0, [-18, 0, 8]], [6, [-48, 0, 5]], [12, [-18, 0, 8]], [18, [42, 0, 6]], [24, [-18, 0, 8]]],
+        leftLeg: [[0, [12, 0, 2]], [6, [-24, 0, 2]], [12, [12, 0, 2]], [18, [28, 0, 2]], [24, [12, 0, 2]]],
+        rightLeg: [[0, [12, 0, -2]], [6, [28, 0, -2]], [12, [12, 0, -2]], [18, [-24, 0, -2]], [24, [12, 0, -2]]]
+      }),
+      clip("Swim", 32, "loop", {
+        body: [[0, [-88, 0, 0], [0, -3.5, 0]], [8, [-90, -2, 0.6], [0, -3.2, 0]], [16, [-88, 0, 0], [0, -3.5, 0]], [24, [-90, 2, -0.6], [0, -3.2, 0]], [32, [-88, 0, 0], [0, -3.5, 0]]],
+        head: [[0, [28, 0, 0]], [8, [24, -8, 0]], [16, [28, 0, 0]], [24, [24, 8, 0]], [32, [28, 0, 0]]],
+        leftArm: [[0, [88, 0, -10]], [8, [32, 0, -18]], [16, [-48, 0, -10]], [24, [32, 0, -5]], [32, [88, 0, -10]]],
+        rightArm: [[0, [-48, 0, 10]], [8, [32, 0, 5]], [16, [88, 0, 10]], [24, [32, 0, 18]], [32, [-48, 0, 10]]],
+        leftLeg: [[0, [18, 0, 1]], [8, [-18, 0, 1]], [16, [18, 0, 1]], [24, [-18, 0, 1]], [32, [18, 0, 1]]],
+        rightLeg: [[0, [-18, 0, -1]], [8, [18, 0, -1]], [16, [-18, 0, -1]], [24, [18, 0, -1]], [32, [-18, 0, -1]]]
+      })
+    ];
+  }
+  function addMinecraftPlayerRigAnimations() {
+    const missing = minecraftPlayerRigMissingBones();
+    if (missing.length) {
+      log(`Player animation preset needs body, head, both arms, and both legs. Missing: ${missing.join(", ")}.`);
+      syncMinecraftPlayerRigPresetUi();
+      return 0;
+    }
+    persistActiveMinecraftAnimationState();
+    if (typeof recordHistory === "function") recordHistory("add Minecraft player rig animations");
+    const presets = minecraftPlayerAnimationPresets();
+    minecraftAnimationClips = minecraftAnimationClips.filter((clip) => !["minecraft-player-v1", "minecraft-player-v2"].includes(clip.bwsPreset));
+    const firstPresetIndex = minecraftAnimationClips.length;
+    minecraftAnimationClips.push(...presets);
+    activeMinecraftAnimation = firstPresetIndex;
+    minecraftAnimationSequence = [];
+    minecraftAnimationBoneIds = new Map(rigBones.filter((bone) => bone.blockbenchUuid).map((bone) => [bone.blockbenchUuid, bone.id]));
+    activateMinecraftAnimation(activeMinecraftAnimation, { quiet: true, preserveCurrent: false });
+    if (els.minecraftPlayerRigStatus) {
+      els.minecraftPlayerRigStatus.dataset.result = "ready";
+      els.minecraftPlayerRigStatus.textContent = `${presets.length} player animations ready for normal and slim models.`;
+    }
+    if (els.minecraftImportStatus) {
+      els.minecraftImportStatus.textContent = `${objects.length} cubes \xB7 ${rigBones.length} bones \xB7 ${presets.length} player animations`;
+    }
+    updateAll();
+    log(`Added ${presets.length} Minecraft player animations: ${presets.map((clip) => clip.name).join(", ")}. Existing custom clips were kept.`);
+    return presets.length;
   }
   function animationSequenceClipIndices() {
     return minecraftAnimationSequence.filter((index) => Number.isInteger(index) && index >= 0 && index < minecraftAnimationClips.length);
@@ -55832,8 +56449,10 @@ end
     return { position: transformed.multiplyScalar(MINECRAFT_UNIT).toArray(), rotation: new Euler().setFromQuaternion(quaternion, "XYZ").toArray().slice(0, 3).map(MathUtils.radToDeg) };
   }
   async function importBlockbenchProject(file) {
-    const project = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
-    if (!Array.isArray(project.elements) || !Array.isArray(project.outliner)) throw new Error("This .bbmodel has no Blockbench elements/outliner data.");
+    const parsedProject = JSON.parse((await file.text()).replace(/^\uFEFF/, ""));
+    const project = expandBlockbenchSkinProject(parsedProject);
+    if (!Array.isArray(project.elements) || !Array.isArray(project.outliner)) throw new Error("This .bbmodel has no Blockbench elements/outliner data and is not a supported Minecraft Skin project.");
+    if (els.minecraftPlayerRigStatus) delete els.minecraftPlayerRigStatus.dataset.result;
     recordHistory("import Blockbench model");
     clearObjects({ record: false });
     sceneGroupRegistry.clear();
@@ -55889,16 +56508,7 @@ end
         textureHasTransparency: !!texture,
         minecraft: { blockbenchUuid: element.uuid || null, boneId: parentInfo.boneId || null, from, to, origin: minecraftVec(element.origin, centerPixels), rotation: minecraftVec(element.rotation), inflate, flatAxes, uvOffset: Array.isArray(element.uv_offset) ? element.uv_offset : null, faces: element.faces || null }
       }, { record: false, update: false });
-      if (mesh.material?.map) {
-        mesh.material.map.magFilter = NearestFilter;
-        mesh.material.map.minFilter = NearestFilter;
-        mesh.material.map.generateMipmaps = false;
-        mesh.material.map.needsUpdate = true;
-        mesh.material.transparent = false;
-        mesh.material.alphaTest = 0.1;
-        mesh.material.depthWrite = true;
-        mesh.material.needsUpdate = true;
-      }
+      syncMinecraftTextureRendering(mesh);
       mesh.userData.minecraftBoneId = parentInfo.boneId || null;
       cubes++;
     }
@@ -55925,12 +56535,23 @@ end
     animationState.bindingRest = null;
     restoreBoneRig(serializeBoneRig());
     refreshMinecraftAnimationSelect();
-    selectObject(objects[0] || null);
-    updateAll();
     frameSelected();
     setWorkspace("minecraft", { quiet: true });
+    checkedIds.clear();
+    activeGroupIds = [];
+    selectedGroupRecordId = null;
+    selectObject(null);
+    selectedBoneId = null;
+    if (els.showBonesInput) els.showBonesInput.checked = false;
+    activeTransformMode = null;
+    document.querySelectorAll("[data-mode]").forEach((btn) => btn.classList.remove("active"));
+    updateTransformAttachment();
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateAll();
     if (els.minecraftImportStatus) els.minecraftImportStatus.textContent = `${cubes} cubes \xB7 ${rigBones.length} bones \xB7 ${keys} keys`;
-    log(`Imported ${file.name}: ${cubes} Minecraft cuboids, ${rigBones.length} bones, and ${keys} animation keys.${skipped ? ` Skipped ${skipped} non-cuboid element(s).` : ""}`);
+    const skinNote = String(parsedProject.meta?.model_format || "").toLowerCase() === "skin" ? ` Built the ${parsedProject.skin_model || "steve"} body from its Minecraft skin data.` : "";
+    log(`Imported ${file.name}: ${cubes} Minecraft cuboids, ${rigBones.length} bones, and ${keys} animation keys.${skinNote}${skipped ? ` Skipped ${skipped} non-cuboid element(s).` : ""}`);
   }
   function minecraftObjectsByBone() {
     const map = /* @__PURE__ */ new Map();
@@ -56166,7 +56787,7 @@ public final class ${modelName}ClientRegistration {
 }
 `;
     const root = `src/main/java/${packageName.replace(/\./g, "/")}`;
-    const readme = `Generated by BoltWorks 3D AI Studio v49.44.5 for NeoForge 1.21.1.
+    const readme = `Generated by BoltWorks 3D AI Studio v49.46.4 for NeoForge 1.21.1.
 
 1. Copy the Java files into the matching source package.
 2. Replace ModEntities.YOUR_ENTITY in ${modelName}ClientRegistration.java and uncomment the line.
@@ -56196,6 +56817,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     const pickBlockbench = () => els.importBbmodelFile?.click();
     els.importBbmodelBtn?.addEventListener("click", pickBlockbench);
     els.minecraftImportBtn?.addEventListener("click", pickBlockbench);
+    els.minecraftPlayerRigBtn?.addEventListener("click", addMinecraftPlayerRigAnimations);
     els.minecraftAnimationSelect?.addEventListener("change", (event) => {
       activateMinecraftAnimation(event.target.value);
       if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();
@@ -56784,6 +57406,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   function setCameraControlsOpen(open = true) {
     if (!els.cameraViewsSection) return;
     if (open) {
+      if (document.body.classList.contains("animator-workspace-active") && typeof setAnimatorWorkspace === "function") setAnimatorWorkspace(false);
       setSectionCollapsed(els.utilitiesSection, els.utilitiesToggle, false);
       setSectionCollapsed(els.cameraViewsSection, els.cameraViewsToggle, false);
     }
@@ -57171,26 +57794,24 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.importObjFolderBtn.addEventListener("click", () => els.importObjFolderFile.click());
   document.querySelector("#importDaeBtn").addEventListener("click", () => els.importDaeFile.click());
   els.textureBtn.addEventListener("click", () => {
-    const targets = textureTargetObjects();
-    if (!targets.length) {
-      log("Select or check one or more parts before adding a texture.");
-      return;
-    }
-    if (textureLibrary.size) {
-      const opening = els.textureLibraryPanel.hidden;
-      setTextureLibraryPanelOpen(opening);
-      if (opening) {
-        const currentName = currentTextureLibraryName();
-        if (currentName && textureLibrary.has(currentName)) els.textureLibrarySelect.value = currentName;
-        log("Texture Library opened. Pick a stored texture or import a new one.");
-      }
-      return;
-    }
+    setTextureLibraryPanelOpen(true);
+    const currentName = currentTextureLibraryName();
+    if (currentName && textureLibrary.has(currentName)) els.textureLibrarySelect.value = currentName;
+    els.textureFile.value = "";
     els.textureFile.click();
   });
   els.textureEditorBtn.addEventListener("click", openTextureEditor);
   els.applyLibraryTextureBtn.addEventListener("click", applySelectedLibraryTexture);
-  els.importLibraryTextureBtn.addEventListener("click", () => els.textureFile.click());
+  els.addLibraryTextureBtn?.addEventListener("click", () => {
+    els.textureFile.value = "";
+    els.textureFile.click();
+  });
+  els.loadTextureLibraryUrlBtn?.addEventListener("click", applyTextureLibraryUrl);
+  els.textureLibraryUrlInput?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    applyTextureLibraryUrl();
+  });
   els.textureLibrarySelect?.addEventListener("change", syncTextureRobloxIdInput);
   els.textureRobloxIdInput?.addEventListener("input", () => {
     syncCurrentTextureRobloxId({ writeInput: false });
@@ -57246,18 +57867,30 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.textureFile.addEventListener("change", async (event) => {
     const file = event.target.files?.[0];
     const targets = textureTargetObjects();
-    if (!file || !targets.length) return;
+    if (!file) return;
     try {
-      recordHistory("add texture");
+      if (targets.length) recordHistory("add texture");
       const dataUrl = await readFileAsDataUrl(file);
       const libraryName = registerTextureAsset(file.name, dataUrl);
       refreshTextureLibraryUi();
       setTextureLibraryPanelOpen(true);
       if (libraryName && textureLibrary.has(libraryName)) els.textureLibrarySelect.value = libraryName;
-      for (const mesh of targets) applyTextureToMesh(mesh, dataUrl, libraryName || file.name, true, 0);
-      syncInspector();
-      updateAll();
-      log(`Added texture ${libraryName || file.name} to ${targets.length} part${targets.length === 1 ? "" : "s"} and stored it in the project library.`);
+      if (targets.length) {
+        for (const mesh of targets) {
+          applyTextureToMesh(
+            mesh,
+            dataUrl,
+            libraryName || file.name,
+            mesh.userData.textureFlipY ?? true,
+            mesh.userData.textureRotation || 0
+          );
+        }
+        syncInspector();
+        updateAll();
+        log(`Added texture ${libraryName || file.name} to ${targets.length} part${targets.length === 1 ? "" : "s"} and stored it in the project library.`);
+      } else {
+        log(`Added texture ${libraryName || file.name} to the project library. It is ready to use when a model part is selected.`);
+      }
     } catch (error) {
       log(`Texture import failed: ${error.message}`);
     }
@@ -57268,6 +57901,25 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.textureEditorResetBtn.addEventListener("click", resetTextureEditorCanvas);
   els.textureEditorUndoBtn.addEventListener("click", undoTextureEditorPaint);
   [els.textureEditorShowUv, els.textureEditorSelectedOnly].forEach((input) => input.addEventListener("change", renderTextureEditor));
+  [els.textureEditorPixelPen].forEach((input) => input?.addEventListener("change", () => {
+    if (els.textureEditorBrushSize) els.textureEditorBrushSize.disabled = textureEditorState.tool === "pen" && input.checked;
+    renderTextureEditorBrushPreview();
+    renderTextureEditor();
+  }));
+  els.textureEditorPartSelect?.addEventListener("change", (event) => {
+    switchTextureEditorPart(event.target.value).catch((error) => log(`Could not switch texture part: ${error.message}`));
+  });
+  els.textureEditorLoadUrlBtn?.addEventListener("click", () => loadTextureEditorTextureUrl());
+  els.textureEditorTextureUrl?.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    loadTextureEditorTextureUrl();
+  });
+  els.textureEditorChooseFileBtn?.addEventListener("click", () => els.textureEditorTextureFile?.click());
+  els.textureEditorTextureFile?.addEventListener("change", (event) => {
+    loadTextureEditorTextureFile(event.target.files?.[0]);
+    event.target.value = "";
+  });
   [els.textureEditorColor, els.textureEditorChannelValue, els.textureEditorBrushSize, els.textureEditorHardness, els.textureEditorOpacity, els.textureEditorHammerRadius].forEach((input) => input.addEventListener("input", () => {
     syncTextureEditorChannelValueUi();
     renderTextureEditorBrushPreview();
