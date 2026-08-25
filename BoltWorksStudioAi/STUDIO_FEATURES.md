@@ -48,6 +48,50 @@ The top-bar **Snap** setting controls fixed increments for translation,
 rotation, and scale. The Model Tile Kit grid-surface command uses the same
 translation increment so placement and editing stay consistent.
 
+## Core modeling and selection
+
+The editor provides primitive shapes and direct scene assembly tools for normal
+3D construction.
+
+- Add Mesh contains boxes, panels, wedges, hollow boxes, tubes, arches, stairs,
+  domes, capsules, prisms, pyramids, and other base shapes.
+- Select All / Deselect, Hide / Un Hide, Group / Ungroup, Duplicate, and Merge
+  Mesh work with ordinary mesh parts and grouped assemblies.
+- Move, Rotate, and Scale use the transform gizmo. The top-bar Snap control
+  applies matching fixed translation, rotation, and scale increments.
+- Edit Pivot changes the shared rotation pivot for checked parts; Center Pivot
+  restores it to their combined center.
+- Mirror Copy creates independent mirrored geometry. Live Mirror is a preview
+  that can later be made editable with Apply Live Mirror.
+- Loft Checked creates a closed mesh through checked profile objects. Use it
+  when an asset is better defined by several cross-sections than primitives.
+
+For a finished asset, name every part and group by its function. Use groups for
+assemblies such as walls, floor, roof, trim, props, or rigged body sections.
+
+## Surface, topology, and repair tools
+
+Surface Edit contains mesh-level tools for building and repairing editable
+geometry. They work best on the smallest relevant selection.
+
+- Select Tri, Select Face, Area Select, and Paint select individual triangles
+  or connected surface regions.
+- Line Tool, Close Line, Make Face, Fill Line, Cut Hole, Bridge, and Dig Into
+  construct faces, connectors, and openings from sketches or selected bounds.
+- Delete Tri, Extract Tri, Copy Tri, Paste Tri, and Fill Hole edit selected
+  triangle regions and boundary openings.
+- Bevel, Edge Bevel, Corner Bevel, Loop/Ring Cut, Knife/Plane Cut, Subdivide,
+  Edge Slide, and Scale Selected Surface refine form and edge treatment.
+- Normals, Non-manifold Check, Remove Doubles, Mesh Statistics, Weld Vertices,
+  Dissolve Edge or Vertex, and Smooth/Relax Vertices diagnose and repair mesh
+  quality.
+- Protected Decimate and LOD Generator make lower-detail copies while offering
+  protection for borders, UV seams, and material borders.
+
+After topology edits, inspect the opposite view as well as the edited view.
+Thin or coplanar surfaces can look correct from one camera while failing in
+another.
+
 ## Texture and UV Editor
 
 Open **Edit Texture** for a selected textured mesh to paint texture channels,
@@ -67,6 +111,52 @@ inspect UVs, replace a texture, and correct mapping.
 
 For portable projects, embed source images once in `textureLibrary` and keep
 the object color white unless intentional tinting is wanted.
+
+## Scene, camera, and QA controls
+
+- Front Work, Side Work, and Top Work provide constrained work views; Restore
+  View returns to the free perspective editor camera.
+- Background & Environment controls the studio/plain/road environment,
+  backgrounds, grid visibility, and shot grid visibility.
+- Reference Image loads an image as a panel, overlay, or both, with adjustable
+  opacity, scale, and offset.
+- Camera Views offers standard Front/Back/Left/Right/Top/Iso framing, custom
+  camera directors, a player camera, and a Gameplay Preview.
+- Save Views and the individual PNG buttons export reference images. QA Sheet
+  exports the canonical six-view contact sheet for visual review.
+
+The screenshot view contract is Front from `+Z`, Back from `-Z`, Left from
+`-X`, Right from `+X`, Top from `+Y`, and Iso from positive X/Y/Z.
+
+## Projects, import, and export
+
+- Save Project and Load Project preserve the editable `.modelerproj` scene,
+  editor state, lighting, textures, groups, and rig data.
+- Import supports scene JSON, OBJ, OBJ folders with optional MTL/textures, DAE,
+  and Blockbench `.bbmodel` files.
+- Export supports scene JSON, OBJ, selected OBJ, Roblox packs, DAE, Bolt 2D,
+  and the Model Tile Kit sheet/manifest workflow.
+- Game Optimize Copy creates a separate game-focused project by merging
+  materials and simplifying dense geometry while keeping the original project.
+
+Use project save files as the canonical source. Mesh exports are delivery
+formats and do not preserve all BWS editing information.
+
+## Rigging, animation, Minecraft, and AI workflows
+
+- Bone Placement creates, imports, edits, glues, and removes bone hierarchies.
+  It supports skinned mesh binding and reference-view bone placement.
+- Timeline / Animator supports animation clips, key poses, frame editing,
+  animation JSON, transparent sprite sheets, WebM, and local MP4 export.
+- Minecraft Model imports Blockbench projects, supports Minecraft player rigs
+  and animation presets, and exports a NeoForge Java ZIP.
+- Reference Match / Image-to-Mesh provides reference-guided model creation
+  workflows. Human AI Viewer and MCP work sessions provide visible, auditable
+  AI-assisted editing rather than hidden background mutations.
+- Plugins can be created or imported through the Plugins panel.
+
+Use a fresh QA Sheet after changes to a rig, texture, model orientation, or
+export setting. For animated assets, also inspect the output sheet or video.
 
 ## Completion expectation for AI-authored assets
 
