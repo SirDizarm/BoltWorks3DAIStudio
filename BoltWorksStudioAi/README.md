@@ -20,9 +20,10 @@ ska kunna:
 3. [`SHAPE_CATALOG.md`](SHAPE_CATALOG.md) – formernas lokala axlar och geometri.
 4. [`TEXTURE_WORKFLOW.md`](TEXTURE_WORKFLOW.md) – skapa, bädda in och kontrollera materialbilder.
 5. [`VISUAL_QA.md`](VISUAL_QA.md) – hur modellen måste renderas och granskas.
-6. [`SYSTEM_PROMPT.md`](SYSTEM_PROMPT.md) – färdig grundinstruktion för en skapande AI.
-7. [`schemas/modeler-project.schema.json`](schemas/modeler-project.schema.json) – maskinläsbart schema.
-8. [`examples/minimal-valid.modelerproj`](examples/minimal-valid.modelerproj) – litet fungerande exempel.
+6. [`STUDIO_FEATURES.md`](STUDIO_FEATURES.md) – current editor tools, tile export and UV workflows.
+7. [`SYSTEM_PROMPT.md`](SYSTEM_PROMPT.md) – färdig grundinstruktion för en skapande AI.
+8. [`schemas/modeler-project.schema.json`](schemas/modeler-project.schema.json) – maskinläsbart schema.
+9. [`examples/minimal-valid.modelerproj`](examples/minimal-valid.modelerproj) – litet fungerande exempel.
 
 ## AI work sessions
 
@@ -65,3 +66,11 @@ JSON-validering kan visa att en fil är tekniskt korrekt. Endast rendering kan
 visa att tak, Wedges, fönster, hjul och andra riktade delar faktiskt är vända
 och placerade rätt. En AI får därför aldrig skriva "klart" eller "fixat" innan
 den har granskat ett nytt QA Sheet skapat från den senaste projektfilen.
+
+## Keeping the handbook current
+
+Whenever the studio gains or changes a user-visible tool, exporter, camera
+rule, transform behavior, texture/UV workflow, or project field, update the
+matching handbook document in the same change. Add practical usage details to
+`STUDIO_FEATURES.md`; update the format contract, shape catalogue, texture
+workflow, schema, or QA guide when that specific contract changed.

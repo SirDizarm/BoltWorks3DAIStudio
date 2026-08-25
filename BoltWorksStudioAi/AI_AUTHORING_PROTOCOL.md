@@ -3,6 +3,10 @@
 This document is normative. An AI creating a BoltWorks model must follow every
 phase in order.
 
+Before authoring, also read `STUDIO_FEATURES.md` for current editor and exporter
+behavior. When a studio tool is added or changed as part of the work, update the
+relevant handbook documentation in the same change.
+
 ## 1. Understand the requested asset
 
 Write a short design inventory before editing JSON:

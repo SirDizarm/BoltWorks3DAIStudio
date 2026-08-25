@@ -1,7 +1,7 @@
 {
   "name": "BoltWorksStudioAi Authoring Handbook",
   "version": 2,
-  "studioVersion": "49.47.4",
+  "studioVersion": "49.57.2",
   "purpose": "Create, validate, render and visually inspect editable BoltWorks 3D AI Studio projects.",
   "canonicalProjectExtension": ".modelerproj",
   "entryPoint": "README.md",
@@ -12,6 +12,7 @@
     "SHAPE_CATALOG.md",
     "TEXTURE_WORKFLOW.md",
     "VISUAL_QA.md",
+    "STUDIO_FEATURES.md",
     "SYSTEM_PROMPT.md"
   ],
   "machineResources": {
