@@ -596,6 +596,7 @@ function applyProjectEditorState(editor = {}) {
   selectObject(null);
   selectedBoneId = null;
   if (els.showBonesInput) els.showBonesInput.checked = false;
+  setBoneGizmoEnabled(false, "rotate");
   rebuildBoneVisuals();
   syncBonePanel();
 
@@ -1107,8 +1108,9 @@ function syncInspector() {
     els.scaleX.value = round(groupPivot.scale.x);
     els.scaleY.value = round(groupPivot.scale.y);
     els.scaleZ.value = round(groupPivot.scale.z);
-    els.colorInput.value = "#40c7a5";
-    els.colorHexInput.value = "#40C7A5";
+    els.colorInput.value = "#ffffff";
+    els.colorHexInput.value = "#FFFFFF";
+    if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = true; els.addColorToSceneBtn.textContent = "Add Color to Scene"; }
     els.roughInput.value = .6;
     els.roughValue.value = "0.60";
     els.opacityInput.value = 1;
@@ -1124,7 +1126,9 @@ function syncInspector() {
   if (!selected) {
     syncTextureButtonLabel();
     els.nameInput.value = "";
-    els.colorHexInput.value = "";
+    els.colorInput.value = "#ffffff";
+    els.colorHexInput.value = "#FFFFFF";
+    if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = true; els.addColorToSceneBtn.textContent = "Add Color to Scene"; }
     els.opacityInput.value = 1;
     els.opacityValue.value = "1.00";
     els.textureName.textContent = "No texture";
@@ -1149,6 +1153,7 @@ function syncInspector() {
   els.scaleZ.value = round(selected.scale.z);
   els.colorInput.value = `#${selected.material.color.getHexString()}`;
   els.colorHexInput.value = `#${selected.material.color.getHexString()}`.toUpperCase();
+  if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = false; els.addColorToSceneBtn.textContent = selected.userData.colorApplied ? "Color Added to Scene" : "Add Color to Scene"; }
   els.roughInput.value = selected.material.roughness;
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
   els.opacityInput.value = selected.material.opacity ?? 1;
@@ -1210,7 +1215,7 @@ function applyInspector({ record = true } = {}) {
   }
   if (!selected) return;
   if (record) recordHistory("inspector");
-  const normalizedColor = normalizeHexColor(els.colorHexInput?.value || els.colorInput.value, normalizeHexColor(els.colorInput.value, "#40C7A5"));
+  const normalizedColor = normalizeHexColor(els.colorHexInput?.value || els.colorInput.value, normalizeHexColor(els.colorInput.value, "#ffffff"));
   if (!normalizedColor) return;
   els.colorInput.value = normalizedColor;
   els.colorHexInput.value = normalizedColor;
@@ -1230,7 +1235,7 @@ function applyInspector({ record = true } = {}) {
     inspectorNumber(els.scaleY, selected.scale.y, { min: .05 }),
     inspectorNumber(els.scaleZ, selected.scale.z, { min: .05 })
   );
-  selected.material.color.set(normalizedColor);
+  if (selected.userData.colorApplied) selected.material.color.set(normalizedColor);
   selected.material.roughness = +els.roughInput.value;
   const opacity = Math.max(.05, Math.min(1, Number(els.opacityInput.value) || 1));
   selected.material.transparent = opacity < .999 || !!selected.userData.textureHasTransparency;
@@ -4813,17 +4818,17 @@ function restoreCustomCameraViews(cameraState = {}) {
 }
 
 const screenshotViewDirections = {
-  front: new THREE.Vector3(0, 0, -1),
-  back: new THREE.Vector3(0, 0, 1),
+  front: new THREE.Vector3(0, 0, 1),
+  back: new THREE.Vector3(0, 0, -1),
   left: new THREE.Vector3(-1, 0, 0),
   right: new THREE.Vector3(1, 0, 0),
   side: new THREE.Vector3(1, 0, 0),
   top: new THREE.Vector3(0, 1, 0),
   iso: new THREE.Vector3(.78, .52, .92),
-  "front-left": new THREE.Vector3(-.78, .35, -.92),
-  "front-right": new THREE.Vector3(.78, .35, -.92),
-  "back-left": new THREE.Vector3(-.78, .35, .92),
-  "back-right": new THREE.Vector3(.78, .35, .92)
+  "front-left": new THREE.Vector3(-.78, .35, .92),
+  "front-right": new THREE.Vector3(.78, .35, .92),
+  "back-left": new THREE.Vector3(-.78, .35, -.92),
+  "back-right": new THREE.Vector3(.78, .35, -.92)
 };
 
 function sceneBounds() {
@@ -4835,14 +4840,14 @@ function sceneBounds() {
   return box;
 }
 
-function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = null, bounds = null } = {}) {
+function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = null, bounds = null, directionOverride = null, centerOverride = null } = {}) {
   const box = bounds?.isBox3 ? bounds : sceneBounds();
-  const center = box.getCenter(new THREE.Vector3());
+  const center = centerOverride?.isVector3 ? centerOverride.clone() : box.getCenter(new THREE.Vector3());
   const size = box.getSize(new THREE.Vector3());
   const radius = Math.max(size.x, size.y, size.z, 2);
   const defaultSpace = shotSpaceMultiplier();
   updateViewScale(radius);
-  const direction = (screenshotViewDirections[viewName] || screenshotViewDirections.iso).clone().normalize();
+  const direction = (directionOverride?.isVector3 ? directionOverride : (screenshotViewDirections[viewName] || screenshotViewDirections.iso)).clone().normalize();
   const baseDistance = radius / Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * .82;
   const currentSpace = useCurrentZoom && currentDistance ? Math.max(.2, currentDistance / Math.max(.001, baseDistance)) : defaultSpace;
   const distance = baseDistance * currentSpace;
@@ -4941,7 +4946,7 @@ function restoreOrthographicWorkView() {
   return true;
 }
 
-function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1 } = {}) {
+function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false } = {}) {
   const oldPosition = camera.position.clone();
   const oldUp = camera.up.clone();
   const oldTarget = orbit.target.clone();
@@ -4970,6 +4975,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   const oldFloorVisible = floor.visible;
   const oldStudioFloorVisible = studioFloor.visible;
   const oldPixelRatio = renderer.getPixelRatio();
+  const oldProjectionMatrix = camera.projectionMatrix.clone();
 
   transform.visible = false;
   boneTransform.visible = false;
@@ -5005,8 +5011,20 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   setCameraToView(viewName, {
     useCurrentZoom: useCurrentZoom ?? (els.useCurrentZoomInShotsInput?.checked ?? true),
     currentDistance: oldDistance,
-    bounds
+    bounds,
+    directionOverride,
+    centerOverride
   });
+  if (orthographic) {
+    const fitBox = bounds?.isBox3 ? bounds : sceneBounds();
+    const fitSize = fitBox.getSize(new THREE.Vector3());
+    // Diagonal isometric views project width/depth into screen height. Fit the
+    // full 3D diagonal, not only the largest single dimension, so no tile part
+    // is clipped at the top or bottom of a sheet cell.
+    const fitHeight = Math.max(fitSize.length() * 1.35, 2);
+    const aspect = canvas.width / Math.max(1, canvas.height);
+    camera.projectionMatrix.makeOrthographic(-fitHeight * aspect / 2, fitHeight * aspect / 2, fitHeight / 2, -fitHeight / 2, camera.near, camera.far);
+  }
   if (transparent) {
     scene.background = null;
     scene.fog = null;
@@ -5060,6 +5078,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   camera.up.copy(oldUp);
   camera.near = oldNear;
   camera.far = oldFar;
+  camera.projectionMatrix.copy(oldProjectionMatrix);
   orbit.target.copy(oldTarget);
   camera.lookAt(oldTarget);
   camera.updateProjectionMatrix();

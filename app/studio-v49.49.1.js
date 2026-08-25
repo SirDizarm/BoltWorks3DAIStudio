@@ -32317,7 +32317,7 @@ void main() {
   var activeWorkView = null;
   var savedWorkViewCamera = null;
   var frontBoneCamera = new OrthographicCamera(-5, 5, 5, -5, 0.01, 1e4);
-  frontBoneCamera.position.set(0, 0, -100);
+  frontBoneCamera.position.set(0, 0, 100);
   frontBoneCamera.lookAt(0, 0, 0);
   frontBoneCamera.layers.enable(1);
   var sideBoneCamera = new OrthographicCamera(-5, 5, 5, -5, 0.01, 1e4);
@@ -34078,11 +34078,11 @@ void main() {
       mesh.rotation.set(-Math.PI / 2, 0, 0);
       switch (mesh.userData.axis) {
         case "front":
-          mesh.position.set(0, labelY, -halfSize - offset);
-          break;
-        case "back":
           mesh.position.set(0, labelY, halfSize + offset);
           mesh.rotation.z = Math.PI;
+          break;
+        case "back":
+          mesh.position.set(0, labelY, -halfSize - offset);
           break;
         case "left":
           mesh.position.set(-halfSize - offset, labelY, 0);
@@ -48146,6 +48146,7 @@ void main() {
     selectObject(null);
     selectedBoneId = null;
     if (els.showBonesInput) els.showBonesInput.checked = false;
+    setBoneGizmoEnabled(false, "rotate");
     rebuildBoneVisuals();
     syncBonePanel();
     activeTransformMode = null;
@@ -52108,17 +52109,17 @@ end
     renderCustomCameraViews();
   }
   var screenshotViewDirections = {
-    front: new Vector3(0, 0, -1),
-    back: new Vector3(0, 0, 1),
+    front: new Vector3(0, 0, 1),
+    back: new Vector3(0, 0, -1),
     left: new Vector3(-1, 0, 0),
     right: new Vector3(1, 0, 0),
     side: new Vector3(1, 0, 0),
     top: new Vector3(0, 1, 0),
     iso: new Vector3(0.78, 0.52, 0.92),
-    "front-left": new Vector3(-0.78, 0.35, -0.92),
-    "front-right": new Vector3(0.78, 0.35, -0.92),
-    "back-left": new Vector3(-0.78, 0.35, 0.92),
-    "back-right": new Vector3(0.78, 0.35, 0.92)
+    "front-left": new Vector3(-0.78, 0.35, 0.92),
+    "front-right": new Vector3(0.78, 0.35, 0.92),
+    "back-left": new Vector3(-0.78, 0.35, -0.92),
+    "back-right": new Vector3(0.78, 0.35, -0.92)
   };
   function sceneBounds() {
     const box = new Box3();
@@ -54565,6 +54566,12 @@ end
   function boneGizmoMode() {
     return boneGizmoToolMode === "translate" ? "translate" : "rotate";
   }
+  function setBoneGizmoEnabled(enabled, mode = boneGizmoToolMode) {
+    boneGizmoToolMode = mode === "translate" ? "translate" : "rotate";
+    boneGizmoEnabled = !!enabled;
+    els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
+    els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+  }
   function setBoneGizmoToolMode(mode) {
     const next = mode === "translate" ? "translate" : "rotate";
     if (boneGizmoToolMode === next && boneGizmoEnabled) {
@@ -54573,8 +54580,7 @@ end
       boneGizmoToolMode = next;
       boneGizmoEnabled = true;
     }
-    els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
-    els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+    setBoneGizmoEnabled(boneGizmoEnabled, boneGizmoToolMode);
     syncBoneTransformGizmo();
   }
   function applyBoneAxisLock() {
@@ -54618,6 +54624,7 @@ end
     const bone = boneById(boneId);
     if (!bone) return;
     selectedBoneId = boneId;
+    setBoneGizmoEnabled(true, "rotate");
     if (typeof selectObject === "function") selectObject(null);
     rebuildBoneVisuals();
     syncBonePanel();
@@ -54844,7 +54851,6 @@ end
     if (activeSkinRuntime) applySkinnedPose(poses);
     else {
       poseRigHierarchy();
-      rigBones.forEach((bone) => bone.tail.copy(bone.position).add(bone.tailOffset.clone().applyEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"))));
       applyAnimationBindings();
     }
     if (render) {
@@ -54986,6 +54992,30 @@ end
     const keyedPositionOffset = bone.position.clone().sub(bindPos);
     const bindRotE = bone.bindRotation || bone.rotation;
     const parent = boneById(bone.parentId);
+    if (bone.blockbenchLocalRotation) {
+      if (parent) poseBoneWithChildren(parent, visited, resolved);
+      const parentWorldQuat = parent ? (resolved.get(`${parent.id}:worldQuat`) || new Quaternion()).clone() : new Quaternion();
+      const parentRestWorldQuat2 = parent ? (resolved.get(`${parent.id}:restWorldQuat`) || new Quaternion()).clone() : new Quaternion();
+      const localRestQuat = new Quaternion().setFromEuler(
+        new Euler(bindRotE.x, bindRotE.y, bindRotE.z, "ZYX")
+      );
+      const localPoseQuat = new Quaternion().setFromEuler(
+        new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "ZYX")
+      );
+      const restWorldQuat2 = parentRestWorldQuat2.multiply(localRestQuat);
+      const worldQuat2 = parentWorldQuat.multiply(localPoseQuat);
+      const localPosition = (bone.restLocalPosition || bindPos.clone()).clone().add(keyedPositionOffset);
+      const worldPos2 = parent ? (resolved.get(`${parent.id}:pos`) || parent.position).clone().add(localPosition.applyQuaternion(resolved.get(`${parent.id}:worldQuat`) || new Quaternion())) : localPosition;
+      const worldDelta = worldQuat2.clone().multiply(restWorldQuat2.clone().invert());
+      bone.position.copy(worldPos2);
+      bone.poseWorldQuaternion = worldQuat2.clone();
+      resolved.set(bone.id, worldDelta);
+      resolved.set(`${bone.id}:pos`, worldPos2.clone());
+      resolved.set(`${bone.id}:bindPos`, bindPos.clone());
+      resolved.set(`${bone.id}:worldQuat`, worldQuat2.clone());
+      resolved.set(`${bone.id}:restWorldQuat`, restWorldQuat2.clone());
+      return worldDelta;
+    }
     const parentDelta = parent ? poseBoneWithChildren(parent, visited, resolved).clone() : new Quaternion();
     const bindLocalQuat = new Quaternion().setFromEuler(new Euler(bindRotE.x, bindRotE.y, bindRotE.z, bone.blockbenchLocalRotation ? "ZYX" : "XYZ"));
     const parentRestWorldQuat = parent && resolved.get(`${parent.id}:restWorldQuat`) || new Quaternion();
@@ -55018,6 +55048,18 @@ end
     const visited = /* @__PURE__ */ new Set();
     const resolved = /* @__PURE__ */ new Map();
     rigBones.forEach((bone) => poseBoneWithChildren(bone, visited, resolved));
+    rigBones.forEach((bone) => {
+      const child = rigBones.find((candidate) => candidate.parentId === bone.id);
+      if (child) {
+        bone.tail.copy(child.position);
+        return;
+      }
+      const bindPosition = bone.bindPosition || bone.position;
+      const bindTail = bone.bindTail || bone.tail;
+      const restOffset = bindTail.clone().sub(bindPosition);
+      const worldDelta = resolved.get(bone.id) || new Quaternion();
+      bone.tail.copy(bone.position).add(restOffset.applyQuaternion(worldDelta));
+    });
   }
   function applyCurrentRigPose() {
     if (!bonesGlued && !activeSkinRuntime) {
@@ -55307,6 +55349,7 @@ end
     }));
     els.animationTrackList.querySelectorAll("[data-animation-bone]").forEach((button) => button.addEventListener("click", () => {
       selectedBoneId = button.dataset.animationBone || null;
+      if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
       syncBonePanel();
       rebuildBoneVisuals();
       updateAnimationPanel();
@@ -55617,6 +55660,7 @@ end
       row.append(hideBtn);
       row.addEventListener("click", () => {
         selectedBoneId = selectedBoneId === bone2.id ? null : bone2.id;
+        if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
         rebuildBoneVisuals();
         syncBonePanel();
       });
@@ -55837,7 +55881,7 @@ end
     referenceCamera.top = halfHeight;
     referenceCamera.bottom = -halfHeight;
     if (view === "front") {
-      referenceCamera.position.set(center.x, center.y, center.z - 100);
+      referenceCamera.position.set(center.x, center.y, center.z + 100);
       referenceCamera.up.set(0, 1, 0);
     } else {
       referenceCamera.position.set(center.x + 100, center.y, center.z);
@@ -55862,6 +55906,7 @@ end
     const hit = boneRaycaster.intersectObjects(boneRigGroup.children.filter((child) => child.userData.boneJoint), false)[0];
     if (!hit) return;
     selectedBoneId = hit.object.userData.boneId;
+    setBoneGizmoEnabled(true, "rotate");
     const bone = selectedBone();
     if (!bone) return;
     recordBoneHistory("bone move");
@@ -56057,21 +56102,21 @@ end
     ];
     const body = baseAndLayer("body", "Body", [-4, 12, -2], [4, 24, 2], [16, 16], [16, 32], { origin: [0, 12, 0] });
     const head = baseAndLayer("head", "Head", [-4, 24, -4], [4, 32, 4], [0, 0], [32, 0], { origin: [0, 24, 0] });
-    const rightArmFrom = [-4 - armWidth, 12, -2], rightArmTo = [-4, 24, 2];
-    const leftArmFrom = [4, 12, -2], leftArmTo = [4 + armWidth, 24, 2];
-    const rightArm = baseAndLayer("right-arm", "Right Arm", rightArmFrom, rightArmTo, [40, 16], [40, 32], { origin: [-4, 22, 0] });
-    const leftArm = baseAndLayer("left-arm", "Left Arm", leftArmFrom, leftArmTo, [32, 48], [48, 48], { origin: [4, 22, 0] });
-    const rightLeg = baseAndLayer("right-leg", "Right Leg", [-4, 0, -2], [0, 12, 2], [0, 16], [0, 32], { origin: [-2, 12, 0] });
-    const leftLeg = baseAndLayer("left-leg", "Left Leg", [0, 0, -2], [4, 12, 2], [16, 48], [0, 48], { origin: [2, 12, 0] });
-    const group = (id, name, origin, children) => ({ uuid: `bws-skin-group-${id}`, name, origin, rotation: [0, 0, 0], children });
+    const rightArmFrom = [4, 12, -2], rightArmTo = [4 + armWidth, 24, 2];
+    const leftArmFrom = [-4 - armWidth, 12, -2], leftArmTo = [-4, 24, 2];
+    const rightArm = baseAndLayer("right-arm", "Right Arm", rightArmFrom, rightArmTo, [40, 16], [40, 32], { origin: [4, 22, 0] });
+    const leftArm = baseAndLayer("left-arm", "Left Arm", leftArmFrom, leftArmTo, [32, 48], [48, 48], { origin: [-4, 22, 0] });
+    const rightLeg = baseAndLayer("right-leg", "Right Leg", [0, 0, -2], [4, 12, 2], [0, 16], [0, 32], { origin: [2, 12, 0] });
+    const leftLeg = baseAndLayer("left-leg", "Left Leg", [-4, 0, -2], [0, 12, 2], [16, 48], [0, 48], { origin: [-2, 12, 0] });
+    const group = (id, name, origin, children, rotation = [0, 0, 0]) => ({ uuid: `bws-skin-group-${id}`, name, origin, rotation, children });
     const outliner = [group("body", "body", [0, 12, 0], [
       ...body,
       group("head", "head", [0, 24, 0], head),
-      group("right-arm", "right_arm", [-4, 22, 0], rightArm),
-      group("left-arm", "left_arm", [4, 22, 0], leftArm),
-      group("right-leg", "right_leg", [-2, 12, 0], rightLeg),
-      group("left-leg", "left_leg", [2, 12, 0], leftLeg)
-    ])];
+      group("right-arm", "right_arm", [4, 22, 0], rightArm),
+      group("left-arm", "left_arm", [-4, 22, 0], leftArm),
+      group("right-leg", "right_leg", [2, 12, 0], rightLeg),
+      group("left-leg", "left_leg", [-2, 12, 0], leftLeg)
+    ], [0, 180, 0])];
     return { ...project, elements, outliner, box_uv: true, meta: { ...project.meta || {}, box_uv: true } };
   }
   function collectBlockbenchHierarchy(outliner, parentBoneId, groupMap, cubeParents, parentGroupId = null) {
@@ -56245,6 +56290,14 @@ end
         head: [[0, [-1, -5, 0]], [10, [-2, -1, 0]], [20, [-1, 4, 0]], [30, [1, 0, 0]], [40, [-1, -5, 0]]],
         leftArm: [[0, [2, 0, -2]], [10, [0, 1, -2]], [20, [-2, 0, -1]], [30, [0, -1, -2]], [40, [2, 0, -2]]],
         rightArm: [[0, [-2, 0, 2]], [10, [0, -1, 2]], [20, [2, 0, 1]], [30, [0, 1, 2]], [40, [-2, 0, 2]]]
+      }),
+      clip("Wave", 24, "loop", {
+        body: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+        head: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+        leftArm: [[0, [28, 0, -124]], [4, [28, -8, -112]], [8, [28, 8, -138]], [12, [28, -8, -112]], [16, [28, 8, -138]], [20, [28, -8, -112]], [24, [28, 0, -124]]],
+        rightArm: [[0, [0, 0, 2]], [24, [0, 0, 2]]],
+        leftLeg: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+        rightLeg: [[0, [0, 0, 0]], [24, [0, 0, 0]]]
       }),
       clip("Walk", 24, "loop", {
         body: [[0, [0, 0, 0], [0, 0, 0]], [6, [0, 0, 0], [0, 0.32, 0]], [12, [0, 0, 0], [0, 0, 0]], [18, [0, 0, 0], [0, 0.32, 0]], [24, [0, 0, 0], [0, 0, 0]]],
@@ -56550,6 +56603,7 @@ end
     selectObject(null);
     selectedBoneId = null;
     if (els.showBonesInput) els.showBonesInput.checked = false;
+    setBoneGizmoEnabled(false, "rotate");
     activeTransformMode = null;
     document.querySelectorAll("[data-mode]").forEach((btn) => btn.classList.remove("active"));
     updateTransformAttachment();

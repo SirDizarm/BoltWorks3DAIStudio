@@ -768,11 +768,11 @@ function updateGridLabels() {
     mesh.rotation.set(-Math.PI / 2, 0, 0);
     switch (mesh.userData.axis) {
       case "front":
-        mesh.position.set(0, labelY, -halfSize - offset);
-        break;
-      case "back":
         mesh.position.set(0, labelY, halfSize + offset);
         mesh.rotation.z = Math.PI;
+        break;
+      case "back":
+        mesh.position.set(0, labelY, -halfSize - offset);
         break;
       case "left":
         mesh.position.set(-halfSize - offset, labelY, 0);
@@ -862,7 +862,7 @@ function updateCrashPreview() {
   return;
 }
 
-function makeMaterial(color = "#40c7a5", roughness = .6, textureUrl = null, textureFlipY = true, textureRotation = 0) {
+function makeMaterial(color = "#ffffff", roughness = .6, textureUrl = null, textureFlipY = true, textureRotation = 0) {
   const material = new THREE.MeshStandardMaterial({
     color,
     roughness,
@@ -1133,6 +1133,41 @@ function textureEditorMesh() {
 
 function selectedTextureEditorMesh() {
   return selected && selected.userData.textureUrl && selected.geometry?.getAttribute("uv") ? selected : null;
+}
+
+function applyTextureEditorUvScale() {
+  const mesh = textureEditorMesh();
+  const uv = mesh?.geometry?.getAttribute("uv");
+  if (!mesh || !uv) return;
+  const width = Math.max(0.01, Number(els.textureEditorUvWidth?.value) || 1);
+  const height = Math.max(0.01, Number(els.textureEditorUvHeight?.value) || 1);
+  recordHistory("scale texture UVs");
+  for (let i = 0; i < uv.count; i++) {
+    uv.setXY(i, 0.5 + (uv.getX(i) - 0.5) * width, 0.5 + (uv.getY(i) - 0.5) * height);
+  }
+  uv.needsUpdate = true;
+  mesh.geometry.attributes.uv.needsUpdate = true;
+  mesh.geometry.computeBoundingSphere();
+  renderTextureEditor();
+  updateAll();
+  log(`UV scale applied to ${mesh.name || "selected part"}: width ${width.toFixed(2)}, height ${height.toFixed(2)}.`);
+}
+
+function transformTextureEditorUvs(dx, dy, scaleMode = false) {
+  const mesh = textureEditorMesh();
+  const uv = mesh?.geometry?.getAttribute("uv");
+  if (!uv) return;
+  const bounds = new THREE.Box2();
+  for (let i = 0; i < uv.count; i++) bounds.expandByPoint(new THREE.Vector2(uv.getX(i), uv.getY(i)));
+  const center = bounds.getCenter(new THREE.Vector2());
+  const sx = scaleMode ? Math.max(.01, 1 + dx * 2) : 1;
+  const sy = scaleMode ? Math.max(.01, 1 - dy * 2) : 1;
+  for (let i = 0; i < uv.count; i++) {
+    const x = uv.getX(i), y = uv.getY(i);
+    uv.setXY(i, scaleMode ? center.x + (x - center.x) * sx : x + dx, scaleMode ? center.y + (y - center.y) * sy : y + dy);
+  }
+  uv.needsUpdate = true;
+  renderTextureEditor();
 }
 
 function textureEditorPartMeshes() {
@@ -4552,7 +4587,7 @@ function updateSurfaceGizmoAttachment() {
   configureSurfaceTransformAxis();
   for (const control of surfaceTransforms) {
     control.setMode("translate");
-    control.setTranslationSnap(dragPushStepSize());
+    control.setTranslationSnap(transformSnapSettings().translation ?? dragPushStepSize());
     control.enabled = true;
     control.attach(surfaceGizmoPivot);
     control.visible = true;
@@ -4634,12 +4669,39 @@ function armContextualSurfaceDrag() {
   els.hudText.textContent = `Surface ready: ${surfaceAxisMode() === "free" ? "drag an X/Y/Z arrow" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow or the selected face left/right`} | ${els.surfaceMouseFalloffSelect?.value === "hard" ? "Hard face" : `Soft radius ${Number(els.softRadiusInput?.value || .25)}`}`;
 }
 
-function applyRotationSnap() {
+function transformSnapSettings() {
   const degrees = Number(els.rotationSnapSelect.value) || 0;
-  const radians = degrees ? THREE.MathUtils.degToRad(degrees) : null;
-  if (typeof transform.setRotationSnap === "function") transform.setRotationSnap(radians);
-  else transform.rotationSnap = radians;
-  log(`Rotation snap ${degrees ? `${degrees} degrees` : "disabled"}.`);
+  const translationSteps = { 15: .1, 30: .25, 45: .5, 90: 1 };
+  const scaleSteps = { 15: .05, 30: .1, 45: .25, 90: .5 };
+  return {
+    degrees,
+    rotation: degrees ? THREE.MathUtils.degToRad(degrees) : null,
+    translation: degrees ? translationSteps[degrees] || .1 : null,
+    scale: degrees ? scaleSteps[degrees] || .05 : null
+  };
+}
+
+function applyControlSnap(control, settings) {
+  if (!control) return;
+  if (typeof control.setTranslationSnap === "function") control.setTranslationSnap(settings.translation);
+  else control.translationSnap = settings.translation;
+  if (typeof control.setRotationSnap === "function") control.setRotationSnap(settings.rotation);
+  else control.rotationSnap = settings.rotation;
+  if (typeof control.setScaleSnap === "function") control.setScaleSnap(settings.scale);
+  else control.scaleSnap = settings.scale;
+}
+
+function applyRotationSnap() {
+  const settings = transformSnapSettings();
+  applyControlSnap(transform, settings);
+  applyControlSnap(boneTransform, settings);
+  for (const control of surfaceTransforms) {
+    const surfaceSettings = { ...settings, translation: settings.translation ?? dragPushStepSize() };
+    applyControlSnap(control, surfaceSettings);
+  }
+  log(settings.degrees
+    ? `Transform snap: move ${settings.translation}, rotate ${settings.degrees} degrees, scale ${settings.scale}.`
+    : "Global transform snap disabled; free movement and rotation enabled.");
 }
 
 function linkedObjects(mesh) {
@@ -16351,4 +16413,148 @@ function clearObjects({ record = true } = {}) {
   selectObject(null);
   refreshTextureLibraryUi();
   updateAll();
+}
+
+function modelTileMaterialImage() {
+  const mesh = singleMeshTarget?.();
+  const material = Array.isArray(mesh?.material) ? mesh.material[0] : mesh?.material;
+  return { mesh, material, image: material?.map?.image || null };
+}
+
+function centerModelTileToEditor() {
+  const targets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [...objects];
+  if (!targets.length) {
+    if (els.modelTileStatus) els.modelTileStatus.textContent = "Add or select a model first.";
+    return;
+  }
+  recordHistory("center model tile to editor");
+  const bounds = new THREE.Box3();
+  targets.forEach(target => bounds.expandByObject(target));
+  const offset = bounds.getCenter(new THREE.Vector3()).negate();
+  targets.forEach(target => {
+    const worldPosition = new THREE.Vector3();
+    target.getWorldPosition(worldPosition).add(offset);
+    if (target.parent) target.parent.worldToLocal(worldPosition);
+    target.position.copy(worldPosition);
+    target.updateMatrixWorld(true);
+  });
+  updateAll();
+  if (els.modelTileStatus) els.modelTileStatus.textContent = `Centered ${targets.length} model part${targets.length === 1 ? "" : "s"} to the editor origin; relative spacing preserved.`;
+}
+
+function snapSelectionToGridSurface() {
+  const targets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [];
+  if (!targets.length) {
+    if (els.modelTileStatus) els.modelTileStatus.textContent = "Select a mesh, group, or multiple parts first.";
+    return;
+  }
+  const bounds = new THREE.Box3();
+  targets.forEach(target => bounds.expandByObject(target));
+  const center = bounds.getCenter(new THREE.Vector3());
+  const increment = transformSnapSettings().translation || 0;
+  const delta = new THREE.Vector3(
+    increment ? Math.round(center.x / increment) * increment - center.x : 0,
+    -bounds.min.y,
+    increment ? Math.round(center.z / increment) * increment - center.z : 0
+  );
+  recordHistory("snap selection to grid surface");
+  targets.forEach(target => {
+    const worldPosition = target.getWorldPosition(new THREE.Vector3()).add(delta);
+    if (target.parent) target.parent.worldToLocal(worldPosition);
+    target.position.copy(worldPosition);
+    target.updateMatrixWorld(true);
+  });
+  updateAll();
+  if (els.modelTileStatus) els.modelTileStatus.textContent = `Snapped ${targets.length} model part${targets.length === 1 ? "" : "s"} to the grid surface; relative spacing preserved.`;
+}
+
+async function exportModelTileKit() {
+  const exportTargets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [];
+  const { mesh: singleMesh, material, image } = modelTileMaterialImage();
+  const mesh = exportTargets[0] || singleMesh;
+  const facing = els.modelTileFacingSelect?.value || "N";
+  const width = Number(els.modelTileWidthInput?.value) || 1;
+  const depth = Number(els.modelTileDepthInput?.value) || 1;
+  const height = Number(els.modelTileHeightInput?.value) || 3;
+  const cameraProfile = {
+    azimuth: Number(els.modelTileCameraAzimuthInput?.value) || 45,
+    elevation: Number(els.modelTileCameraElevationInput?.value) || 35.264,
+    distance: Number(els.modelTileCameraDistanceInput?.value) || 12,
+    targetY: Number(els.modelTileCameraTargetYInput?.value) || 0,
+    viewSet: els.modelTileViewSetSelect?.value || "isometric",
+    wallSafeCardinalViews: (els.modelTileViewSetSelect?.value || "isometric") === "cardinal"
+  };
+  if (!mesh) { if (els.modelTileStatus) els.modelTileStatus.textContent = "Select a mesh, group, or multiple parts first."; return; }
+  const selectedGroup = selectedGroupRecordId ? groupRecord(selectedGroupRecordId) : null;
+  const exportName = selectedGroup?.name || (exportTargets.length > 1 ? `${mesh.name}-assembly` : mesh.name) || "tile";
+  const safeName = exportName.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "tile";
+  const manifest = { kind: "death-and-dues-tile", version: 1, asset: mesh.name || "Tile", dimensionsMeters: { width, depth, wallHeight: height }, ground: { texture: `${safeName}-ground.png`, material: material?.name || "default" }, wall: { texture: `${safeName}-wall.png`, facing, compassOrder: ["N", "E", "S", "W"], rotateYDegrees: { N: 0, E: 90, S: 180, W: 270 } }, textureSheet: { file: `${safeName}-wall-4x.png`, columns: 4, order: cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"], renderMode: cameraProfile.wallSafeCardinalViews ? "wall-normal-aligned-orthographic" : "isometric-diagonal-orthographic" }, camera: { projection: "orthographic", coordinateSystem: "Unity-Y-up", ...cameraProfile, lockToEditorOrigin: true }, unity: { prefabRoot: "DeathAndDues/Tiles", rotateWallAtPlacement: true } };
+  download(`${safeName}.deathanddues.tile.json`, JSON.stringify(manifest, null, 2), "application/json");
+  const exportTargetsForRender = exportTargets.length ? exportTargets : [...objects];
+  const exportTargetIds = new Set(exportTargetsForRender.map(target => target.userData.id));
+  const visibility = objects.map(target => ({ target, visible: target.visible }));
+  objects.forEach(target => { target.visible = exportTargetIds.has(target.userData.id); });
+  const bounds = new THREE.Box3();
+  exportTargetsForRender.forEach(target => bounds.expandByObject(target));
+  const center = bounds.getCenter(new THREE.Vector3());
+  const size = 512, sheet = document.createElement("canvas"); sheet.width = size * 4; sheet.height = size;
+  const ctx = sheet.getContext("2d");
+  ctx.clearRect(0, 0, sheet.width, sheet.height);
+  const baseAzimuth = THREE.MathUtils.degToRad(cameraProfile.azimuth);
+  const elevation = THREE.MathUtils.degToRad(cameraProfile.elevation);
+  const renderDistance = Math.max(cameraProfile.distance, bounds.getSize(new THREE.Vector3()).length() * 1.2);
+  const viewNames = cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"];
+  const renderedCells = [];
+  for (let i = 0; i < 4; i++) {
+    const azimuth = (cameraProfile.wallSafeCardinalViews ? 0 : baseAzimuth) + i * Math.PI / 2;
+    const direction = new THREE.Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
+    const shot = captureView(`tile-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
+    const imageElement = await new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = shot.dataUrl; });
+    const source = document.createElement("canvas"); source.width = imageElement.width; source.height = imageElement.height;
+    const sourceContext = source.getContext("2d"); sourceContext.drawImage(imageElement, 0, 0);
+    const pixels = sourceContext.getImageData(0, 0, source.width, source.height).data;
+    let minX = source.width, minY = source.height, maxX = -1, maxY = -1;
+    for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) if (pixels[(y * source.width + x) * 4 + 3] > 3) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+    if (maxX < 0) continue;
+    renderedCells.push({ index: i, source, minX, minY, cropWidth: maxX - minX + 1, cropHeight: maxY - minY + 1 });
+  }
+  // Use one shared scale for the complete four-view sheet. Per-view fitting
+  // makes diagonal silhouettes with a wider projected footprint appear closer
+  // to the camera than the other orientations.
+  const maxCropWidth = Math.max(...renderedCells.map(cell => cell.cropWidth), 1);
+  const maxCropHeight = Math.max(...renderedCells.map(cell => cell.cropHeight), 1);
+  const sharedScale = Math.min((size * .9) / maxCropWidth, (size * .9) / maxCropHeight);
+  renderedCells.forEach(({ index, source, minX, minY, cropWidth, cropHeight }) => {
+    const drawWidth = cropWidth * sharedScale, drawHeight = cropHeight * sharedScale;
+    ctx.drawImage(source, minX, minY, cropWidth, cropHeight, index * size + (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
+  });
+  visibility.forEach(entry => { entry.target.visible = entry.visible; });
+  downloadDataUrl(`${safeName}-wall-4x.png`, sheet.toDataURL("image/png"));
+  if (els.modelTileStatus) els.modelTileStatus.textContent = `Exported ${manifest.asset}: transparent, tightly framed ${viewNames.join("/")} model renders.`;
+}
+
+function rotateModelTileFacing() {
+  const order = ["N", "E", "S", "W"], select = els.modelTileFacingSelect;
+  if (!select) return;
+  select.value = order[(order.indexOf(select.value) + 1) % order.length];
+  const targets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [...objects];
+  if (!targets.length) {
+    if (els.modelTileStatus) els.modelTileStatus.textContent = `Wall facing: ${select.value}; add or select a model first.`;
+    return;
+  }
+  recordHistory("rotate model tile compass");
+  const center = new THREE.Vector3(0, 0, 0);
+  const quarterTurn = Math.PI / 2;
+  const rotation = new THREE.Matrix4().makeRotationY(quarterTurn);
+  targets.forEach(target => {
+    const worldPosition = new THREE.Vector3();
+    target.getWorldPosition(worldPosition);
+    worldPosition.sub(center).applyMatrix4(rotation).add(center);
+    if (target.parent) target.parent.worldToLocal(worldPosition);
+    target.position.copy(worldPosition);
+    target.rotation.y += quarterTurn;
+    target.updateMatrixWorld(true);
+  });
+  updateAll();
+  if (els.modelTileStatus) els.modelTileStatus.textContent = `Wall facing: ${select.value}; rotated ${targets.length} model part${targets.length === 1 ? "" : "s"} 90° around the editor center.`;
 }

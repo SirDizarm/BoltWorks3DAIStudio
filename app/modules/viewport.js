@@ -40,8 +40,8 @@ let activeWorkView = null;
 let savedWorkViewCamera = null;
 
 const frontBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
-// Match the canonical Front work/export view: the model faces toward -Z.
-frontBoneCamera.position.set(0, 0, -100);
+// Blockbench's canonical Front view looks from +Z toward the origin.
+frontBoneCamera.position.set(0, 0, 100);
 frontBoneCamera.lookAt(0, 0, 0);
 frontBoneCamera.layers.enable(1);
 const sideBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
@@ -54,6 +54,40 @@ orbit.enableDamping = true;
 orbit.minDistance = 0.05;
 orbit.maxDistance = 500000;
 orbit.target.set(0, 1, 0);
+let modelTileCameraLocked = false;
+
+function applyModelTileCameraLock() {
+  const azimuth = Number(els.modelTileCameraAzimuthInput?.value) || 45;
+  const elevation = Math.max(-89, Math.min(89, Number(els.modelTileCameraElevationInput?.value) || 35.264));
+  const distance = Math.max(.1, Number(els.modelTileCameraDistanceInput?.value) || 12);
+  const targetY = Number(els.modelTileCameraTargetYInput?.value) || 0;
+  const az = THREE.MathUtils.degToRad(azimuth);
+  const el = THREE.MathUtils.degToRad(elevation);
+  const target = new THREE.Vector3(0, targetY, 0);
+  camera.position.set(
+    target.x + Math.sin(az) * Math.cos(el) * distance,
+    target.y + Math.sin(el) * distance,
+    target.z + Math.cos(az) * Math.cos(el) * distance
+  );
+  camera.lookAt(target);
+  orbit.target.copy(target);
+  orbit.update();
+  return { azimuth, elevation, distance, targetY };
+}
+
+function toggleModelTileCameraLock() {
+  modelTileCameraLocked = !modelTileCameraLocked;
+  if (modelTileCameraLocked) {
+    const profile = applyModelTileCameraLock();
+    orbit.enabled = false;
+    if (els.modelTileCameraLockBtn) els.modelTileCameraLockBtn.textContent = "Unlock Isometric Camera";
+    if (els.modelTileStatus) els.modelTileStatus.textContent = `Camera locked: azimuth ${profile.azimuth}°, elevation ${profile.elevation}°, distance ${profile.distance}.`;
+  } else {
+    orbit.enabled = true;
+    if (els.modelTileCameraLockBtn) els.modelTileCameraLockBtn.textContent = "Lock Isometric Camera";
+    if (els.modelTileStatus) els.modelTileStatus.textContent = "Camera unlocked.";
+  }
+}
 
 const surfaceGizmoPivot = new THREE.Object3D();
 surfaceGizmoPivot.name = "surface edit pivot";
@@ -88,6 +122,7 @@ transform.addEventListener("objectChange", () => {
   syncInspector();
   updateState();
   updateScore();
+  updateScaleModifierMarkers();
 });
 scene.add(transform);
 
@@ -364,6 +399,43 @@ let currentTransformTargetKey = "";
 let pivotEditMode = false;
 let pivotReturnMode = "rotate";
 let isShiftHeld = false;
+let isCtrlHeld = false;
+const scaleModifierMarkers = new THREE.Group();
+scaleModifierMarkers.name = "scale modifier markers";
+scaleModifierMarkers.visible = false;
+scene.add(scaleModifierMarkers);
+const scaleMarkerArrows = [
+  new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), new THREE.Vector3(), .8, 0xffb347, .18, .1),
+  new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), new THREE.Vector3(), .8, 0x66ddaa, .18, .1),
+  new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), new THREE.Vector3(), .8, 0x66aaff, .18, .1),
+  new THREE.ArrowHelper(new THREE.Vector3(-1, 0, 0), new THREE.Vector3(), .8, 0xffb347, .18, .1),
+  new THREE.ArrowHelper(new THREE.Vector3(0, -1, 0), new THREE.Vector3(), .8, 0x66ddaa, .18, .1),
+  new THREE.ArrowHelper(new THREE.Vector3(0, 0, -1), new THREE.Vector3(), .8, 0x66aaff, .18, .1)
+];
+scaleMarkerArrows.forEach(arrow => scaleModifierMarkers.add(arrow));
+
+function updateScaleModifierMarkers() {
+  const show = activeTransformMode === "scale" && (isShiftHeld || isCtrlHeld) && transform.visible && transform.object;
+  scaleModifierMarkers.visible = !!show;
+  if (!show) return;
+  const object = transform.object;
+  const center = new THREE.Vector3(); object.getWorldPosition(center);
+  const bounds = new THREE.Box3().setFromObject(object);
+  const size = bounds.getSize(new THREE.Vector3());
+  const half = Math.max(.35, Math.max(size.x, size.y, size.z) * .55);
+  scaleModifierMarkers.position.copy(center);
+  scaleMarkerArrows.forEach((arrow, index) => {
+    const axis = index % 3;
+    const negative = index >= 3;
+    const direction = arrow.getWorldDirection(new THREE.Vector3());
+    const offset = direction.clone().multiplyScalar(half);
+    arrow.position.copy(offset);
+    arrow.setLength(Math.max(.5, half * .55));
+    const activeAxis = String(transform.axis || "").toUpperCase();
+    const axisName = ["X", "Y", "Z"][axis];
+    arrow.visible = activeAxis ? activeAxis.includes(axisName) && (isCtrlHeld || !negative) : (isCtrlHeld || !negative);
+  });
+}
 let scaleDragState = null;
 let pendingScenePick = null;
 let idCounter = 1;
@@ -817,6 +889,20 @@ const els = {
   uvPngExportSelect: document.querySelector("#uvPngExportSelect"),
   uvPngExportCount: document.querySelector("#uvPngExportCount"),
   exportUvPngBtn: document.querySelector("#exportUvPngBtn"),
+  modelTileWidthInput: document.querySelector("#modelTileWidthInput"),
+  modelTileDepthInput: document.querySelector("#modelTileDepthInput"),
+  modelTileHeightInput: document.querySelector("#modelTileHeightInput"),
+  modelTileFacingSelect: document.querySelector("#modelTileFacingSelect"),
+  modelTileRotateBtn: document.querySelector("#modelTileRotateBtn"),
+  modelTileExportBtn: document.querySelector("#modelTileExportBtn"),
+  modelTileCenterBtn: document.querySelector("#modelTileCenterBtn"),
+  modelTileCameraAzimuthInput: document.querySelector("#modelTileCameraAzimuthInput"),
+  modelTileCameraElevationInput: document.querySelector("#modelTileCameraElevationInput"),
+  modelTileCameraDistanceInput: document.querySelector("#modelTileCameraDistanceInput"),
+  modelTileCameraTargetYInput: document.querySelector("#modelTileCameraTargetYInput"),
+  modelTileCameraLockBtn: document.querySelector("#modelTileCameraLockBtn"),
+  modelTileViewSetSelect: document.querySelector("#modelTileViewSetSelect"),
+  modelTileStatus: document.querySelector("#modelTileStatus"),
   edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
   edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
   edgeSlideBtn: document.querySelector("#edgeSlideBtn"),
@@ -849,6 +935,7 @@ const els = {
   scaleZ: document.querySelector("#scaleZ"),
   colorInput: document.querySelector("#colorInput"),
   colorHexInput: document.querySelector("#colorHexInput"),
+  addColorToSceneBtn: document.querySelector("#addColorToSceneBtn"),
   roughInput: document.querySelector("#roughInput"),
   roughValue: document.querySelector("#roughValue"),
   opacityInput: document.querySelector("#opacityInput"),
@@ -907,6 +994,11 @@ const els = {
   textureEditorOpacity: document.querySelector("#textureEditorOpacity"),
   textureEditorHammerRadius: document.querySelector("#textureEditorHammerRadius"),
   textureEditorShowUv: document.querySelector("#textureEditorShowUv"),
+  textureEditorUvWidth: document.querySelector("#textureEditorUvWidth"),
+  textureEditorUvHeight: document.querySelector("#textureEditorUvHeight"),
+  textureEditorApplyUvScaleBtn: document.querySelector("#textureEditorApplyUvScaleBtn"),
+  textureEditorEditUv: document.querySelector("#textureEditorEditUv"),
+  textureEditorScaleUv: document.querySelector("#textureEditorScaleUv"),
   textureEditorSelectedOnly: document.querySelector("#textureEditorSelectedOnly"),
   textureEditorBaseColorSource: document.querySelector("#textureEditorBaseColorSource"),
   textureEditorTextureUrl: document.querySelector("#textureEditorTextureUrl"),
@@ -998,6 +1090,8 @@ const els = {
   saveQaSheetBtn: document.querySelector("#saveQaSheetBtn"),
   resetZoomBtn: document.querySelector("#resetZoomBtn"),
   flat2dLookInput: document.querySelector("#flat2dLookInput"),
+  modelTileFlat2dLookInput: document.querySelector("#modelTileFlat2dLookInput"),
+  modelTileSnapBtn: document.querySelector("#modelTileSnapBtn"),
   hudText: document.querySelector("#hudText")
 };
 
@@ -1031,6 +1125,7 @@ const textureEditorState = {
   shapeStart: null,
   shapeEnd: null,
   isDrawingShape: false,
+  uvLayoutDrag: null,
   layers: [],
   activeLayerId: null,
   layerCounter: 0

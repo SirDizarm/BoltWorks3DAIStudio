@@ -1830,10 +1830,20 @@ label {
   flex-wrap: wrap;
   gap: 10px 12px;
   align-items: end;
-  max-height: min(26vh, 220px);
+  max-height: none;
   min-height: 44px;
   padding-right: 4px;
-  overflow-y: auto;
+  overflow: visible;
+}
+
+.texture-editor-uv-scale {
+  display: flex;
+  flex: 1 1 100%;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--line, #2b3940);
 }
 
 .texture-editor-toolbar label {
@@ -2756,3 +2766,321 @@ body[data-workspace="minecraft"] #addMeshSection button[data-add]:not([data-add=
 .plugin-row div { min-width:0; display:grid; gap:2px; }
 .plugin-row span { color:var(--muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 #minecraftBody > button { width:100%; margin-top:8px; }
+
+/* Mobile Studio reuses the complete BWS editor and presents its panels as touch drawers. */
+.mobile-workspace-nav,
+.mobile-panel-backdrop,
+.mobile-command-sheet { display: none; }
+
+html.mobile-layout,
+html.mobile-layout body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+html.mobile-layout body { background: #0b1012; }
+
+html.mobile-layout .app {
+  width: 100%;
+  height: 100dvh;
+  min-width: 0;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: calc(56px + env(safe-area-inset-top)) minmax(0, 1fr) calc(62px + env(safe-area-inset-bottom));
+  grid-template-areas:
+    "top"
+    "view"
+    ".";
+}
+
+html.mobile-layout .top {
+  grid-area: top;
+  height: calc(56px + env(safe-area-inset-top));
+  min-height: 0;
+  padding: calc(6px + env(safe-area-inset-top)) 8px 6px;
+  flex-wrap: nowrap;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  z-index: 110;
+}
+
+html.mobile-layout .top::-webkit-scrollbar { display: none; }
+html.mobile-layout .top > * { flex: 0 0 auto; }
+html.mobile-layout .top > .toolbar-group { display: none !important; }
+html.mobile-layout .top #toolbarUndoGroup,
+html.mobile-layout .top #toolbarSnapGroup { display: flex !important; }
+html.mobile-layout .top .brand { min-width: 0; margin-right: 2px; }
+html.mobile-layout .top .brand .mark { width: 32px; height: 32px; }
+html.mobile-layout .top .brand span { max-width: 62px; font-size: 0; }
+html.mobile-layout .top .brand span::after { content: "BWS"; font-size: 14px; }
+html.mobile-layout .top .brand small { display: none; }
+html.mobile-layout #toolbarUndoGroup button,
+html.mobile-layout #toolbarSnapGroup select { min-height: 40px; }
+html.mobile-layout #toolbarSnapGroup { min-width: 0; padding-left: 4px; }
+html.mobile-layout #toolbarSnapGroup label { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+html.mobile-layout #toolbarSnapGroup select { width: clamp(84px, 29vw, 132px); min-width: 0; }
+
+html.mobile-layout .viewport {
+  grid-area: view;
+  min-width: 0;
+  min-height: 0;
+  grid-template-columns: minmax(0, 1fr) !important;
+  touch-action: none;
+}
+
+html.mobile-layout #referenceViewportsToggleBtn,
+html.mobile-layout .bottom,
+html.mobile-layout .persistent-notices { display: none !important; }
+
+html.mobile-layout .reference-viewports { display: none !important; }
+html.mobile-layout .app.mobile-reference-views-open .viewport {
+  grid-template-columns: minmax(0, 1fr) clamp(118px, 40vw, 280px) !important;
+}
+html.mobile-layout .app.mobile-reference-views-open .reference-viewports {
+  display: grid !important;
+  min-width: 0;
+  border-left: 1px solid #38474e;
+}
+
+html.mobile-layout .left,
+html.mobile-layout .right {
+  display: block !important;
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top));
+  bottom: calc(62px + env(safe-area-inset-bottom));
+  width: min(88vw, 390px);
+  max-width: none;
+  min-width: 0;
+  height: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  background: #11181b;
+  box-shadow: 0 0 30px rgba(0, 0, 0, .65);
+  transition: transform .2s ease;
+  z-index: 100;
+}
+
+html.mobile-layout .left {
+  left: 0;
+  transform: translateX(-105%);
+  border-right: 1px solid #38474e;
+}
+
+html.mobile-layout .right {
+  right: 0;
+  transform: translateX(105%);
+  border-left: 1px solid #38474e;
+}
+
+html.mobile-layout .app.mobile-left-open .left,
+html.mobile-layout .app.mobile-right-open .right { transform: translateX(0); }
+
+html.mobile-layout .left button,
+html.mobile-layout .right button,
+html.mobile-layout .left input,
+html.mobile-layout .right input,
+html.mobile-layout .left select,
+html.mobile-layout .right select { min-height: 40px; }
+
+html.mobile-layout .mobile-panel-backdrop {
+  position: fixed;
+  display: block;
+  inset: calc(56px + env(safe-area-inset-top)) 0 calc(62px + env(safe-area-inset-bottom));
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: rgba(0, 0, 0, .48);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .18s ease;
+  z-index: 90;
+}
+
+html.mobile-layout .mobile-panel-backdrop.visible { opacity: 1; pointer-events: auto; }
+
+html.mobile-layout .mobile-workspace-nav {
+  position: fixed;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: calc(62px + env(safe-area-inset-bottom));
+  padding: 4px 4px calc(4px + env(safe-area-inset-bottom));
+  border-top: 1px solid #3a484e;
+  background: rgba(14, 20, 23, .98);
+  z-index: 130;
+}
+
+html.mobile-layout .mobile-workspace-nav button {
+  display: grid;
+  place-content: center;
+  gap: 1px;
+  min-width: 0;
+  min-height: 52px;
+  padding: 3px 2px;
+  border: 0;
+  background: transparent;
+  color: #aab7bc;
+  font-size: 10px;
+}
+
+html.mobile-layout .mobile-workspace-nav button span { color: #dfe8eb; font-size: 18px; line-height: 1; }
+html.mobile-layout .mobile-workspace-nav button.active { color: #60e0c1; background: rgba(42, 194, 157, .12); }
+html.mobile-layout .mobile-workspace-nav button.active span { color: #60e0c1; }
+
+html.mobile-layout .mobile-command-sheet {
+  position: fixed;
+  display: block;
+  left: 8px;
+  right: 8px;
+  bottom: calc(70px + env(safe-area-inset-bottom));
+  padding: 10px;
+  border: 1px solid #405158;
+  border-radius: 12px;
+  background: #131b1f;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, .7);
+  transform: translateY(calc(100% + 90px));
+  transition: transform .2s ease;
+  z-index: 120;
+  max-height: min(70dvh, 590px);
+  overflow-y: auto;
+}
+
+html.mobile-layout .mobile-command-sheet.visible { transform: translateY(0); }
+html.mobile-layout .mobile-command-sheet header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: #f1c65b; }
+html.mobile-layout .mobile-command-sheet header button { min-width: 40px; min-height: 40px; padding: 0; font-size: 22px; }
+html.mobile-layout .mobile-command-sheet .mobile-command-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+html.mobile-layout .mobile-command-sheet .mobile-command-grid button { min-height: 46px; }
+
+html.mobile-layout .docked-tools-section {
+  position: fixed !important;
+  inset: calc(56px + env(safe-area-inset-top)) 0 calc(62px + env(safe-area-inset-bottom)) !important;
+  width: auto !important;
+  height: auto !important;
+  max-width: none !important;
+  max-height: none !important;
+  overflow: auto !important;
+  transform: none !important;
+  z-index: 150 !important;
+}
+
+html.mobile-layout .docked-tools-section.collapsed { display: none !important; }
+html.mobile-layout .docked-tools-section:not(.collapsed) { display: block !important; }
+
+html.mobile-layout .modal,
+html.mobile-layout .texture-editor-modal,
+html.mobile-layout .group-editor-modal { padding: 0 !important; }
+html.mobile-layout .modal-card,
+html.mobile-layout .texture-editor-window,
+html.mobile-layout .group-editor-window {
+  width: 100vw !important;
+  max-width: none !important;
+  height: 100dvh !important;
+  max-height: none !important;
+  border-radius: 0 !important;
+  overflow: auto !important;
+}
+html.mobile-layout .texture-editor-workspace { grid-template-columns: minmax(0, 1fr) !important; }
+
+html.mobile-layout .view-controls { max-width: calc(100% - 12px); overflow-x: auto; scrollbar-width: none; }
+html.mobile-layout .view-hud { max-width: calc(100% - 14px); font-size: 10px; }
+
+html.mobile-layout .app.animator-mode {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: calc(56px + env(safe-area-inset-top)) minmax(170px, 1fr) minmax(350px, 54vh) calc(62px + env(safe-area-inset-bottom));
+  grid-template-areas:
+    "top"
+    "view"
+    "timeline"
+    ".";
+}
+
+html.mobile-layout .app.animator-mode > #animationSection {
+  grid-area: timeline;
+  min-width: 0;
+  min-height: 0;
+  max-height: none;
+}
+
+html.mobile-layout .app.animator-mode > #bonePlacementSection {
+  position: fixed;
+  top: calc(56px + env(safe-area-inset-top));
+  right: 0;
+  bottom: calc(62px + env(safe-area-inset-bottom));
+  width: min(88vw, 390px);
+  height: auto;
+  min-height: 0;
+  padding: 12px;
+  border: 0;
+  border-left: 1px solid #38474e;
+  background: #11181b;
+  box-shadow: 0 0 30px rgba(0, 0, 0, .65);
+  overflow: auto;
+  transform: translateX(105%);
+  transition: transform .2s ease;
+  z-index: 100;
+}
+
+html.mobile-layout .app.animator-mode.mobile-right-open > #bonePlacementSection { transform: translateX(0); }
+
+html.mobile-layout .animator-workspace-bar {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 6px 8px;
+  overflow: visible;
+}
+html.mobile-layout .animator-workspace-bar span { display: none; }
+html.mobile-layout .animator-workspace-bar > div { min-width: 0; }
+html.mobile-layout .animator-workspace-bar label { flex: 1 1 auto; min-width: 0; font-size: 0; }
+html.mobile-layout .animator-workspace-bar label select { width: 100%; min-width: 0; font-size: 12px; }
+html.mobile-layout .app.animator-mode #animationBody {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto minmax(105px, 130px) auto minmax(112px, auto) auto;
+  grid-template-areas:
+    "controls"
+    "readout"
+    "scrubber"
+    "tracks"
+    "keys"
+    "sequence"
+    "exports";
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: auto;
+  scrollbar-color: #60e0c1 #202a2e;
+}
+html.mobile-layout .app.animator-mode .animation-toolbar,
+html.mobile-layout .app.animator-mode .animation-key-actions,
+html.mobile-layout .app.animator-mode .animation-export-actions { flex-wrap: wrap; justify-content: flex-start; overflow: visible; }
+html.mobile-layout .app.animator-mode .animation-scrubber { width: calc(100% - var(--animation-track-label-width) + var(--animation-scrubber-thumb-half)); }
+html.mobile-layout .app.animator-mode #animationExportBtn { flex: 1 1 100%; min-height: 40px; }
+html.mobile-layout .app.animator-mode .animation-track-list,
+html.mobile-layout .app.animator-mode .animation-sequence-list {
+  scrollbar-width: auto;
+  scrollbar-color: #60e0c1 #202a2e;
+}
+html.mobile-layout .app.animator-mode #animationBody::-webkit-scrollbar,
+html.mobile-layout .app.animator-mode .animation-track-list::-webkit-scrollbar,
+html.mobile-layout .app.animator-mode .animation-sequence-list::-webkit-scrollbar { width: 12px; height: 12px; }
+html.mobile-layout .app.animator-mode #animationBody::-webkit-scrollbar-thumb,
+html.mobile-layout .app.animator-mode .animation-track-list::-webkit-scrollbar-thumb,
+html.mobile-layout .app.animator-mode .animation-sequence-list::-webkit-scrollbar-thumb { background: #60e0c1; border-radius: 999px; }
+html.mobile-layout .animation-sequence-builder {
+  grid-template-columns: minmax(145px, 1fr) auto;
+  min-height: 112px;
+  overflow: visible;
+  align-content: start;
+}
+html.mobile-layout .animation-sequence-list { grid-column: 1 / -1; }
+html.mobile-layout .animation-export-actions > label { flex: 1 1 112px; min-width: 0; }
+html.mobile-layout .animation-export-actions button { min-height: 40px; }
+
+@media (orientation: landscape) and (max-height: 620px) {
+  html.mobile-layout .left,
+  html.mobile-layout .right { width: min(54vw, 430px); }
+  html.mobile-layout .app.animator-mode { grid-template-rows: 56px minmax(120px, 1fr) minmax(250px, 56vh) 62px; }
+}

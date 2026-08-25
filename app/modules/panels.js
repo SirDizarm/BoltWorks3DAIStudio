@@ -203,6 +203,7 @@ function syncFlat2dLook() {
 
 function setFlat2dLook(enabled, { quiet = false } = {}) {
   if (els.flat2dLookInput) els.flat2dLookInput.checked = !!enabled;
+  if (els.modelTileFlat2dLookInput) els.modelTileFlat2dLookInput.checked = !!enabled;
   syncFlat2dLook();
   if (!quiet) log(enabled
     ? "Flat 2D Look enabled. Textures now render without lighting or shadows, including animation exports."
@@ -682,6 +683,23 @@ els.applyUvUnwrapBtn?.addEventListener("click", applyAnalyzedUvUnwrap);
 els.bakeTextureAtlasBtn?.addEventListener("click", bakeAnalyzedTextureAtlas);
 els.exportUvPngBtn?.addEventListener("click", exportSelectedUvPngs);
 els.uvPngExportSelect?.addEventListener("change", () => syncUvUnwrapUi());
+els.modelTileRotateBtn?.addEventListener("click", rotateModelTileFacing);
+els.modelTileExportBtn?.addEventListener("click", exportModelTileKit);
+els.addColorToSceneBtn?.addEventListener("click", () => {
+  if (!selected) return;
+  selected.userData.colorApplied = true;
+  applyInspector({ record: true });
+  els.addColorToSceneBtn.textContent = "Color Added to Scene";
+});
+els.modelTileCenterBtn?.addEventListener("click", centerModelTileToEditor);
+els.modelTileCameraLockBtn?.addEventListener("click", toggleModelTileCameraLock);
+for (const input of [els.modelTileCameraAzimuthInput, els.modelTileCameraElevationInput, els.modelTileCameraDistanceInput, els.modelTileCameraTargetYInput]) {
+  input?.addEventListener("input", () => {
+    if (!modelTileCameraLocked) return;
+    const profile = applyModelTileCameraLock();
+    if (els.modelTileStatus) els.modelTileStatus.textContent = `Camera updated: azimuth ${profile.azimuth}°, elevation ${profile.elevation}°, distance ${profile.distance}.`;
+  });
+}
 for (const input of [
   els.uvUnwrapSeamAngleInput,
   els.uvUnwrapPaddingInput,
@@ -706,7 +724,9 @@ els.resetZoomBtn.addEventListener("click", () => {
   frameSelected();
   log("Viewer zoom reset by framing the current model.");
 });
+els.modelTileSnapBtn?.addEventListener("click", snapSelectionToGridSurface);
 els.flat2dLookInput?.addEventListener("change", event => setFlat2dLook(event.target.checked));
+els.modelTileFlat2dLookInput?.addEventListener("change", event => setFlat2dLook(event.target.checked));
 els.reliefImageBtn?.addEventListener("click", () => els.reliefImageFile?.click());
 els.reliefImageFile?.addEventListener("change", async event => {
   try {
@@ -1041,6 +1061,7 @@ els.textureFile.addEventListener("change", async event => {
 els.textureEditorCloseBtn.addEventListener("click", closeTextureEditor);
 els.textureEditorApplyBtn.addEventListener("click", applyTextureEditorChanges);
 els.textureEditorResetBtn.addEventListener("click", resetTextureEditorCanvas);
+els.textureEditorApplyUvScaleBtn?.addEventListener("click", applyTextureEditorUvScale);
 els.textureEditorUndoBtn.addEventListener("click", undoTextureEditorPaint);
 [els.textureEditorShowUv, els.textureEditorSelectedOnly].forEach(input => input.addEventListener("change", renderTextureEditor));
 [els.textureEditorPixelPen].forEach(input => input?.addEventListener("change", () => {
@@ -1127,6 +1148,13 @@ els.meshDetailsModal.addEventListener("click", event => {
 });
 els.textureEditorCanvas.addEventListener("pointerdown", event => {
   if (!textureEditorState.open) return;
+  if (els.textureEditorEditUv?.checked && event.button === 0) {
+    snapshotTextureEditor();
+    textureEditorState.uvLayoutDrag = { start: textureEditorCanvasPointFromEvent(event), scale: !!els.textureEditorScaleUv?.checked };
+    els.textureEditorCanvas.setPointerCapture?.(event.pointerId);
+    event.preventDefault();
+    return;
+  }
   textureEditorState.tool = els.textureEditorTool?.value || textureEditorState.tool || "none";
   if (textureEditorState.tool === "none" && event.button !== 1) return;
   if (textureEditorState.tool === "pan" || event.button === 1) {
@@ -1180,6 +1208,14 @@ els.textureEditorCanvas.addEventListener("pointerdown", event => {
   textureEditorStrokeTo(point);
 });
 els.textureEditorCanvas.addEventListener("pointermove", event => {
+  if (textureEditorState.uvLayoutDrag) {
+    const current = textureEditorCanvasPointFromEvent(event);
+    const start = textureEditorState.uvLayoutDrag.start;
+    const canvas = els.textureEditorCanvas;
+    transformTextureEditorUvs((current.x - start.x) / canvas.width, (current.y - start.y) / canvas.height, textureEditorState.uvLayoutDrag.scale);
+    textureEditorState.uvLayoutDrag.start = current;
+    return;
+  }
   if (textureEditorState.isPanning) {
     hideTextureEditorPointerPreview();
     const current = textureEditorCanvasPointFromEvent(event);
@@ -1247,7 +1283,15 @@ const finishTextureEditorStroke = pointerId => {
   }
   syncTextureEditorCursor();
 };
-els.textureEditorCanvas.addEventListener("pointerup", event => finishTextureEditorStroke(event.pointerId));
+els.textureEditorCanvas.addEventListener("pointerup", event => {
+  if (textureEditorState.uvLayoutDrag) {
+    textureEditorState.uvLayoutDrag = null;
+    els.textureEditorCanvas.releasePointerCapture?.(event.pointerId);
+    updateAll();
+    return;
+  }
+  finishTextureEditorStroke(event.pointerId);
+});
 els.textureEditorCanvas.addEventListener("pointerleave", event => {
   textureEditorState.hoverPoint = null;
   hideTextureEditorPointerPreview();
@@ -1314,6 +1358,11 @@ const activeInspectorEdits = new WeakSet();
 document.querySelectorAll(".props input").forEach(input => {
   if (input === els.cutAmountInput || input === els.textureFile) return;
   input.addEventListener("input", () => {
+    if (input === els.colorInput) els.colorHexInput.value = input.value;
+    if (input === els.colorHexInput) {
+      const normalized = normalizeHexColor(input.value, null);
+      if (normalized) els.colorInput.value = normalized;
+    }
     if (!activeInspectorEdits.has(input)) {
       recordHistory("inspector");
       activeInspectorEdits.add(input);
@@ -1543,6 +1592,8 @@ window.addEventListener("keydown", event => {
     }
   }
   if (event.key === "Shift") isShiftHeld = true;
+  if (event.key === "Control" || event.key === "Meta") isCtrlHeld = true;
+  updateScaleModifierMarkers();
   if (knifeCutMode && event.key === "Escape") {
     event.preventDefault();
     if (knifeCutPoints.length) cancelKnifeCutStroke();
@@ -1606,6 +1657,8 @@ window.addEventListener("keydown", event => {
 window.addEventListener("keyup", event => {
   gameplayKeys.delete(event.code);
   if (event.key === "Shift") isShiftHeld = false;
+  if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
+  updateScaleModifierMarkers();
   if (event.code !== "Space") return;
   spaceCameraMode = false;
   if (facePickMode) {
@@ -1615,6 +1668,8 @@ window.addEventListener("keyup", event => {
 window.addEventListener("blur", () => {
   gameplayKeys.clear();
   isShiftHeld = false;
+  isCtrlHeld = false;
+  updateScaleModifierMarkers();
   finishDragPushSession();
   finishScaleDragSession();
 });

@@ -32317,7 +32317,7 @@ void main() {
   var activeWorkView = null;
   var savedWorkViewCamera = null;
   var frontBoneCamera = new OrthographicCamera(-5, 5, 5, -5, 0.01, 1e4);
-  frontBoneCamera.position.set(0, 0, -100);
+  frontBoneCamera.position.set(0, 0, 100);
   frontBoneCamera.lookAt(0, 0, 0);
   frontBoneCamera.layers.enable(1);
   var sideBoneCamera = new OrthographicCamera(-5, 5, 5, -5, 0.01, 1e4);
@@ -32329,6 +32329,38 @@ void main() {
   orbit.minDistance = 0.05;
   orbit.maxDistance = 5e5;
   orbit.target.set(0, 1, 0);
+  var modelTileCameraLocked = false;
+  function applyModelTileCameraLock() {
+    const azimuth = Number(els.modelTileCameraAzimuthInput?.value) || 45;
+    const elevation = Math.max(-89, Math.min(89, Number(els.modelTileCameraElevationInput?.value) || 35.264));
+    const distance = Math.max(0.1, Number(els.modelTileCameraDistanceInput?.value) || 12);
+    const targetY = Number(els.modelTileCameraTargetYInput?.value) || 0;
+    const az = MathUtils.degToRad(azimuth);
+    const el = MathUtils.degToRad(elevation);
+    const target = new Vector3(0, targetY, 0);
+    camera.position.set(
+      target.x + Math.sin(az) * Math.cos(el) * distance,
+      target.y + Math.sin(el) * distance,
+      target.z + Math.cos(az) * Math.cos(el) * distance
+    );
+    camera.lookAt(target);
+    orbit.target.copy(target);
+    orbit.update();
+    return { azimuth, elevation, distance, targetY };
+  }
+  function toggleModelTileCameraLock() {
+    modelTileCameraLocked = !modelTileCameraLocked;
+    if (modelTileCameraLocked) {
+      const profile = applyModelTileCameraLock();
+      orbit.enabled = false;
+      if (els.modelTileCameraLockBtn) els.modelTileCameraLockBtn.textContent = "Unlock Isometric Camera";
+      if (els.modelTileStatus) els.modelTileStatus.textContent = `Camera locked: azimuth ${profile.azimuth}\xB0, elevation ${profile.elevation}\xB0, distance ${profile.distance}.`;
+    } else {
+      orbit.enabled = true;
+      if (els.modelTileCameraLockBtn) els.modelTileCameraLockBtn.textContent = "Lock Isometric Camera";
+      if (els.modelTileStatus) els.modelTileStatus.textContent = "Camera unlocked.";
+    }
+  }
   var surfaceGizmoPivot = new Object3D();
   surfaceGizmoPivot.name = "surface edit pivot";
   surfaceGizmoPivot.visible = false;
@@ -32361,6 +32393,7 @@ void main() {
     syncInspector();
     updateState();
     updateScore();
+    updateScaleModifierMarkers();
   });
   scene.add(transform);
   var surfaceTransform = new TransformControls(camera, renderer.domElement);
@@ -32612,6 +32645,43 @@ void main() {
   var pivotEditMode = false;
   var pivotReturnMode = "rotate";
   var isShiftHeld = false;
+  var isCtrlHeld = false;
+  var scaleModifierMarkers = new Group();
+  scaleModifierMarkers.name = "scale modifier markers";
+  scaleModifierMarkers.visible = false;
+  scene.add(scaleModifierMarkers);
+  var scaleMarkerArrows = [
+    new ArrowHelper(new Vector3(1, 0, 0), new Vector3(), 0.8, 16757575, 0.18, 0.1),
+    new ArrowHelper(new Vector3(0, 1, 0), new Vector3(), 0.8, 6741418, 0.18, 0.1),
+    new ArrowHelper(new Vector3(0, 0, 1), new Vector3(), 0.8, 6728447, 0.18, 0.1),
+    new ArrowHelper(new Vector3(-1, 0, 0), new Vector3(), 0.8, 16757575, 0.18, 0.1),
+    new ArrowHelper(new Vector3(0, -1, 0), new Vector3(), 0.8, 6741418, 0.18, 0.1),
+    new ArrowHelper(new Vector3(0, 0, -1), new Vector3(), 0.8, 6728447, 0.18, 0.1)
+  ];
+  scaleMarkerArrows.forEach((arrow) => scaleModifierMarkers.add(arrow));
+  function updateScaleModifierMarkers() {
+    const show = activeTransformMode === "scale" && (isShiftHeld || isCtrlHeld) && transform.visible && transform.object;
+    scaleModifierMarkers.visible = !!show;
+    if (!show) return;
+    const object = transform.object;
+    const center = new Vector3();
+    object.getWorldPosition(center);
+    const bounds = new Box3().setFromObject(object);
+    const size = bounds.getSize(new Vector3());
+    const half = Math.max(0.35, Math.max(size.x, size.y, size.z) * 0.55);
+    scaleModifierMarkers.position.copy(center);
+    scaleMarkerArrows.forEach((arrow, index) => {
+      const axis = index % 3;
+      const negative = index >= 3;
+      const direction = arrow.getWorldDirection(new Vector3());
+      const offset = direction.clone().multiplyScalar(half);
+      arrow.position.copy(offset);
+      arrow.setLength(Math.max(0.5, half * 0.55));
+      const activeAxis = String(transform.axis || "").toUpperCase();
+      const axisName = ["X", "Y", "Z"][axis];
+      arrow.visible = activeAxis ? activeAxis.includes(axisName) && (isCtrlHeld || !negative) : isCtrlHeld || !negative;
+    });
+  }
   var scaleDragState = null;
   var pendingScenePick = null;
   var idCounter = 1;
@@ -33064,6 +33134,20 @@ void main() {
     uvPngExportSelect: document.querySelector("#uvPngExportSelect"),
     uvPngExportCount: document.querySelector("#uvPngExportCount"),
     exportUvPngBtn: document.querySelector("#exportUvPngBtn"),
+    modelTileWidthInput: document.querySelector("#modelTileWidthInput"),
+    modelTileDepthInput: document.querySelector("#modelTileDepthInput"),
+    modelTileHeightInput: document.querySelector("#modelTileHeightInput"),
+    modelTileFacingSelect: document.querySelector("#modelTileFacingSelect"),
+    modelTileRotateBtn: document.querySelector("#modelTileRotateBtn"),
+    modelTileExportBtn: document.querySelector("#modelTileExportBtn"),
+    modelTileCenterBtn: document.querySelector("#modelTileCenterBtn"),
+    modelTileCameraAzimuthInput: document.querySelector("#modelTileCameraAzimuthInput"),
+    modelTileCameraElevationInput: document.querySelector("#modelTileCameraElevationInput"),
+    modelTileCameraDistanceInput: document.querySelector("#modelTileCameraDistanceInput"),
+    modelTileCameraTargetYInput: document.querySelector("#modelTileCameraTargetYInput"),
+    modelTileCameraLockBtn: document.querySelector("#modelTileCameraLockBtn"),
+    modelTileViewSetSelect: document.querySelector("#modelTileViewSetSelect"),
+    modelTileStatus: document.querySelector("#modelTileStatus"),
     edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
     edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
     edgeSlideBtn: document.querySelector("#edgeSlideBtn"),
@@ -33096,6 +33180,7 @@ void main() {
     scaleZ: document.querySelector("#scaleZ"),
     colorInput: document.querySelector("#colorInput"),
     colorHexInput: document.querySelector("#colorHexInput"),
+    addColorToSceneBtn: document.querySelector("#addColorToSceneBtn"),
     roughInput: document.querySelector("#roughInput"),
     roughValue: document.querySelector("#roughValue"),
     opacityInput: document.querySelector("#opacityInput"),
@@ -34078,11 +34163,11 @@ void main() {
       mesh.rotation.set(-Math.PI / 2, 0, 0);
       switch (mesh.userData.axis) {
         case "front":
-          mesh.position.set(0, labelY, -halfSize - offset);
-          break;
-        case "back":
           mesh.position.set(0, labelY, halfSize + offset);
           mesh.rotation.z = Math.PI;
+          break;
+        case "back":
+          mesh.position.set(0, labelY, -halfSize - offset);
           break;
         case "left":
           mesh.position.set(-halfSize - offset, labelY, 0);
@@ -34144,7 +34229,7 @@ void main() {
     }
     syncSelectionOutlineTransforms();
   }
-  function makeMaterial(color = "#40c7a5", roughness = 0.6, textureUrl = null, textureFlipY = true, textureRotation = 0) {
+  function makeMaterial(color = "#ffffff", roughness = 0.6, textureUrl = null, textureFlipY = true, textureRotation = 0) {
     const material = new MeshStandardMaterial({
       color,
       roughness,
@@ -36979,7 +37064,7 @@ void main() {
     configureSurfaceTransformAxis();
     for (const control of surfaceTransforms) {
       control.setMode("translate");
-      control.setTranslationSnap(dragPushStepSize());
+      control.setTranslationSnap(transformSnapSettings().translation ?? dragPushStepSize());
       control.enabled = true;
       control.attach(surfaceGizmoPivot);
       control.visible = true;
@@ -37054,12 +37139,35 @@ void main() {
     updateSurfaceGizmoAttachment();
     els.hudText.textContent = `Surface ready: ${surfaceAxisMode() === "free" ? "drag an X/Y/Z arrow" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow or the selected face left/right`} | ${els.surfaceMouseFalloffSelect?.value === "hard" ? "Hard face" : `Soft radius ${Number(els.softRadiusInput?.value || 0.25)}`}`;
   }
-  function applyRotationSnap() {
+  function transformSnapSettings() {
     const degrees = Number(els.rotationSnapSelect.value) || 0;
-    const radians = degrees ? MathUtils.degToRad(degrees) : null;
-    if (typeof transform.setRotationSnap === "function") transform.setRotationSnap(radians);
-    else transform.rotationSnap = radians;
-    log(`Rotation snap ${degrees ? `${degrees} degrees` : "disabled"}.`);
+    const translationSteps = { 15: 0.1, 30: 0.25, 45: 0.5, 90: 1 };
+    const scaleSteps = { 15: 0.05, 30: 0.1, 45: 0.25, 90: 0.5 };
+    return {
+      degrees,
+      rotation: degrees ? MathUtils.degToRad(degrees) : null,
+      translation: degrees ? translationSteps[degrees] || 0.1 : null,
+      scale: degrees ? scaleSteps[degrees] || 0.05 : null
+    };
+  }
+  function applyControlSnap(control, settings) {
+    if (!control) return;
+    if (typeof control.setTranslationSnap === "function") control.setTranslationSnap(settings.translation);
+    else control.translationSnap = settings.translation;
+    if (typeof control.setRotationSnap === "function") control.setRotationSnap(settings.rotation);
+    else control.rotationSnap = settings.rotation;
+    if (typeof control.setScaleSnap === "function") control.setScaleSnap(settings.scale);
+    else control.scaleSnap = settings.scale;
+  }
+  function applyRotationSnap() {
+    const settings = transformSnapSettings();
+    applyControlSnap(transform, settings);
+    applyControlSnap(boneTransform, settings);
+    for (const control of surfaceTransforms) {
+      const surfaceSettings = { ...settings, translation: settings.translation ?? dragPushStepSize() };
+      applyControlSnap(control, surfaceSettings);
+    }
+    log(settings.degrees ? `Transform snap: move ${settings.translation}, rotate ${settings.degrees} degrees, scale ${settings.scale}.` : "Global transform snap disabled; free movement and rotation enabled.");
   }
   function linkedObjects(mesh) {
     const linkId = mesh?.userData?.linkId;
@@ -47599,6 +47707,152 @@ void main() {
     refreshTextureLibraryUi();
     updateAll();
   }
+  function modelTileMaterialImage() {
+    const mesh = singleMeshTarget?.();
+    const material = Array.isArray(mesh?.material) ? mesh.material[0] : mesh?.material;
+    return { mesh, material, image: material?.map?.image || null };
+  }
+  function centerModelTileToEditor() {
+    const targets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [...objects];
+    if (!targets.length) {
+      if (els.modelTileStatus) els.modelTileStatus.textContent = "Add or select a model first.";
+      return;
+    }
+    recordHistory("center model tile to editor");
+    const bounds = new Box3();
+    targets.forEach((target) => bounds.expandByObject(target));
+    const offset = bounds.getCenter(new Vector3()).negate();
+    targets.forEach((target) => {
+      const worldPosition = new Vector3();
+      target.getWorldPosition(worldPosition).add(offset);
+      if (target.parent) target.parent.worldToLocal(worldPosition);
+      target.position.copy(worldPosition);
+      target.updateMatrixWorld(true);
+    });
+    updateAll();
+    if (els.modelTileStatus) els.modelTileStatus.textContent = `Centered ${targets.length} model part${targets.length === 1 ? "" : "s"} to the editor origin; relative spacing preserved.`;
+  }
+  async function exportModelTileKit() {
+    const exportTargets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [];
+    const { mesh: singleMesh, material, image } = modelTileMaterialImage();
+    const mesh = exportTargets[0] || singleMesh;
+    const facing = els.modelTileFacingSelect?.value || "N";
+    const width = Number(els.modelTileWidthInput?.value) || 1;
+    const depth = Number(els.modelTileDepthInput?.value) || 1;
+    const height = Number(els.modelTileHeightInput?.value) || 3;
+    const cameraProfile = {
+      azimuth: Number(els.modelTileCameraAzimuthInput?.value) || 45,
+      elevation: Number(els.modelTileCameraElevationInput?.value) || 35.264,
+      distance: Number(els.modelTileCameraDistanceInput?.value) || 12,
+      targetY: Number(els.modelTileCameraTargetYInput?.value) || 0,
+      viewSet: els.modelTileViewSetSelect?.value || "isometric",
+      wallSafeCardinalViews: (els.modelTileViewSetSelect?.value || "isometric") === "cardinal"
+    };
+    if (!mesh) {
+      if (els.modelTileStatus) els.modelTileStatus.textContent = "Select a mesh, group, or multiple parts first.";
+      return;
+    }
+    const selectedGroup = selectedGroupRecordId ? groupRecord(selectedGroupRecordId) : null;
+    const exportName = selectedGroup?.name || (exportTargets.length > 1 ? `${mesh.name}-assembly` : mesh.name) || "tile";
+    const safeName = exportName.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "tile";
+    const manifest = { kind: "death-and-dues-tile", version: 1, asset: mesh.name || "Tile", dimensionsMeters: { width, depth, wallHeight: height }, ground: { texture: `${safeName}-ground.png`, material: material?.name || "default" }, wall: { texture: `${safeName}-wall.png`, facing, compassOrder: ["N", "E", "S", "W"], rotateYDegrees: { N: 0, E: 90, S: 180, W: 270 } }, textureSheet: { file: `${safeName}-wall-4x.png`, columns: 4, order: cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"], renderMode: cameraProfile.wallSafeCardinalViews ? "wall-normal-aligned-orthographic" : "isometric-diagonal-orthographic" }, camera: { projection: "orthographic", coordinateSystem: "Unity-Y-up", ...cameraProfile, lockToEditorOrigin: true }, unity: { prefabRoot: "DeathAndDues/Tiles", rotateWallAtPlacement: true } };
+    download(`${safeName}.deathanddues.tile.json`, JSON.stringify(manifest, null, 2), "application/json");
+    const exportTargetsForRender = exportTargets.length ? exportTargets : [...objects];
+    const exportTargetIds = new Set(exportTargetsForRender.map((target) => target.userData.id));
+    const visibility = objects.map((target) => ({ target, visible: target.visible }));
+    objects.forEach((target) => {
+      target.visible = exportTargetIds.has(target.userData.id);
+    });
+    const bounds = new Box3();
+    exportTargetsForRender.forEach((target) => bounds.expandByObject(target));
+    const center = bounds.getCenter(new Vector3());
+    const size = 512, sheet = document.createElement("canvas");
+    sheet.width = size * 4;
+    sheet.height = size;
+    const ctx = sheet.getContext("2d");
+    ctx.clearRect(0, 0, sheet.width, sheet.height);
+    const baseAzimuth = MathUtils.degToRad(cameraProfile.azimuth);
+    const elevation = MathUtils.degToRad(cameraProfile.elevation);
+    const renderDistance = Math.max(cameraProfile.distance, bounds.getSize(new Vector3()).length() * 1.2);
+    const originalTransforms = exportTargetsForRender.map((target) => ({ target, position: target.position.clone(), quaternion: target.quaternion.clone(), scale: target.scale.clone() }));
+    const viewNames = cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"];
+    for (let i = 0; i < 4; i++) {
+      if (i > 0) {
+        const quarterTurn = new Matrix4().makeRotationY(Math.PI / 2);
+        exportTargetsForRender.forEach((target) => {
+          const worldPosition = new Vector3();
+          target.getWorldPosition(worldPosition);
+          worldPosition.sub(center).applyMatrix4(quarterTurn).add(center);
+          if (target.parent) target.parent.worldToLocal(worldPosition);
+          target.position.copy(worldPosition);
+          target.rotation.y += Math.PI / 2;
+          target.updateMatrixWorld(true);
+        });
+      }
+      const azimuth = cameraProfile.wallSafeCardinalViews ? 0 : baseAzimuth;
+      const direction = new Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
+      const shot = captureView(`tile-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
+      const imageElement = await new Promise((resolve, reject) => {
+        const image2 = new Image();
+        image2.onload = () => resolve(image2);
+        image2.onerror = reject;
+        image2.src = shot.dataUrl;
+      });
+      const source = document.createElement("canvas");
+      source.width = imageElement.width;
+      source.height = imageElement.height;
+      const sourceContext = source.getContext("2d");
+      sourceContext.drawImage(imageElement, 0, 0);
+      const pixels = sourceContext.getImageData(0, 0, source.width, source.height).data;
+      let minX = source.width, minY = source.height, maxX = -1, maxY = -1;
+      for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) if (pixels[(y * source.width + x) * 4 + 3] > 3) {
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+      if (maxX < 0) continue;
+      const cropWidth = maxX - minX + 1, cropHeight = maxY - minY + 1, scale = Math.min(size * 0.9 / cropWidth, size * 0.9 / cropHeight);
+      const drawWidth = cropWidth * scale, drawHeight = cropHeight * scale;
+      ctx.drawImage(source, minX, minY, cropWidth, cropHeight, i * size + (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
+    }
+    originalTransforms.forEach((entry) => {
+      entry.target.position.copy(entry.position);
+      entry.target.quaternion.copy(entry.quaternion);
+      entry.target.scale.copy(entry.scale);
+      entry.target.updateMatrixWorld(true);
+    });
+    visibility.forEach((entry) => {
+      entry.target.visible = entry.visible;
+    });
+    downloadDataUrl(`${safeName}-wall-4x.png`, sheet.toDataURL("image/png"));
+    if (els.modelTileStatus) els.modelTileStatus.textContent = `Exported ${manifest.asset}: transparent, tightly framed ${viewNames.join("/")} model renders.`;
+  }
+  function rotateModelTileFacing() {
+    const order = ["N", "E", "S", "W"], select = els.modelTileFacingSelect;
+    if (!select) return;
+    select.value = order[(order.indexOf(select.value) + 1) % order.length];
+    const targets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [...objects];
+    if (!targets.length) {
+      if (els.modelTileStatus) els.modelTileStatus.textContent = `Wall facing: ${select.value}; add or select a model first.`;
+      return;
+    }
+    recordHistory("rotate model tile compass");
+    const center = new Vector3(0, 0, 0);
+    const quarterTurn = Math.PI / 2;
+    const rotation = new Matrix4().makeRotationY(quarterTurn);
+    targets.forEach((target) => {
+      const worldPosition = new Vector3();
+      target.getWorldPosition(worldPosition);
+      worldPosition.sub(center).applyMatrix4(rotation).add(center);
+      if (target.parent) target.parent.worldToLocal(worldPosition);
+      target.position.copy(worldPosition);
+      target.rotation.y += quarterTurn;
+      target.updateMatrixWorld(true);
+    });
+    updateAll();
+    if (els.modelTileStatus) els.modelTileStatus.textContent = `Wall facing: ${select.value}; rotated ${targets.length} model part${targets.length === 1 ? "" : "s"} 90\xB0 around the editor center.`;
+  }
   function serializeObject(mesh) {
     return {
       id: mesh.userData.id,
@@ -48146,6 +48400,7 @@ void main() {
     selectObject(null);
     selectedBoneId = null;
     if (els.showBonesInput) els.showBonesInput.checked = false;
+    setBoneGizmoEnabled(false, "rotate");
     rebuildBoneVisuals();
     syncBonePanel();
     activeTransformMode = null;
@@ -48614,8 +48869,12 @@ void main() {
       els.scaleX.value = round2(groupPivot.scale.x);
       els.scaleY.value = round2(groupPivot.scale.y);
       els.scaleZ.value = round2(groupPivot.scale.z);
-      els.colorInput.value = "#40c7a5";
-      els.colorHexInput.value = "#40C7A5";
+      els.colorInput.value = "#ffffff";
+      els.colorHexInput.value = "#FFFFFF";
+      if (els.addColorToSceneBtn) {
+        els.addColorToSceneBtn.disabled = true;
+        els.addColorToSceneBtn.textContent = "Add Color to Scene";
+      }
       els.roughInput.value = 0.6;
       els.roughValue.value = "0.60";
       els.opacityInput.value = 1;
@@ -48629,7 +48888,12 @@ void main() {
     if (!selected) {
       syncTextureButtonLabel();
       els.nameInput.value = "";
-      els.colorHexInput.value = "";
+      els.colorInput.value = "#ffffff";
+      els.colorHexInput.value = "#FFFFFF";
+      if (els.addColorToSceneBtn) {
+        els.addColorToSceneBtn.disabled = true;
+        els.addColorToSceneBtn.textContent = "Add Color to Scene";
+      }
       els.opacityInput.value = 1;
       els.opacityValue.value = "1.00";
       els.textureName.textContent = "No texture";
@@ -48654,6 +48918,10 @@ void main() {
     els.scaleZ.value = round2(selected.scale.z);
     els.colorInput.value = `#${selected.material.color.getHexString()}`;
     els.colorHexInput.value = `#${selected.material.color.getHexString()}`.toUpperCase();
+    if (els.addColorToSceneBtn) {
+      els.addColorToSceneBtn.disabled = false;
+      els.addColorToSceneBtn.textContent = selected.userData.colorApplied ? "Color Added to Scene" : "Add Color to Scene";
+    }
     els.roughInput.value = selected.material.roughness;
     els.roughValue.value = Number(selected.material.roughness).toFixed(2);
     els.opacityInput.value = selected.material.opacity ?? 1;
@@ -48713,7 +48981,7 @@ void main() {
     }
     if (!selected) return;
     if (record) recordHistory("inspector");
-    const normalizedColor = normalizeHexColor(els.colorHexInput?.value || els.colorInput.value, normalizeHexColor(els.colorInput.value, "#40C7A5"));
+    const normalizedColor = normalizeHexColor(els.colorHexInput?.value || els.colorInput.value, normalizeHexColor(els.colorInput.value, "#ffffff"));
     if (!normalizedColor) return;
     els.colorInput.value = normalizedColor;
     els.colorHexInput.value = normalizedColor;
@@ -48733,7 +49001,7 @@ void main() {
       inspectorNumber(els.scaleY, selected.scale.y, { min: 0.05 }),
       inspectorNumber(els.scaleZ, selected.scale.z, { min: 0.05 })
     );
-    selected.material.color.set(normalizedColor);
+    if (selected.userData.colorApplied) selected.material.color.set(normalizedColor);
     selected.material.roughness = +els.roughInput.value;
     const opacity = Math.max(0.05, Math.min(1, Number(els.opacityInput.value) || 1));
     selected.material.transparent = opacity < 0.999 || !!selected.userData.textureHasTransparency;
@@ -52108,17 +52376,17 @@ end
     renderCustomCameraViews();
   }
   var screenshotViewDirections = {
-    front: new Vector3(0, 0, -1),
-    back: new Vector3(0, 0, 1),
+    front: new Vector3(0, 0, 1),
+    back: new Vector3(0, 0, -1),
     left: new Vector3(-1, 0, 0),
     right: new Vector3(1, 0, 0),
     side: new Vector3(1, 0, 0),
     top: new Vector3(0, 1, 0),
     iso: new Vector3(0.78, 0.52, 0.92),
-    "front-left": new Vector3(-0.78, 0.35, -0.92),
-    "front-right": new Vector3(0.78, 0.35, -0.92),
-    "back-left": new Vector3(-0.78, 0.35, 0.92),
-    "back-right": new Vector3(0.78, 0.35, 0.92)
+    "front-left": new Vector3(-0.78, 0.35, 0.92),
+    "front-right": new Vector3(0.78, 0.35, 0.92),
+    "back-left": new Vector3(-0.78, 0.35, -0.92),
+    "back-right": new Vector3(0.78, 0.35, -0.92)
   };
   function sceneBounds() {
     const box = new Box3();
@@ -52128,14 +52396,14 @@ end
     }
     return box;
   }
-  function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = null, bounds = null } = {}) {
+  function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = null, bounds = null, directionOverride = null, centerOverride = null } = {}) {
     const box = bounds?.isBox3 ? bounds : sceneBounds();
-    const center = box.getCenter(new Vector3());
+    const center = centerOverride?.isVector3 ? centerOverride.clone() : box.getCenter(new Vector3());
     const size = box.getSize(new Vector3());
     const radius = Math.max(size.x, size.y, size.z, 2);
     const defaultSpace = shotSpaceMultiplier();
     updateViewScale(radius);
-    const direction = (screenshotViewDirections[viewName] || screenshotViewDirections.iso).clone().normalize();
+    const direction = (directionOverride?.isVector3 ? directionOverride : screenshotViewDirections[viewName] || screenshotViewDirections.iso).clone().normalize();
     const baseDistance = radius / Math.tan(MathUtils.degToRad(camera.fov) / 2) * 0.82;
     const currentSpace = useCurrentZoom && currentDistance ? Math.max(0.2, currentDistance / Math.max(1e-3, baseDistance)) : defaultSpace;
     const distance = baseDistance * currentSpace;
@@ -52225,7 +52493,7 @@ end
     log("Restored the free perspective work view.");
     return true;
   }
-  function captureView(viewName = "iso", { download: download2 = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1 } = {}) {
+  function captureView(viewName = "iso", { download: download2 = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false } = {}) {
     const oldPosition = camera.position.clone();
     const oldUp = camera.up.clone();
     const oldTarget = orbit.target.clone();
@@ -52254,6 +52522,7 @@ end
     const oldFloorVisible = floor.visible;
     const oldStudioFloorVisible = studioFloor.visible;
     const oldPixelRatio = renderer.getPixelRatio();
+    const oldProjectionMatrix = camera.projectionMatrix.clone();
     transform.visible = false;
     boneTransform.visible = false;
     faceMarker.visible = false;
@@ -52288,8 +52557,17 @@ end
     setCameraToView(viewName, {
       useCurrentZoom: useCurrentZoom ?? (els.useCurrentZoomInShotsInput?.checked ?? true),
       currentDistance: oldDistance,
-      bounds
+      bounds,
+      directionOverride,
+      centerOverride
     });
+    if (orthographic) {
+      const fitBox = bounds?.isBox3 ? bounds : sceneBounds();
+      const fitSize = fitBox.getSize(new Vector3());
+      const fitHeight = Math.max(fitSize.length() * 1.35, 2);
+      const aspect2 = canvas.width / Math.max(1, canvas.height);
+      camera.projectionMatrix.makeOrthographic(-fitHeight * aspect2 / 2, fitHeight * aspect2 / 2, fitHeight / 2, -fitHeight / 2, camera.near, camera.far);
+    }
     if (transparent) {
       scene.background = null;
       scene.fog = null;
@@ -52341,6 +52619,7 @@ end
     camera.up.copy(oldUp);
     camera.near = oldNear;
     camera.far = oldFar;
+    camera.projectionMatrix.copy(oldProjectionMatrix);
     orbit.target.copy(oldTarget);
     camera.lookAt(oldTarget);
     camera.updateProjectionMatrix();
@@ -54565,6 +54844,12 @@ end
   function boneGizmoMode() {
     return boneGizmoToolMode === "translate" ? "translate" : "rotate";
   }
+  function setBoneGizmoEnabled(enabled, mode = boneGizmoToolMode) {
+    boneGizmoToolMode = mode === "translate" ? "translate" : "rotate";
+    boneGizmoEnabled = !!enabled;
+    els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
+    els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+  }
   function setBoneGizmoToolMode(mode) {
     const next = mode === "translate" ? "translate" : "rotate";
     if (boneGizmoToolMode === next && boneGizmoEnabled) {
@@ -54573,8 +54858,7 @@ end
       boneGizmoToolMode = next;
       boneGizmoEnabled = true;
     }
-    els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
-    els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+    setBoneGizmoEnabled(boneGizmoEnabled, boneGizmoToolMode);
     syncBoneTransformGizmo();
   }
   function applyBoneAxisLock() {
@@ -54618,6 +54902,7 @@ end
     const bone = boneById(boneId);
     if (!bone) return;
     selectedBoneId = boneId;
+    setBoneGizmoEnabled(true, "rotate");
     if (typeof selectObject === "function") selectObject(null);
     rebuildBoneVisuals();
     syncBonePanel();
@@ -54844,7 +55129,6 @@ end
     if (activeSkinRuntime) applySkinnedPose(poses);
     else {
       poseRigHierarchy();
-      rigBones.forEach((bone) => bone.tail.copy(bone.position).add(bone.tailOffset.clone().applyEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"))));
       applyAnimationBindings();
     }
     if (render) {
@@ -54986,6 +55270,30 @@ end
     const keyedPositionOffset = bone.position.clone().sub(bindPos);
     const bindRotE = bone.bindRotation || bone.rotation;
     const parent = boneById(bone.parentId);
+    if (bone.blockbenchLocalRotation) {
+      if (parent) poseBoneWithChildren(parent, visited, resolved);
+      const parentWorldQuat = parent ? (resolved.get(`${parent.id}:worldQuat`) || new Quaternion()).clone() : new Quaternion();
+      const parentRestWorldQuat2 = parent ? (resolved.get(`${parent.id}:restWorldQuat`) || new Quaternion()).clone() : new Quaternion();
+      const localRestQuat = new Quaternion().setFromEuler(
+        new Euler(bindRotE.x, bindRotE.y, bindRotE.z, "ZYX")
+      );
+      const localPoseQuat = new Quaternion().setFromEuler(
+        new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "ZYX")
+      );
+      const restWorldQuat2 = parentRestWorldQuat2.multiply(localRestQuat);
+      const worldQuat2 = parentWorldQuat.multiply(localPoseQuat);
+      const localPosition = (bone.restLocalPosition || bindPos.clone()).clone().add(keyedPositionOffset);
+      const worldPos2 = parent ? (resolved.get(`${parent.id}:pos`) || parent.position).clone().add(localPosition.applyQuaternion(resolved.get(`${parent.id}:worldQuat`) || new Quaternion())) : localPosition;
+      const worldDelta = worldQuat2.clone().multiply(restWorldQuat2.clone().invert());
+      bone.position.copy(worldPos2);
+      bone.poseWorldQuaternion = worldQuat2.clone();
+      resolved.set(bone.id, worldDelta);
+      resolved.set(`${bone.id}:pos`, worldPos2.clone());
+      resolved.set(`${bone.id}:bindPos`, bindPos.clone());
+      resolved.set(`${bone.id}:worldQuat`, worldQuat2.clone());
+      resolved.set(`${bone.id}:restWorldQuat`, restWorldQuat2.clone());
+      return worldDelta;
+    }
     const parentDelta = parent ? poseBoneWithChildren(parent, visited, resolved).clone() : new Quaternion();
     const bindLocalQuat = new Quaternion().setFromEuler(new Euler(bindRotE.x, bindRotE.y, bindRotE.z, bone.blockbenchLocalRotation ? "ZYX" : "XYZ"));
     const parentRestWorldQuat = parent && resolved.get(`${parent.id}:restWorldQuat`) || new Quaternion();
@@ -55018,6 +55326,18 @@ end
     const visited = /* @__PURE__ */ new Set();
     const resolved = /* @__PURE__ */ new Map();
     rigBones.forEach((bone) => poseBoneWithChildren(bone, visited, resolved));
+    rigBones.forEach((bone) => {
+      const child = rigBones.find((candidate) => candidate.parentId === bone.id);
+      if (child) {
+        bone.tail.copy(child.position);
+        return;
+      }
+      const bindPosition = bone.bindPosition || bone.position;
+      const bindTail = bone.bindTail || bone.tail;
+      const restOffset = bindTail.clone().sub(bindPosition);
+      const worldDelta = resolved.get(bone.id) || new Quaternion();
+      bone.tail.copy(bone.position).add(restOffset.applyQuaternion(worldDelta));
+    });
   }
   function applyCurrentRigPose() {
     if (!bonesGlued && !activeSkinRuntime) {
@@ -55307,6 +55627,7 @@ end
     }));
     els.animationTrackList.querySelectorAll("[data-animation-bone]").forEach((button) => button.addEventListener("click", () => {
       selectedBoneId = button.dataset.animationBone || null;
+      if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
       syncBonePanel();
       rebuildBoneVisuals();
       updateAnimationPanel();
@@ -55617,6 +55938,7 @@ end
       row.append(hideBtn);
       row.addEventListener("click", () => {
         selectedBoneId = selectedBoneId === bone2.id ? null : bone2.id;
+        if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
         rebuildBoneVisuals();
         syncBonePanel();
       });
@@ -55837,7 +56159,7 @@ end
     referenceCamera.top = halfHeight;
     referenceCamera.bottom = -halfHeight;
     if (view === "front") {
-      referenceCamera.position.set(center.x, center.y, center.z - 100);
+      referenceCamera.position.set(center.x, center.y, center.z + 100);
       referenceCamera.up.set(0, 1, 0);
     } else {
       referenceCamera.position.set(center.x + 100, center.y, center.z);
@@ -55862,6 +56184,7 @@ end
     const hit = boneRaycaster.intersectObjects(boneRigGroup.children.filter((child) => child.userData.boneJoint), false)[0];
     if (!hit) return;
     selectedBoneId = hit.object.userData.boneId;
+    setBoneGizmoEnabled(true, "rotate");
     const bone = selectedBone();
     if (!bone) return;
     recordBoneHistory("bone move");
@@ -56057,21 +56380,21 @@ end
     ];
     const body = baseAndLayer("body", "Body", [-4, 12, -2], [4, 24, 2], [16, 16], [16, 32], { origin: [0, 12, 0] });
     const head = baseAndLayer("head", "Head", [-4, 24, -4], [4, 32, 4], [0, 0], [32, 0], { origin: [0, 24, 0] });
-    const rightArmFrom = [-4 - armWidth, 12, -2], rightArmTo = [-4, 24, 2];
-    const leftArmFrom = [4, 12, -2], leftArmTo = [4 + armWidth, 24, 2];
-    const rightArm = baseAndLayer("right-arm", "Right Arm", rightArmFrom, rightArmTo, [40, 16], [40, 32], { origin: [-4, 22, 0] });
-    const leftArm = baseAndLayer("left-arm", "Left Arm", leftArmFrom, leftArmTo, [32, 48], [48, 48], { origin: [4, 22, 0] });
-    const rightLeg = baseAndLayer("right-leg", "Right Leg", [-4, 0, -2], [0, 12, 2], [0, 16], [0, 32], { origin: [-2, 12, 0] });
-    const leftLeg = baseAndLayer("left-leg", "Left Leg", [0, 0, -2], [4, 12, 2], [16, 48], [0, 48], { origin: [2, 12, 0] });
-    const group = (id, name, origin, children) => ({ uuid: `bws-skin-group-${id}`, name, origin, rotation: [0, 0, 0], children });
+    const rightArmFrom = [4, 12, -2], rightArmTo = [4 + armWidth, 24, 2];
+    const leftArmFrom = [-4 - armWidth, 12, -2], leftArmTo = [-4, 24, 2];
+    const rightArm = baseAndLayer("right-arm", "Right Arm", rightArmFrom, rightArmTo, [40, 16], [40, 32], { origin: [4, 22, 0] });
+    const leftArm = baseAndLayer("left-arm", "Left Arm", leftArmFrom, leftArmTo, [32, 48], [48, 48], { origin: [-4, 22, 0] });
+    const rightLeg = baseAndLayer("right-leg", "Right Leg", [0, 0, -2], [4, 12, 2], [0, 16], [0, 32], { origin: [2, 12, 0] });
+    const leftLeg = baseAndLayer("left-leg", "Left Leg", [-4, 0, -2], [0, 12, 2], [16, 48], [0, 48], { origin: [-2, 12, 0] });
+    const group = (id, name, origin, children, rotation = [0, 0, 0]) => ({ uuid: `bws-skin-group-${id}`, name, origin, rotation, children });
     const outliner = [group("body", "body", [0, 12, 0], [
       ...body,
       group("head", "head", [0, 24, 0], head),
-      group("right-arm", "right_arm", [-4, 22, 0], rightArm),
-      group("left-arm", "left_arm", [4, 22, 0], leftArm),
-      group("right-leg", "right_leg", [-2, 12, 0], rightLeg),
-      group("left-leg", "left_leg", [2, 12, 0], leftLeg)
-    ])];
+      group("right-arm", "right_arm", [4, 22, 0], rightArm),
+      group("left-arm", "left_arm", [-4, 22, 0], leftArm),
+      group("right-leg", "right_leg", [2, 12, 0], rightLeg),
+      group("left-leg", "left_leg", [-2, 12, 0], leftLeg)
+    ], [0, 180, 0])];
     return { ...project, elements, outliner, box_uv: true, meta: { ...project.meta || {}, box_uv: true } };
   }
   function collectBlockbenchHierarchy(outliner, parentBoneId, groupMap, cubeParents, parentGroupId = null) {
@@ -56245,6 +56568,14 @@ end
         head: [[0, [-1, -5, 0]], [10, [-2, -1, 0]], [20, [-1, 4, 0]], [30, [1, 0, 0]], [40, [-1, -5, 0]]],
         leftArm: [[0, [2, 0, -2]], [10, [0, 1, -2]], [20, [-2, 0, -1]], [30, [0, -1, -2]], [40, [2, 0, -2]]],
         rightArm: [[0, [-2, 0, 2]], [10, [0, -1, 2]], [20, [2, 0, 1]], [30, [0, 1, 2]], [40, [-2, 0, 2]]]
+      }),
+      clip("Wave", 24, "loop", {
+        body: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+        head: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+        leftArm: [[0, [28, 0, -124]], [4, [28, -8, -112]], [8, [28, 8, -138]], [12, [28, -8, -112]], [16, [28, 8, -138]], [20, [28, -8, -112]], [24, [28, 0, -124]]],
+        rightArm: [[0, [0, 0, 2]], [24, [0, 0, 2]]],
+        leftLeg: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+        rightLeg: [[0, [0, 0, 0]], [24, [0, 0, 0]]]
       }),
       clip("Walk", 24, "loop", {
         body: [[0, [0, 0, 0], [0, 0, 0]], [6, [0, 0, 0], [0, 0.32, 0]], [12, [0, 0, 0], [0, 0, 0]], [18, [0, 0, 0], [0, 0.32, 0]], [24, [0, 0, 0], [0, 0, 0]]],
@@ -56550,6 +56881,7 @@ end
     selectObject(null);
     selectedBoneId = null;
     if (els.showBonesInput) els.showBonesInput.checked = false;
+    setBoneGizmoEnabled(false, "rotate");
     activeTransformMode = null;
     document.querySelectorAll("[data-mode]").forEach((btn) => btn.classList.remove("active"));
     updateTransformAttachment();
@@ -57624,6 +57956,23 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.bakeTextureAtlasBtn?.addEventListener("click", bakeAnalyzedTextureAtlas);
   els.exportUvPngBtn?.addEventListener("click", exportSelectedUvPngs);
   els.uvPngExportSelect?.addEventListener("change", () => syncUvUnwrapUi());
+  els.modelTileRotateBtn?.addEventListener("click", rotateModelTileFacing);
+  els.modelTileExportBtn?.addEventListener("click", exportModelTileKit);
+  els.addColorToSceneBtn?.addEventListener("click", () => {
+    if (!selected) return;
+    selected.userData.colorApplied = true;
+    applyInspector({ record: true });
+    els.addColorToSceneBtn.textContent = "Color Added to Scene";
+  });
+  els.modelTileCenterBtn?.addEventListener("click", centerModelTileToEditor);
+  els.modelTileCameraLockBtn?.addEventListener("click", toggleModelTileCameraLock);
+  for (const input of [els.modelTileCameraAzimuthInput, els.modelTileCameraElevationInput, els.modelTileCameraDistanceInput, els.modelTileCameraTargetYInput]) {
+    input?.addEventListener("input", () => {
+      if (!modelTileCameraLocked) return;
+      const profile = applyModelTileCameraLock();
+      if (els.modelTileStatus) els.modelTileStatus.textContent = `Camera updated: azimuth ${profile.azimuth}\xB0, elevation ${profile.elevation}\xB0, distance ${profile.distance}.`;
+    });
+  }
   for (const input of [
     els.uvUnwrapSeamAngleInput,
     els.uvUnwrapPaddingInput,
@@ -58253,6 +58602,11 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   document.querySelectorAll(".props input").forEach((input) => {
     if (input === els.cutAmountInput || input === els.textureFile) return;
     input.addEventListener("input", () => {
+      if (input === els.colorInput) els.colorHexInput.value = input.value;
+      if (input === els.colorHexInput) {
+        const normalized = normalizeHexColor(input.value, null);
+        if (normalized) els.colorInput.value = normalized;
+      }
       if (!activeInspectorEdits.has(input)) {
         recordHistory("inspector");
         activeInspectorEdits.add(input);
@@ -58472,6 +58826,8 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
       }
     }
     if (event.key === "Shift") isShiftHeld = true;
+    if (event.key === "Control" || event.key === "Meta") isCtrlHeld = true;
+    updateScaleModifierMarkers();
     if (knifeCutMode && event.key === "Escape") {
       event.preventDefault();
       if (knifeCutPoints.length) cancelKnifeCutStroke();
@@ -58534,6 +58890,8 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   window.addEventListener("keyup", (event) => {
     gameplayKeys.delete(event.code);
     if (event.key === "Shift") isShiftHeld = false;
+    if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
+    updateScaleModifierMarkers();
     if (event.code !== "Space") return;
     spaceCameraMode = false;
     if (facePickMode) {
@@ -58543,6 +58901,8 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   window.addEventListener("blur", () => {
     gameplayKeys.clear();
     isShiftHeld = false;
+    isCtrlHeld = false;
+    updateScaleModifierMarkers();
     finishDragPushSession();
     finishScaleDragSession();
   });

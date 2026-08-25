@@ -155,21 +155,25 @@ function expandBlockbenchSkinProject(project) {
   ];
   const body = baseAndLayer("body", "Body", [-4, 12, -2], [4, 24, 2], [16, 16], [16, 32], { origin: [0, 12, 0] });
   const head = baseAndLayer("head", "Head", [-4, 24, -4], [4, 32, 4], [0, 0], [32, 0], { origin: [0, 24, 0] });
-  const rightArmFrom = [-4 - armWidth, 12, -2], rightArmTo = [-4, 24, 2];
-  const leftArmFrom = [4, 12, -2], leftArmTo = [4 + armWidth, 24, 2];
-  const rightArm = baseAndLayer("right-arm", "Right Arm", rightArmFrom, rightArmTo, [40, 16], [40, 32], { origin: [-4, 22, 0] });
-  const leftArm = baseAndLayer("left-arm", "Left Arm", leftArmFrom, leftArmTo, [32, 48], [48, 48], { origin: [4, 22, 0] });
-  const rightLeg = baseAndLayer("right-leg", "Right Leg", [-4, 0, -2], [0, 12, 2], [0, 16], [0, 32], { origin: [-2, 12, 0] });
-  const leftLeg = baseAndLayer("left-leg", "Left Leg", [0, 0, -2], [4, 12, 2], [16, 48], [0, 48], { origin: [2, 12, 0] });
-  const group = (id, name, origin, children) => ({ uuid: `bws-skin-group-${id}`, name, origin, rotation: [0, 0, 0], children });
+  // The generated skin rig is turned 180 degrees below so its textured face
+  // matches Blockbench's canonical Front view. Build its local left/right
+  // limbs on the opposite X sides first; the root turn then places each limb
+  // on its correct anatomical side instead of mirroring asymmetric skins.
+  const rightArmFrom = [4, 12, -2], rightArmTo = [4 + armWidth, 24, 2];
+  const leftArmFrom = [-4 - armWidth, 12, -2], leftArmTo = [-4, 24, 2];
+  const rightArm = baseAndLayer("right-arm", "Right Arm", rightArmFrom, rightArmTo, [40, 16], [40, 32], { origin: [4, 22, 0] });
+  const leftArm = baseAndLayer("left-arm", "Left Arm", leftArmFrom, leftArmTo, [32, 48], [48, 48], { origin: [-4, 22, 0] });
+  const rightLeg = baseAndLayer("right-leg", "Right Leg", [0, 0, -2], [4, 12, 2], [0, 16], [0, 32], { origin: [2, 12, 0] });
+  const leftLeg = baseAndLayer("left-leg", "Left Leg", [-4, 0, -2], [0, 12, 2], [16, 48], [0, 48], { origin: [-2, 12, 0] });
+  const group = (id, name, origin, children, rotation = [0, 0, 0]) => ({ uuid: `bws-skin-group-${id}`, name, origin, rotation, children });
   const outliner = [group("body", "body", [0, 12, 0], [
     ...body,
     group("head", "head", [0, 24, 0], head),
-    group("right-arm", "right_arm", [-4, 22, 0], rightArm),
-    group("left-arm", "left_arm", [4, 22, 0], leftArm),
-    group("right-leg", "right_leg", [-2, 12, 0], rightLeg),
-    group("left-leg", "left_leg", [2, 12, 0], leftLeg)
-  ])];
+    group("right-arm", "right_arm", [4, 22, 0], rightArm),
+    group("left-arm", "left_arm", [-4, 22, 0], leftArm),
+    group("right-leg", "right_leg", [2, 12, 0], rightLeg),
+    group("left-leg", "left_leg", [-2, 12, 0], leftLeg)
+  ], [0, 180, 0])];
   return { ...project, elements, outliner, box_uv: true, meta: { ...(project.meta || {}), box_uv: true } };
 }
 
@@ -351,6 +355,14 @@ function minecraftPlayerAnimationPresets() {
       head: [[0, [-1, -5, 0]], [10, [-2, -1, 0]], [20, [-1, 4, 0]], [30, [1, 0, 0]], [40, [-1, -5, 0]]],
       leftArm: [[0, [2, 0, -2]], [10, [0, 1, -2]], [20, [-2, 0, -1]], [30, [0, -1, -2]], [40, [2, 0, -2]]],
       rightArm: [[0, [-2, 0, 2]], [10, [0, -1, 2]], [20, [2, 0, 1]], [30, [0, 1, 2]], [40, [-2, 0, 2]]]
+    }),
+    clip("Wave", 24, "loop", {
+      body: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+      head: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+      leftArm: [[0, [28, 0, -124]], [4, [28, -8, -112]], [8, [28, 8, -138]], [12, [28, -8, -112]], [16, [28, 8, -138]], [20, [28, -8, -112]], [24, [28, 0, -124]]],
+      rightArm: [[0, [0, 0, 2]], [24, [0, 0, 2]]],
+      leftLeg: [[0, [0, 0, 0]], [24, [0, 0, 0]]],
+      rightLeg: [[0, [0, 0, 0]], [24, [0, 0, 0]]]
     }),
     clip("Walk", 24, "loop", {
       body: [[0, [0, 0, 0], [0, 0, 0]], [6, [0, 0, 0], [0, .32, 0]], [12, [0, 0, 0], [0, 0, 0]], [18, [0, 0, 0], [0, .32, 0]], [24, [0, 0, 0], [0, 0, 0]]],
@@ -657,6 +669,7 @@ async function importBlockbenchProject(file) {
   selectObject(null);
   selectedBoneId = null;
   if (els.showBonesInput) els.showBonesInput.checked = false;
+  setBoneGizmoEnabled(false, "rotate");
   activeTransformMode = null;
   document.querySelectorAll("[data-mode]").forEach(btn => btn.classList.remove("active"));
   updateTransformAttachment();

@@ -191,8 +191,85 @@ const chew = animation("d42a405f-e2f1-4cb5-991e-2031c8d1ae13", "Chew", .75, "loo
 addTrack(chew, jaw, "rotation", [[0,[0,0,0]],[.18,[-14,0,0]],[.34,[-2,0,0]],[.52,[-11,0,0]],[.75,[0,0,0]]]);
 addTrack(chew, head, "rotation", [[0,[0,0,0]],[.38,[2,0,0]],[.75,[0,0,0]]]);
 
+// Swimming is driven as a travelling yaw wave. The pelvis starts the motion,
+// the neck/head continue it, and every tail joint receives a slightly delayed
+// and stronger phase so the raptor bends like a swimming reptile instead of
+// rotating as one rigid object.
+const swim = animation("f166ca37-09d2-4382-b230-794c2ac718f1", "Swim", 1.6, "loop");
+const swimTimes = [0, .2, .4, .6, .8, 1, 1.2, 1.4, 1.6];
+const wave = phase => swimTimes.map((time, index) => {
+  const angle = Math.sin((index / 8) * Math.PI * 2 - phase);
+  return [time, angle, "catmullrom"];
+});
+const waveRotation = (amplitude, phase = 0, pitch = 0) => wave(phase).map(([time, value, interpolation]) => [time, [pitch, value * amplitude, 0], interpolation]);
+addTrack(swim, pelvis, "position", swimTimes.map((time, index) => [time, [0, Math.sin((index / 8) * Math.PI * 4) * .18, 0], "catmullrom"]));
+addTrack(swim, pelvis, "rotation", waveRotation(5));
+addTrack(swim, neck, "rotation", waveRotation(8, Math.PI / 3, -2));
+addTrack(swim, head, "rotation", waveRotation(7, Math.PI / 2, 2));
+tailBones.forEach((part, index) => addTrack(swim, part, "rotation", waveRotation(4 + index * 1.1, Math.PI / 5 + index * .38)));
+// Sweep the hind legs back beside the tail and keep them slightly splayed,
+// like a swimming gecko. Opposing, shallow kicks add life without bringing
+// either leg forward beneath the chest.
+addTrack(swim, leftUpper, "rotation", [[0,[-76,-10,-18]],[.4,[-68,-8,-20]],[.8,[-82,-12,-18]],[1.2,[-70,-9,-20]],[1.6,[-76,-10,-18]]]);
+addTrack(swim, rightUpper, "rotation", [[0,[-70,9,18]],[.4,[-82,12,20]],[.8,[-68,8,18]],[1.2,[-80,11,20]],[1.6,[-70,9,18]]]);
+for (const [kneePart, anklePart, footPart] of [[leftKnee,leftAnkle,leftFoot],[rightKnee,rightAnkle,rightFoot]]) {
+  addTrack(swim, kneePart, "rotation", [[0,[38,0,0]],[.8,[30,0,0]],[1.6,[38,0,0]]]);
+  addTrack(swim, anklePart, "rotation", [[0,[-22,0,0]],[.8,[-17,0,0]],[1.6,[-22,0,0]]]);
+  addTrack(swim, footPart, "rotation", [[0,[-9,0,0]],[.8,[-5,0,0]],[1.6,[-9,0,0]]]);
+}
+addTrack(swim, leftShoulder, "rotation", [[0,[-8,-5,-10]],[.8,[5,5,-8]],[1.6,[-8,-5,-10]]]);
+addTrack(swim, rightShoulder, "rotation", [[0,[5,5,10]],[.8,[-8,-5,8]],[1.6,[5,5,10]]]);
+
+function turningAnimation(uuid, name, direction) {
+  const clip = animation(uuid, name, 1.2, "once");
+  const times = [0, .3, .6, .9, 1.2];
+  const frames = values => times.map((time, index) => [time, values[index], "catmullrom"]);
+  addTrack(clip, pelvis, "rotation", frames([0,6,15,24,30].map(value => [0, value * direction, 0])));
+  addTrack(clip, pelvis, "position", frames([[0,0,0],[0,-.3,0],[0,-.55,0],[0,-.25,0],[0,0,0]]));
+
+  const inside = direction > 0
+    ? [leftUpper, leftKnee, leftAnkle, leftFoot]
+    : [rightUpper, rightKnee, rightAnkle, rightFoot];
+  const outside = direction > 0
+    ? [rightUpper, rightKnee, rightAnkle, rightFoot]
+    : [leftUpper, leftKnee, leftAnkle, leftFoot];
+  addTrack(clip, inside[0], "rotation", frames([[0,0,0],[-8,5*direction,0],[-12,12*direction,0],[-5,19*direction,0],[0,24*direction,0]]));
+  addTrack(clip, inside[1], "rotation", frames([[0,0,0],[-10,0,0],[-18,0,0],[-9,0,0],[0,0,0]]));
+  addTrack(clip, inside[2], "rotation", frames([[0,0,0],[6,0,0],[10,0,0],[4,0,0],[0,0,0]]));
+  addTrack(clip, inside[3], "rotation", frames([[0,0,0],[-8,5*direction,0],[-14,13*direction,0],[-6,20*direction,0],[0,24*direction,0]]));
+  addTrack(clip, outside[0], "rotation", frames([[0,0,0],[22,-5*direction,0],[6,-12*direction,0],[-18,-18*direction,0],[0,-22*direction,0]]));
+  addTrack(clip, outside[1], "rotation", frames([[0,0,0],[-36,0,0],[-22,0,0],[-8,0,0],[0,0,0]]));
+  addTrack(clip, outside[2], "rotation", frames([[0,0,0],[18,0,0],[12,0,0],[4,0,0],[0,0,0]]));
+  addTrack(clip, outside[3], "rotation", frames([[0,0,0],[12,-4*direction,0],[-6,-12*direction,0],[-12,-18*direction,0],[0,-22*direction,0]]));
+  tailBones.forEach((part, index) => addTrack(clip, part, "rotation", frames([0,-.5,-1.2,-2,-2.5].map(value => [0, value * direction * (1 + index * .16), 0]))));
+  addTrack(clip, neck, "rotation", frames([0,-2,-5,-7,-8].map(value => [0, value * direction, 0])));
+  addTrack(clip, head, "rotation", frames([0,2,4,6,7].map(value => [0, value * direction, 0])));
+  return clip;
+}
+
+const turnLeft = turningAnimation("313898b8-c751-4cf5-b478-f8587a11773e", "Turn Left", 1);
+const turnRight = turningAnimation("d58ce530-cf21-4a74-8898-0d99410b506a", "Turn Right", -1);
+
+// A settled sleeping pose with a small breathing loop. The legs fold beneath
+// the body, the head and tail rest low, and only the chest/head move subtly.
+const sleep = animation("7387f2b4-f3d0-42c0-a67a-e55bdc6b1da9", "Sleep", 3.2, "loop");
+addTrack(sleep, pelvis, "position", [[0,[0,-17,0]],[1.6,[0,-16.7,0]],[3.2,[0,-17,0]]]);
+addTrack(sleep, pelvis, "rotation", [[0,[0,0,-3]],[1.6,[0,0,-2]],[3.2,[0,0,-3]]]);
+addTrack(sleep, neck, "rotation", [[0,[-42,-6,0]],[1.6,[-39,-4,0]],[3.2,[-42,-6,0]]]);
+addTrack(sleep, head, "rotation", [[0,[-24,8,-5]],[1.6,[-21,6,-4]],[3.2,[-24,8,-5]]]);
+addTrack(sleep, jaw, "rotation", [[0,[2,0,0]],[1.6,[4,0,0]],[3.2,[2,0,0]]]);
+tailBones.forEach((part, index) => addTrack(sleep, part, "rotation", [[0,[2 + index * .35,2 + index * .75,0]],[1.6,[1.7 + index * .3,1.5 + index * .7,0]],[3.2,[2 + index * .35,2 + index * .75,0]]]));
+for (const [upperPart, kneePart, anklePart, footPart, side] of [[leftUpper,leftKnee,leftAnkle,leftFoot,-1],[rightUpper,rightKnee,rightAnkle,rightFoot,1]]) {
+  addTrack(sleep, upperPart, "rotation", [[0,[-78,side*9,side*22]],[1.6,[-75,side*8,side*21]],[3.2,[-78,side*9,side*22]]]);
+  addTrack(sleep, kneePart, "rotation", [[0,[132,0,0]],[1.6,[128,0,0]],[3.2,[132,0,0]]]);
+  addTrack(sleep, anklePart, "rotation", [[0,[-56,0,0]],[1.6,[-53,0,0]],[3.2,[-56,0,0]]]);
+  addTrack(sleep, footPart, "rotation", [[0,[-22,0,side*10]],[1.6,[-20,0,side*9]],[3.2,[-22,0,side*10]]]);
+}
+addTrack(sleep, leftShoulder, "rotation", [[0,[18,-8,-20]],[1.6,[16,-7,-18]],[3.2,[18,-8,-20]]]);
+addTrack(sleep, rightShoulder, "rotation", [[0,[18,8,20]],[1.6,[16,7,18]],[3.2,[18,8,20]]]);
+
 idle.selected = true;
-project.animations = [idle, walk, run, sprint, jump, chew];
+project.animations = [idle, walk, run, sprint, jump, chew, swim, turnLeft, turnRight, sleep];
 project.name = "raptor_rigged";
 project.model_identifier = project.model_identifier || "raptor_rigged";
 writeFileSync(outputPath, `${JSON.stringify(project)}\n`);

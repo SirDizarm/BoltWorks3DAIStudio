@@ -14,12 +14,13 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.47.5.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.57.2.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
 const humanWalkCycle = JSON.parse(readFileSync(new URL("../samples/assets/human-walk-rig-smoke.modelerproj", import.meta.url), "utf8"));
 const minecraftRigSmoke = JSON.parse(readFileSync(new URL("../samples/assets/minecraft-rig-smoke.bbmodel", import.meta.url), "utf8"));
+const raptorRig = JSON.parse(readFileSync(new URL("../samples/assets/raptor-rigged.bbmodel", import.meta.url), "utf8"));
 const panelsSource = moduleSources.get("panels") || "";
 const meshesSource = moduleSources.get("meshes") || "";
 const aiViewerSource = moduleSources.get("ai-viewer") || "";
@@ -35,6 +36,27 @@ if (
   || minecraftRigSmoke.animations?.[0]?.animators?.["bone-arm"]?.keyframes?.length !== 3
 ) {
   throw new Error("The Minecraft smoke fixture must preserve cuboids, nested bones, and animation keys.");
+}
+
+{
+  const clips = new Map((raptorRig.animations || []).map(clip => [clip.name, clip]));
+  for (const name of ["Swim", "Turn Left", "Turn Right", "Sleep"]) {
+    if (!clips.has(name)) throw new Error(`The rigged raptor must include its ${name} animation.`);
+  }
+  const swimTracks = [...Object.values(clips.get("Swim").animators || {})];
+  const swimNames = new Set(swimTracks.map(track => track.name));
+  if (!["pelvis_body", "neck", "head", "tail_base", "tail_tip"].every(name => swimNames.has(name))) {
+    throw new Error("Raptor swimming must travel through the body, head, and complete tail hierarchy.");
+  }
+  for (const name of ["Turn Left", "Turn Right"]) {
+    const trackNames = new Set(Object.values(clips.get(name).animators || {}).map(track => track.name));
+    if (!["left_upper_leg", "left_knee", "left_foot", "right_upper_leg", "right_knee", "right_foot"].every(part => trackNames.has(part))) {
+      throw new Error(`${name} must animate both connected stepping leg chains.`);
+    }
+  }
+  if ((clips.get("Sleep").loop !== "loop") || Object.keys(clips.get("Sleep").animators || {}).length < 15) {
+    throw new Error("Raptor sleep must remain a complete looping laid-down pose.");
+  }
 }
 
 if (meshesSource.includes("cullCoincidentOpposingMergeTriangles") || meshesSource.includes("culledInternalTriangles")) {
@@ -1107,7 +1129,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.47.8.js?v=49.47.8"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.57.2.js?v=49.57.2"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
@@ -1130,7 +1152,7 @@ for (const kneeId of ["walk-shin-l", "walk-shin-r"]) {
 if (applicationSource.includes('camera.up.set(0, viewName === "top" ? 0 : 1')) {
   throw new Error("Top view must not replace the OrbitControls world-up axis.");
 }
-if (documentSource.includes('type="module" src="./app/studio-v49.47.8.js') || documentSource.includes('type="importmap"')) {
+if (documentSource.includes('type="module" src="./app/studio-v49.50.0.js') || documentSource.includes('type="importmap"')) {
   throw new Error("Direct index opening cannot depend on module loading or an import map.");
 }
 if (!directBundle.startsWith("/* Generated from app/modules.")) {
@@ -1143,7 +1165,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.47.8",
+  "tool-docking.js?v=49.57.2",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1466,8 +1488,12 @@ for (const required of [
   "Connect",
   "connectFaceInput",
   "rotationSnapSelect",
+  "transformSnapSettings",
+  "applyControlSnap",
   "applyRotationSnap",
+  "setTranslationSnap",
   "setRotationSnap",
+  "setScaleSnap",
   "markerBtn",
   "clearTriBtn",
   "areaTriBtn",
@@ -1860,8 +1886,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.47.8 Experimental") || !documentSource.includes("v49.47.8 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.47.8 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.57.2 Experimental") || !documentSource.includes("v49.57.2 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.57.2 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -1974,6 +2000,7 @@ for (const minecraftSourceRequirement of [
   "minecraftPlayerAnimationPresets",
   "addMinecraftPlayerRigAnimations",
   'clip("Idle"',
+  'clip("Wave"',
   'clip("Walk"',
   'clip("Run"',
   'clip("Sprint"',
@@ -2015,12 +2042,34 @@ for (const clipName of ["Walk", "Run", "Sprint"]) {
     throw new Error(`${clipName} must keep the Minecraft player head upright at every keyframe.`);
   }
 }
+{
+  const waveStart = applicationSource.indexOf('clip("Wave"');
+  const nextClip = applicationSource.indexOf("\n    clip(\"", waveStart + 1);
+  const waveSource = applicationSource.slice(waveStart, nextClip < 0 ? undefined : nextClip);
+  if (waveStart < 0 || !waveSource.includes("leftArm:") || !waveSource.includes("rightArm:")) {
+    throw new Error("The Minecraft Wave preset must animate the semantic left arm while preserving the right arm.");
+  }
+  const leftWaveTrack = waveSource.match(/^\s*leftArm:\s*(.+)$/m)?.[1] || "";
+  const raisedAngles = [...leftWaveTrack.matchAll(/\[\d+,\s*\[([^\]]+)\]/g)]
+    .map(match => match[1].split(",").map(value => Number(value.trim())));
+  if (raisedAngles.length < 5 || raisedAngles.some(rotation => rotation[0] < 20 || Math.abs(rotation[2]) < 100)) {
+    throw new Error("The Minecraft Wave preset must keep the left arm raised beside the head throughout its loop.");
+  }
+}
+if (!moduleSources.get("rigging")?.includes('if (selectedBoneId) setBoneGizmoEnabled(true, "rotate")')
+  || !moduleSources.get("rigging")?.includes('setBoneGizmoEnabled(true, "rotate");')) {
+  throw new Error("Explicitly selecting a rig bone must restore its rotation lever.");
+}
 if ((moduleSources.get("meshes").match(/syncMinecraftTextureRendering\(mesh\);/g) || []).length < 2) {
   throw new Error("Minecraft pixel filtering must be reapplied when textured meshes are created or restored by Undo.");
 }
 for (const skinImportRequirement of [
   "function expandBlockbenchSkinProject(project)",
   "project.skin_model || \"steve\"",
+  "const rightArmFrom = [4, 12, -2]",
+  "const leftArmFrom = [-4 - armWidth, 12, -2]",
+  "group(\"right-leg\", \"right_leg\", [2, 12, 0]",
+  "group(\"left-leg\", \"left_leg\", [-2, 12, 0]",
   "group(\"right-arm\", \"right_arm\"",
   "Built the ${parsedProject.skin_model || \"steve\"} body"
 ]) {
@@ -2232,18 +2281,18 @@ if (!moduleSources.get("rigging")?.includes("function animationJumpLift") || !mo
 for (const cleanCaptureRequirement of ["surfaceComponentMarker.visible = false", "modelingEdgesOverlay.visible = false", "knifeCutGuideGroup.visible = false", "meshIntegrityGuideGroup.visible = false"]) {
   if (!moduleSources.get("import-export")?.includes(cleanCaptureRequirement)) throw new Error(`Animation capture must hide editor helper: ${cleanCaptureRequirement}`);
 }
-if (!moduleSources.get("import-export")?.includes("front: new THREE.Vector3(0, 0, -1)") || !moduleSources.get("import-export")?.includes("back: new THREE.Vector3(0, 0, 1)")) {
-  throw new Error("Front and Back animation exports must use the corrected Minecraft-facing orientation.");
+if (!moduleSources.get("import-export")?.includes("front: new THREE.Vector3(0, 0, 1)") || !moduleSources.get("import-export")?.includes("back: new THREE.Vector3(0, 0, -1)")) {
+  throw new Error("Front and Back animation exports must use Blockbench's canonical facing orientation.");
 }
-if (!moduleSources.get("viewport")?.includes("frontBoneCamera.position.set(0, 0, -100)")) {
+if (!moduleSources.get("viewport")?.includes("frontBoneCamera.position.set(0, 0, 100)")) {
   throw new Error("The Front X/Y reference camera must face the same side as the canonical Front work view.");
 }
-if (!moduleSources.get("rigging")?.includes("referenceCamera.position.set(center.x, center.y, center.z - 100)")) {
+if (!moduleSources.get("rigging")?.includes("referenceCamera.position.set(center.x, center.y, center.z + 100)")) {
   throw new Error("Fitting the Front X/Y reference camera must preserve the canonical front direction.");
 }
-if (!moduleSources.get("meshes")?.includes('case "front":\n        mesh.position.set(0, labelY, -halfSize - offset)')
-  || !moduleSources.get("meshes")?.includes('case "back":\n        mesh.position.set(0, labelY, halfSize + offset)')) {
-  throw new Error("FRONT and BACK floor labels must match the corrected canonical model facing.");
+if (!moduleSources.get("meshes")?.includes('case "front":\n        mesh.position.set(0, labelY, halfSize + offset)')
+  || !moduleSources.get("meshes")?.includes('case "back":\n        mesh.position.set(0, labelY, -halfSize - offset)')) {
+  throw new Error("FRONT and BACK floor labels must match Blockbench's canonical model facing.");
 }
 if (!html.includes('id="flat2dLookInput"') || !moduleSources.get("panels")?.includes("function setFlat2dLook") || !moduleSources.get("panels")?.includes("new THREE.MeshBasicMaterial")) {
   throw new Error("Flat 2D Look must provide a visible toggle and unlit model rendering.");

@@ -290,6 +290,13 @@ function boneGizmoMode() {
   return boneGizmoToolMode === "translate" ? "translate" : "rotate";
 }
 
+function setBoneGizmoEnabled(enabled, mode = boneGizmoToolMode) {
+  boneGizmoToolMode = mode === "translate" ? "translate" : "rotate";
+  boneGizmoEnabled = !!enabled;
+  els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
+  els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+}
+
 function setBoneGizmoToolMode(mode) {
   const next = mode === "translate" ? "translate" : "rotate";
   // Clicking the active mode again turns the gizmo off (toggling).
@@ -299,8 +306,7 @@ function setBoneGizmoToolMode(mode) {
     boneGizmoToolMode = next;
     boneGizmoEnabled = true;
   }
-  els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
-  els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+  setBoneGizmoEnabled(boneGizmoEnabled, boneGizmoToolMode);
   syncBoneTransformGizmo();
 }
 
@@ -349,6 +355,7 @@ function selectBoneFromViewport(boneId) {
   const bone = boneById(boneId);
   if (!bone) return;
   selectedBoneId = boneId;
+  setBoneGizmoEnabled(true, "rotate");
   if (typeof selectObject === "function") selectObject(null);
   rebuildBoneVisuals();
   syncBonePanel();
@@ -595,7 +602,6 @@ function animationSetFrame(frame, { render = true } = {}) {
   if (activeSkinRuntime) applySkinnedPose(poses);
   else {
     poseRigHierarchy();
-    rigBones.forEach(bone => bone.tail.copy(bone.position).add(bone.tailOffset.clone().applyEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"))));
     applyAnimationBindings();
   }
   if (render) { rebuildBoneVisuals(); syncBonePanel(); }
@@ -748,6 +754,43 @@ function poseBoneWithChildren(bone, visited = new Set(), resolved = new Map()) {
   const keyedPositionOffset = bone.position.clone().sub(bindPos);
   const bindRotE = bone.bindRotation || bone.rotation;
   const parent = boneById(bone.parentId);
+
+  // Blockbench stores every group's rotation and animation channel in the
+  // group's LOCAL coordinate system. Resolve those bones with ordinary FK.
+  // Treating the local value as a world rotation makes children orbit their
+  // parent and was the cause of the raptor's broken legs and tail.
+  if (bone.blockbenchLocalRotation) {
+    if (parent) poseBoneWithChildren(parent, visited, resolved);
+    const parentWorldQuat = parent
+      ? (resolved.get(`${parent.id}:worldQuat`) || new THREE.Quaternion()).clone()
+      : new THREE.Quaternion();
+    const parentRestWorldQuat = parent
+      ? (resolved.get(`${parent.id}:restWorldQuat`) || new THREE.Quaternion()).clone()
+      : new THREE.Quaternion();
+    const localRestQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(bindRotE.x, bindRotE.y, bindRotE.z, "ZYX")
+    );
+    const localPoseQuat = new THREE.Quaternion().setFromEuler(
+      new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "ZYX")
+    );
+    const restWorldQuat = parentRestWorldQuat.multiply(localRestQuat);
+    const worldQuat = parentWorldQuat.multiply(localPoseQuat);
+    const localPosition = (bone.restLocalPosition || bindPos.clone()).clone().add(keyedPositionOffset);
+    const worldPos = parent
+      ? (resolved.get(`${parent.id}:pos`) || parent.position).clone().add(localPosition.applyQuaternion(resolved.get(`${parent.id}:worldQuat`) || new THREE.Quaternion()))
+      : localPosition;
+    const worldDelta = worldQuat.clone().multiply(restWorldQuat.clone().invert());
+
+    bone.position.copy(worldPos);
+    bone.poseWorldQuaternion = worldQuat.clone();
+    resolved.set(bone.id, worldDelta);
+    resolved.set(`${bone.id}:pos`, worldPos.clone());
+    resolved.set(`${bone.id}:bindPos`, bindPos.clone());
+    resolved.set(`${bone.id}:worldQuat`, worldQuat.clone());
+    resolved.set(`${bone.id}:restWorldQuat`, restWorldQuat.clone());
+    return worldDelta;
+  }
+
   // Parent's ACCUMULATED change (own delta premultiplied by all ancestors').
   const parentDelta = parent ? poseBoneWithChildren(parent, visited, resolved).clone() : new THREE.Quaternion();
   // Rest-pose WORLD rotation. Blockbench bones store LOCAL rest rotations (ZYX
@@ -797,6 +840,20 @@ function poseRigHierarchy() {
   const visited = new Set();
   const resolved = new Map();
   rigBones.forEach(bone => poseBoneWithChildren(bone, visited, resolved));
+  // Resolve tails after every joint has its final world position. A parent tail
+  // lands on its first child; leaf tails follow the bone's world-space delta.
+  rigBones.forEach(bone => {
+    const child = rigBones.find(candidate => candidate.parentId === bone.id);
+    if (child) {
+      bone.tail.copy(child.position);
+      return;
+    }
+    const bindPosition = bone.bindPosition || bone.position;
+    const bindTail = bone.bindTail || bone.tail;
+    const restOffset = bindTail.clone().sub(bindPosition);
+    const worldDelta = resolved.get(bone.id) || new THREE.Quaternion();
+    bone.tail.copy(bone.position).add(restOffset.applyQuaternion(worldDelta));
+  });
 }
 
 function applyCurrentRigPose() {
@@ -1090,6 +1147,7 @@ function bindAnimationTimelineEvents() {
   }));
   els.animationTrackList.querySelectorAll("[data-animation-bone]").forEach(button => button.addEventListener("click", () => {
     selectedBoneId = button.dataset.animationBone || null;
+    if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
     syncBonePanel();
     rebuildBoneVisuals();
     updateAnimationPanel();
@@ -1416,6 +1474,7 @@ function syncBonePanel() {
     row.addEventListener("click", () => {
       // Clicking the already-selected bone again unselects it.
       selectedBoneId = selectedBoneId === bone.id ? null : bone.id;
+      if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
       rebuildBoneVisuals();
       syncBonePanel();
     });
@@ -1655,10 +1714,8 @@ function fitBoneCamera(referenceCamera, canvasElement, view) {
   referenceCamera.top = halfHeight;
   referenceCamera.bottom = -halfHeight;
   if (view === "front") {
-    // Keep this identical to Front Work/export: imported Minecraft models face
-    // toward -Z, so +Z is their back. This function runs whenever the reference
-    // view is fitted and must not reverse the canonical front direction.
-    referenceCamera.position.set(center.x, center.y, center.z - 100);
+    // Match Blockbench's canonical Front view: look from +Z toward the origin.
+    referenceCamera.position.set(center.x, center.y, center.z + 100);
     referenceCamera.up.set(0, 1, 0);
   } else {
     referenceCamera.position.set(center.x + 100, center.y, center.z);
@@ -1686,6 +1743,7 @@ function beginBoneDrag(event, view, referenceCanvas, referenceCamera) {
   const hit = boneRaycaster.intersectObjects(boneRigGroup.children.filter(child => child.userData.boneJoint), false)[0];
   if (!hit) return;
   selectedBoneId = hit.object.userData.boneId;
+  setBoneGizmoEnabled(true, "rotate");
   const bone = selectedBone();
   if (!bone) return;
   recordBoneHistory("bone move");
