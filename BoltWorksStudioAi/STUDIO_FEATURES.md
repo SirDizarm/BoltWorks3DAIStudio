@@ -14,6 +14,13 @@ be rendered to 2D sprites or used as tile assemblies in Unity.
 - **Center Model to Editor** moves the selected assembly as one unit so its
   combined bounds are centered on the editor origin. Relative placement is
   preserved.
+- **Show 3×3 Tile Neighbours** places eight translucent, temporary copies
+  around the selected tile using the configured width and depth. These copies
+  are neither saved nor included in the tile export.
+- **Apply Continuous Texture** repeats the selected texture in U and V and can
+  trim a small percentage of each image edge to hide dark gutters. It does not
+  alter the UV layout or source image; **Reset Tile Texture** restores the
+  normal one-repeat, no-trim material mapping.
 - **Snap Selection to Grid Surface** moves the selected assembly together so
   its lowest point rests on `Y = 0`. Its X/Z center follows the current toolbar
   transform-snap increment when transform snapping is enabled.

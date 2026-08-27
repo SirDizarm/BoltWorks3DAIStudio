@@ -606,9 +606,24 @@ function setTextureLibraryPanelOpen(open) {
   if (open) refreshTextureLibraryUi();
 }
 
-function applyTextureTransform(texture, { textureFlipY = true, textureRotation = 0 } = {}) {
+function normalizedTileTextureValue(value, fallback = 1) {
+  return Math.max(.1, Math.min(32, Number.isFinite(Number(value)) ? Number(value) : fallback));
+}
+
+function normalizedTileTextureEdgeTrim(value) {
+  return Math.max(0, Math.min(.2, (Number(value) || 0)));
+}
+
+function applyTextureTransform(texture, { textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0 } = {}) {
+  const repeatU = normalizedTileTextureValue(tileTextureRepeatU);
+  const repeatV = normalizedTileTextureValue(tileTextureRepeatV);
+  const edgeTrim = normalizedTileTextureEdgeTrim(tileTextureEdgeTrim);
+  const span = Math.max(.01, 1 - edgeTrim * 2);
   texture.colorSpace = THREE.SRGBColorSpace;
   texture.flipY = textureFlipY;
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeatU * span, repeatV * span);
+  texture.offset.set(edgeTrim, edgeTrim);
   texture.center.set(.5, .5);
   texture.rotation = THREE.MathUtils.degToRad(normalizeTextureRotation(textureRotation));
 }
@@ -1010,7 +1025,13 @@ function applyTextureToMesh(mesh, textureUrl, textureName = "Texture", textureFl
       maybeApplyTextureDisplayColor(mesh, loadedTexture.image);
       scheduleTextureUiRefresh();
     });
-    applyTextureTransform(texture, { textureFlipY, textureRotation });
+    applyTextureTransform(texture, {
+      textureFlipY,
+      textureRotation,
+      tileTextureRepeatU: mesh.userData.tileTextureRepeatU,
+      tileTextureRepeatV: mesh.userData.tileTextureRepeatV,
+      tileTextureEdgeTrim: mesh.userData.tileTextureEdgeTrim
+    });
     mesh.material.map = texture;
   } else {
     delete mesh.userData.textureDisplayColor;
@@ -1087,7 +1108,10 @@ function materialTextureChannelData(mesh, channel = "baseColor") {
 function configureMaterialChannelTexture(texture, channel, mesh) {
   applyTextureTransform(texture, {
     textureFlipY: mesh.userData.textureFlipY ?? true,
-    textureRotation: mesh.userData.textureRotation || 0
+    textureRotation: mesh.userData.textureRotation || 0,
+    tileTextureRepeatU: mesh.userData.tileTextureRepeatU,
+    tileTextureRepeatV: mesh.userData.tileTextureRepeatV,
+    tileTextureEdgeTrim: mesh.userData.tileTextureEdgeTrim
   });
   if ("colorSpace" in texture) {
     texture.colorSpace = channel === "roughness" || channel === "metalness"
@@ -3340,7 +3364,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3372,6 +3396,9 @@ function createMesh(spec = {}) {
     textureRobloxAssetId: normalizeRobloxAssetId(textureRobloxAssetId || ""),
     textureFlipY,
     textureRotation: normalizeTextureRotation(textureRotation),
+    tileTextureRepeatU: normalizedTileTextureValue(tileTextureRepeatU),
+    tileTextureRepeatV: normalizedTileTextureValue(tileTextureRepeatV),
+    tileTextureEdgeTrim: normalizedTileTextureEdgeTrim(tileTextureEdgeTrim),
     textureHasTransparency: !!textureHasTransparency,
     roughnessTextureUrl,
     roughnessTextureName,
@@ -16468,6 +16495,122 @@ function snapSelectionToGridSurface() {
   if (els.modelTileStatus) els.modelTileStatus.textContent = `Snapped ${targets.length} model part${targets.length === 1 ? "" : "s"} to the grid surface; relative spacing preserved.`;
 }
 
+function clearModelTileNeighbourPreview() {
+  while (modelTileNeighbourPreviewGroup.children.length) {
+    const clone = modelTileNeighbourPreviewGroup.children[0];
+    modelTileNeighbourPreviewGroup.remove(clone);
+    clone.traverse(part => {
+      if (!part.isMesh) return;
+      if (Array.isArray(part.material)) part.material.forEach(material => material?.dispose?.());
+      else part.material?.dispose?.();
+    });
+  }
+  modelTileNeighbourPreviewGroup.visible = false;
+}
+
+function modelTilePreviewTargets() {
+  return resolveSelectionTargets("meshes");
+}
+
+function setModelTileNeighbourPreview(enabled, { silent = false } = {}) {
+  clearModelTileNeighbourPreview();
+  if (!enabled) {
+    if (!silent && els.modelTileStatus) els.modelTileStatus.textContent = "Tile neighbour preview hidden.";
+    return;
+  }
+  const targets = modelTilePreviewTargets();
+  if (!targets.length) {
+    if (els.modelTileNeighbourPreviewInput) els.modelTileNeighbourPreviewInput.checked = false;
+    if (!silent && els.modelTileStatus) els.modelTileStatus.textContent = "Select a mesh, group, or multiple parts before showing tile neighbours.";
+    return;
+  }
+  const width = Math.max(.1, Number(els.modelTileWidthInput?.value) || 1);
+  const depth = Math.max(.1, Number(els.modelTileDepthInput?.value) || 1);
+  for (const x of [-1, 0, 1]) for (const z of [-1, 0, 1]) {
+    if (!x && !z) continue;
+    const offset = new THREE.Vector3(x * width, 0, z * depth);
+    for (const target of targets) {
+      const clone = target.clone();
+      const materials = Array.isArray(target.material) ? target.material : [target.material];
+      clone.material = materials.map(material => {
+        const previewMaterial = material.clone();
+        previewMaterial.transparent = true;
+        previewMaterial.opacity = Math.min(.34, Math.max(.12, (material.opacity ?? 1) * .42));
+        previewMaterial.depthWrite = false;
+        previewMaterial.needsUpdate = true;
+        return previewMaterial;
+      });
+      if (!Array.isArray(target.material)) clone.material = clone.material[0];
+      clone.position.add(offset);
+      clone.userData = { ...target.userData, modelTileNeighbourPreview: true };
+      clone.castShadow = false;
+      clone.receiveShadow = false;
+      modelTileNeighbourPreviewGroup.add(clone);
+    }
+  }
+  modelTileNeighbourPreviewGroup.visible = true;
+  if (!silent && els.modelTileStatus) {
+    els.modelTileStatus.textContent = "Showing eight preview copies around " + targets.length + " selected tile part" + (targets.length === 1 ? "" : "s") + ". Preview copies are not exported or saved.";
+  }
+}
+
+function modelTileTextureTargets() {
+  return modelTilePreviewTargets().filter(mesh => !!mesh.material?.map);
+}
+
+function applyModelTileContinuousTexture() {
+  const targets = modelTileTextureTargets();
+  if (!targets.length) {
+    if (els.modelTileStatus) els.modelTileStatus.textContent = "Select one or more textured tile parts first.";
+    return;
+  }
+  const repeatU = normalizedTileTextureValue(els.modelTileTextureRepeatUInput?.value);
+  const repeatV = normalizedTileTextureValue(els.modelTileTextureRepeatVInput?.value);
+  const edgeTrim = Math.max(0, Math.min(.2, (Number(els.modelTileTextureEdgeTrimInput?.value) || 0) / 100));
+  recordHistory("apply continuous tile texture");
+  for (const mesh of targets) {
+    mesh.userData.tileTextureRepeatU = repeatU;
+    mesh.userData.tileTextureRepeatV = repeatV;
+    mesh.userData.tileTextureEdgeTrim = edgeTrim;
+    applyTextureTransform(mesh.material.map, {
+      textureFlipY: mesh.userData.textureFlipY ?? true,
+      textureRotation: mesh.userData.textureRotation || 0,
+      tileTextureRepeatU: repeatU,
+      tileTextureRepeatV: repeatV,
+      tileTextureEdgeTrim: edgeTrim
+    });
+    mesh.material.map.needsUpdate = true;
+  }
+  updateAll();
+  if (els.modelTileStatus) {
+    els.modelTileStatus.textContent = "Applied continuous texture to " + targets.length + " tile part" + (targets.length === 1 ? "" : "s") + ": U ×" + round(repeatU) + ", V ×" + round(repeatV) + ", " + round(edgeTrim * 100) + "% edge trim. UVs and source images are unchanged.";
+  }
+}
+
+function resetModelTileContinuousTexture() {
+  const targets = modelTileTextureTargets();
+  if (!targets.length) {
+    if (els.modelTileStatus) els.modelTileStatus.textContent = "Select one or more textured tile parts first.";
+    return;
+  }
+  recordHistory("reset continuous tile texture");
+  for (const mesh of targets) {
+    mesh.userData.tileTextureRepeatU = 1;
+    mesh.userData.tileTextureRepeatV = 1;
+    mesh.userData.tileTextureEdgeTrim = 0;
+    applyTextureTransform(mesh.material.map, {
+      textureFlipY: mesh.userData.textureFlipY ?? true,
+      textureRotation: mesh.userData.textureRotation || 0
+    });
+    mesh.material.map.needsUpdate = true;
+  }
+  if (els.modelTileTextureRepeatUInput) els.modelTileTextureRepeatUInput.value = "1";
+  if (els.modelTileTextureRepeatVInput) els.modelTileTextureRepeatVInput.value = "1";
+  if (els.modelTileTextureEdgeTrimInput) els.modelTileTextureEdgeTrimInput.value = "0";
+  updateAll();
+  if (els.modelTileStatus) els.modelTileStatus.textContent = "Reset continuous texture settings for " + targets.length + " tile part" + (targets.length === 1 ? "" : "s") + ".";
+}
+
 async function exportModelTileKit() {
   const exportTargets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [];
   const { mesh: singleMesh, material, image } = modelTileMaterialImage();
@@ -16493,6 +16636,8 @@ async function exportModelTileKit() {
   const exportTargetsForRender = exportTargets.length ? exportTargets : [...objects];
   const exportTargetIds = new Set(exportTargetsForRender.map(target => target.userData.id));
   const visibility = objects.map(target => ({ target, visible: target.visible }));
+  const neighbourPreviewWasVisible = modelTileNeighbourPreviewGroup.visible;
+  modelTileNeighbourPreviewGroup.visible = false;
   objects.forEach(target => { target.visible = exportTargetIds.has(target.userData.id); });
   const bounds = new THREE.Box3();
   exportTargetsForRender.forEach(target => bounds.expandByObject(target));
@@ -16529,6 +16674,7 @@ async function exportModelTileKit() {
     ctx.drawImage(source, minX, minY, cropWidth, cropHeight, index * size + (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
   });
   visibility.forEach(entry => { entry.target.visible = entry.visible; });
+  modelTileNeighbourPreviewGroup.visible = neighbourPreviewWasVisible;
   downloadDataUrl(`${safeName}-wall-4x.png`, sheet.toDataURL("image/png"));
   if (els.modelTileStatus) els.modelTileStatus.textContent = `Exported ${manifest.asset}: transparent, tightly framed ${viewNames.join("/")} model renders.`;
 }

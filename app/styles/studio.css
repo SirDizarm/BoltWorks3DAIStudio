@@ -1055,7 +1055,7 @@ label {
   position: absolute;
   top: 8px;
   left: 8px;
-  z-index: 2;
+  z-index: 10001;
   padding: 4px 7px;
   border: 1px solid #3b494f;
   border-radius: 4px;
@@ -1623,6 +1623,27 @@ label {
 
 .surface-bevel-details[open] summary {
   margin-bottom: 8px;
+}
+
+#modelTileKitDetails .action-grid {
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 8px;
+  padding: 8px 0;
+  background: #15191b;
+}
+
+#modelTileKitDetails[open] {
+  position: relative;
+  z-index: 10001;
+}
+
+#modelTileKitDetails .action-grid button:last-child {
+  grid-column: 1 / -1;
 }
 
 .texture-editor-modal.open {

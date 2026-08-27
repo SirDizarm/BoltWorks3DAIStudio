@@ -499,6 +499,10 @@ scene.add(lineSketchCursor);
 const markerGroup = new THREE.Group();
 markerGroup.name = "marker helpers";
 scene.add(markerGroup);
+const modelTileNeighbourPreviewGroup = new THREE.Group();
+modelTileNeighbourPreviewGroup.name = "model tile neighbour preview";
+modelTileNeighbourPreviewGroup.visible = false;
+scene.add(modelTileNeighbourPreviewGroup);
 const markerHelpers = [];
 const cameraDirectorGroup = new THREE.Group();
 cameraDirectorGroup.name = "camera director helpers";
@@ -902,6 +906,12 @@ const els = {
   modelTileCameraTargetYInput: document.querySelector("#modelTileCameraTargetYInput"),
   modelTileCameraLockBtn: document.querySelector("#modelTileCameraLockBtn"),
   modelTileViewSetSelect: document.querySelector("#modelTileViewSetSelect"),
+  modelTileNeighbourPreviewInput: document.querySelector("#modelTileNeighbourPreviewInput"),
+  modelTileTextureRepeatUInput: document.querySelector("#modelTileTextureRepeatUInput"),
+  modelTileTextureRepeatVInput: document.querySelector("#modelTileTextureRepeatVInput"),
+  modelTileTextureEdgeTrimInput: document.querySelector("#modelTileTextureEdgeTrimInput"),
+  modelTileTextureRepeatBtn: document.querySelector("#modelTileTextureRepeatBtn"),
+  modelTileTextureResetBtn: document.querySelector("#modelTileTextureResetBtn"),
   modelTileStatus: document.querySelector("#modelTileStatus"),
   edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
   edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),
