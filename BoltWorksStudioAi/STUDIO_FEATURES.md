@@ -43,10 +43,15 @@ origin at the configured target height, so a floor and its props retain the
 same assembly pivot in every Unity-facing view.
 
 - **NE / SE / SW / NW Isometric** outputs four diagonal orthographic views.
+  Flat ground tiles are held screen-stable while taller props rotate through the
+  four views, so the ground remains below the prop instead of appearing to
+  swing upward or sideways across the sheet.
 - **N / E / S / W Straight Walls** outputs the separate cardinal wall-facing
   set.
 - Every cell uses one shared scale, so an orientation with a wider silhouette
   is not enlarged relative to the other three cells.
+- Tile-sheet renders temporarily remove material specular and environment
+  reflections, preventing a moving sun-glare spot from appearing on the ground.
 - The exporter frames the complete selected assembly and uses a transparent
   background.
 

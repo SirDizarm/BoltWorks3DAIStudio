@@ -16745,6 +16745,15 @@ function resetModelTileContinuousTexture() {
   if (els.modelTileStatus) els.modelTileStatus.textContent = "Reset continuous texture settings for " + targets.length + " tile part" + (targets.length === 1 ? "" : "s") + ".";
 }
 
+function modelTileGroundTargets(targets) {
+  return targets.filter(target => {
+    const bounds = new THREE.Box3().setFromObject(target);
+    const size = bounds.getSize(new THREE.Vector3());
+    const shortestFloorSide = Math.min(size.x, size.z);
+    return shortestFloorSide > .05 && size.y <= Math.max(.05, shortestFloorSide * .15);
+  });
+}
+
 async function exportModelTileKit() {
   const exportTargets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [];
   const { mesh: singleMesh, material, image } = modelTileMaterialImage();
@@ -16768,11 +16777,37 @@ async function exportModelTileKit() {
   const manifest = { kind: "death-and-dues-tile", version: 1, asset: mesh.name || "Tile", dimensionsMeters: { width, depth, wallHeight: height }, ground: { texture: `${safeName}-ground.png`, material: material?.name || "default" }, wall: { texture: `${safeName}-wall.png`, facing, compassOrder: ["N", "E", "S", "W"], rotateYDegrees: { N: 0, E: 90, S: 180, W: 270 } }, textureSheet: { file: `${safeName}-wall-4x.png`, columns: 4, order: cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"], renderMode: cameraProfile.wallSafeCardinalViews ? "wall-normal-aligned-orthographic" : "isometric-diagonal-orthographic" }, camera: { projection: "orthographic", coordinateSystem: "Unity-Y-up", ...cameraProfile, lockToEditorOrigin: true }, unity: { prefabRoot: "DeathAndDues/Tiles", rotateWallAtPlacement: true } };
   download(`${safeName}.deathanddues.tile.json`, JSON.stringify(manifest, null, 2), "application/json");
   const exportTargetsForRender = exportTargets.length ? exportTargets : [...objects];
+  const groundTargetsForRender = cameraProfile.wallSafeCardinalViews ? [] : modelTileGroundTargets(exportTargetsForRender);
+  const groundTransformSnapshots = groundTargetsForRender.map(target => ({
+    target,
+    position: target.position.clone(),
+    quaternion: target.quaternion.clone()
+  }));
   const exportTargetIds = new Set(exportTargetsForRender.map(target => target.userData.id));
   const visibility = objects.map(target => ({ target, visible: target.visible }));
   const neighbourPreviewWasVisible = modelTileNeighbourPreviewGroup.visible;
   modelTileNeighbourPreviewGroup.visible = false;
   objects.forEach(target => { target.visible = exportTargetIds.has(target.userData.id); });
+  const materialSnapshots = new Map();
+  for (const target of exportTargetsForRender) {
+    target.traverse(part => {
+      if (!part.isMesh) return;
+      for (const material of (Array.isArray(part.material) ? part.material : [part.material])) {
+        if (!material || materialSnapshots.has(material)) continue;
+        materialSnapshots.set(material, {
+          roughness: material.roughness,
+          metalness: material.metalness,
+          envMapIntensity: material.envMapIntensity,
+          specularIntensity: material.specularIntensity
+        });
+        if ("roughness" in material) material.roughness = 1;
+        if ("metalness" in material) material.metalness = 0;
+        if ("envMapIntensity" in material) material.envMapIntensity = 0;
+        if ("specularIntensity" in material) material.specularIntensity = 0;
+        material.needsUpdate = true;
+      }
+    });
+  }
   const bounds = new THREE.Box3();
   exportTargetsForRender.forEach(target => bounds.expandByObject(target));
   // Tile directions must orbit the same fixed point the editor and Unity use,
@@ -16793,6 +16828,14 @@ async function exportModelTileKit() {
   const viewNames = cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"];
   const renderedCells = [];
   for (let i = 0; i < 4; i++) {
+    const groundRotation = i * Math.PI / 2;
+    const groundRotationMatrix = new THREE.Matrix4().makeRotationY(groundRotation);
+    const groundRotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), groundRotation);
+    for (const snapshot of groundTransformSnapshots) {
+      snapshot.target.position.copy(snapshot.position).sub(center).applyMatrix4(groundRotationMatrix).add(center);
+      snapshot.target.quaternion.copy(groundRotationQuaternion).multiply(snapshot.quaternion);
+      snapshot.target.updateMatrixWorld(true);
+    }
     const azimuth = (cameraProfile.wallSafeCardinalViews ? 0 : baseAzimuth) + i * Math.PI / 2;
     const direction = new THREE.Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
     const shot = captureView(`tile-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds: framingBounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
@@ -16816,6 +16859,18 @@ async function exportModelTileKit() {
     ctx.drawImage(source, minX, minY, cropWidth, cropHeight, index * size + (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
   });
   visibility.forEach(entry => { entry.target.visible = entry.visible; });
+  for (const snapshot of groundTransformSnapshots) {
+    snapshot.target.position.copy(snapshot.position);
+    snapshot.target.quaternion.copy(snapshot.quaternion);
+    snapshot.target.updateMatrixWorld(true);
+  }
+  for (const [material, snapshot] of materialSnapshots) {
+    if ("roughness" in material) material.roughness = snapshot.roughness;
+    if ("metalness" in material) material.metalness = snapshot.metalness;
+    if ("envMapIntensity" in material) material.envMapIntensity = snapshot.envMapIntensity;
+    if ("specularIntensity" in material) material.specularIntensity = snapshot.specularIntensity;
+    material.needsUpdate = true;
+  }
   modelTileNeighbourPreviewGroup.visible = neighbourPreviewWasVisible;
   downloadDataUrl(`${safeName}-wall-4x.png`, sheet.toDataURL("image/png"));
   if (els.modelTileStatus) els.modelTileStatus.textContent = `Exported ${manifest.asset}: transparent, tightly framed ${viewNames.join("/")} model renders.`;
