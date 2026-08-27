@@ -38,15 +38,13 @@ be rendered to 2D sprites or used as tile assemblies in Unity.
 
 **Export Tile + 4x Sheet** saves a tile manifest and a transparent four-cell
 PNG. It supports selected individual meshes, groups, or multiple checked parts.
-Only the export targets are rendered. All four cameras orbit the fixed editor
-origin at the configured target height, so a floor and its props retain the
-same assembly pivot in every Unity-facing view.
+Only the export targets are rendered. The export camera stays fixed while the
+complete selected assembly turns around the fixed editor origin, so a floor and
+its props always share the same pivot in every Unity-facing view.
 
 - **NE / SE / SW / NW Isometric** outputs four diagonal orthographic views.
-  Only a large, flat tile at the assembly's lowest level is held screen-stable;
-  every prop part, including flat anvil plates, rotates through the four views.
-  This keeps the ground below the prop without freezing or mis-rotating model
-  pieces.
+  Each turn rotates the whole selected assembly—not only the floor—so props
+  such as anvils remain correctly aligned with the tile below them.
 - **N / E / S / W Straight Walls** outputs the separate cardinal wall-facing
   set.
 - Every cell uses one shared scale, so an orientation with a wider silhouette

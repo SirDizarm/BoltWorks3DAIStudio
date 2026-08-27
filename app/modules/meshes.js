@@ -16745,20 +16745,6 @@ function resetModelTileContinuousTexture() {
   if (els.modelTileStatus) els.modelTileStatus.textContent = "Reset continuous texture settings for " + targets.length + " tile part" + (targets.length === 1 ? "" : "s") + ".";
 }
 
-function modelTileGroundTargets(targets, assemblyBounds) {
-  const assemblySize = assemblyBounds.getSize(new THREE.Vector3());
-  const groundLevel = assemblyBounds.min.y + Math.max(.02, assemblySize.y * .03);
-  const minimumFootprint = Math.max(.1, Math.min(assemblySize.x, assemblySize.z) * .35);
-  return targets.filter(target => {
-    const bounds = new THREE.Box3().setFromObject(target);
-    const size = bounds.getSize(new THREE.Vector3());
-    const shortestFloorSide = Math.min(size.x, size.z);
-    return bounds.min.y <= groundLevel
-      && shortestFloorSide >= minimumFootprint
-      && size.y <= Math.max(.05, shortestFloorSide * .15);
-  });
-}
-
 async function exportModelTileKit() {
   const exportTargets = resolveSelectionTargets("meshes").length ? resolveSelectionTargets("meshes") : [];
   const { mesh: singleMesh, material, image } = modelTileMaterialImage();
@@ -16817,17 +16803,14 @@ async function exportModelTileKit() {
     new THREE.Vector3(width, .001, depth)
   );
   const frameBounds = bounds.clone().union(frameFootprint);
-  const groundTargetsForRender = cameraProfile.wallSafeCardinalViews
-    ? []
-    : modelTileGroundTargets(exportTargetsForRender, bounds);
-  const groundTransformSnapshots = groundTargetsForRender.map(target => ({
+  const exportTransformSnapshots = exportTargetsForRender.map(target => ({
     target,
     position: target.position.clone(),
     quaternion: target.quaternion.clone()
   }));
-  // Tile directions must orbit the same fixed point the editor and Unity use,
-  // not the changing centre of a floor/prop assembly. This keeps a prop's
-  // placement stable while each sprite view rotates around the editor origin.
+  // Keep the camera fixed and rotate the whole selected assembly around the
+  // editor origin. This matches the four base floor/wall sheets used in-game,
+  // so props and their tile rotate together instead of independently.
   const center = new THREE.Vector3(0, cameraProfile.targetY, 0);
   const assemblyCenter = frameBounds.getCenter(new THREE.Vector3());
   const assemblyHalfSize = frameBounds.getSize(new THREE.Vector3()).multiplyScalar(.5);
@@ -16869,7 +16852,7 @@ async function exportModelTileKit() {
     const groundRotation = i * Math.PI / 2;
     const groundRotationMatrix = new THREE.Matrix4().makeRotationY(groundRotation);
     const groundRotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), groundRotation);
-    for (const snapshot of groundTransformSnapshots) {
+    for (const snapshot of exportTransformSnapshots) {
       snapshot.target.position.copy(snapshot.position).sub(center).applyMatrix4(groundRotationMatrix).add(center);
       snapshot.target.quaternion.copy(groundRotationQuaternion).multiply(snapshot.quaternion);
       snapshot.target.updateMatrixWorld(true);
@@ -16877,7 +16860,7 @@ async function exportModelTileKit() {
     frameGuide.position.copy(frameGuidePosition).sub(center).applyMatrix4(groundRotationMatrix).add(center);
     frameGuide.quaternion.copy(groundRotationQuaternion).multiply(frameGuideQuaternion);
     frameGuide.updateMatrixWorld(true);
-    const azimuth = (cameraProfile.wallSafeCardinalViews ? 0 : baseAzimuth) + i * Math.PI / 2;
+    const azimuth = cameraProfile.wallSafeCardinalViews ? 0 : baseAzimuth;
     const direction = new THREE.Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
     // The invisible guide is captured once only to establish the canonical
     // tile crop. It is hidden before the real render, so it is never exported.
@@ -16901,7 +16884,7 @@ async function exportModelTileKit() {
     ctx.drawImage(source, minX, minY, cropWidth, cropHeight, index * size + (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
   });
   visibility.forEach(entry => { entry.target.visible = entry.visible; });
-  for (const snapshot of groundTransformSnapshots) {
+  for (const snapshot of exportTransformSnapshots) {
     snapshot.target.position.copy(snapshot.position);
     snapshot.target.quaternion.copy(snapshot.quaternion);
     snapshot.target.updateMatrixWorld(true);
