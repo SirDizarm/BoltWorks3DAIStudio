@@ -38,7 +38,7 @@ for (const directory of ["assets", "styles", "panels", "selection", "meshes"]) {
 }
 await copyFile(join(root, "CNAME"), join(output, "CNAME"));
 
-await buildStudioBundle({ outfile: join(output, "app", "studio-v49.57.4.js") });
+await buildStudioBundle({ outfile: join(output, "app", "studio-v49.57.5.js") });
 
 const threeSource = join(root, "node_modules", "three");
 const threeOutput = join(output, "node_modules", "three");

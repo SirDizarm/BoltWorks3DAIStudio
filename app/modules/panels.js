@@ -905,6 +905,10 @@ els.saveProjectBtn.addEventListener("click", () => {
   });
 });
 els.loadProjectBtn.addEventListener("click", () => els.importProjectFile.click());
+els.insertObjBtn?.addEventListener("click", () => {
+  els.insertObjFile.value = "";
+  els.insertObjFile.click();
+});
 els.loadProjectUrlBtn?.addEventListener("click", async () => {
   const rawUrl = window.prompt(
     "Paste an HTTPS URL to a BoltWorks .modelerproj or saved scene JSON file. Localhost HTTP is also allowed:"
@@ -1337,6 +1341,16 @@ els.importObjFile.addEventListener("change", async event => {
     await importObjFiles(files);
   } catch (error) {
     log(`OBJ import failed: ${error.message}`);
+  }
+  event.target.value = "";
+});
+els.insertObjFile?.addEventListener("change", async event => {
+  const files = [...(event.target.files || [])].filter(file => /\.obj$/i.test(file.name));
+  if (!files.length) return;
+  try {
+    await insertObjFiles(files);
+  } catch (error) {
+    log(`OBJ insert failed: ${error.message}`);
   }
   event.target.value = "";
 });

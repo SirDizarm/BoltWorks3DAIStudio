@@ -140,6 +140,9 @@ The screenshot view contract is Front from `+Z`, Back from `-Z`, Left from
 
 - Save Project and Load Project preserve the editable `.modelerproj` scene,
   editor state, lighting, textures, groups, and rig data.
+- **Insert OBJ** adds an OBJ as editable parts in the current workspace without
+  clearing the models already there. The inserted model is selected and framed
+  so it can immediately be moved into place.
 - Import supports scene JSON, OBJ, OBJ folders with optional MTL/textures, DAE,
   and Blockbench `.bbmodel` files.
 - Export supports scene JSON, OBJ, selected OBJ, Roblox packs, DAE, Bolt 2D,

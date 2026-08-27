@@ -3964,6 +3964,18 @@ function importSpecsAsScene(specs, fileName, sourceLabel, { preserveScale = fals
   log(`Imported ${sourceLabel} ${fileName} as ${normalized.length} editable mesh part${normalized.length === 1 ? "" : "s"}${preserveScale ? " at Roblox stud scale" : ""}.`);
 }
 
+function insertSpecsIntoScene(specs, fileName, sourceLabel, { preserveScale = false } = {}) {
+  if (!specs.length) {
+    log(`No meshes found in ${fileName}.`);
+    return;
+  }
+  const normalized = normalizeImportedSpecs(specs, { fitToWorkspace: !preserveScale });
+  const inserted = normalized.map(spec => addObject(spec, { record: false }));
+  selectObject(inserted.at(-1) || null);
+  frameSelected();
+  log(`Inserted ${sourceLabel} ${fileName} as ${inserted.length} editable mesh part${inserted.length === 1 ? "" : "s"}; existing workspace parts were kept${preserveScale ? " at Roblox stud scale" : ""}.`);
+}
+
 function importObjText(text, fileName) {
   recordHistory("import obj");
   const parsed = new OBJLoader().parse(text);
@@ -4011,6 +4023,15 @@ async function importObjFiles(fileList) {
   recordHistory("import obj");
   const parsed = loader.parse(objText);
   importSpecsAsScene(specsFromObject3D(parsed, objFile.name), objFile.name, mtlFile ? "OBJ + MTL" : "OBJ", { preserveScale: true });
+}
+
+async function insertObjFiles(fileList) {
+  const files = [...fileList];
+  const objFile = files.find(file => /\.obj$/i.test(file.name));
+  if (!objFile) throw new Error("Select an .obj file to insert into the current workspace.");
+  recordHistory("insert obj");
+  const parsed = new OBJLoader().parse(await objFile.text());
+  insertSpecsIntoScene(specsFromObject3D(parsed, objFile.name), objFile.name, "OBJ", { preserveScale: true });
 }
 
 function importDaeText(text, fileName) {
