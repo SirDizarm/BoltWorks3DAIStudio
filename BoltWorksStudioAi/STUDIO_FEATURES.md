@@ -144,6 +144,8 @@ The screenshot view contract is Front from `+Z`, Back from `-Z`, Left from
   clearing the models already there. Select its OBJ, MTL, and texture images
   together to bring in its available colours and textures; the inserted model
   is then selected and framed so it can immediately be moved into place.
+- **Open OBJ (Replace Scene)** intentionally clears the current workspace before
+  opening the selected OBJ bundle. Use it only when starting a new scene.
 - Import supports scene JSON, OBJ, OBJ folders with optional MTL/textures, DAE,
   and Blockbench `.bbmodel` files.
 - **Export OBJ + MTL** creates a ZIP containing the OBJ, matching MTL material

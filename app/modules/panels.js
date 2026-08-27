@@ -1340,8 +1340,8 @@ els.importObjFile.addEventListener("change", async event => {
   event.target.value = "";
 });
 els.insertObjFile?.addEventListener("change", async event => {
-  const files = [...(event.target.files || [])].filter(file => /\.obj$/i.test(file.name));
-  if (!files.length) return;
+  const files = [...(event.target.files || [])];
+  if (!files.some(file => /\.obj$/i.test(file.name))) return;
   try {
     await insertObjFiles(files);
   } catch (error) {
