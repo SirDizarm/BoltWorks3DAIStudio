@@ -51,6 +51,10 @@ same assembly pivot in every Unity-facing view.
   set.
 - Every cell uses one shared scale, so an orientation with a wider silhouette
   is not enlarged relative to the other three cells.
+- The configured tile width and depth remain an invisible export frame when a
+  floor or wall is removed. A prop-only export therefore stays at the same
+  size and cell placement as the project's standard floor or wall template,
+  instead of zooming in to fill the sprite.
 - Tile-sheet renders temporarily remove material specular and environment
   reflections, preventing a moving sun-glare spot from appearing on the ground.
 - The exporter frames the complete selected assembly and uses a transparent
