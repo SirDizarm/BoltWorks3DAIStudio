@@ -16806,7 +16806,13 @@ async function exportModelTileKit() {
   // Rotate only export roots. Imported OBJ parts can be nested beneath an
   // object group; moving both a group and one of its descendants would apply
   // the turn twice and make the apparent pivot drift.
-  const exportRotationTargets = exportTargetsForRender.filter(target => !exportTargetsForRender.some(parent => parent !== target && parent.isAncestorOf(target)));
+  const hasExportAncestor = (target) => {
+    for (let parent = target.parent; parent; parent = parent.parent) {
+      if (exportTargetsForRender.includes(parent)) return true;
+    }
+    return false;
+  };
+  const exportRotationTargets = exportTargetsForRender.filter(target => !hasExportAncestor(target));
   const exportTransformSnapshots = exportRotationTargets.map(target => {
     target.updateWorldMatrix(true, false);
     return {
