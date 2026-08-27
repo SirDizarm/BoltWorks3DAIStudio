@@ -141,11 +141,16 @@ The screenshot view contract is Front from `+Z`, Back from `-Z`, Left from
 - Save Project and Load Project preserve the editable `.modelerproj` scene,
   editor state, lighting, textures, groups, and rig data.
 - **Insert OBJ** adds an OBJ as editable parts in the current workspace without
-  clearing the models already there. The inserted model is selected and framed
-  so it can immediately be moved into place.
+  clearing the models already there. Select its OBJ, MTL, and texture images
+  together to bring in its available colours and textures; the inserted model
+  is then selected and framed so it can immediately be moved into place.
 - Import supports scene JSON, OBJ, OBJ folders with optional MTL/textures, DAE,
   and Blockbench `.bbmodel` files.
-- Export supports scene JSON, OBJ, selected OBJ, Roblox packs, DAE, Bolt 2D,
+- **Export OBJ + MTL** creates a ZIP containing the OBJ, matching MTL material
+  file, and available texture images. Extract it before importing elsewhere so
+  plain colours and texture assignments remain intact. The selected-model OBJ
+  export uses the same material bundle format.
+- Export supports scene JSON, Roblox packs, DAE, Bolt 2D,
   and the Model Tile Kit sheet/manifest workflow.
 - Game Optimize Copy creates a separate game-focused project by merging
   materials and simplifying dense geometry while keeping the original project.

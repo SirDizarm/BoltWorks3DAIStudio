@@ -930,22 +930,17 @@ els.loadProjectUrlBtn?.addEventListener("click", async () => {
 els.stopServerBtn?.addEventListener("click", shutdownServerAndCloseApp);
 document.querySelector("#exportJsonBtn").addEventListener("click", () => download(`${currentProjectBaseName()}-scene.json`, JSON.stringify(state(), null, 2), "application/json"));
 document.querySelector("#exportObjBtn").addEventListener("click", () => {
-  const group = new THREE.Group();
-  objects.forEach(mesh => group.add(mesh.clone()));
-  download(`${currentProjectBaseName()}.obj`, new OBJExporter().parse(group), "text/plain");
+  exportObjMaterialBundle(objects, currentProjectBaseName());
 });
 document.querySelector("#exportSelectedObjBtn")?.addEventListener("click", () => {
   if (!selected?.geometry) {
     log("Export Selected OBJ needs one selected model or LOD level.");
     return;
   }
-  const exportMesh = selected.clone();
-  exportMesh.visible = true;
-  exportMesh.updateMatrixWorld(true);
   const fileName = `${currentProjectBaseName()}-${safeFileName(selected.name, "selected-model")}.obj`;
-  download(fileName, new OBJExporter().parse(exportMesh), "text/plain");
-  log(`Exported selected model ${selected.name} as a separate OBJ.`, {
-    fileName,
+  const archiveName = exportObjMaterialBundle([selected], fileName.replace(/\.obj$/i, ""));
+  log(`Exported selected model ${selected.name} as an OBJ + MTL material bundle.`, {
+    archiveName,
     lodLevel: Number.isInteger(selected.userData?.lod?.level) ? selected.userData.lod.level : null,
     triangles: Math.floor((selected.geometry.index?.count || selected.geometry.getAttribute("position")?.count || 0) / 3)
   });
@@ -1335,8 +1330,8 @@ els.importFile.addEventListener("change", async event => {
   event.target.value = "";
 });
 els.importObjFile.addEventListener("change", async event => {
-  const files = [...(event.target.files || [])].filter(file => /\.obj$/i.test(file.name));
-  if (!files.length) return;
+  const files = [...(event.target.files || [])];
+  if (!files.some(file => /\.obj$/i.test(file.name))) return;
   try {
     await importObjFiles(files);
   } catch (error) {

@@ -3658,6 +3658,62 @@ function downloadDataUrl(name, dataUrl) {
   a.click();
 }
 
+function objMaterialColor(material) {
+  const color = new THREE.Color(material?.color || "#ffffff").convertLinearToSRGB();
+  return [round(color.r), round(color.g), round(color.b)];
+}
+
+function exportObjMaterialBundle(targets, exportName) {
+  const exportTargets = [...targets].filter(mesh => mesh?.isMesh && mesh.geometry);
+  if (!exportTargets.length) {
+    log("No mesh parts to export.");
+    return null;
+  }
+  const baseName = safeFileName(exportName, "model").replace(/\.obj$/i, "");
+  const objName = `${baseName}.obj`;
+  const mtlName = `${baseName}.mtl`;
+  const group = new THREE.Group();
+  const materialLines = [];
+  const textureEntries = [];
+  const textureNames = new Set();
+
+  exportTargets.forEach((mesh, index) => {
+    const clone = mesh.clone();
+    const sourceMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+    const material = sourceMaterial?.clone?.() || new THREE.MeshStandardMaterial({ color: "#ffffff" });
+    const materialName = `material_${index + 1}_${idSafe(mesh.name || "part")}`;
+    material.name = materialName;
+    clone.material = material;
+    clone.visible = true;
+    const textureUrl = mesh.userData.textureUrl || null;
+    let texturePath = null;
+    if (/^data:/i.test(textureUrl || "")) {
+      const extension = imageExtensionFromDataUrl(textureUrl, mesh.userData.textureName || "texture.png");
+      const preferredName = fileSafe(mesh.userData.textureName || `${mesh.name || "texture"}${extension}`);
+      const fileName = uniqueTextureFileName(preferredName, { has: name => textureNames.has(name), add: name => textureNames.add(name) });
+      const bytes = dataUrlToBytes(textureUrl);
+      if (bytes) {
+        textureNames.add(fileName);
+        texturePath = `textures/${fileName}`;
+        textureEntries.push({ name: texturePath, data: bytes });
+      }
+    }
+    const color = objMaterialColor(material);
+    materialLines.push(`newmtl ${materialName}\nKd ${color.join(" ")}\nd ${round(material.opacity ?? 1)}\nTr ${round(1 - (material.opacity ?? 1))}${texturePath ? `\nmap_Kd ${texturePath}` : ""}\n`);
+    group.add(clone);
+  });
+  group.updateMatrixWorld(true);
+  const objText = `mtllib ${mtlName}\n${new OBJExporter().parse(group)}`;
+  const archiveName = `${baseName}-obj-materials.zip`;
+  downloadBlob(archiveName, makeZip([
+    { name: objName, data: objText },
+    { name: mtlName, data: materialLines.join("\n") },
+    ...textureEntries
+  ]));
+  log(`Exported ${exportTargets.length} OBJ part${exportTargets.length === 1 ? "" : "s"} with ${materialLines.length} MTL material${materialLines.length === 1 ? "" : "s"} and ${textureEntries.length} texture image${textureEntries.length === 1 ? "" : "s"} in ${archiveName}. Extract the ZIP and keep the OBJ, MTL, and textures folder together.`, archiveName);
+  return archiveName;
+}
+
 function xmlSafe(value) {
   return String(value).replace(/[&<>"']/g, char => ({
     "&": "&amp;",
@@ -4029,9 +4085,30 @@ async function insertObjFiles(fileList) {
   const files = [...fileList];
   const objFile = files.find(file => /\.obj$/i.test(file.name));
   if (!objFile) throw new Error("Select an .obj file to insert into the current workspace.");
+  const mtlFile = files.find(file => /\.mtl$/i.test(file.name));
+  const assetUrls = new Map();
+  for (const file of files) {
+    if (!/\.(obj|mtl)$/i.test(file.name)) {
+      const dataUrl = await readFileAsDataUrl(file);
+      assetUrls.set(file.name, dataUrl);
+      if (isImageFileName(file.name)) registerTextureAsset(file.name, dataUrl);
+    }
+  }
+  refreshTextureLibraryUi();
   recordHistory("insert obj");
-  const parsed = new OBJLoader().parse(await objFile.text());
-  insertSpecsIntoScene(specsFromObject3D(parsed, objFile.name), objFile.name, "OBJ", { preserveScale: true });
+  const loader = new OBJLoader();
+  if (mtlFile) {
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier(url => {
+      const clean = decodeURIComponent(url).split(/[\\/]/).pop();
+      return assetUrls.get(clean) || assetUrls.get(url) || url;
+    });
+    const materials = new MTLLoader(manager).parse(await mtlFile.text(), "");
+    materials.preload();
+    loader.setMaterials(materials);
+  }
+  const parsed = loader.parse(await objFile.text());
+  insertSpecsIntoScene(specsFromObject3D(parsed, objFile.name), objFile.name, mtlFile ? "OBJ + MTL" : "OBJ", { preserveScale: true });
 }
 
 function importDaeText(text, fileName) {
