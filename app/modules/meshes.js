@@ -16803,11 +16803,33 @@ async function exportModelTileKit() {
     new THREE.Vector3(width, .001, depth)
   );
   const frameBounds = bounds.clone().union(frameFootprint);
-  const exportTransformSnapshots = exportTargetsForRender.map(target => ({
-    target,
-    position: target.position.clone(),
-    quaternion: target.quaternion.clone()
-  }));
+  // Rotate only export roots. Imported OBJ parts can be nested beneath an
+  // object group; moving both a group and one of its descendants would apply
+  // the turn twice and make the apparent pivot drift.
+  const exportRotationTargets = exportTargetsForRender.filter(target => !exportTargetsForRender.some(parent => parent !== target && parent.isAncestorOf(target)));
+  const exportTransformSnapshots = exportRotationTargets.map(target => {
+    target.updateWorldMatrix(true, false);
+    return {
+      target,
+      position: target.position.clone(),
+      quaternion: target.quaternion.clone(),
+      worldPosition: target.getWorldPosition(new THREE.Vector3()),
+      worldQuaternion: target.getWorldQuaternion(new THREE.Quaternion())
+    };
+  });
+  function setWorldTransform(target, worldPosition, worldQuaternion) {
+    if (!target.parent) {
+      target.position.copy(worldPosition);
+      target.quaternion.copy(worldQuaternion);
+    } else {
+      target.parent.updateWorldMatrix(true, false);
+      target.position.copy(worldPosition);
+      target.parent.worldToLocal(target.position);
+      const parentQuaternion = target.parent.getWorldQuaternion(new THREE.Quaternion());
+      target.quaternion.copy(parentQuaternion.invert().multiply(worldQuaternion));
+    }
+    target.updateMatrixWorld(true);
+  }
   // Keep the camera fixed and rotate the whole selected assembly around the
   // editor origin. This matches the four base floor/wall sheets used in-game,
   // so props and their tile rotate together instead of independently.
@@ -16853,9 +16875,9 @@ async function exportModelTileKit() {
     const groundRotationMatrix = new THREE.Matrix4().makeRotationY(groundRotation);
     const groundRotationQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), groundRotation);
     for (const snapshot of exportTransformSnapshots) {
-      snapshot.target.position.copy(snapshot.position).sub(center).applyMatrix4(groundRotationMatrix).add(center);
-      snapshot.target.quaternion.copy(groundRotationQuaternion).multiply(snapshot.quaternion);
-      snapshot.target.updateMatrixWorld(true);
+      const rotatedPosition = snapshot.worldPosition.clone().sub(center).applyMatrix4(groundRotationMatrix).add(center);
+      const rotatedQuaternion = groundRotationQuaternion.clone().multiply(snapshot.worldQuaternion);
+      setWorldTransform(snapshot.target, rotatedPosition, rotatedQuaternion);
     }
     frameGuide.position.copy(frameGuidePosition).sub(center).applyMatrix4(groundRotationMatrix).add(center);
     frameGuide.quaternion.copy(groundRotationQuaternion).multiply(frameGuideQuaternion);
