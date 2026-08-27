@@ -694,11 +694,10 @@ els.addColorToSceneBtn?.addEventListener("click", () => {
 els.modelTileCenterBtn?.addEventListener("click", centerModelTileToEditor);
 els.modelTileCameraLockBtn?.addEventListener("click", toggleModelTileCameraLock);
 els.modelTileNeighbourPreviewInput?.addEventListener("change", event => setModelTileNeighbourPreview(event.target.checked));
-for (const input of [els.modelTileWidthInput, els.modelTileDepthInput]) {
-  input?.addEventListener("input", () => {
-    if (els.modelTileNeighbourPreviewInput?.checked) setModelTileNeighbourPreview(true, { silent: true });
-  });
-}
+els.modelTileNeighbourOpacityInput?.addEventListener("input", () => {
+  if (els.modelTileNeighbourPreviewInput?.checked) setModelTileNeighbourPreview(true, { silent: true });
+  else syncModelTileNeighbourOpacityUi();
+});
 els.modelTileTextureRepeatBtn?.addEventListener("click", applyModelTileContinuousTexture);
 els.modelTileTextureResetBtn?.addEventListener("click", resetModelTileContinuousTexture);
 for (const input of [els.modelTileCameraAzimuthInput, els.modelTileCameraElevationInput, els.modelTileCameraDistanceInput, els.modelTileCameraTargetYInput]) {

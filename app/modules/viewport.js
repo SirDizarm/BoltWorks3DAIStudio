@@ -907,6 +907,8 @@ const els = {
   modelTileCameraLockBtn: document.querySelector("#modelTileCameraLockBtn"),
   modelTileViewSetSelect: document.querySelector("#modelTileViewSetSelect"),
   modelTileNeighbourPreviewInput: document.querySelector("#modelTileNeighbourPreviewInput"),
+  modelTileNeighbourOpacityInput: document.querySelector("#modelTileNeighbourOpacityInput"),
+  modelTileNeighbourOpacityValue: document.querySelector("#modelTileNeighbourOpacityValue"),
   modelTileTextureRepeatUInput: document.querySelector("#modelTileTextureRepeatUInput"),
   modelTileTextureRepeatVInput: document.querySelector("#modelTileTextureRepeatVInput"),
   modelTileTextureEdgeTrimInput: document.querySelector("#modelTileTextureEdgeTrimInput"),

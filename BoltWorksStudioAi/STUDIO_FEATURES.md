@@ -14,9 +14,10 @@ be rendered to 2D sprites or used as tile assemblies in Unity.
 - **Center Model to Editor** moves the selected assembly as one unit so its
   combined bounds are centered on the editor origin. Relative placement is
   preserved.
-- **Show 3×3 Tile Neighbours** places eight translucent, temporary copies
-  around the selected tile using the configured width and depth. These copies
-  are neither saved nor included in the tile export.
+- **Show Tile Neighbours** uses the selected model's real bounds so copies meet
+  precisely at their edges: walls form a side-to-side row and floor tiles form
+  a 3×3 floor patch. A **Neighbour opacity** slider makes their textures easy
+  to inspect. These copies are neither saved nor included in the tile export.
 - **Apply Continuous Texture** repeats the selected texture in U and V and can
   trim a small percentage of each image edge to hide dark gutters. It does not
   alter the UV layout or source image; **Reset Tile Texture** restores the

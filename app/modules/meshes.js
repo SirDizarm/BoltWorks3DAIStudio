@@ -16512,8 +16512,20 @@ function modelTilePreviewTargets() {
   return resolveSelectionTargets("meshes");
 }
 
+function modelTileNeighbourOpacity() {
+  return Math.max(.05, Math.min(1, Number(els.modelTileNeighbourOpacityInput?.value) || .55));
+}
+
+function syncModelTileNeighbourOpacityUi() {
+  const opacity = modelTileNeighbourOpacity();
+  if (els.modelTileNeighbourOpacityInput) els.modelTileNeighbourOpacityInput.value = String(opacity);
+  if (els.modelTileNeighbourOpacityValue) els.modelTileNeighbourOpacityValue.textContent = Math.round(opacity * 100) + "%";
+  return opacity;
+}
+
 function setModelTileNeighbourPreview(enabled, { silent = false } = {}) {
   clearModelTileNeighbourPreview();
+  const previewOpacity = syncModelTileNeighbourOpacityUi();
   if (!enabled) {
     if (!silent && els.modelTileStatus) els.modelTileStatus.textContent = "Tile neighbour preview hidden.";
     return;
@@ -16524,18 +16536,34 @@ function setModelTileNeighbourPreview(enabled, { silent = false } = {}) {
     if (!silent && els.modelTileStatus) els.modelTileStatus.textContent = "Select a mesh, group, or multiple parts before showing tile neighbours.";
     return;
   }
-  const width = Math.max(.1, Number(els.modelTileWidthInput?.value) || 1);
-  const depth = Math.max(.1, Number(els.modelTileDepthInput?.value) || 1);
-  for (const x of [-1, 0, 1]) for (const z of [-1, 0, 1]) {
-    if (!x && !z) continue;
-    const offset = new THREE.Vector3(x * width, 0, z * depth);
+  const bounds = new THREE.Box3();
+  targets.forEach(target => bounds.expandByObject(target));
+  const size = bounds.getSize(new THREE.Vector3());
+  const wallPreview = size.y > Math.max(size.x, size.z) * 1.15;
+  const offsets = [];
+  if (wallPreview) {
+    const wallAxis = size.x >= size.z ? "x" : "z";
+    const wallSpan = Math.max(.001, size[wallAxis]);
+    for (const direction of [-2, -1, 1, 2]) {
+      const offset = new THREE.Vector3();
+      offset[wallAxis] = direction * wallSpan;
+      offsets.push(offset);
+    }
+  } else {
+    const width = Math.max(.001, size.x);
+    const depth = Math.max(.001, size.z);
+    for (const x of [-1, 0, 1]) for (const z of [-1, 0, 1]) {
+      if (x || z) offsets.push(new THREE.Vector3(x * width, 0, z * depth));
+    }
+  }
+  for (const offset of offsets) {
     for (const target of targets) {
       const clone = target.clone();
       const materials = Array.isArray(target.material) ? target.material : [target.material];
       clone.material = materials.map(material => {
         const previewMaterial = material.clone();
         previewMaterial.transparent = true;
-        previewMaterial.opacity = Math.min(.34, Math.max(.12, (material.opacity ?? 1) * .42));
+        previewMaterial.opacity = Math.min(1, Math.max(.03, (material.opacity ?? 1) * previewOpacity));
         previewMaterial.depthWrite = false;
         previewMaterial.needsUpdate = true;
         return previewMaterial;
@@ -16550,7 +16578,8 @@ function setModelTileNeighbourPreview(enabled, { silent = false } = {}) {
   }
   modelTileNeighbourPreviewGroup.visible = true;
   if (!silent && els.modelTileStatus) {
-    els.modelTileStatus.textContent = "Showing eight preview copies around " + targets.length + " selected tile part" + (targets.length === 1 ? "" : "s") + ". Preview copies are not exported or saved.";
+    const copyCount = offsets.length;
+    els.modelTileStatus.textContent = "Showing " + copyCount + " edge-connected " + (wallPreview ? "wall" : "floor/tile") + " preview" + (copyCount === 1 ? "" : "s") + " for " + targets.length + " selected tile part" + (targets.length === 1 ? "" : "s") + ". Preview copies are not exported or saved.";
   }
 }
 
