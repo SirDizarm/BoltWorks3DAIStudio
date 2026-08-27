@@ -16745,12 +16745,17 @@ function resetModelTileContinuousTexture() {
   if (els.modelTileStatus) els.modelTileStatus.textContent = "Reset continuous texture settings for " + targets.length + " tile part" + (targets.length === 1 ? "" : "s") + ".";
 }
 
-function modelTileGroundTargets(targets) {
+function modelTileGroundTargets(targets, assemblyBounds) {
+  const assemblySize = assemblyBounds.getSize(new THREE.Vector3());
+  const groundLevel = assemblyBounds.min.y + Math.max(.02, assemblySize.y * .03);
+  const minimumFootprint = Math.max(.1, Math.min(assemblySize.x, assemblySize.z) * .35);
   return targets.filter(target => {
     const bounds = new THREE.Box3().setFromObject(target);
     const size = bounds.getSize(new THREE.Vector3());
     const shortestFloorSide = Math.min(size.x, size.z);
-    return shortestFloorSide > .05 && size.y <= Math.max(.05, shortestFloorSide * .15);
+    return bounds.min.y <= groundLevel
+      && shortestFloorSide >= minimumFootprint
+      && size.y <= Math.max(.05, shortestFloorSide * .15);
   });
 }
 
@@ -16777,12 +16782,6 @@ async function exportModelTileKit() {
   const manifest = { kind: "death-and-dues-tile", version: 1, asset: mesh.name || "Tile", dimensionsMeters: { width, depth, wallHeight: height }, ground: { texture: `${safeName}-ground.png`, material: material?.name || "default" }, wall: { texture: `${safeName}-wall.png`, facing, compassOrder: ["N", "E", "S", "W"], rotateYDegrees: { N: 0, E: 90, S: 180, W: 270 } }, textureSheet: { file: `${safeName}-wall-4x.png`, columns: 4, order: cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"], renderMode: cameraProfile.wallSafeCardinalViews ? "wall-normal-aligned-orthographic" : "isometric-diagonal-orthographic" }, camera: { projection: "orthographic", coordinateSystem: "Unity-Y-up", ...cameraProfile, lockToEditorOrigin: true }, unity: { prefabRoot: "DeathAndDues/Tiles", rotateWallAtPlacement: true } };
   download(`${safeName}.deathanddues.tile.json`, JSON.stringify(manifest, null, 2), "application/json");
   const exportTargetsForRender = exportTargets.length ? exportTargets : [...objects];
-  const groundTargetsForRender = cameraProfile.wallSafeCardinalViews ? [] : modelTileGroundTargets(exportTargetsForRender);
-  const groundTransformSnapshots = groundTargetsForRender.map(target => ({
-    target,
-    position: target.position.clone(),
-    quaternion: target.quaternion.clone()
-  }));
   const exportTargetIds = new Set(exportTargetsForRender.map(target => target.userData.id));
   const visibility = objects.map(target => ({ target, visible: target.visible }));
   const neighbourPreviewWasVisible = modelTileNeighbourPreviewGroup.visible;
@@ -16810,6 +16809,14 @@ async function exportModelTileKit() {
   }
   const bounds = new THREE.Box3();
   exportTargetsForRender.forEach(target => bounds.expandByObject(target));
+  const groundTargetsForRender = cameraProfile.wallSafeCardinalViews
+    ? []
+    : modelTileGroundTargets(exportTargetsForRender, bounds);
+  const groundTransformSnapshots = groundTargetsForRender.map(target => ({
+    target,
+    position: target.position.clone(),
+    quaternion: target.quaternion.clone()
+  }));
   // Tile directions must orbit the same fixed point the editor and Unity use,
   // not the changing centre of a floor/prop assembly. This keeps a prop's
   // placement stable while each sprite view rotates around the editor origin.
