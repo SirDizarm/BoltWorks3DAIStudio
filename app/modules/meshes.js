@@ -16670,7 +16670,15 @@ async function exportModelTileKit() {
   objects.forEach(target => { target.visible = exportTargetIds.has(target.userData.id); });
   const bounds = new THREE.Box3();
   exportTargetsForRender.forEach(target => bounds.expandByObject(target));
-  const center = bounds.getCenter(new THREE.Vector3());
+  // Tile directions must orbit the same fixed point the editor and Unity use,
+  // not the changing centre of a floor/prop assembly. This keeps a prop's
+  // placement stable while each sprite view rotates around the editor origin.
+  const center = new THREE.Vector3(0, cameraProfile.targetY, 0);
+  const assemblyCenter = bounds.getCenter(new THREE.Vector3());
+  const assemblyHalfSize = bounds.getSize(new THREE.Vector3()).multiplyScalar(.5);
+  const pivotOffset = assemblyCenter.sub(center);
+  const pivotHalfSize = assemblyHalfSize.add(new THREE.Vector3(Math.abs(pivotOffset.x), Math.abs(pivotOffset.y), Math.abs(pivotOffset.z)));
+  const framingBounds = new THREE.Box3().setFromCenterAndSize(center, pivotHalfSize.multiplyScalar(2));
   const size = 512, sheet = document.createElement("canvas"); sheet.width = size * 4; sheet.height = size;
   const ctx = sheet.getContext("2d");
   ctx.clearRect(0, 0, sheet.width, sheet.height);
@@ -16682,7 +16690,7 @@ async function exportModelTileKit() {
   for (let i = 0; i < 4; i++) {
     const azimuth = (cameraProfile.wallSafeCardinalViews ? 0 : baseAzimuth) + i * Math.PI / 2;
     const direction = new THREE.Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
-    const shot = captureView(`tile-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
+    const shot = captureView(`tile-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds: framingBounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
     const imageElement = await new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = shot.dataUrl; });
     const source = document.createElement("canvas"); source.width = imageElement.width; source.height = imageElement.height;
     const sourceContext = source.getContext("2d"); sourceContext.drawImage(imageElement, 0, 0);
