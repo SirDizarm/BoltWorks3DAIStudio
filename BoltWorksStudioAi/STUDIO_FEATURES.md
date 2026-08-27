@@ -92,6 +92,11 @@ geometry. They work best on the smallest relevant selection.
   triangle regions and boundary openings.
 - Bevel, Edge Bevel, Corner Bevel, Loop/Ring Cut, Knife/Plane Cut, Subdivide,
   Edge Slide, and Scale Selected Surface refine form and edge treatment.
+- **Pull to Target** keeps the selected connected, flat source region, then
+  lets you click a receiving face. It uses the existing Pull extrusion to
+  extend the source along its normal and stops it just outside the receiving
+  face, so adjacent parts do not overlap. Click **Pick Target…** again or
+  press Escape to cancel before choosing the receiving face.
 - Normals, Non-manifold Check, Remove Doubles, Mesh Statistics, Weld Vertices,
   Dissolve Edge or Vertex, and Smooth/Relax Vertices diagnose and repair mesh
   quality.

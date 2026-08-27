@@ -4356,6 +4356,15 @@ function syncSurfaceEditorUi() {
       : "Select a Triangle or Whole Face to delete it without deleting the model";
   }
   const canEditSelectedUv = (surfaceComponentMode === "triangle" || surfaceComponentMode === "face") && selectedFaces.length > 0;
+  const pullToTargetArmed = !!pullToTargetSession;
+  if (els.pullToTargetBtn) {
+    els.pullToTargetBtn.classList.toggle("active", pullToTargetArmed);
+    els.pullToTargetBtn.disabled = !pullToTargetArmed && !canEditSelectedUv;
+    els.pullToTargetBtn.textContent = pullToTargetArmed ? "Pick Target…" : "Pull to Target";
+    els.pullToTargetBtn.title = pullToTargetArmed
+      ? "Click the face that the saved source region should pull toward. Click again or press Escape to cancel."
+      : "Select one flat source region, then click here and click the receiving face.";
+  }
   for (const button of [els.rotateSelectedUvLeftBtn, els.rotateSelectedUvRightBtn, els.flipSelectedUvUBtn, els.flipSelectedUvVBtn]) {
     if (button) button.disabled = !canEditSelectedUv;
   }
@@ -15034,6 +15043,92 @@ function pullSelectedFaces() {
     toolLabel: "Pull",
     actionLabel: "Pulled"
   });
+}
+
+function copyFaceSelection(faces) {
+  return faces.map(face => faceFromLocalTriangle(
+    face.mesh,
+    face.localTrianglePoints.map(point => point.clone()),
+    face.faceIndex,
+    face.localUvs?.map(uv => uv.clone()) || null
+  ));
+}
+
+function setPullToTargetSession(enabled) {
+  if (!enabled) {
+    pullToTargetSession = null;
+    syncSurfaceEditorUi();
+    return false;
+  }
+  if (!selectedFaces.length) {
+    log("Select one flat Triangle or Whole Face before using Pull to Target.");
+    setFacePickMode(true);
+    return false;
+  }
+  const sourceMeshes = [...new Set(selectedFaces.map(face => face.mesh).filter(Boolean))];
+  if (sourceMeshes.length !== 1 || !selectedFaceRegionIsConnected(selectedFaces) || !selectedFaceRegionIsPlanar(selectedFaces)) {
+    log("Pull to Target needs one connected, flat source region on one mesh.");
+    return false;
+  }
+  pullToTargetSession = { faces: copyFaceSelection(selectedFaces) };
+  setFacePickMode(true);
+  syncSurfaceEditorUi();
+  els.hudText.textContent = "Pull to Target: click the receiving face. The source will stop just outside it.";
+  log(`Pull to Target armed for ${selectedFaces.length} source triangle${selectedFaces.length === 1 ? "" : "s"}. Click the receiving face.`);
+  return true;
+}
+
+function togglePullToTargetSession() {
+  if (pullToTargetSession) {
+    setPullToTargetSession(false);
+    log("Pull to Target cancelled.");
+    return false;
+  }
+  return setPullToTargetSession(true);
+}
+
+function pullSelectedRegionToHit(hit) {
+  const session = pullToTargetSession;
+  if (!session?.faces?.length || !hit?.point || !hit?.face) return false;
+  const faces = session.faces;
+  const sourceMesh = faces[0].mesh;
+  const sourceSignatures = new Set(faces.map(face => triangleSignature(face.localTrianglePoints)));
+  const targetSignature = triangleSignature(triangleLocalPoints(hit));
+  if (hit.object === sourceMesh && sourceSignatures.has(targetSignature)) {
+    log("Choose a different receiving face for Pull to Target.");
+    return true;
+  }
+  const sourceCenter = faces
+    .reduce((sum, face) => sum.add(worldFacePoint(face)), new THREE.Vector3())
+    .multiplyScalar(1 / faces.length);
+  const sourceNormal = faces
+    .reduce((sum, face) => sum.add(worldFaceNormal(face)), new THREE.Vector3())
+    .normalize();
+  if (sourceNormal.lengthSq() < 1e-8) {
+    log("Pull to Target could not determine the source region normal.");
+    setPullToTargetSession(false);
+    return false;
+  }
+  const projectedDistance = hit.point.clone().sub(sourceCenter).dot(sourceNormal);
+  const clearance = Math.max(.001, Math.min(.01, faceEditDepth({ min: .001, max: 100 }) * .025));
+  if (Math.abs(projectedDistance) <= clearance) {
+    log("The receiving face is too close to pull toward. Choose a face farther along the source normal.");
+    return true;
+  }
+  const signedDistance = projectedDistance - Math.sign(projectedDistance) * clearance;
+  selectedFaces.length = 0;
+  selectedFaces.push(...faces);
+  selectedFace = selectedFaces.at(-1) || null;
+  pullToTargetSession = null;
+  const result = extrudeSelectedRegion({
+    distance: signedDistance,
+    historyLabel: "pull selected region to target",
+    toolLabel: "Pull to Target",
+    actionLabel: "Pulled to target"
+  });
+  syncSurfaceEditorUi();
+  if (result.length) log(`Pull to Target stopped ${round(clearance)} units before the receiving face.`, { target: hit.object.name });
+  return true;
 }
 
 function pushSelectedFaces() {

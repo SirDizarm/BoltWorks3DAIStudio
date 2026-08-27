@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.58.3.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.59.0.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1129,7 +1129,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.58.3.js?v=49.58.3"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.59.0.js?v=49.59.0"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
@@ -1165,7 +1165,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.58.3",
+  "tool-docking.js?v=49.59.0",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1238,6 +1238,7 @@ for (const required of [
   "applyLiveMirrorBtn",
   "softPullBtn",
   "softPushBtn",
+  "pullToTargetBtn",
   "resetZoomBtn",
   "Camera Views",
   "Reference Image",
@@ -1266,6 +1267,8 @@ for (const required of [
   "function toggleLiveMirror",
   "function applyLiveMirrorSelection",
   "function softMoveSelectedFaces",
+  "function setPullToTargetSession",
+  "function pullSelectedRegionToHit",
   "function softMoveFacesByDistance",
   "function setSurfaceEditorOpen",
   "function setSurfaceInteractionMode",
@@ -1506,6 +1509,7 @@ for (const required of [
   "pasteTriBtn",
   "extendFaceBtn",
   "pullFaceBtn",
+  "pullToTargetBtn",
   "pushFaceBtn",
   "markerGroup",
   "markerHelpers",
@@ -1589,6 +1593,7 @@ for (const required of [
   "mesh.userData.shape = \"custom\"",
   "mesh.userData.geometry = geometryToData(geometry)",
   "pullSelectedFaces",
+  "pullSelectedRegionToHit",
   "pushSelectedFaces",
   "historyLabel: \"pull selected region\"",
   "historyLabel: \"push selected region\"",
@@ -1894,8 +1899,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.58.3 Experimental") || !documentSource.includes("v49.58.3 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.58.3 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.59.0 Experimental") || !documentSource.includes("v49.59.0 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.59.0 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

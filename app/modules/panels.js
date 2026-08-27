@@ -589,6 +589,7 @@ document.querySelector("#extendFaceBtn").addEventListener("click", extendSelecte
 els.insetFaceBtn?.addEventListener("click", insetSelectedFace);
 els.extrudeRegionBtn?.addEventListener("click", extrudeSelectedRegion);
 document.querySelector("#pullFaceBtn").addEventListener("click", pullSelectedFaces);
+els.pullToTargetBtn?.addEventListener("click", togglePullToTargetSession);
 document.querySelector("#pushFaceBtn").addEventListener("click", pushSelectedFaces);
 els.softPullBtn?.addEventListener("click", () => softMoveSelectedFaces(1));
 els.softPushBtn?.addEventListener("click", () => softMoveSelectedFaces(-1));
@@ -1416,6 +1417,7 @@ function prioritizeUnselectedSurfaceTriangle(event) {
   if (event.type === "pointerdown" && overMeshTriangle && !canStartDragPushFromHit(hit)) {
     event.preventDefault();
     event.stopImmediatePropagation();
+    if (pullToTargetSession && pullSelectedRegionToHit(hit)) return;
     pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
   }
 }
@@ -1451,6 +1453,7 @@ canvas.addEventListener("pointerdown", event => {
     return;
   }
   const hit = hitFromPointerEvent(event);
+  if (pullToTargetSession && hit?.face && pullSelectedRegionToHit(hit)) return;
   if (dragPushMode && canStartDragPushFromHit(hit)) {
     beginDragPushSession(event);
     return;
@@ -1610,6 +1613,12 @@ window.addEventListener("keydown", event => {
   if (event.key === "Shift") isShiftHeld = true;
   if (event.key === "Control" || event.key === "Meta") isCtrlHeld = true;
   updateScaleModifierMarkers();
+  if (pullToTargetSession && event.key === "Escape") {
+    event.preventDefault();
+    setPullToTargetSession(false);
+    log("Pull to Target cancelled.");
+    return;
+  }
   if (knifeCutMode && event.key === "Escape") {
     event.preventDefault();
     if (knifeCutPoints.length) cancelKnifeCutStroke();

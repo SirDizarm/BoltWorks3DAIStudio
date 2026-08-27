@@ -99,7 +99,7 @@ function projectCapabilities() {
   return {
     shapes: Object.keys(shapeFactories),
     transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
-    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
+    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "pullToTarget", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
     textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary", "baseColorPaint", "roughnessPaint", "metalnessPaint", "emissivePaint"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
     sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],

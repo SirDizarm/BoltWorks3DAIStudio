@@ -360,6 +360,7 @@ let coplanarFacePickMode = false;
 let openingPickMode = false;
 let lineSketchMode = false;
 let dragPushMode = false;
+let pullToTargetSession = null;
 let lineSketchClosed = false;
 let lineSketchPlane = null;
 let lineSketchPlaneNormal = null;
@@ -783,6 +784,7 @@ const els = {
   pasteTriBtn: document.querySelector("#pasteTriBtn"),
   extendFaceBtn: document.querySelector("#extendFaceBtn"),
   pullFaceBtn: document.querySelector("#pullFaceBtn"),
+  pullToTargetBtn: document.querySelector("#pullToTargetBtn"),
   pushFaceBtn: document.querySelector("#pushFaceBtn"),
   surfaceEditorOpenBtn: document.querySelector("#surfaceEditorOpenBtn"),
   surfaceEditorWindow: document.querySelector("#surfaceEditorWindow"),
