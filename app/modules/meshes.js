@@ -4359,7 +4359,7 @@ function syncSurfaceEditorUi() {
   const pullToTargetArmed = !!pullToTargetSession;
   if (els.pullToTargetBtn) {
     els.pullToTargetBtn.classList.toggle("active", pullToTargetArmed);
-    els.pullToTargetBtn.disabled = !pullToTargetArmed && !canEditSelectedUv;
+    els.pullToTargetBtn.disabled = false;
     els.pullToTargetBtn.textContent = pullToTargetArmed ? "Pick Target…" : "Pull to Target";
     els.pullToTargetBtn.title = pullToTargetArmed
       ? "Click the face that the saved source region should pull toward. Click again or press Escape to cancel."
@@ -4434,6 +4434,10 @@ function setSurfaceInteractionMode(mode = "mouse") {
 }
 
 function toggleSurfaceMouseMode() {
+  if (pullToTargetSession) {
+    log("Pull to Target is waiting for its receiving face. Click Pick Target… again or press Escape to cancel it before using Mouse Drag.");
+    return false;
+  }
   if (surfaceInteractionMode() === "mouse") {
     if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "off";
     if (dragPushMode) setDragPushMode(false, { silent: true });
@@ -12937,7 +12941,7 @@ function extrudeSelectedRegion({
     return [];
   }
   const requestedDistance = Number(distance);
-  const signedDistance = Number.isFinite(requestedDistance) && Math.abs(requestedDistance) >= .001
+  const signedDistance = Number.isFinite(requestedDistance)
     ? Math.max(-100, Math.min(100, requestedDistance))
     : faceEditDepth({ min: .001, max: 100 });
   const buffers = removeSelectedFaceRegionFromMesh(mesh);
@@ -15071,9 +15075,10 @@ function setPullToTargetSession(enabled) {
     return false;
   }
   pullToTargetSession = { faces: copyFaceSelection(selectedFaces) };
+  if (dragPushMode) setDragPushMode(false, { silent: true });
   setFacePickMode(true);
   syncSurfaceEditorUi();
-  els.hudText.textContent = "Pull to Target: click the receiving face. The source will stop just outside it.";
+  els.hudText.textContent = "Pull to Target: click the receiving face. Mouse dragging is paused until you choose it or cancel.";
   log(`Pull to Target armed for ${selectedFaces.length} source triangle${selectedFaces.length === 1 ? "" : "s"}. Click the receiving face.`);
   return true;
 }
@@ -15109,13 +15114,18 @@ function pullSelectedRegionToHit(hit) {
     setPullToTargetSession(false);
     return false;
   }
-  const projectedDistance = hit.point.clone().sub(sourceCenter).dot(sourceNormal);
-  const clearance = Math.max(.001, Math.min(.01, faceEditDepth({ min: .001, max: 100 }) * .025));
-  if (Math.abs(projectedDistance) <= clearance) {
+  hit.object.updateWorldMatrix(true, false);
+  const targetNormal = hit.face.normal.clone().transformDirection(hit.object.matrixWorld).normalize();
+  const normalAlignment = sourceNormal.dot(targetNormal);
+  const targetDistance = Math.abs(normalAlignment) > 1e-5
+    ? hit.point.clone().sub(sourceCenter).dot(targetNormal) / normalAlignment
+    : hit.point.clone().sub(sourceCenter).dot(sourceNormal);
+  const outwardOffset = .0001;
+  if (Math.abs(targetDistance) <= outwardOffset) {
     log("The receiving face is too close to pull toward. Choose a face farther along the source normal.");
     return true;
   }
-  const signedDistance = projectedDistance - Math.sign(projectedDistance) * clearance;
+  const signedDistance = targetDistance + Math.sign(targetDistance) * outwardOffset;
   selectedFaces.length = 0;
   selectedFaces.push(...faces);
   selectedFace = selectedFaces.at(-1) || null;
@@ -15127,7 +15137,7 @@ function pullSelectedRegionToHit(hit) {
     actionLabel: "Pulled to target"
   });
   syncSurfaceEditorUi();
-  if (result.length) log(`Pull to Target stopped ${round(clearance)} units before the receiving face.`, { target: hit.object.name });
+  if (result.length) log(`Pull to Target matched the receiving face plane with a ${round(outwardOffset)} unit outward offset.`, { target: hit.object.name });
   return true;
 }
 
