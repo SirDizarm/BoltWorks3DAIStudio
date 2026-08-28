@@ -567,8 +567,8 @@ function createHumanoidTestRig() {
   animationState.keys = {
     left_thigh: [{ frame: 0, rotation: [.28, 0, 0] }, { frame: 12, rotation: [-.28, 0, 0] }, { frame: 24, rotation: [.28, 0, 0] }],
     right_thigh: [{ frame: 0, rotation: [-.28, 0, 0] }, { frame: 12, rotation: [.28, 0, 0] }, { frame: 24, rotation: [-.28, 0, 0] }],
-    left_upper_arm: [{ frame: 0, rotation: [-.18, 0, 0] }, { frame: 12, rotation: [.18, 0, 0] }, { frame: 24, rotation: [-.18, 0, 0] }],
-    right_upper_arm: [{ frame: 0, rotation: [.18, 0, 0] }, { frame: 12, rotation: [-.18, 0, 0] }, { frame: 24, rotation: [.18, 0, 0] }]
+    left_upper_arm: [{ frame: 0, rotation: [-.18, 0, 1.12] }, { frame: 12, rotation: [.18, 0, 1.34] }, { frame: 24, rotation: [-.18, 0, 1.12] }],
+    right_upper_arm: [{ frame: 0, rotation: [.18, 0, -1.12] }, { frame: 12, rotation: [-.18, 0, -1.34] }, { frame: 24, rotation: [.18, 0, -1.12] }]
   };
   animationState.end = 24;
   animationState.frame = 0;
@@ -916,10 +916,12 @@ function applySkinnedPose(poses) {
     const parentQuat = parentPose
       ? new THREE.Quaternion().setFromEuler(new THREE.Euler(parentPose.rotation.x, parentPose.rotation.y, parentPose.rotation.z, "XYZ"))
       : new THREE.Quaternion();
-    const worldQuat = parentQuat.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z, "XYZ")));
     if (parent && threeBones.has(parent.id)) threeBone.position.copy(pose.position).sub(parentPose?.position || parent.bindPosition).applyQuaternion(parentQuat.clone().invert());
     else threeBone.position.copy(pose.position);
-    threeBone.quaternion.copy(worldQuat);
+    // THREE.Bone stores a child rotation in parent-local space. Supplying the
+    // already-composed world rotation here applied the thigh turn a second
+    // time to shin and foot bones, pulling the leg chain apart.
+    threeBone.quaternion.setFromEuler(new THREE.Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z, "XYZ"));
   }
   avatar.updateMatrixWorld(true);
   skeleton.update();
