@@ -454,6 +454,7 @@ els.animationNextBtn?.addEventListener("click", () => animationSetFrame(animatio
 els.animationResetBtn?.addEventListener("click", () => { animationState.playing = false; animationSetFrame(0); });
 els.animationClipSelect?.addEventListener("change", event => setActiveAnimationClip(event.target.value));
 els.animationClipAddBtn?.addEventListener("click", addAnimationClip);
+els.animationClipDeleteBtn?.addEventListener("click", deleteActiveAnimationClip);
 els.animationScrubber?.addEventListener("input", event => animationSetFrame(event.target.value));
 els.animationKeyBtn?.addEventListener("click", keyAnimationPose);
 els.animationDeleteFrameBtn?.addEventListener("click", deleteAnimationFrameKeys);

@@ -443,6 +443,20 @@ function addAnimationClip() {
   log(`Created animation clip ${animationState.clips[id].name}.`);
 }
 
+function deleteActiveAnimationClip() {
+  syncActiveAnimationClip();
+  const ids = Object.keys(animationState.clips);
+  if (ids.length <= 1) { log("A rig must keep at least one animation clip."); return; }
+  const removedId = animationState.activeClipId;
+  const removedName = animationState.clips[removedId]?.name || removedId;
+  const nextId = ids.find(id => id !== removedId);
+  delete animationState.clips[removedId];
+  bwsAnimationSequence = bwsAnimationSequence.filter(id => id !== removedId);
+  animationState.activeClipId = "";
+  setActiveAnimationClip(nextId);
+  log(`Deleted animation clip ${removedName}.`);
+}
+
 function syncAnimationClipUi() {
   if (!els.animationClipSelect) return;
   syncActiveAnimationClip();

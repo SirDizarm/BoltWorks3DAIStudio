@@ -666,6 +666,7 @@ const els = {
   animationToggle: document.querySelector("#animationToggle"),
   animationClipSelect: document.querySelector("#animationClipSelect"),
   animationClipAddBtn: document.querySelector("#animationClipAddBtn"),
+  animationClipDeleteBtn: document.querySelector("#animationClipDeleteBtn"),
   animationPlayBtn: document.querySelector("#animationPlayBtn"),
   animationStopBtn: document.querySelector("#animationStopBtn"),
   animationPrevBtn: document.querySelector("#animationPrevBtn"),
