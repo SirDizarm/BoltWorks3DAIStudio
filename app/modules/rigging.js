@@ -565,10 +565,10 @@ function createHumanoidTestRig() {
   rigBones.forEach(item => initializeBoneRestState(item, { capture: true }));
   selectedBoneId = "root";
   animationState.keys = {
-    left_thigh: [{ frame: 0, rotation: [0, 0, .28] }, { frame: 12, rotation: [0, 0, -.28] }, { frame: 24, rotation: [0, 0, .28] }],
-    right_thigh: [{ frame: 0, rotation: [0, 0, -.28] }, { frame: 12, rotation: [0, 0, .28] }, { frame: 24, rotation: [0, 0, -.28] }],
-    left_upper_arm: [{ frame: 0, rotation: [0, 0, -.18] }, { frame: 12, rotation: [0, 0, .18] }, { frame: 24, rotation: [0, 0, -.18] }],
-    right_upper_arm: [{ frame: 0, rotation: [0, 0, .18] }, { frame: 12, rotation: [0, 0, -.18] }, { frame: 24, rotation: [0, 0, .18] }]
+    left_thigh: [{ frame: 0, rotation: [.28, 0, 0] }, { frame: 12, rotation: [-.28, 0, 0] }, { frame: 24, rotation: [.28, 0, 0] }],
+    right_thigh: [{ frame: 0, rotation: [-.28, 0, 0] }, { frame: 12, rotation: [.28, 0, 0] }, { frame: 24, rotation: [-.28, 0, 0] }],
+    left_upper_arm: [{ frame: 0, rotation: [-.18, 0, 0] }, { frame: 12, rotation: [.18, 0, 0] }, { frame: 24, rotation: [-.18, 0, 0] }],
+    right_upper_arm: [{ frame: 0, rotation: [.18, 0, 0] }, { frame: 12, rotation: [-.18, 0, 0] }, { frame: 24, rotation: [.18, 0, 0] }]
   };
   animationState.end = 24;
   animationState.frame = 0;
