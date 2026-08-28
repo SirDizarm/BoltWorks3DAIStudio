@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.59.8.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.59.9.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1129,7 +1129,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.59.8.js?v=49.59.8"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.59.9.js?v=49.59.9"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
@@ -1165,7 +1165,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.59.8",
+  "tool-docking.js?v=49.59.9",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1272,7 +1272,8 @@ for (const required of [
   "exportTransformSnapshots",
   "const hasExportAncestor = (target)",
   "function setWorldTransform(target, worldPosition, worldQuaternion)",
-  "function expandFrameToContent(frame, content, source)",
+  "const center = new THREE.Vector3(0, cameraProfile.targetY, 0)",
+  "const framingBounds = frameFootprint.clone()",
   "worldPosition: target.getWorldPosition",
   "Keep the camera fixed and rotate the whole selected assembly",
   "tile export framing guide",
@@ -1908,8 +1909,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.59.8 Experimental") || !documentSource.includes("v49.59.8 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.59.8 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.59.9 Experimental") || !documentSource.includes("v49.59.9 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.59.9 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

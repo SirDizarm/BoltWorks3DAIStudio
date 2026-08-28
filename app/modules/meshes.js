@@ -16799,10 +16799,9 @@ async function exportModelTileKit() {
   // footprint in the framing calculation even when the author removes the
   // floor mesh, otherwise a prop-only export gets cropped and enlarged.
   const frameFootprint = new THREE.Box3().setFromCenterAndSize(
-    new THREE.Vector3(0, bounds.min.y, 0),
+    new THREE.Vector3(0, 0, 0),
     new THREE.Vector3(width, .001, depth)
   );
-  const frameBounds = bounds.clone().union(frameFootprint);
   // Rotate only export roots. Imported OBJ parts can be nested beneath an
   // object group; moving both a group and one of its descendants would apply
   // the turn twice and make the apparent pivot drift.
@@ -16840,18 +16839,14 @@ async function exportModelTileKit() {
   // editor origin. This matches the four base floor/wall sheets used in-game,
   // so props and their tile rotate together instead of independently.
   const center = new THREE.Vector3(0, cameraProfile.targetY, 0);
-  const assemblyCenter = frameBounds.getCenter(new THREE.Vector3());
-  const assemblyHalfSize = frameBounds.getSize(new THREE.Vector3()).multiplyScalar(.5);
-  const pivotOffset = assemblyCenter.sub(center);
-  const pivotHalfSize = assemblyHalfSize.add(new THREE.Vector3(Math.abs(pivotOffset.x), Math.abs(pivotOffset.y), Math.abs(pivotOffset.z)));
-  const framingBounds = new THREE.Box3().setFromCenterAndSize(center, pivotHalfSize.multiplyScalar(2));
+  const framingBounds = frameFootprint.clone();
   const frameGuide = new THREE.Mesh(
     new THREE.PlaneGeometry(width, depth),
     new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: false, depthWrite: false })
   );
   frameGuide.name = "tile export framing guide";
   frameGuide.rotation.x = -Math.PI / 2;
-  frameGuide.position.set(0, bounds.min.y, 0);
+  frameGuide.position.set(0, 0, 0);
   frameGuide.visible = false;
   scene.add(frameGuide);
   const frameGuidePosition = frameGuide.position.clone();
@@ -16876,20 +16871,6 @@ async function exportModelTileKit() {
     for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) if (pixels[(y * source.width + x) * 4 + 3] > 3) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
     return maxX < 0 ? null : { minX, minY, cropWidth: maxX - minX + 1, cropHeight: maxY - minY + 1 };
   }
-  function expandFrameToContent(frame, content, source) {
-    if (!content) return frame;
-    const centerX = frame.minX + frame.cropWidth / 2;
-    const centerY = frame.minY + frame.cropHeight / 2;
-    const contentMaxX = content.minX + content.cropWidth - 1;
-    const contentMaxY = content.minY + content.cropHeight - 1;
-    const halfWidth = Math.max(frame.cropWidth / 2, Math.abs(content.minX - centerX), Math.abs(contentMaxX - centerX));
-    const halfHeight = Math.max(frame.cropHeight / 2, Math.abs(content.minY - centerY), Math.abs(contentMaxY - centerY));
-    const minX = Math.max(0, Math.floor(centerX - halfWidth));
-    const minY = Math.max(0, Math.floor(centerY - halfHeight));
-    const maxX = Math.min(source.width - 1, Math.ceil(centerX + halfWidth));
-    const maxY = Math.min(source.height - 1, Math.ceil(centerY + halfHeight));
-    return { minX, minY, cropWidth: maxX - minX + 1, cropHeight: maxY - minY + 1 };
-  }
   for (let i = 0; i < 4; i++) {
     const groundRotation = i * Math.PI / 2;
     const groundRotationMatrix = new THREE.Matrix4().makeRotationY(groundRotation);
@@ -16913,7 +16894,7 @@ async function exportModelTileKit() {
     const shot = captureView(`tile-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds: framingBounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
     const source = await sourceCanvas(shot);
     if (!frameCrop) continue;
-    renderedCells.push({ index: i, source, ...expandFrameToContent(frameCrop, opaqueBounds(source), source) });
+    renderedCells.push({ index: i, source, ...frameCrop });
   }
   // Use one shared scale for the complete four-view sheet. Per-view fitting
   // makes diagonal silhouettes with a wider projected footprint appear closer

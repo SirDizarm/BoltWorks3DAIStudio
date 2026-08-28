@@ -39,10 +39,10 @@ be rendered to 2D sprites or used as tile assemblies in Unity.
 **Export Tile + 4x Sheet** saves a tile manifest and a transparent four-cell
 PNG. It supports selected individual meshes, groups, or multiple checked parts.
 Only the export targets are rendered. The export camera stays fixed while the
-complete selected assembly turns around the fixed editor origin in world space,
-so imported models use the same absolute `(0, 0, 0)` pivot as the floor. A
-prop placed in any tile corner therefore moves to that matching corner in each
-view instead of using its own object pivot.
+complete selected assembly turns around the editor origin `(0, 0, 0)` in world
+space. The configured floor footprint is the permanent framing and scale
+template, whether or not its mesh is selected. Props and walls are ignored when
+choosing the pivot, crop centre, and scale.
 
 - **NE / SE / SW / NW Isometric** outputs four diagonal orthographic views.
   Each turn rotates the whole selected assembly—not only the floor—so props
@@ -55,9 +55,6 @@ view instead of using its own object pivot.
   floor or wall is removed. A prop-only export therefore stays at the same
   size and cell placement as the project's standard floor or wall template,
   instead of zooming in to fill the sprite.
-- If a prop is intentionally placed beyond the tile footprint, the exporter
-  expands the transparent frame evenly around that fixed centre so the prop is
-  fully visible without shifting the base tile in its cell.
 - Tile-sheet renders temporarily remove material specular and environment
   reflections, preventing a moving sun-glare spot from appearing on the ground.
 - The exporter frames the complete selected assembly and uses a transparent
