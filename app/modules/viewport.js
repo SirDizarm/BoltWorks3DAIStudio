@@ -930,6 +930,7 @@ const els = {
   gameAssetHidePartsInput: document.querySelector("#gameAssetHidePartsInput"),
   gameAssetSaveBtn: document.querySelector("#gameAssetSaveBtn"),
   gameAssetExportBtn: document.querySelector("#gameAssetExportBtn"),
+  gameAssetHumanoidRigBtn: document.querySelector("#gameAssetHumanoidRigBtn"),
   gameAssetStatus: document.querySelector("#gameAssetStatus"),
   edgeSlideAxisSelect: document.querySelector("#edgeSlideAxisSelect"),
   edgeSlideAmountInput: document.querySelector("#edgeSlideAmountInput"),

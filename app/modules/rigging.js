@@ -407,6 +407,90 @@ function freshBoneId() {
   return `bone-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+// Build the baseline game-character skeleton from the selected mesh rather
+// than from a mesh's own pivot.  This keeps a saved mannequin usable as the
+// neutral character template: all equipment identifies stable semantic bone
+// IDs (right_hand, head, chest, etc.), while the actual proportions come from
+// the visible model bounds.
+function createHumanoidTestRig() {
+  const avatar = selected?.geometry?.getAttribute("position")
+    ? selected
+    : objects.find(object => object?.geometry?.getAttribute("position") && !object.userData?.editorHelper);
+  if (!avatar) {
+    log("Select the character mesh before creating a humanoid test rig.");
+    return;
+  }
+  if (avatar.isSkinnedMesh || rigBones.some(bone => bone.avatarObjectId === avatar.userData.id)) {
+    log("This character already has a humanoid rig. Undo first if you want to rebuild it.");
+    return;
+  }
+  recordBoneHistory("create humanoid test rig");
+  avatar.updateWorldMatrix(true, false);
+  const bounds = new THREE.Box3().setFromObject(avatar);
+  const size = bounds.getSize(new THREE.Vector3());
+  const center = bounds.getCenter(new THREE.Vector3());
+  const minY = bounds.min.y;
+  const maxY = bounds.max.y;
+  const height = Math.max(size.y, .01);
+  const halfWidth = Math.max(size.x * .5, height * .09);
+  const halfDepth = Math.max(size.z * .5, height * .06);
+  const y = fraction => minY + height * fraction;
+  const point = (x, fraction, z = center.z) => new THREE.Vector3(x, y(fraction), z);
+  const bone = (id, name, parentId, position, tail) => ({
+    id,
+    name,
+    parentId,
+    avatarObjectId: avatar.userData.id,
+    position,
+    rotation: new THREE.Vector3(),
+    tail
+  });
+  const left = center.x - halfWidth;
+  const right = center.x + halfWidth;
+  const front = center.z + halfDepth * .38;
+  const bones = [
+    bone("root", "Root", null, point(center.x, .01), point(center.x, .12)),
+    bone("pelvis", "Pelvis", "root", point(center.x, .12), point(center.x, .31)),
+    bone("spine", "Spine", "pelvis", point(center.x, .31), point(center.x, .52)),
+    bone("chest", "Chest", "spine", point(center.x, .52), point(center.x, .68)),
+    bone("back", "Back Mount", "chest", point(center.x, .60, center.z - halfDepth * .28), point(center.x, .60, center.z - halfDepth * .7)),
+    bone("neck", "Neck", "chest", point(center.x, .68), point(center.x, .77)),
+    bone("head", "Head", "neck", point(center.x, .77), point(center.x, .97)),
+    bone("left_upper_arm", "Upper Arm L", "chest", point(center.x - halfWidth * .18, .64), point(center.x - halfWidth * .64, .62)),
+    bone("left_forearm", "Forearm L", "left_upper_arm", point(center.x - halfWidth * .64, .62), point(center.x - halfWidth * .98, .60)),
+    bone("left_hand", "Hand L", "left_forearm", point(center.x - halfWidth * .98, .60), point(left - halfWidth * .04, .60)),
+    bone("right_upper_arm", "Upper Arm R", "chest", point(center.x + halfWidth * .18, .64), point(center.x + halfWidth * .64, .62)),
+    bone("right_forearm", "Forearm R", "right_upper_arm", point(center.x + halfWidth * .64, .62), point(center.x + halfWidth * .98, .60)),
+    bone("right_hand", "Hand R", "right_forearm", point(center.x + halfWidth * .98, .60), point(right + halfWidth * .04, .60)),
+    bone("left_thigh", "Thigh L", "pelvis", point(center.x - halfWidth * .22, .28), point(center.x - halfWidth * .25, .13)),
+    bone("left_shin", "Shin L", "left_thigh", point(center.x - halfWidth * .25, .13), point(center.x - halfWidth * .26, .035, front)),
+    bone("left_foot", "Foot L", "left_shin", point(center.x - halfWidth * .26, .035, front), point(center.x - halfWidth * .26, .02, front + halfDepth * .45)),
+    bone("right_thigh", "Thigh R", "pelvis", point(center.x + halfWidth * .22, .28), point(center.x + halfWidth * .25, .13)),
+    bone("right_shin", "Shin R", "right_thigh", point(center.x + halfWidth * .25, .13), point(center.x + halfWidth * .26, .035, front)),
+    bone("right_foot", "Foot R", "right_shin", point(center.x + halfWidth * .26, .035, front), point(center.x + halfWidth * .26, .02, front + halfDepth * .45))
+  ];
+  rigBones = bones;
+  rigBones.forEach(item => initializeBoneRestState(item, { capture: true }));
+  selectedBoneId = "root";
+  animationState.keys = {
+    left_thigh: [{ frame: 0, rotation: [0, 0, .28] }, { frame: 12, rotation: [0, 0, -.28] }, { frame: 24, rotation: [0, 0, .28] }],
+    right_thigh: [{ frame: 0, rotation: [0, 0, -.28] }, { frame: 12, rotation: [0, 0, .28] }, { frame: 24, rotation: [0, 0, -.28] }],
+    left_upper_arm: [{ frame: 0, rotation: [0, 0, -.18] }, { frame: 12, rotation: [0, 0, .18] }, { frame: 24, rotation: [0, 0, -.18] }],
+    right_upper_arm: [{ frame: 0, rotation: [0, 0, .18] }, { frame: 12, rotation: [0, 0, -.18] }, { frame: 24, rotation: [0, 0, .18] }]
+  };
+  animationState.end = 24;
+  animationState.frame = 0;
+  setupSkinnedRig();
+  bonesGlued = !!activeSkinRuntime;
+  animationState.bindingRest = null;
+  poseRigHierarchy();
+  rebuildBoneVisuals();
+  syncBonePanel();
+  updateGlueButton();
+  if (els.gameAssetStatus) els.gameAssetStatus.textContent = `Created and bound a ${rigBones.length}-bone humanoid test rig for ${avatar.name}. Equipment can attach to head, chest, hands, feet, or back bone IDs.`;
+  log(`Created humanoid test rig for ${avatar.name} with ${rigBones.length} named bones and a 24-frame walk test.`);
+}
+
 function serializeBoneRig() {
   return {
     selectedBoneId,
