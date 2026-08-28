@@ -16876,6 +16876,20 @@ async function exportModelTileKit() {
     for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) if (pixels[(y * source.width + x) * 4 + 3] > 3) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
     return maxX < 0 ? null : { minX, minY, cropWidth: maxX - minX + 1, cropHeight: maxY - minY + 1 };
   }
+  function expandFrameToContent(frame, content, source) {
+    if (!content) return frame;
+    const centerX = frame.minX + frame.cropWidth / 2;
+    const centerY = frame.minY + frame.cropHeight / 2;
+    const contentMaxX = content.minX + content.cropWidth - 1;
+    const contentMaxY = content.minY + content.cropHeight - 1;
+    const halfWidth = Math.max(frame.cropWidth / 2, Math.abs(content.minX - centerX), Math.abs(contentMaxX - centerX));
+    const halfHeight = Math.max(frame.cropHeight / 2, Math.abs(content.minY - centerY), Math.abs(contentMaxY - centerY));
+    const minX = Math.max(0, Math.floor(centerX - halfWidth));
+    const minY = Math.max(0, Math.floor(centerY - halfHeight));
+    const maxX = Math.min(source.width - 1, Math.ceil(centerX + halfWidth));
+    const maxY = Math.min(source.height - 1, Math.ceil(centerY + halfHeight));
+    return { minX, minY, cropWidth: maxX - minX + 1, cropHeight: maxY - minY + 1 };
+  }
   for (let i = 0; i < 4; i++) {
     const groundRotation = i * Math.PI / 2;
     const groundRotationMatrix = new THREE.Matrix4().makeRotationY(groundRotation);
@@ -16899,7 +16913,7 @@ async function exportModelTileKit() {
     const shot = captureView(`tile-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds: framingBounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
     const source = await sourceCanvas(shot);
     if (!frameCrop) continue;
-    renderedCells.push({ index: i, source, ...frameCrop });
+    renderedCells.push({ index: i, source, ...expandFrameToContent(frameCrop, opaqueBounds(source), source) });
   }
   // Use one shared scale for the complete four-view sheet. Per-view fitting
   // makes diagonal silhouettes with a wider projected footprint appear closer

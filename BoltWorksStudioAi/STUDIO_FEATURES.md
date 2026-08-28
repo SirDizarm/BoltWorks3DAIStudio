@@ -55,6 +55,9 @@ view instead of using its own object pivot.
   floor or wall is removed. A prop-only export therefore stays at the same
   size and cell placement as the project's standard floor or wall template,
   instead of zooming in to fill the sprite.
+- If a prop is intentionally placed beyond the tile footprint, the exporter
+  expands the transparent frame evenly around that fixed centre so the prop is
+  fully visible without shifting the base tile in its cell.
 - Tile-sheet renders temporarily remove material specular and environment
   reflections, preventing a moving sun-glare spot from appearing on the ground.
 - The exporter frames the complete selected assembly and uses a transparent
