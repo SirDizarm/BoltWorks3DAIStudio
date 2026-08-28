@@ -1163,8 +1163,10 @@ function syncInspector() {
   if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = false; els.addColorToSceneBtn.textContent = selected.userData.colorApplied ? "Color Added to Scene" : "Add Color to Scene"; }
   els.roughInput.value = selected.material.roughness;
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
-  els.opacityInput.value = selected.material.opacity ?? 1;
-  els.opacityValue.value = Number(selected.material.opacity ?? 1).toFixed(2);
+  const baseMaterialState = typeof rigModelBaseMaterialState === "function" ? rigModelBaseMaterialState(selected.material) : null;
+  const inspectorOpacity = baseMaterialState?.opacity ?? selected.material.opacity ?? 1;
+  els.opacityInput.value = inspectorOpacity;
+  els.opacityValue.value = Number(inspectorOpacity).toFixed(2);
   if (selected.userData.cuts?.bottom !== undefined) {
     els.cutSideSelect.value = "bottom";
     els.cutAmountInput.value = selected.userData.cuts.bottom;
@@ -1243,12 +1245,13 @@ function applyInspector({ record = true } = {}) {
     inspectorNumber(els.scaleZ, selected.scale.z, { min: .05 })
   );
   if (selected.userData.colorApplied) selected.material.color.set(normalizedColor);
+  const reapplyRigOpacity = typeof restoreRigModelMaterials === "function" && restoreRigModelMaterials();
   selected.material.roughness = +els.roughInput.value;
   const opacity = Math.max(.05, Math.min(1, Number(els.opacityInput.value) || 1));
   selected.material.transparent = opacity < .999 || !!selected.userData.textureHasTransparency;
   selected.material.opacity = opacity;
   selected.material.wireframe = false;
-  selected.material.depthWrite = opacity >= .999;
+  selected.material.depthWrite = opacity >= .9;
   selected.material.needsUpdate = true;
   selected.userData.color = normalizedColor;
   selected.userData.roughness = +els.roughInput.value;
@@ -1256,6 +1259,7 @@ function applyInspector({ record = true } = {}) {
   syncMeshRenderCulling(selected);
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
   els.opacityValue.value = opacity.toFixed(2);
+  if (reapplyRigOpacity) applyRigModelOpacity();
   updateAll();
 }
 
@@ -4925,15 +4929,17 @@ function restoreCustomCameraViews(cameraState = {}) {
 const screenshotViewDirections = {
   front: new THREE.Vector3(0, 0, 1),
   back: new THREE.Vector3(0, 0, -1),
-  left: new THREE.Vector3(-1, 0, 0),
-  right: new THREE.Vector3(1, 0, 0),
+  // Side labels describe the direction the character faces in the exported
+  // image: Left faces screen-left and Right faces screen-right.
+  left: new THREE.Vector3(1, 0, 0),
+  right: new THREE.Vector3(-1, 0, 0),
   side: new THREE.Vector3(1, 0, 0),
   top: new THREE.Vector3(0, 1, 0),
   iso: new THREE.Vector3(.78, .52, .92),
-  "front-left": new THREE.Vector3(-.78, .35, .92),
-  "front-right": new THREE.Vector3(.78, .35, .92),
-  "back-left": new THREE.Vector3(-.78, .35, -.92),
-  "back-right": new THREE.Vector3(.78, .35, -.92)
+  "front-left": new THREE.Vector3(.78, .35, .92),
+  "front-right": new THREE.Vector3(-.78, .35, .92),
+  "back-left": new THREE.Vector3(.78, .35, -.92),
+  "back-right": new THREE.Vector3(-.78, .35, -.92)
 };
 
 function sceneBounds() {
@@ -5051,7 +5057,7 @@ function restoreOrthographicWorkView() {
   return true;
 }
 
-function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false } = {}) {
+function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false, includeBones = false, restoreRigOpacity = false } = {}) {
   const oldPosition = camera.position.clone();
   const oldUp = camera.up.clone();
   const oldTarget = orbit.target.clone();
@@ -5073,6 +5079,9 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   const oldBoneRigVisible = boneRigGroup.visible;
   const oldBoneGridAxisVisible = boneGridAxisGroup.visible;
   const oldBoneTransformVisible = boneTransform.visible;
+  const oldBoneJoystickVisible = boneJoystickGroup.visible;
+  const oldBoneRingGuideVisible = boneRingGuideGroup.visible;
+  const oldBoneChildVisibility = boneRigGroup.children.map(child => [child, child.visible]);
   const oldSceneBackground = scene.background;
   const oldSceneFog = scene.fog;
   const oldClearAlpha = renderer.getClearAlpha();
@@ -5081,9 +5090,35 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   const oldStudioFloorVisible = studioFloor.visible;
   const oldPixelRatio = renderer.getPixelRatio();
   const oldProjectionMatrix = camera.projectionMatrix.clone();
+  const exportMaterialStates = [];
+  if (restoreRigOpacity && rigModelMaterialState instanceof Map) {
+    for (const [material, original] of rigModelMaterialState) {
+      exportMaterialStates.push([material, material.opacity, material.transparent, material.depthWrite]);
+      material.opacity = original.opacity;
+      material.transparent = original.transparent;
+      material.depthWrite = original.depthWrite;
+      material.needsUpdate = true;
+    }
+  }
+  const exportBoneMaterialStates = [];
+  if (includeBones) {
+    boneRigGroup.traverse(child => {
+      const materials = Array.isArray(child.material) ? child.material : [child.material];
+      for (const material of materials) {
+        if (!material) continue;
+        exportBoneMaterialStates.push([material, material.depthTest, material.depthWrite]);
+        material.depthTest = false;
+        material.depthWrite = false;
+        material.needsUpdate = true;
+      }
+    });
+  }
 
   transform.visible = false;
   boneTransform.visible = false;
+  boneJoystickGroup.visible = false;
+  boneRingGuideGroup.visible = false;
+  boneRigGroup.children.filter(child => child.userData?.boneGizmo).forEach(child => { child.visible = false; });
   faceMarker.visible = false;
   surfaceComponentMarker.visible = false;
   modelingEdgesOverlay.visible = false;
@@ -5102,13 +5137,13 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
     studioFloor.visible = false;
     grid.visible = false;
     gridLabelGroup.visible = false;
-    boneRigGroup.visible = false;
+    boneRigGroup.visible = includeBones && rigBones.length > 0;
     boneGridAxisGroup.visible = false;
   }
   if (els.hideGridInShotsInput?.checked) {
     grid.visible = false;
     gridLabelGroup.visible = false;
-    boneRigGroup.visible = false;
+    boneRigGroup.visible = includeBones && rigBones.length > 0;
     boneGridAxisGroup.visible = false;
   }
   renderer.setPixelRatio(Math.min(4, oldPixelRatio * Math.max(1, Number(qualityScale) || 1)));
@@ -5158,6 +5193,9 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
 
   transform.visible = oldTransformVisible;
   boneTransform.visible = oldBoneTransformVisible;
+  boneJoystickGroup.visible = oldBoneJoystickVisible;
+  boneRingGuideGroup.visible = oldBoneRingGuideVisible;
+  oldBoneChildVisibility.forEach(([child, visible]) => { child.visible = visible; });
   faceMarker.visible = oldFaceMarkerVisible;
   surfaceComponentMarker.visible = oldSurfaceComponentMarkerVisible;
   modelingEdgesOverlay.visible = oldModelingEdgesOverlayVisible;
@@ -5174,6 +5212,17 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   floor.visible = oldFloorVisible;
   studioFloor.visible = oldStudioFloorVisible;
   renderer.setPixelRatio(oldPixelRatio);
+  exportMaterialStates.forEach(([material, opacity, transparent, depthWrite]) => {
+    material.opacity = opacity;
+    material.transparent = transparent;
+    material.depthWrite = depthWrite;
+    material.needsUpdate = true;
+  });
+  exportBoneMaterialStates.forEach(([material, depthTest, depthWrite]) => {
+    material.depthTest = depthTest;
+    material.depthWrite = depthWrite;
+    material.needsUpdate = true;
+  });
   resize();
   grid.visible = oldGridVisible;
   gridLabelGroup.visible = oldGridLabelsVisible;
@@ -5555,7 +5604,7 @@ async function composeAnimationMotionSheet(viewName, shots, clipLabel, prefix) {
   return { fileName, width: sheet.width, height: sheet.height, frameWidth: cellWidth, frameHeight: cellHeight, columns, rows, dataUrl: sheet.toDataURL("image/png"), view: viewName, shots };
 }
 
-async function saveAnimationMotionSheets({ view = "left", frameCount = 8, range = "end", download = true, qualityScale = 1 } = {}) {
+async function saveAnimationMotionSheets({ view = "left", frameCount = 8, range = "end", download = true, qualityScale = 1, includeBones = false } = {}) {
   if (!animationHasKeys()) {
     animationState.playing = false;
     updateAnimationPanel();
@@ -5569,7 +5618,8 @@ async function saveAnimationMotionSheets({ view = "left", frameCount = 8, range 
   const exportEnd = animationExportEndFrame(range);
   const frames = animationMotionSheetFrames(frameCount, exportEnd);
   const prefix = currentProjectBaseName();
-  const clipLabel = els.minecraftAnimationSelect?.selectedOptions?.[0]?.textContent?.trim() || "animation";
+  const activeClip = animationState.clips?.[animationState.activeClipId];
+  const clipLabel = String(activeClip?.name || animationState.activeClipId || "animation").trim();
   const sheets = [];
   animationState.playing = false;
 
@@ -5579,13 +5629,22 @@ async function saveAnimationMotionSheets({ view = "left", frameCount = 8, range 
     for (const frame of frames) {
       animationSetFrame(frame, { render: false });
       for (const object of objects) animationBounds.expandByObject(object);
+      if (includeBones) {
+        rebuildBoneVisuals();
+        boneRigGroup.visible = true;
+        animationBounds.expandByObject(boneRigGroup);
+      }
     }
     for (const viewName of requestedViews) {
       const shots = [];
       for (const frame of frames) {
         animationSetFrame(frame, { render: false });
+        if (includeBones) {
+          rebuildBoneVisuals();
+          boneRigGroup.visible = true;
+        }
         renderer.render(scene, camera);
-        shots.push({ ...captureView(viewName, { download: false, prefix, transparent: true, useCurrentZoom: false, bounds: animationBounds, qualityScale }), frame });
+        shots.push({ ...captureView(viewName, { download: false, prefix, transparent: true, useCurrentZoom: false, bounds: animationBounds, qualityScale, includeBones, restoreRigOpacity: true }), frame });
       }
       const sheet = await composeAnimationMotionSheet(viewName, shots, clipLabel, prefix);
       sheets.push(sheet);

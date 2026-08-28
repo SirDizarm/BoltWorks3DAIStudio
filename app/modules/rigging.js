@@ -188,10 +188,10 @@ function syncBoneJoystick() {
   boneJoystickGroup.visible = show;
   if (!show) return;
   const base = bone.displayPosition || bone.position;
-  // Stick the handle OUT THE BACK of the parent ball (opposite the cone/bone
-  // direction) so it sits in open space and is easy to grab, not buried in the
-  // body being moved.
-  const dir = boneAimDir(bone).negate();
+  // Keep the handle on the bone's aiming side. A handle behind the joint is
+  // visually convenient but makes a drag appear reversed, because the handle
+  // and the limb point in opposite directions.
+  const dir = boneAimDir(bone);
   const len = boneJoystickLength();
   boneJoystickGroup.position.copy(base);
   // Shaft from base to handle.
@@ -229,9 +229,9 @@ function beginBoneAimDrag(event) {
     startRotation: bone.rotation.clone(),
     mirrorId: boneById(mirroredBoneId(bone.id))?.id || null,
     mirrorRotation: boneById(mirroredBoneId(bone.id))?.rotation.clone() || null,
-    // The handle sits on the opposite side from the bone, so rotate relative to
-    // the handle's own start direction (which the cursor grabs).
-    startDir: boneAimDir(bone).negate()
+    // The visible joystick and limb share the same direction, so a clockwise
+    // drag produces a clockwise bone turn from the user's point of view.
+    startDir: boneAimDir(bone)
   };
   orbit.enabled = false;
   renderer.domElement.setPointerCapture?.(event.pointerId);
@@ -959,12 +959,25 @@ function skinCandidatesForVertex(point, bones) {
   const side = point.x < 0 ? "L" : "R";
   const byName = name => bones.findIndex(bone => bone.name === name);
   const named = names => names.map(byName).filter(index => index >= 0);
-  if (point.y < .16) return named([`Foot ${side}`, `Shin ${side}`]);
-  if (point.y < .74) return named([`Shin ${side}`, `Thigh ${side}`, "Root"]);
-  if (point.y < .92) return named([`Thigh ${side}`, "Root", "Spine"]);
-  const armThreshold = point.y > 1.12 ? .24 : .34;
+  const pelvis = bones.find(bone => bone.name === "Pelvis");
+  const chest = bones.find(bone => bone.name === "Chest");
+  const foot = bones.find(bone => bone.name === `Foot ${side}`);
+  const pelvisY = pelvis?.bindPosition?.y ?? .9;
+  const chestY = chest?.bindPosition?.y ?? 1.2;
+  const footY = foot?.bindPosition?.y ?? .08;
+  // The previous fixed thresholds stopped thigh influence around the middle of
+  // this mannequin's upper legs. Use the placed rig instead: all vertices from
+  // the sole through the hip are weighted to that side's complete leg chain.
+  // Include the whole upper-leg/hip transition. The thigh joint sits beneath
+  // the pelvis, but its skin must reach a little above it; otherwise the bone
+  // turns under a stationary hip and the walk looks like only the shin moves.
+  if (point.y <= pelvisY + .15) {
+    if (point.y < footY + .12) return named([`Foot ${side}`, `Shin ${side}`, `Thigh ${side}`]);
+    return named([`Thigh ${side}`, `Shin ${side}`, "Pelvis", "Root"]);
+  }
+  const armThreshold = point.y > chestY - .06 ? .24 : .34;
   if (Math.abs(point.x) > armThreshold) return named([`Upper Arm ${side}`, `Forearm ${side}`, "Chest"]);
-  if (point.y > 1.48) return named(["Head", "Chest"]);
+  if (point.y > chestY + .26) return named(["Head", "Neck", "Chest"]);
   return named(["Chest", "Spine", "Root"]);
 }
 
@@ -1062,16 +1075,28 @@ function applySkinnedPose(poses) {
     const threeBone = threeBones.get(bone.id);
     const pose = poses.get(bone.id) || { position: bone.bindPosition, rotation: bone.bindRotation };
     const parent = boneById(bone.parentId);
-    const parentPose = parent ? poses.get(parent.id) : null;
-    const parentQuat = parentPose
-      ? new THREE.Quaternion().setFromEuler(new THREE.Euler(parentPose.rotation.x, parentPose.rotation.y, parentPose.rotation.z, "XYZ"))
-      : new THREE.Quaternion();
-    if (parent && threeBones.has(parent.id)) threeBone.position.copy(pose.position).sub(parentPose?.position || parent.bindPosition).applyQuaternion(parentQuat.clone().invert());
-    else threeBone.position.copy(pose.position);
-    // THREE.Bone stores a child rotation in parent-local space. Supplying the
-    // already-composed world rotation here applied the thigh turn a second
-    // time to shin and foot bones, pulling the leg chain apart.
-    threeBone.quaternion.setFromEuler(new THREE.Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z, "XYZ"));
+    const bindPosition = bone.bindPosition || bone.position;
+    const posePosition = pose.position?.clone?.()
+      || new THREE.Vector3().fromArray(Array.isArray(pose.position) ? pose.position : bindPosition.toArray());
+    const keyedOffset = posePosition.sub(bindPosition);
+    // A child bone's local position is its fixed joint offset plus any explicit
+    // animation translation. Do not counter-rotate that offset: doing so holds
+    // the elbow/knee in world space when its shoulder/hip turns, which was why
+    // arms twisted apart and the upper leg did not swing as a real limb.
+    if (parent && threeBones.has(parent.id)) {
+      threeBone.position.copy(bindPosition).sub(parent.bindPosition || parent.position).add(keyedOffset);
+    } else {
+      threeBone.position.copy(bindPosition).add(keyedOffset);
+    }
+    // The guide's bind rotation describes where its cone points, not a mesh
+    // deformation. Skinning needs only the animation delta from that bind pose.
+    const bindQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      bone.bindRotation?.x || 0, bone.bindRotation?.y || 0, bone.bindRotation?.z || 0, "XYZ"
+    ));
+    const poseQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+      pose.rotation?.x || 0, pose.rotation?.y || 0, pose.rotation?.z || 0, "XYZ"
+    ));
+    threeBone.quaternion.copy(poseQuaternion.multiply(bindQuaternion.invert()));
   }
   avatar.updateMatrixWorld(true);
   skeleton.update();
@@ -1698,7 +1723,12 @@ function rebuildBoneVisuals() {
     const childTail = directChild ? (directChild.displayPosition || directChild.position) : null;
     const guideTail = childTail || bone.displayTail || bone.tail || bone.position.clone().add(new THREE.Vector3(0, .12, 0));
     const selectedGuide = bone.id === selectedBoneId;
-    const jointColor = selectedGuide ? 0xffc547 : 0xd8d8d8;
+    const lowerId = String(bone.id || "").toLowerCase();
+    const lowerName = String(bone.name || "").toLowerCase();
+    const leftSide = lowerId.includes("left_") || /(?:^|\s)l$/.test(lowerName);
+    const rightSide = lowerId.includes("right_") || /(?:^|\s)r$/.test(lowerName);
+    const jointColor = selectedGuide ? 0xffc547 : leftSide ? 0x55b7ff : rightSide ? 0xff6868 : 0xd8d8d8;
+    const coneColor = selectedGuide ? 0xffc547 : leftSide ? 0x267dcc : rightSide ? 0xc93f3f : 0x9aa7ad;
     const boneVector = guideTail.clone().sub(guidePosition);
     const boneLength = boneVector.length();
     const childBone = rigBones.find(candidate => boneById(candidate.parentId)?.id === bone.id);
@@ -1737,7 +1767,7 @@ function rebuildBoneVisuals() {
       const coneRadius = Math.min(Math.max(boneLength * .18 * guideScale, .018), .22 * guideScale);
       const cone = new THREE.Mesh(
         new THREE.ConeGeometry(coneRadius, boneLength, 12, 1, false),
-        new THREE.MeshStandardMaterial({ color: selectedGuide ? 0xffc547 : 0x9aa7ad, depthTest: true, roughness: .8, metalness: 0 })
+        new THREE.MeshStandardMaterial({ color: coneColor, depthTest: true, roughness: .8, metalness: 0 })
       );
       cone.position.copy(guidePosition).add(boneVector.clone().multiplyScalar(.5));
       cone.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
@@ -1785,7 +1815,8 @@ function syncBoneGuideScaleUi() {
   if (els.boneGuideScaleValue) els.boneGuideScaleValue.textContent = `${Math.round(boneGuideScale * 100)}%`;
 }
 
-function applyRigModelOpacity() {
+function restoreRigModelMaterials() {
+  const restored = rigModelMaterialState.size > 0;
   for (const [material, state] of rigModelMaterialState) {
     material.opacity = state.opacity;
     material.transparent = state.transparent;
@@ -1793,6 +1824,15 @@ function applyRigModelOpacity() {
     material.needsUpdate = true;
   }
   rigModelMaterialState.clear();
+  return restored;
+}
+
+function rigModelBaseMaterialState(material) {
+  return rigModelMaterialState.get(material) || null;
+}
+
+function applyRigModelOpacity() {
+  restoreRigModelMaterials();
   const roots = new Set(objects.filter(object => object && !object.userData?.editorHelper && object.userData?.rigRole !== "armor"));
   if (activeSkinRuntime?.avatar) roots.add(activeSkinRuntime.avatar);
   for (const root of roots) {
@@ -1800,14 +1840,17 @@ function applyRigModelOpacity() {
       if (!part.isMesh) return;
       for (const material of (Array.isArray(part.material) ? part.material : [part.material])) {
         if (!material || rigModelMaterialState.has(material)) continue;
-        rigModelMaterialState.set(material, {
+        const originalState = {
           opacity: material.opacity,
           transparent: material.transparent,
           depthWrite: material.depthWrite
-        });
+        };
+        rigModelMaterialState.set(material, originalState);
         material.opacity *= rigModelOpacity;
         material.transparent = material.transparent || rigModelOpacity < .999;
-        material.depthWrite = rigModelOpacity >= .999 ? material.depthWrite : false;
+        // Preserve correct self-occlusion while the model is only slightly faded.
+        // At true rig-debug opacity, disable depth writing so internal bones remain visible.
+        material.depthWrite = rigModelOpacity >= .9 ? originalState.depthWrite : false;
         material.needsUpdate = true;
       }
     });

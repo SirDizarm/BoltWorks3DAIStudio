@@ -32285,6 +32285,7 @@ void main() {
   var frontBoneCanvas = document.querySelector("#frontBoneCanvas");
   var sideBoneCanvas = document.querySelector("#sideBoneCanvas");
   var gameplayCanvas = document.querySelector("#gameplayCanvas");
+  var viewportCompassCamera = document.querySelector("#viewportCompassCamera");
   var renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -32330,6 +32331,14 @@ void main() {
   orbit.maxDistance = 5e5;
   orbit.target.set(0, 1, 0);
   var modelTileCameraLocked = false;
+  function updateViewportCompass() {
+    if (!viewportCompassCamera) return;
+    const x = camera.position.x - orbit.target.x;
+    const z = camera.position.z - orbit.target.z;
+    if (Math.hypot(x, z) < 1e-6) return;
+    const angle = MathUtils.radToDeg(Math.atan2(x, z));
+    viewportCompassCamera.style.transform = `rotate(${angle}deg) translateY(-22px)`;
+  }
   function applyModelTileCameraLock() {
     const azimuth = Number(els.modelTileCameraAzimuthInput?.value) || 45;
     const elevation = Math.max(-89, Math.min(89, Number(els.modelTileCameraElevationInput?.value) || 35.264));
@@ -32939,6 +32948,7 @@ void main() {
     animationSheetViewSelect: document.querySelector("#animationSheetViewSelect"),
     animationExportRangeSelect: document.querySelector("#animationExportRangeSelect"),
     animationSheetFramesInput: document.querySelector("#animationSheetFramesInput"),
+    animationExportBonesInput: document.querySelector("#animationExportBonesInput"),
     animationVideoDurationInput: document.querySelector("#animationVideoDurationInput"),
     animationVideoQualitySelect: document.querySelector("#animationVideoQualitySelect"),
     animationVideoLengthModeSelect: document.querySelector("#animationVideoLengthModeSelect"),
@@ -34148,100 +34158,12 @@ void main() {
       disposeObject3DTree(child);
     }
   }
-  function makeGuideLabelTexture(text, {
-    width = 512,
-    height = 160,
-    textColor = "#f3f7fb",
-    bgColor = "rgba(9,12,17,0.68)",
-    strokeColor = "rgba(0,0,0,0.4)"
-  } = {}) {
-    const labelCanvas = document.createElement("canvas");
-    labelCanvas.width = width;
-    labelCanvas.height = height;
-    const ctx = labelCanvas.getContext("2d");
-    if (!ctx) return null;
-    ctx.clearRect(0, 0, width, height);
-    ctx.fillStyle = bgColor;
-    ctx.beginPath();
-    const radius = 26;
-    ctx.moveTo(radius, 0);
-    ctx.lineTo(width - radius, 0);
-    ctx.quadraticCurveTo(width, 0, width, radius);
-    ctx.lineTo(width, height - radius);
-    ctx.quadraticCurveTo(width, height, width - radius, height);
-    ctx.lineTo(radius, height);
-    ctx.quadraticCurveTo(0, height, 0, height - radius);
-    ctx.lineTo(0, radius);
-    ctx.quadraticCurveTo(0, 0, radius, 0);
-    ctx.closePath();
-    ctx.fill();
-    ctx.lineWidth = 6;
-    ctx.strokeStyle = strokeColor;
-    ctx.stroke();
-    ctx.fillStyle = textColor;
-    ctx.font = "700 78px system-ui, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "middle";
-    ctx.fillText(text, width / 2, height / 2 + 4);
-    const texture = new CanvasTexture(labelCanvas);
-    texture.needsUpdate = true;
-    texture.colorSpace = SRGBColorSpace;
-    return texture;
-  }
-  function makeFlatGuideLabel(text, width = 2.2, height = 0.7) {
-    const texture = makeGuideLabelTexture(text);
-    const material = new MeshBasicMaterial({
-      map: texture,
-      transparent: true,
-      depthWrite: false,
-      side: DoubleSide
-    });
-    const mesh = new Mesh(new PlaneGeometry(width, height), material);
-    mesh.rotation.x = -Math.PI / 2;
-    mesh.renderOrder = 12;
-    return mesh;
-  }
   function buildGridLabels() {
     clearGuideGroup(gridLabelGroup);
-    const labels = [
-      { text: "FRONT", axis: "front" },
-      { text: "BACK", axis: "back" },
-      { text: "LEFT", axis: "left" },
-      { text: "RIGHT", axis: "right" }
-    ];
-    for (const spec of labels) {
-      const mesh = makeFlatGuideLabel(spec.text);
-      mesh.userData.axis = spec.axis;
-      gridLabelGroup.add(mesh);
-    }
+    gridLabelGroup.visible = false;
   }
   function updateGridLabels() {
-    const scale = grid.scale.x || 1;
-    const halfSize = 9 * scale;
-    const offset = Math.max(0.9, halfSize * 0.12);
-    const labelY = 0.03;
-    for (const mesh of gridLabelGroup.children) {
-      mesh.scale.setScalar(scale);
-      mesh.rotation.set(-Math.PI / 2, 0, 0);
-      switch (mesh.userData.axis) {
-        case "front":
-          mesh.position.set(0, labelY, halfSize + offset);
-          mesh.rotation.z = Math.PI;
-          break;
-        case "back":
-          mesh.position.set(0, labelY, -halfSize - offset);
-          break;
-        case "left":
-          mesh.position.set(-halfSize - offset, labelY, 0);
-          mesh.rotation.z = Math.PI / 2;
-          break;
-        case "right":
-          mesh.position.set(halfSize + offset, labelY, 0);
-          mesh.rotation.z = -Math.PI / 2;
-          break;
-      }
-    }
-    gridLabelGroup.visible = grid.visible;
+    gridLabelGroup.visible = false;
   }
   var selectionOutlineTargets = /* @__PURE__ */ new WeakMap();
   var selectionOutlinePadding = new Vector3(1.025, 1.025, 1.025);
@@ -34442,7 +34364,7 @@ void main() {
     const materialOpacity = Number(mesh.userData?.opacity ?? mesh.material.opacity ?? 1);
     const textureHasTransparency = !!mesh.userData?.textureHasTransparency;
     mesh.material.transparent = materialOpacity < 0.999 || textureHasTransparency;
-    mesh.material.depthWrite = materialOpacity >= 0.999;
+    mesh.material.depthWrite = materialOpacity >= 0.9;
     mesh.material.needsUpdate = true;
     mesh.userData.textureUrl = textureUrl || null;
     mesh.userData.textureName = textureUrl ? textureName : null;
@@ -36523,7 +36445,7 @@ void main() {
     const materialOpacity = Math.max(0.05, Math.min(1, Number(opacity) || 1));
     mesh.material.opacity = materialOpacity;
     mesh.material.transparent = materialOpacity < 0.999 || !!textureHasTransparency;
-    mesh.material.depthWrite = materialOpacity >= 0.999;
+    mesh.material.depthWrite = materialOpacity >= 0.9;
     mesh.material.needsUpdate = true;
     mesh.name = name || `${shape} ${defaultOrdinal}`;
     mesh.userData = {
@@ -49477,8 +49399,10 @@ void main() {
     }
     els.roughInput.value = selected.material.roughness;
     els.roughValue.value = Number(selected.material.roughness).toFixed(2);
-    els.opacityInput.value = selected.material.opacity ?? 1;
-    els.opacityValue.value = Number(selected.material.opacity ?? 1).toFixed(2);
+    const baseMaterialState = typeof rigModelBaseMaterialState === "function" ? rigModelBaseMaterialState(selected.material) : null;
+    const inspectorOpacity = baseMaterialState?.opacity ?? selected.material.opacity ?? 1;
+    els.opacityInput.value = inspectorOpacity;
+    els.opacityValue.value = Number(inspectorOpacity).toFixed(2);
     if (selected.userData.cuts?.bottom !== void 0) {
       els.cutSideSelect.value = "bottom";
       els.cutAmountInput.value = selected.userData.cuts.bottom;
@@ -49555,12 +49479,13 @@ void main() {
       inspectorNumber(els.scaleZ, selected.scale.z, { min: 0.05 })
     );
     if (selected.userData.colorApplied) selected.material.color.set(normalizedColor);
+    const reapplyRigOpacity = typeof restoreRigModelMaterials === "function" && restoreRigModelMaterials();
     selected.material.roughness = +els.roughInput.value;
     const opacity = Math.max(0.05, Math.min(1, Number(els.opacityInput.value) || 1));
     selected.material.transparent = opacity < 0.999 || !!selected.userData.textureHasTransparency;
     selected.material.opacity = opacity;
     selected.material.wireframe = false;
-    selected.material.depthWrite = opacity >= 0.999;
+    selected.material.depthWrite = opacity >= 0.9;
     selected.material.needsUpdate = true;
     selected.userData.color = normalizedColor;
     selected.userData.roughness = +els.roughInput.value;
@@ -49568,6 +49493,7 @@ void main() {
     syncMeshRenderCulling(selected);
     els.roughValue.value = Number(selected.material.roughness).toFixed(2);
     els.opacityValue.value = opacity.toFixed(2);
+    if (reapplyRigOpacity) applyRigModelOpacity();
     updateAll();
   }
   function importJsonData(data, fileName = "JSON") {
@@ -53030,15 +52956,17 @@ ${new OBJExporter().parse(group)}`;
   var screenshotViewDirections = {
     front: new Vector3(0, 0, 1),
     back: new Vector3(0, 0, -1),
-    left: new Vector3(-1, 0, 0),
-    right: new Vector3(1, 0, 0),
+    // Side labels describe the direction the character faces in the exported
+    // image: Left faces screen-left and Right faces screen-right.
+    left: new Vector3(1, 0, 0),
+    right: new Vector3(-1, 0, 0),
     side: new Vector3(1, 0, 0),
     top: new Vector3(0, 1, 0),
     iso: new Vector3(0.78, 0.52, 0.92),
-    "front-left": new Vector3(-0.78, 0.35, 0.92),
-    "front-right": new Vector3(0.78, 0.35, 0.92),
-    "back-left": new Vector3(-0.78, 0.35, -0.92),
-    "back-right": new Vector3(0.78, 0.35, -0.92)
+    "front-left": new Vector3(0.78, 0.35, 0.92),
+    "front-right": new Vector3(-0.78, 0.35, 0.92),
+    "back-left": new Vector3(0.78, 0.35, -0.92),
+    "back-right": new Vector3(-0.78, 0.35, -0.92)
   };
   function sceneBounds() {
     const box = new Box3();
@@ -53145,7 +53073,7 @@ ${new OBJExporter().parse(group)}`;
     log("Restored the free perspective work view.");
     return true;
   }
-  function captureView(viewName = "iso", { download: download2 = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false } = {}) {
+  function captureView(viewName = "iso", { download: download2 = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false, includeBones = false, restoreRigOpacity = false } = {}) {
     const oldPosition = camera.position.clone();
     const oldUp = camera.up.clone();
     const oldTarget = orbit.target.clone();
@@ -53167,6 +53095,9 @@ ${new OBJExporter().parse(group)}`;
     const oldBoneRigVisible = boneRigGroup.visible;
     const oldBoneGridAxisVisible = boneGridAxisGroup.visible;
     const oldBoneTransformVisible = boneTransform.visible;
+    const oldBoneJoystickVisible = boneJoystickGroup.visible;
+    const oldBoneRingGuideVisible = boneRingGuideGroup.visible;
+    const oldBoneChildVisibility = boneRigGroup.children.map((child) => [child, child.visible]);
     const oldSceneBackground = scene.background;
     const oldSceneFog = scene.fog;
     const oldClearAlpha = renderer.getClearAlpha();
@@ -53175,8 +53106,36 @@ ${new OBJExporter().parse(group)}`;
     const oldStudioFloorVisible = studioFloor.visible;
     const oldPixelRatio = renderer.getPixelRatio();
     const oldProjectionMatrix = camera.projectionMatrix.clone();
+    const exportMaterialStates = [];
+    if (restoreRigOpacity && rigModelMaterialState instanceof Map) {
+      for (const [material, original] of rigModelMaterialState) {
+        exportMaterialStates.push([material, material.opacity, material.transparent, material.depthWrite]);
+        material.opacity = original.opacity;
+        material.transparent = original.transparent;
+        material.depthWrite = original.depthWrite;
+        material.needsUpdate = true;
+      }
+    }
+    const exportBoneMaterialStates = [];
+    if (includeBones) {
+      boneRigGroup.traverse((child) => {
+        const materials = Array.isArray(child.material) ? child.material : [child.material];
+        for (const material of materials) {
+          if (!material) continue;
+          exportBoneMaterialStates.push([material, material.depthTest, material.depthWrite]);
+          material.depthTest = false;
+          material.depthWrite = false;
+          material.needsUpdate = true;
+        }
+      });
+    }
     transform.visible = false;
     boneTransform.visible = false;
+    boneJoystickGroup.visible = false;
+    boneRingGuideGroup.visible = false;
+    boneRigGroup.children.filter((child) => child.userData?.boneGizmo).forEach((child) => {
+      child.visible = false;
+    });
     faceMarker.visible = false;
     surfaceComponentMarker.visible = false;
     modelingEdgesOverlay.visible = false;
@@ -53195,13 +53154,13 @@ ${new OBJExporter().parse(group)}`;
       studioFloor.visible = false;
       grid.visible = false;
       gridLabelGroup.visible = false;
-      boneRigGroup.visible = false;
+      boneRigGroup.visible = includeBones && rigBones.length > 0;
       boneGridAxisGroup.visible = false;
     }
     if (els.hideGridInShotsInput?.checked) {
       grid.visible = false;
       gridLabelGroup.visible = false;
-      boneRigGroup.visible = false;
+      boneRigGroup.visible = includeBones && rigBones.length > 0;
       boneGridAxisGroup.visible = false;
     }
     renderer.setPixelRatio(Math.min(4, oldPixelRatio * Math.max(1, Number(qualityScale) || 1)));
@@ -53246,6 +53205,11 @@ ${new OBJExporter().parse(group)}`;
     if (download2) downloadDataUrl(shot.fileName, dataUrl);
     transform.visible = oldTransformVisible;
     boneTransform.visible = oldBoneTransformVisible;
+    boneJoystickGroup.visible = oldBoneJoystickVisible;
+    boneRingGuideGroup.visible = oldBoneRingGuideVisible;
+    oldBoneChildVisibility.forEach(([child, visible]) => {
+      child.visible = visible;
+    });
     faceMarker.visible = oldFaceMarkerVisible;
     surfaceComponentMarker.visible = oldSurfaceComponentMarkerVisible;
     modelingEdgesOverlay.visible = oldModelingEdgesOverlayVisible;
@@ -53262,6 +53226,17 @@ ${new OBJExporter().parse(group)}`;
     floor.visible = oldFloorVisible;
     studioFloor.visible = oldStudioFloorVisible;
     renderer.setPixelRatio(oldPixelRatio);
+    exportMaterialStates.forEach(([material, opacity, transparent2, depthWrite]) => {
+      material.opacity = opacity;
+      material.transparent = transparent2;
+      material.depthWrite = depthWrite;
+      material.needsUpdate = true;
+    });
+    exportBoneMaterialStates.forEach(([material, depthTest, depthWrite]) => {
+      material.depthTest = depthTest;
+      material.depthWrite = depthWrite;
+      material.needsUpdate = true;
+    });
     resize();
     grid.visible = oldGridVisible;
     gridLabelGroup.visible = oldGridLabelsVisible;
@@ -53618,7 +53593,7 @@ ${new OBJExporter().parse(group)}`;
     const fileName = `${prefix}-${clipSlug}-${viewName}-sprite-sheet.png`;
     return { fileName, width: sheet.width, height: sheet.height, frameWidth: cellWidth, frameHeight: cellHeight, columns, rows, dataUrl: sheet.toDataURL("image/png"), view: viewName, shots };
   }
-  async function saveAnimationMotionSheets({ view = "left", frameCount = 8, range = "end", download: download2 = true, qualityScale = 1 } = {}) {
+  async function saveAnimationMotionSheets({ view = "left", frameCount = 8, range = "end", download: download2 = true, qualityScale = 1, includeBones = false } = {}) {
     if (!animationHasKeys()) {
       animationState.playing = false;
       updateAnimationPanel();
@@ -53631,7 +53606,8 @@ ${new OBJExporter().parse(group)}`;
     const exportEnd = animationExportEndFrame(range);
     const frames = animationMotionSheetFrames(frameCount, exportEnd);
     const prefix = currentProjectBaseName();
-    const clipLabel = els.minecraftAnimationSelect?.selectedOptions?.[0]?.textContent?.trim() || "animation";
+    const activeClip = animationState.clips?.[animationState.activeClipId];
+    const clipLabel = String(activeClip?.name || animationState.activeClipId || "animation").trim();
     const sheets = [];
     animationState.playing = false;
     try {
@@ -53640,13 +53616,22 @@ ${new OBJExporter().parse(group)}`;
       for (const frame of frames) {
         animationSetFrame(frame, { render: false });
         for (const object of objects) animationBounds.expandByObject(object);
+        if (includeBones) {
+          rebuildBoneVisuals();
+          boneRigGroup.visible = true;
+          animationBounds.expandByObject(boneRigGroup);
+        }
       }
       for (const viewName of requestedViews) {
         const shots = [];
         for (const frame of frames) {
           animationSetFrame(frame, { render: false });
+          if (includeBones) {
+            rebuildBoneVisuals();
+            boneRigGroup.visible = true;
+          }
           renderer.render(scene, camera);
-          shots.push({ ...captureView(viewName, { download: false, prefix, transparent: true, useCurrentZoom: false, bounds: animationBounds, qualityScale }), frame });
+          shots.push({ ...captureView(viewName, { download: false, prefix, transparent: true, useCurrentZoom: false, bounds: animationBounds, qualityScale, includeBones, restoreRigOpacity: true }), frame });
         }
         const sheet = await composeAnimationMotionSheet(viewName, shots, clipLabel, prefix);
         sheets.push(sheet);
@@ -55408,7 +55393,7 @@ ${new OBJExporter().parse(group)}`;
     boneJoystickGroup.visible = show;
     if (!show) return;
     const base = bone.displayPosition || bone.position;
-    const dir = boneAimDir(bone).negate();
+    const dir = boneAimDir(bone);
     const len = boneJoystickLength();
     boneJoystickGroup.position.copy(base);
     boneJoystickShaft.scale.y = len;
@@ -55442,9 +55427,9 @@ ${new OBJExporter().parse(group)}`;
       startRotation: bone.rotation.clone(),
       mirrorId: boneById(mirroredBoneId(bone.id))?.id || null,
       mirrorRotation: boneById(mirroredBoneId(bone.id))?.rotation.clone() || null,
-      // The handle sits on the opposite side from the bone, so rotate relative to
-      // the handle's own start direction (which the cursor grabs).
-      startDir: boneAimDir(bone).negate()
+      // The visible joystick and limb share the same direction, so a clockwise
+      // drag produces a clockwise bone turn from the user's point of view.
+      startDir: boneAimDir(bone)
     };
     orbit.enabled = false;
     renderer.domElement.setPointerCapture?.(event.pointerId);
@@ -56105,12 +56090,19 @@ ${new OBJExporter().parse(group)}`;
     const side = point.x < 0 ? "L" : "R";
     const byName = (name) => bones.findIndex((bone) => bone.name === name);
     const named = (names) => names.map(byName).filter((index) => index >= 0);
-    if (point.y < 0.16) return named([`Foot ${side}`, `Shin ${side}`]);
-    if (point.y < 0.74) return named([`Shin ${side}`, `Thigh ${side}`, "Root"]);
-    if (point.y < 0.92) return named([`Thigh ${side}`, "Root", "Spine"]);
-    const armThreshold = point.y > 1.12 ? 0.24 : 0.34;
+    const pelvis = bones.find((bone) => bone.name === "Pelvis");
+    const chest = bones.find((bone) => bone.name === "Chest");
+    const foot = bones.find((bone) => bone.name === `Foot ${side}`);
+    const pelvisY = pelvis?.bindPosition?.y ?? 0.9;
+    const chestY = chest?.bindPosition?.y ?? 1.2;
+    const footY = foot?.bindPosition?.y ?? 0.08;
+    if (point.y <= pelvisY + 0.15) {
+      if (point.y < footY + 0.12) return named([`Foot ${side}`, `Shin ${side}`, `Thigh ${side}`]);
+      return named([`Thigh ${side}`, `Shin ${side}`, "Pelvis", "Root"]);
+    }
+    const armThreshold = point.y > chestY - 0.06 ? 0.24 : 0.34;
     if (Math.abs(point.x) > armThreshold) return named([`Upper Arm ${side}`, `Forearm ${side}`, "Chest"]);
-    if (point.y > 1.48) return named(["Head", "Chest"]);
+    if (point.y > chestY + 0.26) return named(["Head", "Neck", "Chest"]);
     return named(["Chest", "Spine", "Root"]);
   }
   function addSkinAttributes(geometry, bones) {
@@ -56204,11 +56196,27 @@ ${new OBJExporter().parse(group)}`;
       const threeBone = threeBones.get(bone.id);
       const pose = poses.get(bone.id) || { position: bone.bindPosition, rotation: bone.bindRotation };
       const parent = boneById(bone.parentId);
-      const parentPose = parent ? poses.get(parent.id) : null;
-      const parentQuat = parentPose ? new Quaternion().setFromEuler(new Euler(parentPose.rotation.x, parentPose.rotation.y, parentPose.rotation.z, "XYZ")) : new Quaternion();
-      if (parent && threeBones.has(parent.id)) threeBone.position.copy(pose.position).sub(parentPose?.position || parent.bindPosition).applyQuaternion(parentQuat.clone().invert());
-      else threeBone.position.copy(pose.position);
-      threeBone.quaternion.setFromEuler(new Euler(pose.rotation.x, pose.rotation.y, pose.rotation.z, "XYZ"));
+      const bindPosition = bone.bindPosition || bone.position;
+      const posePosition = pose.position?.clone?.() || new Vector3().fromArray(Array.isArray(pose.position) ? pose.position : bindPosition.toArray());
+      const keyedOffset = posePosition.sub(bindPosition);
+      if (parent && threeBones.has(parent.id)) {
+        threeBone.position.copy(bindPosition).sub(parent.bindPosition || parent.position).add(keyedOffset);
+      } else {
+        threeBone.position.copy(bindPosition).add(keyedOffset);
+      }
+      const bindQuaternion = new Quaternion().setFromEuler(new Euler(
+        bone.bindRotation?.x || 0,
+        bone.bindRotation?.y || 0,
+        bone.bindRotation?.z || 0,
+        "XYZ"
+      ));
+      const poseQuaternion = new Quaternion().setFromEuler(new Euler(
+        pose.rotation?.x || 0,
+        pose.rotation?.y || 0,
+        pose.rotation?.z || 0,
+        "XYZ"
+      ));
+      threeBone.quaternion.copy(poseQuaternion.multiply(bindQuaternion.invert()));
     }
     avatar.updateMatrixWorld(true);
     skeleton.update();
@@ -56789,7 +56797,12 @@ ${new OBJExporter().parse(group)}`;
       const childTail = directChild ? directChild.displayPosition || directChild.position : null;
       const guideTail = childTail || bone2.displayTail || bone2.tail || bone2.position.clone().add(new Vector3(0, 0.12, 0));
       const selectedGuide = bone2.id === selectedBoneId;
-      const jointColor = selectedGuide ? 16762183 : 14211288;
+      const lowerId = String(bone2.id || "").toLowerCase();
+      const lowerName = String(bone2.name || "").toLowerCase();
+      const leftSide = lowerId.includes("left_") || /(?:^|\s)l$/.test(lowerName);
+      const rightSide = lowerId.includes("right_") || /(?:^|\s)r$/.test(lowerName);
+      const jointColor = selectedGuide ? 16762183 : leftSide ? 5617663 : rightSide ? 16738408 : 14211288;
+      const coneColor = selectedGuide ? 16762183 : leftSide ? 2522572 : rightSide ? 13188927 : 10135469;
       const boneVector = guideTail.clone().sub(guidePosition);
       const boneLength = boneVector.length();
       const childBone = rigBones.find((candidate) => boneById(candidate.parentId)?.id === bone2.id);
@@ -56822,7 +56835,7 @@ ${new OBJExporter().parse(group)}`;
         const coneRadius = Math.min(Math.max(boneLength * 0.18 * guideScale, 0.018), 0.22 * guideScale);
         const cone = new Mesh(
           new ConeGeometry(coneRadius, boneLength, 12, 1, false),
-          new MeshStandardMaterial({ color: selectedGuide ? 16762183 : 10135469, depthTest: true, roughness: 0.8, metalness: 0 })
+          new MeshStandardMaterial({ color: coneColor, depthTest: true, roughness: 0.8, metalness: 0 })
         );
         cone.position.copy(guidePosition).add(boneVector.clone().multiplyScalar(0.5));
         cone.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction);
@@ -56867,7 +56880,8 @@ ${new OBJExporter().parse(group)}`;
     if (els.boneGuideScaleInput) els.boneGuideScaleInput.value = String(boneGuideScale);
     if (els.boneGuideScaleValue) els.boneGuideScaleValue.textContent = `${Math.round(boneGuideScale * 100)}%`;
   }
-  function applyRigModelOpacity() {
+  function restoreRigModelMaterials() {
+    const restored = rigModelMaterialState.size > 0;
     for (const [material, state2] of rigModelMaterialState) {
       material.opacity = state2.opacity;
       material.transparent = state2.transparent;
@@ -56875,6 +56889,13 @@ ${new OBJExporter().parse(group)}`;
       material.needsUpdate = true;
     }
     rigModelMaterialState.clear();
+    return restored;
+  }
+  function rigModelBaseMaterialState(material) {
+    return rigModelMaterialState.get(material) || null;
+  }
+  function applyRigModelOpacity() {
+    restoreRigModelMaterials();
     const roots = new Set(objects.filter((object) => object && !object.userData?.editorHelper && object.userData?.rigRole !== "armor"));
     if (activeSkinRuntime?.avatar) roots.add(activeSkinRuntime.avatar);
     for (const root of roots) {
@@ -56882,14 +56903,15 @@ ${new OBJExporter().parse(group)}`;
         if (!part.isMesh) return;
         for (const material of Array.isArray(part.material) ? part.material : [part.material]) {
           if (!material || rigModelMaterialState.has(material)) continue;
-          rigModelMaterialState.set(material, {
+          const originalState = {
             opacity: material.opacity,
             transparent: material.transparent,
             depthWrite: material.depthWrite
-          });
+          };
+          rigModelMaterialState.set(material, originalState);
           material.opacity *= rigModelOpacity;
           material.transparent = material.transparent || rigModelOpacity < 0.999;
-          material.depthWrite = rigModelOpacity >= 0.999 ? material.depthWrite : false;
+          material.depthWrite = rigModelOpacity >= 0.9 ? originalState.depthWrite : false;
           material.needsUpdate = true;
         }
       });
@@ -58599,6 +58621,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     boneGridAxisGroup.visible = !!els.showGridInput?.checked;
     syncActiveJointCamera();
     orbit.update();
+    updateViewportCompass();
     syncCameraDirectorVisibility();
     syncSelectionOutlineTransforms();
     if (lineSketchMode && lineSketchPoints.length) updateLineSketchGuide();
@@ -58861,7 +58884,8 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.animationSheetExportBtn?.addEventListener("click", async () => saveAnimationMotionSheets({
     view: els.animationSheetViewSelect?.value || "left",
     frameCount: Number(els.animationSheetFramesInput?.value) || 8,
-    range: els.animationExportRangeSelect?.value || "end"
+    range: els.animationExportRangeSelect?.value || "end",
+    includeBones: !!els.animationExportBonesInput?.checked
   }));
   els.animationWebmExportBtn?.addEventListener("click", async () => {
     try {

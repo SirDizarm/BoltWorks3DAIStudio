@@ -703,103 +703,13 @@ function clearGuideGroup(group) {
   }
 }
 
-function makeGuideLabelTexture(text, {
-  width = 512,
-  height = 160,
-  textColor = "#f3f7fb",
-  bgColor = "rgba(9,12,17,0.68)",
-  strokeColor = "rgba(0,0,0,0.4)"
-} = {}) {
-  const labelCanvas = document.createElement("canvas");
-  labelCanvas.width = width;
-  labelCanvas.height = height;
-  const ctx = labelCanvas.getContext("2d");
-  if (!ctx) return null;
-  ctx.clearRect(0, 0, width, height);
-  ctx.fillStyle = bgColor;
-  ctx.beginPath();
-  const radius = 26;
-  ctx.moveTo(radius, 0);
-  ctx.lineTo(width - radius, 0);
-  ctx.quadraticCurveTo(width, 0, width, radius);
-  ctx.lineTo(width, height - radius);
-  ctx.quadraticCurveTo(width, height, width - radius, height);
-  ctx.lineTo(radius, height);
-  ctx.quadraticCurveTo(0, height, 0, height - radius);
-  ctx.lineTo(0, radius);
-  ctx.quadraticCurveTo(0, 0, radius, 0);
-  ctx.closePath();
-  ctx.fill();
-  ctx.lineWidth = 6;
-  ctx.strokeStyle = strokeColor;
-  ctx.stroke();
-  ctx.fillStyle = textColor;
-  ctx.font = "700 78px system-ui, sans-serif";
-  ctx.textAlign = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, width / 2, height / 2 + 4);
-  const texture = new THREE.CanvasTexture(labelCanvas);
-  texture.needsUpdate = true;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  return texture;
-}
-
-function makeFlatGuideLabel(text, width = 2.2, height = 0.7) {
-  const texture = makeGuideLabelTexture(text);
-  const material = new THREE.MeshBasicMaterial({
-    map: texture,
-    transparent: true,
-    depthWrite: false,
-    side: THREE.DoubleSide
-  });
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
-  mesh.rotation.x = -Math.PI / 2;
-  mesh.renderOrder = 12;
-  return mesh;
-}
-
 function buildGridLabels() {
   clearGuideGroup(gridLabelGroup);
-  const labels = [
-    { text: "FRONT", axis: "front" },
-    { text: "BACK", axis: "back" },
-    { text: "LEFT", axis: "left" },
-    { text: "RIGHT", axis: "right" }
-  ];
-  for (const spec of labels) {
-    const mesh = makeFlatGuideLabel(spec.text);
-    mesh.userData.axis = spec.axis;
-    gridLabelGroup.add(mesh);
-  }
+  gridLabelGroup.visible = false;
 }
 
 function updateGridLabels() {
-  const scale = grid.scale.x || 1;
-  const halfSize = 9 * scale;
-  const offset = Math.max(0.9, halfSize * 0.12);
-  const labelY = 0.03;
-  for (const mesh of gridLabelGroup.children) {
-    mesh.scale.setScalar(scale);
-    mesh.rotation.set(-Math.PI / 2, 0, 0);
-    switch (mesh.userData.axis) {
-      case "front":
-        mesh.position.set(0, labelY, halfSize + offset);
-        mesh.rotation.z = Math.PI;
-        break;
-      case "back":
-        mesh.position.set(0, labelY, -halfSize - offset);
-        break;
-      case "left":
-        mesh.position.set(-halfSize - offset, labelY, 0);
-        mesh.rotation.z = Math.PI / 2;
-        break;
-      case "right":
-        mesh.position.set(halfSize + offset, labelY, 0);
-        mesh.rotation.z = -Math.PI / 2;
-        break;
-    }
-  }
-  gridLabelGroup.visible = grid.visible;
+  gridLabelGroup.visible = false;
 }
 
 function makeGuideCircle(radius = 1, color = 0x55ff99, segments = 40) {
@@ -1039,9 +949,9 @@ function applyTextureToMesh(mesh, textureUrl, textureName = "Texture", textureFl
   const materialOpacity = Number(mesh.userData?.opacity ?? mesh.material.opacity ?? 1);
   const textureHasTransparency = !!mesh.userData?.textureHasTransparency;
   mesh.material.transparent = materialOpacity < .999 || textureHasTransparency;
-  // Texture alpha still writes depth so opaque texels occlude correctly;
-  // only a translucent mesh opacity disables depth writing.
-  mesh.material.depthWrite = materialOpacity >= .999;
+  // Near-opaque meshes still need depth writing for correct self-occlusion.
+  // Disable it only for deliberately translucent editing/debug views.
+  mesh.material.depthWrite = materialOpacity >= .9;
   mesh.material.needsUpdate = true;
   mesh.userData.textureUrl = textureUrl || null;
   mesh.userData.textureName = textureUrl ? textureName : null;
@@ -3381,7 +3291,7 @@ function createMesh(spec = {}) {
   const materialOpacity = Math.max(.05, Math.min(1, Number(opacity) || 1));
   mesh.material.opacity = materialOpacity;
   mesh.material.transparent = materialOpacity < .999 || !!textureHasTransparency;
-  mesh.material.depthWrite = materialOpacity >= .999;
+  mesh.material.depthWrite = materialOpacity >= .9;
   mesh.material.needsUpdate = true;
   mesh.name = name || `${shape} ${defaultOrdinal}`;
   mesh.userData = {

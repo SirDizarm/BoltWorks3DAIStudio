@@ -1846,7 +1846,7 @@ for (const required of [
   "selected.material.opacity = opacity",
   "opacityInput",
   "Opacity",
-  "mesh.material.depthWrite = materialOpacity >= .999",
+  "mesh.material.depthWrite = materialOpacity >= .9",
   "selected.material.wireframe = false",
   "position.getX(i) * METERS_PER_ROBLOX_STUD",
   "unitScale: ROBLOX_STUDS_PER_METER",
@@ -2316,9 +2316,10 @@ if (!moduleSources.get("viewport")?.includes("frontBoneCamera.position.set(0, 0,
 if (!moduleSources.get("rigging")?.includes("referenceCamera.position.set(center.x, center.y, center.z + 100)")) {
   throw new Error("Fitting the Front X/Y reference camera must preserve the canonical front direction.");
 }
-if (!moduleSources.get("meshes")?.includes('case "front":\n        mesh.position.set(0, labelY, halfSize + offset)')
-  || !moduleSources.get("meshes")?.includes('case "back":\n        mesh.position.set(0, labelY, -halfSize - offset)')) {
-  throw new Error("FRONT and BACK floor labels must match Blockbench's canonical model facing.");
+if (!documentSource.includes('class="viewport-compass"')
+  || !moduleSources.get("viewport")?.includes("function updateViewportCompass")
+  || !moduleSources.get("meshes")?.includes("gridLabelGroup.visible = false")) {
+  throw new Error("World directions must use the viewport compass instead of scene-intersecting floor labels.");
 }
 if (!html.includes('id="flat2dLookInput"') || !moduleSources.get("panels")?.includes("function setFlat2dLook") || !moduleSources.get("panels")?.includes("new THREE.MeshBasicMaterial")) {
   throw new Error("Flat 2D Look must provide a visible toggle and unlit model rendering.");

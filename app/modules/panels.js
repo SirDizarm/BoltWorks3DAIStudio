@@ -222,6 +222,7 @@ function animate() {
   boneGridAxisGroup.visible = !!els.showGridInput?.checked;
   syncActiveJointCamera();
   orbit.update();
+  updateViewportCompass();
   syncCameraDirectorVisibility();
   syncSelectionOutlineTransforms();
   if (lineSketchMode && lineSketchPoints.length) updateLineSketchGuide();
@@ -470,7 +471,8 @@ els.animationExportBtn?.addEventListener("click", exportAnimationJson);
 els.animationSheetExportBtn?.addEventListener("click", async () => saveAnimationMotionSheets({
   view: els.animationSheetViewSelect?.value || "left",
   frameCount: Number(els.animationSheetFramesInput?.value) || 8,
-  range: els.animationExportRangeSelect?.value || "end"
+  range: els.animationExportRangeSelect?.value || "end",
+  includeBones: !!els.animationExportBonesInput?.checked
 }));
 els.animationWebmExportBtn?.addEventListener("click", async () => {
   try { await exportAnimationWebm({ view: els.animationSheetViewSelect?.value || "left", range: els.animationExportRangeSelect?.value || "end", durationSeconds: Number(els.animationVideoDurationInput?.value) || 6, qualityScale: Number(els.animationVideoQualitySelect?.value) || 1.5, useSequence: !!els.animationUseSequenceInput?.checked, endOnLastClip: els.animationVideoLengthModeSelect?.value === "clips" }); }
