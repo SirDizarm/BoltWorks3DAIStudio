@@ -33,6 +33,9 @@ be rendered to 2D sprites or used as tile assemblies in Unity.
 - **Flat 2D Look (no shading)** is linked to the matching Camera Controls
   toggle. Either control changes the same unlit material setting for editor
   preview and rendered output.
+- **Hide Floor in Export** leaves the detected floor out of the finished PNG
+  while still using that floor as the invisible centre and scale guide. This
+  gives standalone props the same footprint as normal floor-based tiles.
 
 ### Tile export
 
@@ -51,6 +54,9 @@ same assembly pivot in every Unity-facing view.
   set.
 - Every cell uses one shared scale, so an orientation with a wider silhouette
   is not enlarged relative to the other three cells.
+- The floor-only silhouette defines the compositor anchor. Its screen centre
+  and size remain identical in all four cells; props and walls are drawn around
+  it and cannot recenter or resize the tile.
 - Tile-sheet renders temporarily remove material specular and environment
   reflections, preventing a moving sun-glare spot from appearing on the ground.
 - The exporter frames the complete selected assembly and uses a transparent

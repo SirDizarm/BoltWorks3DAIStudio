@@ -910,6 +910,7 @@ const els = {
   modelTileCameraTargetYInput: document.querySelector("#modelTileCameraTargetYInput"),
   modelTileCameraLockBtn: document.querySelector("#modelTileCameraLockBtn"),
   modelTileViewSetSelect: document.querySelector("#modelTileViewSetSelect"),
+  modelTileHideFloorInput: document.querySelector("#modelTileHideFloorInput"),
   modelTileNeighbourPreviewInput: document.querySelector("#modelTileNeighbourPreviewInput"),
   modelTileNeighbourOpacityInput: document.querySelector("#modelTileNeighbourOpacityInput"),
   modelTileNeighbourOpacityValue: document.querySelector("#modelTileNeighbourOpacityValue"),

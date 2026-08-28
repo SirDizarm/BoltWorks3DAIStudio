@@ -16775,11 +16775,12 @@ async function exportModelTileKit() {
     viewSet: els.modelTileViewSetSelect?.value || "isometric",
     wallSafeCardinalViews: (els.modelTileViewSetSelect?.value || "isometric") === "cardinal"
   };
+  const hideFloorInExport = !!els.modelTileHideFloorInput?.checked;
   if (!mesh) { if (els.modelTileStatus) els.modelTileStatus.textContent = "Select a mesh, group, or multiple parts first."; return; }
   const selectedGroup = selectedGroupRecordId ? groupRecord(selectedGroupRecordId) : null;
   const exportName = selectedGroup?.name || (exportTargets.length > 1 ? `${mesh.name}-assembly` : mesh.name) || "tile";
   const safeName = exportName.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "tile";
-  const manifest = { kind: "death-and-dues-tile", version: 1, asset: mesh.name || "Tile", dimensionsMeters: { width, depth, wallHeight: height }, ground: { texture: `${safeName}-ground.png`, material: material?.name || "default" }, wall: { texture: `${safeName}-wall.png`, facing, compassOrder: ["N", "E", "S", "W"], rotateYDegrees: { N: 0, E: 90, S: 180, W: 270 } }, textureSheet: { file: `${safeName}-wall-4x.png`, columns: 4, order: cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"], renderMode: cameraProfile.wallSafeCardinalViews ? "wall-normal-aligned-orthographic" : "isometric-diagonal-orthographic" }, camera: { projection: "orthographic", coordinateSystem: "Unity-Y-up", ...cameraProfile, lockToEditorOrigin: true }, unity: { prefabRoot: "DeathAndDues/Tiles", rotateWallAtPlacement: true } };
+  const manifest = { kind: "death-and-dues-tile", version: 1, asset: mesh.name || "Tile", dimensionsMeters: { width, depth, wallHeight: height }, ground: { texture: `${safeName}-ground.png`, material: material?.name || "default", hiddenInSheet: hideFloorInExport }, wall: { texture: `${safeName}-wall.png`, facing, compassOrder: ["N", "E", "S", "W"], rotateYDegrees: { N: 0, E: 90, S: 180, W: 270 } }, textureSheet: { file: `${safeName}-wall-4x.png`, columns: 4, order: cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"], renderMode: cameraProfile.wallSafeCardinalViews ? "wall-normal-aligned-orthographic" : "isometric-diagonal-orthographic" }, camera: { projection: "orthographic", coordinateSystem: "Unity-Y-up", ...cameraProfile, lockToEditorOrigin: true }, unity: { prefabRoot: "DeathAndDues/Tiles", rotateWallAtPlacement: true } };
   download(`${safeName}.deathanddues.tile.json`, JSON.stringify(manifest, null, 2), "application/json");
   const exportTargetsForRender = exportTargets.length ? exportTargets : [...objects];
   const exportTargetIds = new Set(exportTargetsForRender.map(target => target.userData.id));
@@ -16809,9 +16810,8 @@ async function exportModelTileKit() {
   }
   const bounds = new THREE.Box3();
   exportTargetsForRender.forEach(target => bounds.expandByObject(target));
-  const groundTargetsForRender = cameraProfile.wallSafeCardinalViews
-    ? []
-    : modelTileGroundTargets(exportTargetsForRender, bounds);
+  const floorAnchorTargets = modelTileGroundTargets(exportTargetsForRender, bounds);
+  const groundTargetsForRender = cameraProfile.wallSafeCardinalViews ? [] : floorAnchorTargets;
   const groundTransformSnapshots = groundTargetsForRender.map(target => ({
     target,
     position: target.position.clone(),
@@ -16834,6 +16834,29 @@ async function exportModelTileKit() {
   const renderDistance = Math.max(cameraProfile.distance, bounds.getSize(new THREE.Vector3()).length() * 1.2);
   const viewNames = cameraProfile.wallSafeCardinalViews ? ["N", "E", "S", "W"] : ["NE", "SE", "SW", "NW"];
   const renderedCells = [];
+  const anchorGuide = floorAnchorTargets.length ? null : new THREE.Mesh(
+    new THREE.PlaneGeometry(width, depth),
+    new THREE.MeshBasicMaterial({ color: 0xffffff })
+  );
+  if (anchorGuide) {
+    anchorGuide.name = "tile export floor anchor";
+    anchorGuide.rotation.x = -Math.PI / 2;
+    anchorGuide.position.set(0, 0, 0);
+    anchorGuide.visible = false;
+    scene.add(anchorGuide);
+  }
+  async function shotCanvas(shot) {
+    const imageElement = await new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = shot.dataUrl; });
+    const source = document.createElement("canvas"); source.width = imageElement.width; source.height = imageElement.height;
+    source.getContext("2d").drawImage(imageElement, 0, 0);
+    return source;
+  }
+  function alphaBounds(source) {
+    const pixels = source.getContext("2d").getImageData(0, 0, source.width, source.height).data;
+    let minX = source.width, minY = source.height, maxX = -1, maxY = -1;
+    for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) if (pixels[(y * source.width + x) * 4 + 3] > 3) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
+    return maxX < 0 ? null : { minX, minY, maxX, maxY, width: maxX - minX + 1, height: maxY - minY + 1 };
+  }
   for (let i = 0; i < 4; i++) {
     const groundRotation = i * Math.PI / 2;
     const groundRotationMatrix = new THREE.Matrix4().makeRotationY(groundRotation);
@@ -16845,25 +16868,36 @@ async function exportModelTileKit() {
     }
     const azimuth = (cameraProfile.wallSafeCardinalViews ? 0 : baseAzimuth) + i * Math.PI / 2;
     const direction = new THREE.Vector3(Math.sin(azimuth) * Math.cos(elevation), Math.sin(elevation), Math.cos(azimuth) * Math.cos(elevation));
+    const renderVisibility = exportTargetsForRender.map(target => ({ target, visible: target.visible }));
+    exportTargetsForRender.forEach(target => { target.visible = floorAnchorTargets.includes(target); });
+    if (anchorGuide) anchorGuide.visible = true;
+    const anchorShot = captureView(`tile-anchor-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds: framingBounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
+    const anchor = alphaBounds(await shotCanvas(anchorShot));
+    if (anchorGuide) anchorGuide.visible = false;
+    renderVisibility.forEach(entry => { entry.target.visible = entry.visible; });
+    if (hideFloorInExport) floorAnchorTargets.forEach(target => { target.visible = false; });
     const shot = captureView(`tile-${viewNames[i]}`, { transparent: true, useCurrentZoom: false, bounds: framingBounds, centerOverride: center, directionOverride: direction, qualityScale: 1.5, orthographic: true });
-    const imageElement = await new Promise((resolve, reject) => { const image = new Image(); image.onload = () => resolve(image); image.onerror = reject; image.src = shot.dataUrl; });
-    const source = document.createElement("canvas"); source.width = imageElement.width; source.height = imageElement.height;
-    const sourceContext = source.getContext("2d"); sourceContext.drawImage(imageElement, 0, 0);
-    const pixels = sourceContext.getImageData(0, 0, source.width, source.height).data;
-    let minX = source.width, minY = source.height, maxX = -1, maxY = -1;
-    for (let y = 0; y < source.height; y++) for (let x = 0; x < source.width; x++) if (pixels[(y * source.width + x) * 4 + 3] > 3) { minX = Math.min(minX, x); minY = Math.min(minY, y); maxX = Math.max(maxX, x); maxY = Math.max(maxY, y); }
-    if (maxX < 0) continue;
-    renderedCells.push({ index: i, source, minX, minY, cropWidth: maxX - minX + 1, cropHeight: maxY - minY + 1 });
+    const source = await shotCanvas(shot);
+    renderVisibility.forEach(entry => { entry.target.visible = entry.visible; });
+    if (!anchor) continue;
+    renderedCells.push({ index: i, source, anchor });
   }
-  // Use one shared scale for the complete four-view sheet. Per-view fitting
-  // makes diagonal silhouettes with a wider projected footprint appear closer
-  // to the camera than the other orientations.
-  const maxCropWidth = Math.max(...renderedCells.map(cell => cell.cropWidth), 1);
-  const maxCropHeight = Math.max(...renderedCells.map(cell => cell.cropHeight), 1);
-  const sharedScale = Math.min((size * .9) / maxCropWidth, (size * .9) / maxCropHeight);
-  renderedCells.forEach(({ index, source, minX, minY, cropWidth, cropHeight }) => {
-    const drawWidth = cropWidth * sharedScale, drawHeight = cropHeight * sharedScale;
-    ctx.drawImage(source, minX, minY, cropWidth, cropHeight, index * size + (size - drawWidth) / 2, (size - drawHeight) / 2, drawWidth, drawHeight);
+  // The floor alone defines the fixed cell centre and scale. Extra props and
+  // walls are composited around that anchor and cannot recenter the output.
+  const maxAnchorWidth = Math.max(...renderedCells.map(cell => cell.anchor.width), 1);
+  const maxAnchorHeight = Math.max(...renderedCells.map(cell => cell.anchor.height), 1);
+  const sharedScale = Math.min((size * .9) / maxAnchorWidth, (size * .9) / maxAnchorHeight);
+  renderedCells.forEach(({ index, source, anchor }) => {
+    const anchorCenterX = (anchor.minX + anchor.maxX) / 2;
+    const anchorCenterY = (anchor.minY + anchor.maxY) / 2;
+    const destinationX = index * size + size / 2 - anchorCenterX * sharedScale;
+    const destinationY = size / 2 - anchorCenterY * sharedScale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(index * size, 0, size, size);
+    ctx.clip();
+    ctx.drawImage(source, destinationX, destinationY, source.width * sharedScale, source.height * sharedScale);
+    ctx.restore();
   });
   visibility.forEach(entry => { entry.target.visible = entry.visible; });
   for (const snapshot of groundTransformSnapshots) {
@@ -16878,9 +16912,14 @@ async function exportModelTileKit() {
     if ("specularIntensity" in material) material.specularIntensity = snapshot.specularIntensity;
     material.needsUpdate = true;
   }
+  if (anchorGuide) {
+    scene.remove(anchorGuide);
+    anchorGuide.geometry.dispose();
+    anchorGuide.material.dispose();
+  }
   modelTileNeighbourPreviewGroup.visible = neighbourPreviewWasVisible;
   downloadDataUrl(`${safeName}-wall-4x.png`, sheet.toDataURL("image/png"));
-  if (els.modelTileStatus) els.modelTileStatus.textContent = `Exported ${manifest.asset}: transparent, tightly framed ${viewNames.join("/")} model renders.`;
+  if (els.modelTileStatus) els.modelTileStatus.textContent = `Exported ${manifest.asset}: floor-anchored ${viewNames.join("/")} model renders${hideFloorInExport ? " with the floor hidden" : ""}.`;
 }
 
 function rotateModelTileFacing() {
