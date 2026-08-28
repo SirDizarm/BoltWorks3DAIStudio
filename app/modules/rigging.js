@@ -413,7 +413,7 @@ function freshBoneId() {
 // IDs (right_hand, head, chest, etc.), while the actual proportions come from
 // the visible model bounds.
 function createHumanoidTestRig() {
-  const avatar = selected?.geometry?.getAttribute("position")
+  let avatar = selected?.geometry?.getAttribute("position")
     ? selected
     : objects.find(object => object?.geometry?.getAttribute("position") && !object.userData?.editorHelper);
   if (!avatar) {
@@ -421,8 +421,10 @@ function createHumanoidTestRig() {
     return;
   }
   if (avatar.isSkinnedMesh || rigBones.some(bone => bone.avatarObjectId === avatar.userData.id)) {
-    log("This character already has a humanoid rig. Undo first if you want to rebuild it.");
-    return;
+    const avatarId = avatar.userData.id;
+    unglueBonesFromModel();
+    avatar = findObject(avatarId);
+    rigBones = [];
   }
   recordBoneHistory("create humanoid test rig");
   avatar.updateWorldMatrix(true, false);
@@ -449,25 +451,25 @@ function createHumanoidTestRig() {
   const right = center.x + halfWidth;
   const front = center.z + halfDepth * .38;
   const bones = [
-    bone("root", "Root", null, point(center.x, .01), point(center.x, .12)),
-    bone("pelvis", "Pelvis", "root", point(center.x, .12), point(center.x, .31)),
-    bone("spine", "Spine", "pelvis", point(center.x, .31), point(center.x, .52)),
-    bone("chest", "Chest", "spine", point(center.x, .52), point(center.x, .68)),
-    bone("back", "Back Mount", "chest", point(center.x, .60, center.z - halfDepth * .28), point(center.x, .60, center.z - halfDepth * .7)),
-    bone("neck", "Neck", "chest", point(center.x, .68), point(center.x, .77)),
-    bone("head", "Head", "neck", point(center.x, .77), point(center.x, .97)),
-    bone("left_upper_arm", "Upper Arm L", "chest", point(center.x - halfWidth * .18, .64), point(center.x - halfWidth * .64, .62)),
-    bone("left_forearm", "Forearm L", "left_upper_arm", point(center.x - halfWidth * .64, .62), point(center.x - halfWidth * .98, .60)),
-    bone("left_hand", "Hand L", "left_forearm", point(center.x - halfWidth * .98, .60), point(left - halfWidth * .04, .60)),
-    bone("right_upper_arm", "Upper Arm R", "chest", point(center.x + halfWidth * .18, .64), point(center.x + halfWidth * .64, .62)),
-    bone("right_forearm", "Forearm R", "right_upper_arm", point(center.x + halfWidth * .64, .62), point(center.x + halfWidth * .98, .60)),
-    bone("right_hand", "Hand R", "right_forearm", point(center.x + halfWidth * .98, .60), point(right + halfWidth * .04, .60)),
-    bone("left_thigh", "Thigh L", "pelvis", point(center.x - halfWidth * .22, .28), point(center.x - halfWidth * .25, .13)),
-    bone("left_shin", "Shin L", "left_thigh", point(center.x - halfWidth * .25, .13), point(center.x - halfWidth * .26, .035, front)),
-    bone("left_foot", "Foot L", "left_shin", point(center.x - halfWidth * .26, .035, front), point(center.x - halfWidth * .26, .02, front + halfDepth * .45)),
-    bone("right_thigh", "Thigh R", "pelvis", point(center.x + halfWidth * .22, .28), point(center.x + halfWidth * .25, .13)),
-    bone("right_shin", "Shin R", "right_thigh", point(center.x + halfWidth * .25, .13), point(center.x + halfWidth * .26, .035, front)),
-    bone("right_foot", "Foot R", "right_shin", point(center.x + halfWidth * .26, .035, front), point(center.x + halfWidth * .26, .02, front + halfDepth * .45))
+    bone("root", "Root", null, point(center.x, .01), point(center.x, .48)),
+    bone("pelvis", "Pelvis", "root", point(center.x, .48), point(center.x, .56)),
+    bone("spine", "Spine", "pelvis", point(center.x, .56), point(center.x, .67)),
+    bone("chest", "Chest", "spine", point(center.x, .67), point(center.x, .76)),
+    bone("back", "Back Mount", "chest", point(center.x, .69, center.z - halfDepth * .28), point(center.x, .69, center.z - halfDepth * .7)),
+    bone("neck", "Neck", "chest", point(center.x, .76), point(center.x, .83)),
+    bone("head", "Head", "neck", point(center.x, .83), point(center.x, .97)),
+    bone("left_upper_arm", "Upper Arm L", "chest", point(center.x - halfWidth * .15, .76), point(center.x - halfWidth * .57, .77)),
+    bone("left_forearm", "Forearm L", "left_upper_arm", point(center.x - halfWidth * .57, .77), point(center.x - halfWidth * .93, .78)),
+    bone("left_hand", "Hand L", "left_forearm", point(center.x - halfWidth * .93, .78), point(left - halfWidth * .04, .78)),
+    bone("right_upper_arm", "Upper Arm R", "chest", point(center.x + halfWidth * .15, .76), point(center.x + halfWidth * .57, .77)),
+    bone("right_forearm", "Forearm R", "right_upper_arm", point(center.x + halfWidth * .57, .77), point(center.x + halfWidth * .93, .78)),
+    bone("right_hand", "Hand R", "right_forearm", point(center.x + halfWidth * .93, .78), point(right + halfWidth * .04, .78)),
+    bone("left_thigh", "Thigh L", "pelvis", point(center.x - halfWidth * .20, .48), point(center.x - halfWidth * .24, .27)),
+    bone("left_shin", "Shin L", "left_thigh", point(center.x - halfWidth * .24, .27), point(center.x - halfWidth * .25, .055, front)),
+    bone("left_foot", "Foot L", "left_shin", point(center.x - halfWidth * .25, .055, front), point(center.x - halfWidth * .25, .02, front + halfDepth * .45)),
+    bone("right_thigh", "Thigh R", "pelvis", point(center.x + halfWidth * .20, .48), point(center.x + halfWidth * .24, .27)),
+    bone("right_shin", "Shin R", "right_thigh", point(center.x + halfWidth * .24, .27), point(center.x + halfWidth * .25, .055, front)),
+    bone("right_foot", "Foot R", "right_shin", point(center.x + halfWidth * .25, .055, front), point(center.x + halfWidth * .25, .02, front + halfDepth * .45))
   ];
   rigBones = bones;
   rigBones.forEach(item => initializeBoneRestState(item, { capture: true }));
