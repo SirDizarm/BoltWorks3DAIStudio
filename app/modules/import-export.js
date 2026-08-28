@@ -900,25 +900,36 @@ function renderTree() {
     const materialLabel = materialRulePill(mesh.userData.materialRule || "auto");
     row.className = `object-row child${mesh === selected || activeGroupIds.includes(mesh.userData.id) || (transformTargets.length > 1 && checkedIds.has(mesh.userData.id)) ? " selected" : ""}${mesh.userData.hidden ? " hidden-row" : ""}`;
     row.dataset.meshId = mesh.userData.id;
-    row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${rowType}</small><button class="mesh-details-btn" type="button" title="Open mesh details for ${mesh.name}">...</button>`;
-    row.children[0].checked = checkedIds.has(mesh.userData.id);
-    row.children[1].querySelector("input").checked = !!mesh.userData.linkId;
-    row.children[1].classList.toggle("linked", !!mesh.userData.linkId);
-    row.children[1].style.setProperty("--link-color", linkColor);
-    row.children[1].querySelector("input").style.accentColor = linkColor;
-    row.children[2].querySelector("input").checked = !!mesh.userData.hidden;
-    row.children[4].textContent = mesh.name;
-    row.children[4].title = mesh.name;
-    row.children[0].addEventListener("click", event => event.stopPropagation());
-    row.children[0].addEventListener("change", event => setChecked(mesh, event.target.checked));
-    row.children[1].addEventListener("click", event => event.stopPropagation());
-    row.children[1].querySelector("input").addEventListener("change", event => {
+    row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><label class="row-toggle armor-toggle" title="Include ${mesh.name} in the rigid armor system"><input class="armor-check" type="checkbox" aria-label="Mark ${mesh.name} as armor"><span>Armor</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${rowType}</small><button class="mesh-details-btn" type="button" title="Open mesh details for ${mesh.name}">...</button>`;
+    const partCheck = row.querySelector(".part-check");
+    const linkToggle = row.querySelector(".link-toggle");
+    const linkCheck = row.querySelector(".link-check");
+    const hideToggle = row.querySelector(".hide-toggle");
+    const hideCheck = row.querySelector(".hide-check");
+    const armorToggle = row.querySelector(".armor-toggle");
+    const armorCheck = row.querySelector(".armor-check");
+    const meshName = row.querySelector(".mesh-name");
+    const detailsBtn = row.querySelector(".mesh-details-btn");
+    partCheck.checked = checkedIds.has(mesh.userData.id);
+    linkCheck.checked = !!mesh.userData.linkId;
+    linkToggle.classList.toggle("linked", !!mesh.userData.linkId);
+    linkToggle.style.setProperty("--link-color", linkColor);
+    linkCheck.style.accentColor = linkColor;
+    hideCheck.checked = !!mesh.userData.hidden;
+    armorCheck.checked = mesh.userData.rigRole === "armor";
+    armorToggle.classList.toggle("armor-enabled", armorCheck.checked);
+    meshName.textContent = mesh.name;
+    meshName.title = mesh.name;
+    partCheck.addEventListener("click", event => event.stopPropagation());
+    partCheck.addEventListener("change", event => setChecked(mesh, event.target.checked));
+    linkToggle.addEventListener("click", event => event.stopPropagation());
+    linkCheck.addEventListener("change", event => {
       event.stopPropagation();
       recordHistory(event.target.checked ? "link parts" : "unlink part");
       setLinked(mesh, event.target.checked);
     });
-    row.children[2].addEventListener("click", event => event.stopPropagation());
-    row.children[2].querySelector("input").addEventListener("change", event => {
+    hideToggle.addEventListener("click", event => event.stopPropagation());
+    hideCheck.addEventListener("change", event => {
       event.stopPropagation();
       const targets = hideTargetObjects(mesh);
       const actionLabel = `${event.target.checked ? "hide" : "show"} ${targets.length === 1 ? "part" : "parts"}`;
@@ -929,7 +940,16 @@ function renderTree() {
         mode: checkedIds.has(mesh.userData.id) ? "checked-subset" : (linkedObjects(mesh).length > 1 ? "linked-group" : "single")
       });
     });
-    row.children[6].addEventListener("click", event => {
+    armorToggle.addEventListener("click", event => event.stopPropagation());
+    armorCheck.addEventListener("change", event => {
+      event.stopPropagation();
+      recordHistory(event.target.checked ? "mark armor part" : "remove armor part");
+      setObjectRigRole(mesh, event.target.checked ? "armor" : "skin");
+      applyRigModelOpacity();
+      updateAll();
+      log(`${mesh.name} is now ${event.target.checked ? "rigid armor" : "skin and bone"}.`);
+    });
+    detailsBtn.addEventListener("click", event => {
       event.stopPropagation();
       openMeshDetails(mesh.userData.id);
     });

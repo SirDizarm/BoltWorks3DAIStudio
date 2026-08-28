@@ -533,6 +533,12 @@
           </button>
           <div class="section-body" id="bonePlacementBody">
           <p class="api-note">Place joints in world space. Front dragging changes X/Y while Side dragging changes Z/Y, keeping the hidden axis fixed.</p>
+          <div class="compact-row">
+            <button id="tPoseFittingBtn" type="button" title="Stop animation and fit bones plus attached armor against the model's T-pose">Enter T-Pose Fitting</button>
+            <button id="addGripHandsBtn" type="button" title="Add or realign mirrored thumb, finger, and held-item socket bones to both hands">Fit / Repair Grip Hands</button>
+            <span id="tPoseFittingStatus" class="api-note">Animation mode</span>
+          </div>
+          <p class="api-note">Use T-Pose Fitting to place the skeleton and move or rotate attached armor. Armor keeps its edited offset from the assigned bone; Mirror also fits the matching armor on the opposite side.</p>
           <div class="compact-row bone-axis-row" aria-label="Bone transform mode">
             <span class="api-note">Bone tool:</span>
             <button id="boneModeMoveBtn" type="button">Move</button>
@@ -561,9 +567,10 @@
             <button id="glueBoneBtn" type="button" title="Select the model mesh, then glue the rig so the model follows the bones">Glue Bone to Model</button>
           </div>
           <div class="compact-row">
-            <button id="armorMountBtn" type="button" title="Show or hide a rigid armor attachment plate on the selected bone">Toggle Armor Mount</button>
+            <button id="armorMountBtn" type="button" title="Allow rigid armor parts to attach directly to the selected bone">Use Bone for Armor</button>
             <button id="attachArmorBtn" type="button" title="Attach checked armor parts to the selected bone as rigid objects">Attach Checked Armor</button>
           </div>
+          <p class="api-note">Choose Armor on each part in the model list. Check those parts, select a bone marked ARMOR, and attach them rigidly. No extra mount object is added to the scene.</p>
           <div class="compact-row">
             <button id="markSkinBtn" type="button" title="Mark checked objects as the flexible character skin">Mark Skin &amp; Bone</button>
             <button id="markArmorBtn" type="button" title="Mark checked objects as separate rigid armor">Mark Armor</button>
@@ -591,6 +598,7 @@
             <label>RZ <input id="boneRotZ" type="number" step="1" /></label>
           </div>
           <label class="toggle-chip"><input id="showBonesInput" type="checkbox" checked /> <span>Show bone guides</span></label>
+          <label class="toggle-chip"><input id="skeletonModeInput" type="checkbox" /> <span>Skeleton Mode (simplified anatomy)</span></label>
           <label>Guide size <input id="boneGuideScaleInput" type="range" min="0.2" max="1" step="0.05" value="0.4" /> <span id="boneGuideScaleValue">40%</span></label>
           <label class="toggle-chip"><input id="mirrorBoneEditsInput" type="checkbox" /> <span>Mirror left/right bone edits</span></label>
           </div>

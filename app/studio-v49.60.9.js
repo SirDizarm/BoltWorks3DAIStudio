@@ -32374,6 +32374,7 @@ void main() {
   });
   transform.addEventListener("mouseUp", () => {
     finishScaleDragSession();
+    if (typeof finishArmorFittingTransform === "function") finishArmorFittingTransform(transform.object);
   });
   transform.addEventListener("objectChange", () => {
     if (transform.object === groupPivot) {
@@ -32388,6 +32389,7 @@ void main() {
       applySingleSidedScaleOffset();
     }
     syncPlayerAvatarBones({ object: transform.object, rebuild: true });
+    if (typeof updateArmorFittingMirror === "function") updateArmorFittingMirror(transform.object);
     updateTriangleHelpers();
     syncSelectionOutlineTransforms();
     syncInspector();
@@ -32884,6 +32886,9 @@ void main() {
     imageReliefMeshPlugin: document.querySelector("#imageReliefMeshPlugin"),
     sceneRenderingTools: document.querySelector("#sceneRenderingTools"),
     bonePlacementSection: document.querySelector("#bonePlacementSection"),
+    tPoseFittingBtn: document.querySelector("#tPoseFittingBtn"),
+    tPoseFittingStatus: document.querySelector("#tPoseFittingStatus"),
+    addGripHandsBtn: document.querySelector("#addGripHandsBtn"),
     boneAxisFreeBtn: document.querySelector("#boneAxisFreeBtn"),
     boneAxisXBtn: document.querySelector("#boneAxisXBtn"),
     boneAxisYBtn: document.querySelector("#boneAxisYBtn"),
@@ -32909,6 +32914,7 @@ void main() {
     boneRotY: document.querySelector("#boneRotY"),
     boneRotZ: document.querySelector("#boneRotZ"),
     showBonesInput: document.querySelector("#showBonesInput"),
+    skeletonModeInput: document.querySelector("#skeletonModeInput"),
     boneGuideScaleInput: document.querySelector("#boneGuideScaleInput"),
     boneGuideScaleValue: document.querySelector("#boneGuideScaleValue"),
     mirrorBoneEditsInput: document.querySelector("#mirrorBoneEditsInput"),
@@ -49190,25 +49196,36 @@ void main() {
       const materialLabel = materialRulePill(mesh.userData.materialRule || "auto");
       row.className = `object-row child${mesh === selected || activeGroupIds.includes(mesh.userData.id) || transformTargets.length > 1 && checkedIds.has(mesh.userData.id) ? " selected" : ""}${mesh.userData.hidden ? " hidden-row" : ""}`;
       row.dataset.meshId = mesh.userData.id;
-      row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${rowType}</small><button class="mesh-details-btn" type="button" title="Open mesh details for ${mesh.name}">...</button>`;
-      row.children[0].checked = checkedIds.has(mesh.userData.id);
-      row.children[1].querySelector("input").checked = !!mesh.userData.linkId;
-      row.children[1].classList.toggle("linked", !!mesh.userData.linkId);
-      row.children[1].style.setProperty("--link-color", linkColor);
-      row.children[1].querySelector("input").style.accentColor = linkColor;
-      row.children[2].querySelector("input").checked = !!mesh.userData.hidden;
-      row.children[4].textContent = mesh.name;
-      row.children[4].title = mesh.name;
-      row.children[0].addEventListener("click", (event) => event.stopPropagation());
-      row.children[0].addEventListener("change", (event) => setChecked(mesh, event.target.checked));
-      row.children[1].addEventListener("click", (event) => event.stopPropagation());
-      row.children[1].querySelector("input").addEventListener("change", (event) => {
+      row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><label class="row-toggle armor-toggle" title="Include ${mesh.name} in the rigid armor system"><input class="armor-check" type="checkbox" aria-label="Mark ${mesh.name} as armor"><span>Armor</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${rowType}</small><button class="mesh-details-btn" type="button" title="Open mesh details for ${mesh.name}">...</button>`;
+      const partCheck = row.querySelector(".part-check");
+      const linkToggle = row.querySelector(".link-toggle");
+      const linkCheck = row.querySelector(".link-check");
+      const hideToggle = row.querySelector(".hide-toggle");
+      const hideCheck = row.querySelector(".hide-check");
+      const armorToggle = row.querySelector(".armor-toggle");
+      const armorCheck = row.querySelector(".armor-check");
+      const meshName = row.querySelector(".mesh-name");
+      const detailsBtn = row.querySelector(".mesh-details-btn");
+      partCheck.checked = checkedIds.has(mesh.userData.id);
+      linkCheck.checked = !!mesh.userData.linkId;
+      linkToggle.classList.toggle("linked", !!mesh.userData.linkId);
+      linkToggle.style.setProperty("--link-color", linkColor);
+      linkCheck.style.accentColor = linkColor;
+      hideCheck.checked = !!mesh.userData.hidden;
+      armorCheck.checked = mesh.userData.rigRole === "armor";
+      armorToggle.classList.toggle("armor-enabled", armorCheck.checked);
+      meshName.textContent = mesh.name;
+      meshName.title = mesh.name;
+      partCheck.addEventListener("click", (event) => event.stopPropagation());
+      partCheck.addEventListener("change", (event) => setChecked(mesh, event.target.checked));
+      linkToggle.addEventListener("click", (event) => event.stopPropagation());
+      linkCheck.addEventListener("change", (event) => {
         event.stopPropagation();
         recordHistory(event.target.checked ? "link parts" : "unlink part");
         setLinked(mesh, event.target.checked);
       });
-      row.children[2].addEventListener("click", (event) => event.stopPropagation());
-      row.children[2].querySelector("input").addEventListener("change", (event) => {
+      hideToggle.addEventListener("click", (event) => event.stopPropagation());
+      hideCheck.addEventListener("change", (event) => {
         event.stopPropagation();
         const targets = hideTargetObjects(mesh);
         const actionLabel = `${event.target.checked ? "hide" : "show"} ${targets.length === 1 ? "part" : "parts"}`;
@@ -49219,7 +49236,16 @@ void main() {
           mode: checkedIds.has(mesh.userData.id) ? "checked-subset" : linkedObjects(mesh).length > 1 ? "linked-group" : "single"
         });
       });
-      row.children[6].addEventListener("click", (event) => {
+      armorToggle.addEventListener("click", (event) => event.stopPropagation());
+      armorCheck.addEventListener("change", (event) => {
+        event.stopPropagation();
+        recordHistory(event.target.checked ? "mark armor part" : "remove armor part");
+        setObjectRigRole(mesh, event.target.checked ? "armor" : "skin");
+        applyRigModelOpacity();
+        updateAll();
+        log(`${mesh.name} is now ${event.target.checked ? "rigid armor" : "skin and bone"}.`);
+      });
+      detailsBtn.addEventListener("click", (event) => {
         event.stopPropagation();
         openMeshDetails(mesh.userData.id);
       });
@@ -55359,6 +55385,9 @@ ${new OBJExporter().parse(group)}`;
   var boneGizmoEnabled = false;
   var boneGuideScale = 0.4;
   var mirrorBoneEdits = false;
+  var tPoseFittingMode = false;
+  var skeletonDisplayMode = false;
+  var skeletonPreviousOpacity = null;
   var boneTransformLooseStart = null;
   var rigModelOpacity = 1;
   var rigModelMaterialState = /* @__PURE__ */ new Map();
@@ -55428,7 +55457,7 @@ ${new OBJExporter().parse(group)}`;
     orbit.enabled = !event.value;
     if (event.value && selectedBone()) {
       recordBoneHistory("bone transform");
-      if (!bonesGlued && !activeSkinRuntime) {
+      if (tPoseFittingMode || !bonesGlued && !activeSkinRuntime) {
         const bone = selectedBone();
         const mirror = boneById(mirroredBoneId(bone.id));
         boneTransformLooseStart = {
@@ -55445,7 +55474,9 @@ ${new OBJExporter().parse(group)}`;
     } else if (!event.value && boneTransformLooseStart) {
       const start = boneTransformLooseStart;
       boneTransformLooseStart = null;
-      if (start.mode === "rotate") {
+      if (tPoseFittingMode) {
+        commitTPoseBoneFitting();
+      } else if (start.mode === "rotate") {
         commitLooseBoneRotation(start.boneId, start.rotation);
         if (start.mirrorId && start.mirrorRotation) commitLooseBoneRotation(start.mirrorId, start.mirrorRotation);
       } else {
@@ -55578,6 +55609,135 @@ ${new OBJExporter().parse(group)}`;
       target.rotation.set(source.rotation.x, -source.rotation.y, -source.rotation.z);
     }
     return target;
+  }
+  function syncTPoseFittingUi() {
+    els.tPoseFittingBtn?.classList.toggle("active", tPoseFittingMode);
+    if (els.tPoseFittingBtn) els.tPoseFittingBtn.textContent = tPoseFittingMode ? "Exit T-Pose Fitting" : "Enter T-Pose Fitting";
+    if (els.tPoseFittingStatus) els.tPoseFittingStatus.textContent = tPoseFittingMode ? "Fitting bones, armor, hands, and sockets" : "Animation mode";
+    if (els.addGripHandsBtn) els.addGripHandsBtn.disabled = !tPoseFittingMode;
+    document.body.classList.toggle("t-pose-fitting-active", tPoseFittingMode);
+    for (const control of [els.animationPlayBtn, els.animationPrevBtn, els.animationNextBtn, els.animationScrubber, els.animationKeyBtn]) {
+      if (control) control.disabled = tPoseFittingMode;
+    }
+  }
+  function setTPoseFittingMode(enabled) {
+    const next = !!enabled;
+    if (next === tPoseFittingMode) return;
+    animationState.playing = false;
+    tPoseFittingMode = next;
+    if (tPoseFittingMode) {
+      animationState.frame = 0;
+      restoreAnimationBindPose({ render: false });
+      applyCurrentRigPose();
+      log("T-Pose Fitting enabled. Bone and attached armor edits now redefine their fitted rest offsets.");
+    } else {
+      captureAnimationBindingRest();
+      log("T-Pose Fitting finished. Saved the fitted bone, armor, hand, and item-socket offsets.");
+    }
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateAnimationPanel();
+    syncTPoseFittingUi();
+  }
+  function commitTPoseBoneFitting() {
+    if (!tPoseFittingMode) return;
+    for (const bone of rigBones) {
+      bone.bindPosition = bone.position.clone();
+      bone.bindRotation = bone.rotation.clone();
+      bone.bindTail = (bone.tail || bone.position.clone().add(new Vector3(0, 0.12, 0))).clone();
+      bone.tailOffset = bone.bindTail.clone().sub(bone.bindPosition);
+    }
+    if (activeSkinRuntime) setupSkinnedRig();
+    captureAnimationBindingRest();
+    applyCurrentRigPose();
+  }
+  function addGripHandRig() {
+    if (!tPoseFittingMode) {
+      log("Enter T-Pose Fitting before adding grip hands.");
+      return;
+    }
+    const sides = ["L", "R"];
+    recordBoneHistory("add grip hands");
+    const fingerNames = ["Thumb", "Index", "Middle", "Ring", "Pinky"];
+    let added = 0, realigned = 0;
+    for (const side of sides) {
+      const hand = rigBones.find((bone) => bone.name === `Hand ${side}`);
+      if (!hand) continue;
+      const outward = (hand.bindTail || hand.tail).clone().sub(hand.bindPosition || hand.position);
+      if (outward.lengthSq() < 1e-4) outward.set(side === "L" ? -0.14 : 0.14, 0, 0);
+      const handStart = (hand.bindPosition || hand.position).clone();
+      const handEnd = handStart.clone().add(outward);
+      const forward = new Vector3(0, 0, Math.max(0.018, outward.length() * 0.14));
+      fingerNames.forEach((fingerName, index) => {
+        const spread = (index - 2) * Math.max(0.012, outward.length() * 0.075);
+        const spreadVector = new Vector3(0, spread, 0);
+        const rootRatio = fingerName === "Thumb" ? 0.28 : 0.48;
+        const tipRatio = fingerName === "Thumb" ? 0.72 : 1;
+        const position2 = handStart.clone().addScaledVector(outward, rootRatio).add(spreadVector);
+        const tail = handStart.clone().addScaledVector(outward, tipRatio).add(spreadVector);
+        if (fingerName === "Thumb") tail.add(forward).add(new Vector3(0, -Math.max(0.012, outward.length() * 0.1), 0));
+        let bone = rigBones.find((candidate) => candidate.name === `${fingerName} ${side}`);
+        if (bone) {
+          bone.parentId = hand.id;
+          bone.role = "finger";
+          bone.avatarObjectId = hand.avatarObjectId || null;
+          bone.position.copy(position2);
+          bone.rotation.set(0, 0, 0);
+          bone.tail.copy(tail);
+          initializeBoneRestState(bone, { capture: true });
+          realigned += 1;
+        } else {
+          bone = {
+            id: `finger_${fingerName.toLowerCase()}_${side.toLowerCase()}`,
+            name: `${fingerName} ${side}`,
+            parentId: hand.id,
+            role: "finger",
+            avatarObjectId: hand.avatarObjectId || null,
+            position: position2,
+            rotation: new Vector3(),
+            tail
+          };
+          rigBones.push(bone);
+          initializeBoneRestState(bone, { capture: true });
+          added += 1;
+        }
+      });
+      const position = handStart.clone().addScaledVector(outward, 0.58);
+      let socket = rigBones.find((bone) => bone.name === `Grip Socket ${side}`);
+      if (!socket) {
+        socket = {
+          id: `grip_socket_${side.toLowerCase()}`,
+          name: `Grip Socket ${side}`,
+          parentId: hand.id,
+          role: "itemSocket",
+          avatarObjectId: null,
+          position,
+          rotation: new Vector3(0, side === "L" ? Math.PI / 2 : -Math.PI / 2, 0),
+          tail: position.clone().add(new Vector3(0, 0.08, 0))
+        };
+        rigBones.push(socket);
+        added += 1;
+      } else {
+        socket.parentId = hand.id;
+        socket.role = "itemSocket";
+        socket.avatarObjectId = null;
+        socket.position.copy(position);
+        socket.rotation.set(0, side === "L" ? Math.PI / 2 : -Math.PI / 2, 0);
+        socket.tail.copy(position).add(new Vector3(0, 0.08, 0));
+        realigned += 1;
+      }
+      initializeBoneRestState(socket, { capture: true });
+    }
+    const avatar = activeSkinRuntime?.avatar || objects.find((object) => object.userData?.rigRole === "skin" && object.geometry?.getAttribute?.("position"));
+    if (avatar?.geometry) {
+      const skinBones = rigBones.filter((bone) => bone.avatarObjectId && bone.role !== "itemSocket");
+      addSkinAttributes(avatar.geometry, skinBones);
+    }
+    commitTPoseBoneFitting();
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateAnimationPanel();
+    log(`Grip hands fitted: added ${added} and realigned ${realigned} finger/socket bone${added + realigned === 1 ? "" : "s"}. Pose them in T-Pose Fitting; held items can use the Grip Socket bones.`);
   }
   function prepareLooseBoneHierarchy() {
     if (bonesGlued || activeSkinRuntime) return;
@@ -55833,6 +55993,7 @@ ${new OBJExporter().parse(group)}`;
       showGuides: els.showBonesInput?.checked ?? true,
       guideScale: round2(boneGuideScale),
       mirrorBoneEdits,
+      skeletonDisplayMode,
       modelOpacity: round2(rigModelOpacity),
       bones: rigBones.map((bone) => ({
         id: bone.id,
@@ -55871,7 +56032,7 @@ ${new OBJExporter().parse(group)}`;
       id: bone.id || freshBoneId(),
       name: bone.name || `Bone ${index + 1}`,
       parentId: bone.parentId || null,
-      role: bone.role === "camera" ? "camera" : null,
+      role: typeof bone.role === "string" ? bone.role : null,
       avatarObjectId: typeof bone.avatarObjectId === "string" ? bone.avatarObjectId : null,
       position: new Vector3().fromArray(Array.isArray(bone.position) ? bone.position : [0, index, 0]),
       rotation: new Vector3().fromArray(Array.isArray(bone.rotation) ? bone.rotation : [0, 0, 0]),
@@ -55914,9 +56075,11 @@ ${new OBJExporter().parse(group)}`;
     selectedBoneId = boneById(data.selectedBoneId)?.id || rigBones[0]?.id || null;
     boneGuideScale = MathUtils.clamp(Number(data.guideScale) || 0.4, 0.2, 1);
     mirrorBoneEdits = !!data.mirrorBoneEdits;
+    skeletonDisplayMode = !!data.skeletonDisplayMode;
     rigModelOpacity = MathUtils.clamp(Number(data.modelOpacity) || 1, 0.1, 1);
     syncBoneGuideScaleUi();
     if (els.mirrorBoneEditsInput) els.mirrorBoneEditsInput.checked = mirrorBoneEdits;
+    if (els.skeletonModeInput) els.skeletonModeInput.checked = skeletonDisplayMode;
     syncRigModelOpacityUi();
     const savedClips = data.animation?.clips && typeof data.animation.clips === "object" ? data.animation.clips : null;
     animationState.clips = savedClips && Object.keys(savedClips).length ? savedClips : { idle: { name: "Idle", fps: data.animation?.fps, end: data.animation?.end, keys: data.animation?.keys || {} } };
@@ -55930,9 +56093,8 @@ ${new OBJExporter().parse(group)}`;
     if (els.showBonesInput) els.showBonesInput.checked = data.showGuides ?? true;
     setupSkinnedRig();
     bonesGlued = !!activeSkinRuntime || objects.some((o) => o.userData?.rigBoneId || o.userData?.minecraft?.boneId || o.userData?.minecraftBoneId);
-    if (!activeSkinRuntime) {
-      animationState.bindingRest = restoreSerializedAnimationBindingRest(data.animation?.bindingRest) || rebuildMinecraftAnimationBindingRest();
-    }
+    animationState.bindingRest = restoreSerializedAnimationBindingRest(data.animation?.bindingRest);
+    if (!animationState.bindingRest && !activeSkinRuntime) animationState.bindingRest = rebuildMinecraftAnimationBindingRest();
     if (animationState.bindingRest) {
       poseRigHierarchy();
     } else if (animationHasKeys()) {
@@ -55946,6 +56108,7 @@ ${new OBJExporter().parse(group)}`;
     applyRigModelOpacity();
     syncBonePanel();
     updateGlueButton();
+    syncTPoseFittingUi();
   }
   function animationPoseForBone(bone) {
     return { position: bone.position.toArray(), rotation: bone.rotation.toArray() };
@@ -55985,7 +56148,7 @@ ${new OBJExporter().parse(group)}`;
     const modelHeight = modelBounds.isEmpty() ? 1 : modelBounds.getSize(new Vector3()).y;
     return Math.sin(Math.PI * phase) * Math.max(0.35, modelHeight * 0.35);
   }
-  function animationSetFrame(frame, { render = true } = {}) {
+  function animationSetFrame(frame, { render = true, lightweightPanel = false } = {}) {
     animationState.frame = Math.max(0, Math.min(animationState.end, Math.round(Number(frame) || 0)));
     if (!animationHasKeys()) {
       animationState.playing = false;
@@ -56030,8 +56193,10 @@ ${new OBJExporter().parse(group)}`;
         if (pose) pose.position.y += jumpLift;
       }
     }
-    if (activeSkinRuntime) applySkinnedPose(poses);
-    else {
+    if (activeSkinRuntime) {
+      applySkinnedPose(poses);
+      applyAnimationBindings();
+    } else {
       poseRigHierarchy();
       applyAnimationBindings();
     }
@@ -56039,7 +56204,8 @@ ${new OBJExporter().parse(group)}`;
       rebuildBoneVisuals();
       syncBonePanel();
     }
-    updateAnimationPanel();
+    if (lightweightPanel) updateAnimationPlaybackPanel();
+    else updateAnimationPanel();
   }
   function pointSegmentDistanceSquared(point, start, end) {
     const segment = end.clone().sub(start);
@@ -56069,7 +56235,15 @@ ${new OBJExporter().parse(group)}`;
       const handX = Math.abs(hand?.bindPosition?.x ?? hand?.position?.x ?? Infinity);
       const forearmX = Math.abs(forearm?.bindPosition?.x ?? forearm?.position?.x ?? handX);
       const wristStart = forearmX + Math.max(0, handX - forearmX) * 0.65;
-      if (hand && Math.abs(point.x) >= wristStart) return named([`Hand ${side}`, `Forearm ${side}`]);
+      if (hand && Math.abs(point.x) >= wristStart) return named([
+        `Thumb ${side}`,
+        `Index ${side}`,
+        `Middle ${side}`,
+        `Ring ${side}`,
+        `Pinky ${side}`,
+        `Hand ${side}`,
+        `Forearm ${side}`
+      ]);
       return named([`Forearm ${side}`, `Upper Arm ${side}`, "Chest"]);
     }
     if (point.y > chestY + 0.26) return named(["Head", "Neck", "Chest"]);
@@ -56119,15 +56293,28 @@ ${new OBJExporter().parse(group)}`;
     return skinned;
   }
   function setupSkinnedRig() {
+    if (activeSkinRuntime?.threeBones) {
+      const oldBoneObjects = new Set(activeSkinRuntime.threeBones.values());
+      for (const threeBone of oldBoneObjects) {
+        if (threeBone.parent && !oldBoneObjects.has(threeBone.parent)) threeBone.parent.remove(threeBone);
+      }
+    }
     activeSkinRuntime = null;
     if (!rigBones.length || typeof findObject !== "function") return;
     const avatarCounts = /* @__PURE__ */ new Map();
     rigBones.forEach((bone) => {
       if (bone.avatarObjectId) avatarCounts.set(bone.avatarObjectId, (avatarCounts.get(bone.avatarObjectId) || 0) + 1);
     });
-    const avatarId = [...avatarCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
+    let avatarId = [...avatarCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0];
     let avatar = avatarId ? findObject(avatarId) : null;
-    if (!avatar?.geometry?.getAttribute("position") || avatarCounts.get(avatarId) < 2) return;
+    if (!avatar?.geometry?.getAttribute("position") || avatarCounts.get(avatarId) < 2) {
+      avatar = objects.find((object) => object.userData?.rigRole === "skin" && object.geometry?.getAttribute?.("position")) || null;
+      if (!avatar) return;
+      avatarId = avatar.userData?.id || avatar.name;
+      rigBones.filter((bone) => bone.role !== "camera").forEach((bone) => {
+        bone.avatarObjectId = avatarId;
+      });
+    }
     const bones = rigBones.filter((bone) => bone.avatarObjectId === avatarId);
     const boneIds = new Set(bones.map((bone) => bone.id));
     bones.forEach((bone) => {
@@ -56289,8 +56476,9 @@ ${new OBJExporter().parse(group)}`;
     if (bonesGlued) applyAnimationBindings();
   }
   function collectAnimationBindings() {
-    const bindings = rigBones.filter((bone) => bone.avatarObjectId && typeof findObject === "function").map((bone) => ({ bone, object: findObject(bone.avatarObjectId) })).filter((item) => item.object);
+    const bindings = rigBones.filter((bone) => bone.avatarObjectId && typeof findObject === "function").map((bone) => ({ bone, object: findObject(bone.avatarObjectId) })).filter((item) => item.object && item.object !== activeSkinRuntime?.avatar);
     for (const object of objects) {
+      if (object === activeSkinRuntime?.avatar) continue;
       const mountBoneId = object.userData?.rigArmorMountId ? rigBones.find((bone2) => bone2.armorMountId === object.userData.rigArmorMountId)?.id : null;
       const boneId = mountBoneId || object.userData?.rigBoneId || object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
       const bone = boneById(boneId);
@@ -56439,10 +56627,12 @@ ${new OBJExporter().parse(group)}`;
     for (const { bone, object } of rigidBindings) {
       const rest = animationState.bindingRest.get(`rigid:${bone.id}:${object.userData?.id || object.uuid}`);
       if (!rest) continue;
-      const currentBoneQuaternion = bone.poseWorldQuaternion ? bone.poseWorldQuaternion.clone() : new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
+      const skinnedBone = activeSkinRuntime?.threeBones?.get(bone.id) || null;
+      const currentBonePosition = skinnedBone ? skinnedBone.getWorldPosition(new Vector3()) : bone.position;
+      const currentBoneQuaternion = skinnedBone ? skinnedBone.getWorldQuaternion(new Quaternion()) : bone.poseWorldQuaternion ? bone.poseWorldQuaternion.clone() : new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
       const restBoneQuaternion = rest.boneQuaternion || new Quaternion().setFromEuler(new Euler(rest.boneRotation.x, rest.boneRotation.y, rest.boneRotation.z, "XYZ"));
       const rotationDelta = currentBoneQuaternion.multiply(restBoneQuaternion.clone().invert());
-      object.position.copy(rest.objectPosition).sub(rest.bonePosition).applyQuaternion(rotationDelta).add(bone.position);
+      object.position.copy(rest.objectPosition).sub(rest.bonePosition).applyQuaternion(rotationDelta).add(currentBonePosition);
       object.quaternion.copy(rotationDelta).multiply(rest.objectQuaternion || new Quaternion().setFromEuler(rest.objectRotation));
       object.updateMatrixWorld(true);
     }
@@ -56590,6 +56780,20 @@ ${new OBJExporter().parse(group)}`;
     const scrollbarWidth = Math.max(0, els.animationTrackList.offsetWidth - els.animationTrackList.clientWidth - borderWidth);
     document.getElementById("animationBody")?.style.setProperty("--animation-timeline-scrollbar-width", `${scrollbarWidth}px`);
   }
+  function updateAnimationPlaybackPanel() {
+    if (!els.animationScrubber) return;
+    els.animationScrubber.max = animationState.end;
+    els.animationScrubber.value = animationState.frame;
+    els.animationFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
+    els.animationTimeLabel.textContent = `${(animationState.frame / animationState.fps).toFixed(2)}s`;
+    els.animationPlayBtn.textContent = animationState.playing ? "Pause" : "Play";
+    const end = Math.max(1, animationState.end);
+    const playhead = `${Math.max(0, Math.min(100, animationState.frame / end * 100))}%`;
+    els.animationTrackList?.querySelectorAll(".animation-timeline-lane").forEach((lane) => lane.style.setProperty("--playhead", playhead));
+    els.animationTrackList?.querySelectorAll("[data-animation-frame]").forEach((marker) => {
+      marker.classList.toggle("current", Number(marker.dataset.animationFrame) === animationState.frame);
+    });
+  }
   function updateAnimationPanel() {
     if (!els.animationScrubber) return;
     syncAnimationClipUi();
@@ -56627,12 +56831,13 @@ ${new OBJExporter().parse(group)}`;
       animationState.playing = false;
       return;
     }
-    animationState.lastTime += delta;
-    if (animationState.lastTime >= 1 / animationState.fps) {
-      animationState.lastTime = 0;
-      animationSetFrame(animationState.frame + 1);
-      if (animationState.frame >= animationState.end) animationState.frame = 0;
-    }
+    const frameDuration = 1 / Math.max(1, animationState.fps);
+    animationState.lastTime += Math.max(0, Number(delta) || 0);
+    const elapsedFrames = Math.floor(animationState.lastTime / frameDuration);
+    if (elapsedFrames < 1) return;
+    animationState.lastTime -= elapsedFrames * frameDuration;
+    const frameCount = Math.max(1, animationState.end + 1);
+    animationSetFrame((animationState.frame + elapsedFrames) % frameCount, { lightweightPanel: true });
   }
   function exportAnimationJson() {
     const blob = new Blob([JSON.stringify({ kind: "boltworks-animation", version: 1, ...serializeBoneRig().animation }, null, 2)], { type: "application/json" });
@@ -56747,6 +56952,225 @@ ${new OBJExporter().parse(group)}`;
     rebuildBoneVisuals();
     syncBonePanel();
   }
+  function skeletonBoneColor(bone, selected2 = false) {
+    if (selected2) return 16762183;
+    const label = `${bone?.id || ""} ${bone?.name || ""}`.toLowerCase();
+    if (label.includes("left_") || /(?:^|\s)l(?:\s|$)/.test(label)) return 12113896;
+    if (label.includes("right_") || /(?:^|\s)r(?:\s|$)/.test(label)) return 15188149;
+    return 14208938;
+  }
+  function addSkeletonDisplayMesh(mesh, bone, { joint = false } = {}) {
+    mesh.material = new MeshStandardMaterial({
+      color: skeletonBoneColor(bone, bone?.id === selectedBoneId),
+      roughness: 0.78,
+      metalness: 0,
+      depthTest: true
+    });
+    mesh.renderOrder = 9998;
+    mesh.userData.boneId = bone?.id || null;
+    mesh.userData.boneJoint = joint;
+    mesh.userData.skeletonAnatomy = true;
+    mesh.layers.enable(0);
+    mesh.layers.enable(1);
+    mesh.layers.enable(2);
+    boneRigGroup.add(mesh);
+    return mesh;
+  }
+  function addSkeletonCavityMesh(mesh, bone) {
+    mesh.material = new MeshBasicMaterial({
+      color: 2169619,
+      depthTest: true,
+      polygonOffset: true,
+      polygonOffsetFactor: -2,
+      polygonOffsetUnits: -2
+    });
+    mesh.renderOrder = 9999;
+    mesh.userData.boneId = bone?.id || null;
+    mesh.userData.boneJoint = true;
+    mesh.userData.skeletonAnatomy = true;
+    mesh.layers.enable(0);
+    mesh.layers.enable(1);
+    mesh.layers.enable(2);
+    boneRigGroup.add(mesh);
+    return mesh;
+  }
+  function addSkeletonLongBone(bone, start, end, radius, offset = null) {
+    const from = start.clone().add(offset || new Vector3());
+    const to = end.clone().add(offset || new Vector3());
+    const direction = to.clone().sub(from);
+    const length = direction.length();
+    if (length < 5e-3) return null;
+    const shaft = new Mesh(new CylinderGeometry(radius * 0.82, radius, length, 8, 1, false));
+    shaft.position.copy(from).addScaledVector(direction, 0.5);
+    shaft.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction.normalize());
+    return addSkeletonDisplayMesh(shaft, bone);
+  }
+  function addSkeletonJoint(bone, position, radius) {
+    const joint = new Mesh(new SphereGeometry(radius, 10, 8));
+    joint.position.copy(position);
+    return addSkeletonDisplayMesh(joint, bone, { joint: true });
+  }
+  function addSimplifiedSkeletonVisuals() {
+    const thickness = 0.55 + boneGuideScale * 0.55;
+    const activeBones = rigBones.filter((bone) => !bone.hidden && bone.role !== "camera");
+    for (const bone of activeBones) {
+      const start = (bone.displayPosition || bone.position).clone();
+      const directChild = rigBones.find((candidate) => candidate.parentId === bone.id && candidate.role !== "itemSocket");
+      const end = (directChild?.displayPosition || directChild?.position || bone.displayTail || bone.tail || start.clone().add(new Vector3(0, 0.1, 0))).clone();
+      const name = String(bone.name || "").toLowerCase();
+      if (bone.role === "itemSocket") {
+        const socket = new Mesh(new TorusGeometry(0.045 * thickness, 8e-3, 6, 16));
+        socket.position.copy(start);
+        socket.rotation.x = Math.PI / 2;
+        addSkeletonDisplayMesh(socket, bone, { joint: true });
+        continue;
+      }
+      const length = Math.max(0.01, start.distanceTo(end));
+      let radius = Math.min(0.032, Math.max(8e-3, length * 0.052)) * thickness;
+      if (/finger|thumb|index|middle|ring|pinky/.test(name)) radius = 75e-4 * thickness;
+      else if (/thigh|upper arm/.test(name)) radius = Math.max(radius, 0.024 * thickness);
+      else if (/forearm|shin/.test(name)) radius = Math.max(radius, 0.016 * thickness);
+      else if (/spine|chest|neck/.test(name)) radius = Math.max(radius, 0.017 * thickness);
+      const usesPairedBones = /forearm|shin/.test(name);
+      const hasDedicatedTorsoAnatomy = /^(root|pelvis|spine|chest|head)$/.test(name.trim());
+      if (!usesPairedBones && !hasDedicatedTorsoAnatomy) addSkeletonLongBone(bone, start, end, radius);
+      if (usesPairedBones) {
+        const direction = end.clone().sub(start).normalize();
+        const reference = Math.abs(direction.y) > 0.85 ? new Vector3(0, 0, 1) : new Vector3(0, 1, 0);
+        const pairedOffset = direction.clone().cross(reference).normalize().multiplyScalar(radius * 0.46);
+        addSkeletonLongBone(bone, start, end, radius * 0.62, pairedOffset);
+        addSkeletonLongBone(bone, start, end, radius * 0.62, pairedOffset.clone().multiplyScalar(-1));
+      }
+      addSkeletonJoint(bone, start, Math.max(radius * 0.96, 9e-3));
+    }
+    const head = rigBones.find((bone) => /^head$/i.test(bone.name));
+    if (head) {
+      const start = head.displayPosition || head.position;
+      const end = head.displayTail || head.tail || start.clone().add(new Vector3(0, 0.18, 0));
+      const height = Math.max(0.11, start.distanceTo(end) * 0.94);
+      const skullCenter = start.clone().lerp(end, 0.61);
+      const cranium = new Mesh(new SphereGeometry(1, 16, 12));
+      cranium.position.copy(skullCenter).add(new Vector3(0, height * 0.07, -height * 0.025));
+      cranium.scale.set(height * 0.4, height * 0.47, height * 0.36);
+      addSkeletonDisplayMesh(cranium, head, { joint: true });
+      const face = new Mesh(new SphereGeometry(1, 12, 8));
+      face.position.copy(skullCenter).add(new Vector3(0, -height * 0.08, height * 0.22));
+      face.scale.set(height * 0.29, height * 0.25, height * 0.18);
+      addSkeletonDisplayMesh(face, head, { joint: true });
+      for (const side of [-1, 1]) {
+        const socket = new Mesh(new SphereGeometry(1, 10, 7));
+        socket.position.copy(skullCenter).add(new Vector3(side * height * 0.145, height * 0.12, height * 0.345));
+        socket.scale.set(height * 0.105, height * 0.09, height * 0.025);
+        addSkeletonCavityMesh(socket, head);
+      }
+      const nose = new Mesh(new ConeGeometry(height * 0.055, height * 0.12, 3));
+      nose.position.copy(skullCenter).add(new Vector3(0, -height * 0.015, height * 0.395));
+      nose.rotation.x = Math.PI;
+      addSkeletonCavityMesh(nose, head);
+      const jawTopY = skullCenter.y - height * 0.17;
+      const jawBottomY = skullCenter.y - height * 0.38;
+      const jawZ = skullCenter.z + height * 0.205;
+      addSkeletonLongBone(
+        head,
+        new Vector3(skullCenter.x - height * 0.275, jawTopY, jawZ),
+        new Vector3(skullCenter.x - height * 0.19, jawBottomY, jawZ + height * 0.035),
+        height * 0.035
+      );
+      addSkeletonLongBone(
+        head,
+        new Vector3(skullCenter.x + height * 0.275, jawTopY, jawZ),
+        new Vector3(skullCenter.x + height * 0.19, jawBottomY, jawZ + height * 0.035),
+        height * 0.035
+      );
+      addSkeletonLongBone(
+        head,
+        new Vector3(skullCenter.x - height * 0.19, jawBottomY, jawZ + height * 0.035),
+        new Vector3(skullCenter.x + height * 0.19, jawBottomY, jawZ + height * 0.035),
+        height * 0.032
+      );
+    }
+    const chest = rigBones.find((bone) => /^chest$/i.test(bone.name));
+    const spine = rigBones.find((bone) => /^spine$/i.test(bone.name));
+    const pelvis = rigBones.find((bone) => /^pelvis$/i.test(bone.name));
+    const neck = rigBones.find((bone) => /^neck$/i.test(bone.name));
+    const leftShoulder = rigBones.find((bone) => /upper arm l$/i.test(bone.name));
+    const rightShoulder = rigBones.find((bone) => /upper arm r$/i.test(bone.name));
+    if (chest && spine) {
+      const chestPosition = chest.displayPosition || chest.position;
+      const spinePosition = spine.displayPosition || spine.position;
+      const pelvisPosition = pelvis ? pelvis.displayPosition || pelvis.position : spinePosition;
+      const leftShoulderPosition = leftShoulder && (leftShoulder.displayPosition || leftShoulder.position);
+      const rightShoulderPosition = rightShoulder && (rightShoulder.displayPosition || rightShoulder.position);
+      const shoulderCenter = leftShoulderPosition && rightShoulderPosition ? leftShoulderPosition.clone().lerp(rightShoulderPosition, 0.5) : chestPosition.clone();
+      const torsoHeight = Math.max(0.22, shoulderCenter.y - pelvisPosition.y);
+      const ribTopY = shoulderCenter.y - torsoHeight * 0.15;
+      const ribBottomY = shoulderCenter.y - torsoHeight * 0.53;
+      const shoulderWidth = leftShoulderPosition && rightShoulderPosition ? leftShoulderPosition.distanceTo(rightShoulderPosition) * 0.36 : Math.max(0.14, chestPosition.distanceTo(spinePosition) * 1.3);
+      const ribDepth = Math.max(0.07, shoulderWidth * 0.52);
+      const ribWidths = [0.82, 0.94, 1, 0.98, 0.89, 0.74];
+      for (let rib = 0; rib < ribWidths.length; rib += 1) {
+        const ratio = rib / (ribWidths.length - 1);
+        const center = new Vector3(chestPosition.x, MathUtils.lerp(ribTopY, ribBottomY, ratio), chestPosition.z);
+        const width = shoulderWidth * ribWidths[rib];
+        const drop = torsoHeight * (0.018 + ratio * 0.025);
+        for (const side of [-1, 1]) {
+          const ribCurve = new CatmullRomCurve3([
+            center.clone().add(new Vector3(side * 0.025, 0, -ribDepth * 0.38)),
+            center.clone().add(new Vector3(side * width * 0.72, -drop * 0.08, -ribDepth * 0.32)),
+            center.clone().add(new Vector3(side * width, -drop * 0.28, 0)),
+            center.clone().add(new Vector3(side * width * 0.78, -drop * 0.5, ribDepth * 0.35)),
+            center.clone().add(new Vector3(side * 0.055, -drop * 0.68, ribDepth * 0.48))
+          ], false, "centripetal");
+          const ribMesh = new Mesh(new TubeGeometry(ribCurve, 16, 75e-4 * thickness, 6, false));
+          addSkeletonDisplayMesh(ribMesh, chest, { joint: true });
+        }
+      }
+      const sternumTop = new Vector3(chestPosition.x, ribTopY - torsoHeight * 0.01, chestPosition.z + ribDepth * 0.49);
+      const sternumBottom = new Vector3(chestPosition.x, ribBottomY - torsoHeight * 0.04, chestPosition.z + ribDepth * 0.49);
+      addSkeletonLongBone(chest, sternumTop, sternumBottom, 0.011 * thickness);
+    }
+    if (pelvis) {
+      const position = pelvis.displayPosition || pelvis.position;
+      const hips = ["Thigh L", "Thigh R"].map((name) => rigBones.find((bone) => bone.name === name)).filter(Boolean);
+      const hipPositions = hips.map((hip) => hip.displayPosition || hip.position);
+      const hipSpan = hipPositions.length === 2 ? hipPositions[0].distanceTo(hipPositions[1]) : 0.24;
+      for (const hip of hips) {
+        const hipPosition = hip.displayPosition || hip.position;
+        addSkeletonLongBone(pelvis, position, hipPosition, 0.022 * thickness);
+        const side = Math.sign(hipPosition.x - position.x) || 1;
+        const hipPlate = new Mesh(new SphereGeometry(1, 12, 9));
+        hipPlate.position.copy(position).lerp(hipPosition, 0.68).add(new Vector3(side * hipSpan * 0.04, hipSpan * 0.16, 0));
+        hipPlate.scale.set(hipSpan * 0.34 * thickness, hipSpan * 0.3 * thickness, hipSpan * 0.19 * thickness);
+        hipPlate.rotation.z = side * 0.24;
+        addSkeletonDisplayMesh(hipPlate, pelvis, { joint: true });
+        const hipSocket = new Mesh(new TorusGeometry(hipSpan * 0.105 * thickness, hipSpan * 0.028 * thickness, 7, 14));
+        hipSocket.position.copy(hipPosition).add(new Vector3(0, hipSpan * 0.025, hipSpan * 0.02));
+        addSkeletonDisplayMesh(hipSocket, pelvis, { joint: true });
+      }
+      const sacrum = new Mesh(new ConeGeometry(hipSpan * 0.18 * thickness, hipSpan * 0.35 * thickness, 5));
+      sacrum.position.copy(position).add(new Vector3(0, -hipSpan * 0.08, -hipSpan * 0.035));
+      sacrum.rotation.z = Math.PI;
+      addSkeletonDisplayMesh(sacrum, pelvis, { joint: true });
+      if (hipPositions.length === 2) {
+        const pubicCenter = position.clone().add(new Vector3(0, -hipSpan * 0.27, hipSpan * 0.08));
+        for (const hipPosition of hipPositions) {
+          addSkeletonLongBone(pelvis, hipPosition, pubicCenter, hipSpan * 0.055 * thickness);
+        }
+        addSkeletonJoint(pelvis, pubicCenter, hipSpan * 0.07 * thickness);
+      }
+    }
+    if (pelvis && neck) {
+      const from = pelvis.displayPosition || pelvis.position;
+      const to = neck.displayPosition || neck.position;
+      for (let vertebra = 1; vertebra < 9; vertebra += 1) {
+        const position = from.clone().lerp(to, vertebra / 9);
+        const owner = vertebra > 6 ? chest || neck : spine || pelvis;
+        const disc = new Mesh(new CylinderGeometry(0.018 * thickness, 0.021 * thickness, 0.012, 8));
+        disc.position.copy(position);
+        addSkeletonDisplayMesh(disc, owner, { joint: true });
+      }
+    }
+  }
   function rebuildBoneVisuals() {
     while (boneRigGroup.children.length) {
       const child = boneRigGroup.children.pop();
@@ -56759,6 +57183,14 @@ ${new OBJExporter().parse(group)}`;
     boneRigGroup.layers.enable(0);
     boneRigGroup.layers.enable(1);
     boneRigGroup.layers.enable(2);
+    if (skeletonDisplayMode) {
+      addSimplifiedSkeletonVisuals();
+      const selectedSkeletonBone = selectedBone();
+      if (selectedSkeletonBone && visible) addSelectedBoneGizmos(selectedSkeletonBone);
+      syncBoneTransformGizmo();
+      syncBoneJoystick();
+      return;
+    }
     for (const bone2 of rigBones) {
       if (bone2.hidden) continue;
       const guidePosition = bone2.displayPosition || bone2.position;
@@ -56814,24 +57246,6 @@ ${new OBJExporter().parse(group)}`;
         cone.layers.enable(1);
         cone.layers.enable(2);
         boneRigGroup.add(cone);
-        if (bone2.armorMount) {
-          const mountLength = Math.max(0.14, Math.min(0.42, boneLength * 0.6));
-          const plate = new Mesh(
-            new PlaneGeometry(Math.max(0.14, mountLength * 0.65), mountLength),
-            new MeshBasicMaterial({ color: 6479826, transparent: true, opacity: 0.7, side: DoubleSide, depthTest: false })
-          );
-          plate.position.copy(guidePosition).add(boneVector.clone().multiplyScalar(0.5));
-          plate.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), direction);
-          plate.renderOrder = 10001;
-          plate.userData.boneId = bone2.id;
-          plate.userData.armorMount = true;
-          plate.userData.armorMountId = bone2.armorMountId || null;
-          plate.userData.editorHelper = true;
-          plate.layers.enable(0);
-          plate.layers.enable(1);
-          plate.layers.enable(2);
-          boneRigGroup.add(plate);
-        }
       }
     }
     const bone = selectedBone();
@@ -56847,6 +57261,24 @@ ${new OBJExporter().parse(group)}`;
   function syncBoneGuideScaleUi() {
     if (els.boneGuideScaleInput) els.boneGuideScaleInput.value = String(boneGuideScale);
     if (els.boneGuideScaleValue) els.boneGuideScaleValue.textContent = `${Math.round(boneGuideScale * 100)}%`;
+  }
+  function setSkeletonMode(enabled) {
+    const next = !!enabled;
+    if (next === skeletonDisplayMode) return;
+    skeletonDisplayMode = next;
+    if (els.skeletonModeInput) els.skeletonModeInput.checked = skeletonDisplayMode;
+    if (skeletonDisplayMode) {
+      skeletonPreviousOpacity = rigModelOpacity;
+      if (rigModelOpacity > 0.45) setRigModelOpacity(0.35);
+      if (els.showBonesInput) els.showBonesInput.checked = true;
+      if (!tPoseFittingMode) setTPoseFittingMode(true);
+      log("Skeleton Mode enabled. The simplified anatomy uses the same selectable rig and is shown inside the faded model.");
+    } else {
+      if (Number.isFinite(skeletonPreviousOpacity)) setRigModelOpacity(skeletonPreviousOpacity);
+      skeletonPreviousOpacity = null;
+      log("Skeleton Mode disabled. Restored the standard rig guides.");
+    }
+    rebuildBoneVisuals();
   }
   function restoreRigModelMaterials() {
     const restored = rigModelMaterialState.size > 0;
@@ -56941,6 +57373,13 @@ ${new OBJExporter().parse(group)}`;
       name.className = "bone-name";
       name.textContent = (bone2.parentId ? "  " : "") + bone2.name;
       row.append(name);
+      if (bone2.armorMount) {
+        const mountBadge = document.createElement("span");
+        mountBadge.className = "bone-mount-badge";
+        mountBadge.textContent = "ARMOR";
+        mountBadge.title = "Armor can attach rigidly to this bone";
+        row.append(mountBadge);
+      }
       const hideBtn = document.createElement("button");
       hideBtn.type = "button";
       hideBtn.className = "bone-hide-btn";
@@ -56972,6 +57411,12 @@ ${new OBJExporter().parse(group)}`;
     }
     const disabled = !bone;
     [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ, els.deleteBoneBtn].forEach((control) => control.disabled = disabled);
+    if (els.armorMountBtn) {
+      els.armorMountBtn.disabled = disabled;
+      els.armorMountBtn.textContent = bone?.armorMount ? "Remove Armor Bone" : "Use Bone for Armor";
+      els.armorMountBtn.classList.toggle("active", !!bone?.armorMount);
+    }
+    if (els.attachArmorBtn) els.attachArmorBtn.disabled = !bone?.armorMount;
     els.selectedBoneLabel.textContent = `Selected: ${bone?.name || "None"}`;
     els.boneNameInput.value = bone?.name || "";
     els.boneParentSelect.value = bone?.parentId || "";
@@ -57007,6 +57452,7 @@ ${new OBJExporter().parse(group)}`;
     applyCurrentRigPose({ resolveLooseHierarchy: true });
     mirrorBoneEdit(bone);
     if (mirrorBoneEdits) applyCurrentRigPose({ resolveLooseHierarchy: true });
+    if (tPoseFittingMode) commitTPoseBoneFitting();
     commitLooseBonePosition(bone.id, startPosition);
     if (mirror?.id && mirrorStartPosition) commitLooseBonePosition(mirror.id, mirrorStartPosition);
     commitLooseBoneRotation(bone.id, startRotation);
@@ -57022,14 +57468,38 @@ ${new OBJExporter().parse(group)}`;
   function toggleSelectedArmorMount() {
     const bone = selectedBone();
     if (!bone) {
-      log("Select a bone before adding an armor mount.");
+      log("Select a bone before enabling it for armor.");
       return;
     }
     recordBoneHistory("toggle armor mount");
+    const oldMountId = bone.armorMountId || null;
     bone.armorMount = !bone.armorMount;
     if (bone.armorMount && !bone.armorMountId) bone.armorMountId = `armor-mount-${bone.id}`;
+    let detached = 0;
+    if (!bone.armorMount && oldMountId) {
+      for (const object of objects) {
+        if (object.userData?.rigArmorMountId !== oldMountId) continue;
+        delete object.userData.rigArmorMountId;
+        delete object.userData.rigAttachment;
+        delete object.userData.rigBoneId;
+        detached += 1;
+      }
+    }
     rebuildBoneVisuals();
-    log(`${bone.armorMount ? "Added" : "Removed"} rigid armor mount on ${bone.name}.`);
+    syncBonePanel();
+    updateAll();
+    log(`${bone.armorMount ? "Enabled" : "Disabled"} ${bone.name} for rigid armor${detached ? ` and detached ${detached} armor part${detached === 1 ? "" : "s"}` : ""}.`);
+  }
+  function setObjectRigRole(object, role) {
+    if (!object || object.userData?.editorHelper) return false;
+    const normalized = role === "armor" ? "armor" : "skin";
+    object.userData.rigRole = normalized;
+    if (normalized === "skin") {
+      delete object.userData.rigArmorMountId;
+      delete object.userData.rigAttachment;
+      delete object.userData.rigBoneId;
+    }
+    return true;
   }
   function markCheckedRigRole(role) {
     const targets = (typeof checkedObjects === "function" ? checkedObjects() : []).filter((object) => object && !object.userData?.editorHelper);
@@ -57038,13 +57508,7 @@ ${new OBJExporter().parse(group)}`;
       return;
     }
     recordBoneHistory(`mark ${role}`);
-    targets.forEach((object) => {
-      object.userData.rigRole = role;
-      if (role === "skin") {
-        delete object.userData.rigArmorMountId;
-        delete object.userData.rigAttachment;
-      }
-    });
+    targets.forEach((object) => setObjectRigRole(object, role));
     applyRigModelOpacity();
     updateAll();
     log(`Marked ${targets.length} object${targets.length === 1 ? "" : "s"} as ${role === "armor" ? "separate rigid armor" : "skin and bone"}.`);
@@ -57052,16 +57516,21 @@ ${new OBJExporter().parse(group)}`;
   function attachCheckedArmorToSelectedBone() {
     const bone = selectedBone();
     if (!bone) {
-      log("Select an armor-mount bone first.");
+      log("Select an armor bone first.");
       return;
     }
     if (!bone.armorMount || !bone.armorMountId) {
-      log(`Add an armor mount to ${bone.name} before attaching armor.`);
+      log(`Enable ${bone.name} for armor before attaching parts.`);
       return;
     }
-    const targets = (typeof checkedObjects === "function" ? checkedObjects() : []).filter((object) => object && !object.userData?.editorHelper);
-    if (!targets.length) {
+    const checked = (typeof checkedObjects === "function" ? checkedObjects() : []).filter((object) => object && !object.userData?.editorHelper);
+    if (!checked.length) {
       log("Check one or more armor objects, then click Attach Checked Armor.");
+      return;
+    }
+    const targets = checked.filter((object) => object.userData?.rigRole === "armor");
+    if (!targets.length) {
+      log("None of the checked parts are marked Armor. Enable Armor on the parts first.");
       return;
     }
     recordBoneHistory("attach rigid armor");
@@ -57077,7 +57546,54 @@ ${new OBJExporter().parse(group)}`;
     rebuildBoneVisuals();
     syncBonePanel();
     updateGlueButton();
-    log(`Attached ${targets.length} armor part${targets.length === 1 ? "" : "s"} rigidly to ${bone.name}.`);
+    const ignored = checked.length - targets.length;
+    log(`Attached ${targets.length} armor part${targets.length === 1 ? "" : "s"} rigidly to ${bone.name}${ignored ? `; ignored ${ignored} checked skin part${ignored === 1 ? "" : "s"}` : ""}.`);
+  }
+  function armorBoneForObject(object) {
+    if (!object?.userData) return null;
+    const mountBone = object.userData.rigArmorMountId ? rigBones.find((bone) => bone.armorMountId === object.userData.rigArmorMountId) : null;
+    return mountBone || boneById(object.userData.rigBoneId);
+  }
+  function armorPairKey(object) {
+    return String(object?.name || object?.userData?.id || "").toLowerCase().replace(/\bleft\b|\bright\b/g, "").replace(/(?:^|[\s_.-])[lr](?=$|[\s_.-])/g, " ").replace(/[\s_.-]+/g, " ").trim();
+  }
+  function mirroredArmorForObject(source) {
+    const sourceBone = armorBoneForObject(source);
+    const targetBone = sourceBone ? boneById(mirroredBoneId(sourceBone.id)) : null;
+    if (!targetBone) return null;
+    const candidates = objects.filter((object) => object !== source && object.userData?.rigRole === "armor" && armorBoneForObject(object)?.id === targetBone.id);
+    if (!candidates.length) return null;
+    const sourceKey = armorPairKey(source);
+    return candidates.find((candidate) => armorPairKey(candidate) === sourceKey) || (candidates.length === 1 ? candidates[0] : null);
+  }
+  function armorFittingTargets(controlObject) {
+    if (!controlObject) return [];
+    const candidates = controlObject === groupPivot && typeof activeGroupObjects === "function" ? activeGroupObjects() : [controlObject];
+    return candidates.filter((object) => object?.userData?.rigRole === "armor" && armorBoneForObject(object));
+  }
+  function mirrorArmorFittingObject(source) {
+    if (!tPoseFittingMode || !mirrorBoneEdits) return null;
+    const target = mirroredArmorForObject(source);
+    if (!target) return null;
+    target.position.set(-source.position.x, source.position.y, source.position.z);
+    target.rotation.set(source.rotation.x, -source.rotation.y, -source.rotation.z, source.rotation.order || "XYZ");
+    target.scale.copy(source.scale);
+    target.updateMatrixWorld(true);
+    return target;
+  }
+  function updateArmorFittingMirror(controlObject) {
+    if (!tPoseFittingMode || !mirrorBoneEdits) return;
+    armorFittingTargets(controlObject).forEach(mirrorArmorFittingObject);
+  }
+  function finishArmorFittingTransform(controlObject) {
+    if (!tPoseFittingMode) return;
+    const targets = armorFittingTargets(controlObject);
+    if (!targets.length) return;
+    targets.forEach(mirrorArmorFittingObject);
+    captureAnimationBindingRest();
+    applyCurrentRigPose();
+    updateAll();
+    log(`Saved fitted armor offset${targets.length === 1 ? "" : "s"} relative to the assigned bone${mirrorBoneEdits ? " and mirrored the matching opposite-side armor" : ""}.`);
   }
   function glueBonesToSelected() {
     if (!rigBones.length) {
@@ -57329,11 +57845,16 @@ ${new OBJExporter().parse(group)}`;
   }
   function endBoneDrag(event) {
     if (!boneDrag || event.pointerId !== boneDrag.pointerId) return;
-    commitLooseBonePosition(selectedBoneId, boneDrag.startPosition);
-    if (boneDrag.startMirrorId && boneDrag.startMirrorPosition) commitLooseBonePosition(boneDrag.startMirrorId, boneDrag.startMirrorPosition);
+    if (tPoseFittingMode) {
+      commitTPoseBoneFitting();
+    } else {
+      commitLooseBonePosition(selectedBoneId, boneDrag.startPosition);
+      if (boneDrag.startMirrorId && boneDrag.startMirrorPosition) commitLooseBonePosition(boneDrag.startMirrorId, boneDrag.startMirrorPosition);
+    }
     boneDrag.canvas.releasePointerCapture?.(event.pointerId);
     boneDrag = null;
   }
+  syncTPoseFittingUi();
   var MINECRAFT_UNIT = 1 / 16;
   var minecraftProject = { sourceName: "", format: "", textureWidth: 64, textureHeight: 64, textureName: "", textureDataUrl: null };
   var minecraftAnimationClips = [];
@@ -58790,6 +59311,8 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     syncBoneRotationSnap();
   });
   els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
+  els.tPoseFittingBtn?.addEventListener("click", () => setTPoseFittingMode(!tPoseFittingMode));
+  els.addGripHandsBtn?.addEventListener("click", addGripHandRig);
   els.armorMountBtn?.addEventListener("click", toggleSelectedArmorMount);
   els.markSkinBtn?.addEventListener("click", () => markCheckedRigRole("skin"));
   els.markArmorBtn?.addEventListener("click", () => markCheckedRigRole("armor"));
@@ -58798,6 +59321,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     control?.addEventListener("change", applyBonePanelValues);
   });
   els.showBonesInput?.addEventListener("change", rebuildBoneVisuals);
+  els.skeletonModeInput?.addEventListener("change", (event) => setSkeletonMode(event.target.checked));
   els.boneGuideScaleInput?.addEventListener("input", (event) => setBoneGuideScale(event.target.value));
   els.mirrorBoneEditsInput?.addEventListener("change", (event) => {
     mirrorBoneEdits = event.target.checked;

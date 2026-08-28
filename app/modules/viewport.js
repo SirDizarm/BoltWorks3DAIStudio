@@ -103,6 +103,7 @@ transform.addEventListener("mouseDown", () => {
 });
 transform.addEventListener("mouseUp", () => {
   finishScaleDragSession();
+  if (typeof finishArmorFittingTransform === "function") finishArmorFittingTransform(transform.object);
 });
 transform.addEventListener("objectChange", () => {
   if (transform.object === groupPivot) {
@@ -117,6 +118,7 @@ transform.addEventListener("objectChange", () => {
     applySingleSidedScaleOffset();
   }
   syncPlayerAvatarBones({ object: transform.object, rebuild: true });
+  if (typeof updateArmorFittingMirror === "function") updateArmorFittingMirror(transform.object);
   updateTriangleHelpers();
   syncSelectionOutlineTransforms();
   syncInspector();
@@ -639,6 +641,9 @@ const els = {
   imageReliefMeshPlugin: document.querySelector("#imageReliefMeshPlugin"),
   sceneRenderingTools: document.querySelector("#sceneRenderingTools"),
   bonePlacementSection: document.querySelector("#bonePlacementSection"),
+  tPoseFittingBtn: document.querySelector("#tPoseFittingBtn"),
+  tPoseFittingStatus: document.querySelector("#tPoseFittingStatus"),
+  addGripHandsBtn: document.querySelector("#addGripHandsBtn"),
   boneAxisFreeBtn: document.querySelector("#boneAxisFreeBtn"),
   boneAxisXBtn: document.querySelector("#boneAxisXBtn"),
   boneAxisYBtn: document.querySelector("#boneAxisYBtn"),
@@ -664,6 +669,7 @@ const els = {
   boneRotY: document.querySelector("#boneRotY"),
   boneRotZ: document.querySelector("#boneRotZ"),
   showBonesInput: document.querySelector("#showBonesInput"),
+  skeletonModeInput: document.querySelector("#skeletonModeInput"),
   boneGuideScaleInput: document.querySelector("#boneGuideScaleInput"),
   boneGuideScaleValue: document.querySelector("#boneGuideScaleValue"),
   mirrorBoneEditsInput: document.querySelector("#mirrorBoneEditsInput"),

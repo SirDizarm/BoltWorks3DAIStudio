@@ -810,7 +810,7 @@ label {
   width: 100%;
   min-height: 34px;
   display: grid;
-  grid-template-columns: 22px auto auto 22px minmax(0, 1fr) auto 52px;
+  grid-template-columns: 22px auto auto auto 22px minmax(0, 1fr) auto 52px;
   gap: 6px;
   align-items: center;
   text-align: left;
@@ -869,6 +869,15 @@ label {
 
 .hide-toggle input {
   accent-color: #ffb84d;
+}
+
+.armor-toggle input {
+  accent-color: #36e6d2;
+}
+
+.armor-toggle.armor-enabled {
+  color: #65f3e2;
+  font-weight: 700;
 }
 
 .object-row .mesh-name {
@@ -1185,6 +1194,17 @@ label {
 .bone-row.selected { background: rgba(64,199,165,.22); color: #fff; }
 .bone-row .bone-name { flex: 1; overflow: hidden; text-overflow: ellipsis; }
 .bone-row.bone-hidden .bone-name { opacity: .45; text-decoration: line-through; }
+
+.bone-mount-badge {
+  flex: none;
+  padding: 1px 5px;
+  border: 1px solid rgba(54, 230, 210, .65);
+  border-radius: 4px;
+  color: #65f3e2;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .04em;
+}
 
 .bone-hide-btn {
   flex: none;

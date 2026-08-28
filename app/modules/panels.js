@@ -428,6 +428,8 @@ els.boneRotationStepInput?.addEventListener("change", event => {
   syncBoneRotationSnap();
 });
 els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
+els.tPoseFittingBtn?.addEventListener("click", () => setTPoseFittingMode(!tPoseFittingMode));
+els.addGripHandsBtn?.addEventListener("click", addGripHandRig);
 els.armorMountBtn?.addEventListener("click", toggleSelectedArmorMount);
 els.markSkinBtn?.addEventListener("click", () => markCheckedRigRole("skin"));
 els.markArmorBtn?.addEventListener("click", () => markCheckedRigRole("armor"));
@@ -437,6 +439,7 @@ els.attachArmorBtn?.addEventListener("click", attachCheckedArmorToSelectedBone);
   control?.addEventListener("change", applyBonePanelValues);
 });
 els.showBonesInput?.addEventListener("change", rebuildBoneVisuals);
+els.skeletonModeInput?.addEventListener("change", event => setSkeletonMode(event.target.checked));
 els.boneGuideScaleInput?.addEventListener("input", event => setBoneGuideScale(event.target.value));
 els.mirrorBoneEditsInput?.addEventListener("change", event => { mirrorBoneEdits = event.target.checked; });
 els.rigModelOpacityInput?.addEventListener("input", event => setRigModelOpacity(event.target.value));

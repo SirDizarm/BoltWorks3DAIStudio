@@ -1514,6 +1514,31 @@ for (const required of [
   "function syncBoneRotationSnap",
   "boneTransform.setRotationSnap(radians)",
   "boneJoystickGroup.visible = false",
+  "armor-check",
+  "function setObjectRigRole",
+  "None of the checked parts are marked Armor",
+  "Remove Armor Bone",
+  "No extra mount object is added to the scene",
+  "activeSkinRuntime?.threeBones?.get(bone.id)",
+  "A mesh explicitly marked Skin & Bone is enough to restore the skinned",
+  "applySkinnedPose(poses);\n    // The body and rigid equipment share one pose.",
+  "elapsedFrames * frameDuration",
+  "function updateAnimationPlaybackPanel()",
+  "{ lightweightPanel: true }",
+  "item.object !== activeSkinRuntime?.avatar",
+  "if (object === activeSkinRuntime?.avatar) continue;",
+  "function setTPoseFittingMode(enabled)",
+  "function finishArmorFittingTransform(controlObject)",
+  "function mirroredArmorForObject(source)",
+  "function addGripHandRig()",
+  "Grip Socket ${side}",
+  "const oldBoneObjects = new Set(activeSkinRuntime.threeBones.values())",
+  "function setSkeletonMode(enabled)",
+  "function addSimplifiedSkeletonVisuals()",
+  "Skeleton Mode enabled. The simplified anatomy uses the same selectable rig",
+  "new THREE.TubeGeometry(ribCurve, 16, .0075 * thickness, 6, false)",
+  "const spreadVector = new THREE.Vector3(0, spread, 0)",
+  "Grip hands fitted: added ${added} and realigned ${realigned}",
   "setScaleSnap",
   "markerBtn",
   "clearTriBtn",
@@ -2329,8 +2354,9 @@ if (!moduleSources.get("meshes")?.includes('[["FRONT", "front"], ["BACK", "back"
 if (moduleSources.get("rigging")?.includes('setBoneGizmoEnabled(true, "rotate")')) {
   throw new Error("Selecting a bone must not reactivate Rotate or its joystick.");
 }
-if (!moduleSources.get("rigging")?.includes('return named([`Hand ${side}`, `Forearm ${side}`])')) {
-  throw new Error("Hand vertices must be weighted to the hand bone so wrist twists deform the mesh.");
+if (!moduleSources.get("rigging")?.includes('`Hand ${side}`, `Forearm ${side}`')
+  || !moduleSources.get("rigging")?.includes('`Thumb ${side}`, `Index ${side}`, `Middle ${side}`, `Ring ${side}`, `Pinky ${side}`')) {
+  throw new Error("Hand vertices must be weighted to the hand and grip-finger bones so wrist twists and grip poses deform the mesh.");
 }
 if (!moduleSources.get("import-export")?.includes("? rigModelOpacity")
   || !moduleSources.get("import-export")?.includes("editsRigPreviewOpacity")) {
