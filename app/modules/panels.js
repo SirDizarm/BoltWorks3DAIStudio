@@ -222,7 +222,6 @@ function animate() {
   boneGridAxisGroup.visible = !!els.showGridInput?.checked;
   syncActiveJointCamera();
   orbit.update();
-  updateViewportCompass();
   syncCameraDirectorVisibility();
   syncSelectionOutlineTransforms();
   if (lineSketchMode && lineSketchPoints.length) updateLineSketchGuide();
@@ -423,6 +422,11 @@ els.boneAxisYBtn?.addEventListener("click", () => setBoneMoveAxis("y"));
 els.boneAxisZBtn?.addEventListener("click", () => setBoneMoveAxis("z"));
 els.boneModeMoveBtn?.addEventListener("click", () => setBoneGizmoToolMode("translate"));
 els.boneModeRotateBtn?.addEventListener("click", () => setBoneGizmoToolMode("rotate"));
+els.boneRotationStepInput?.addEventListener("input", syncBoneRotationSnap);
+els.boneRotationStepInput?.addEventListener("change", event => {
+  event.target.value = String(normalizedBoneRotationStep(event.target.value));
+  syncBoneRotationSnap();
+});
 els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
 els.armorMountBtn?.addEventListener("click", toggleSelectedArmorMount);
 els.markSkinBtn?.addEventListener("click", () => markCheckedRigRole("skin"));
@@ -1454,11 +1458,6 @@ canvas.addEventListener("pointerdown", event => {
   }
   if (spaceCameraMode) return;
   pendingScenePick = null;
-  // Grabbing the bone joystick handle starts a precise aim-drag for rotation.
-  if (typeof pickBoneJoystick === "function" && pickBoneJoystick(event)) {
-    beginBoneAimDrag(event);
-    return;
-  }
   if (knifeCutMode) {
     addKnifeCutPointFromHit(hitFromPointerEvent(event));
     return;
@@ -1530,7 +1529,6 @@ canvas.addEventListener("pointerdown", event => {
 });
 
 canvas.addEventListener("pointermove", event => {
-  if (typeof moveBoneAimDrag === "function" && boneAimDrag) { moveBoneAimDrag(event); return; }
   const rect = renderer.domElement.getBoundingClientRect();
   lastCanvasPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -1559,7 +1557,6 @@ canvas.addEventListener("pointermove", event => {
 });
 
 window.addEventListener("pointerup", event => {
-  if (typeof endBoneAimDrag === "function") endBoneAimDrag(event);
   finishDragPushSession(event.pointerId);
   finishAreaSelection(event);
   finishTrianglePainting(event.pointerId);
@@ -1627,6 +1624,7 @@ window.addEventListener("keydown", event => {
   }
   if (event.key === "Shift") isShiftHeld = true;
   if (event.key === "Control" || event.key === "Meta") isCtrlHeld = true;
+  syncBoneRotationSnap();
   updateScaleModifierMarkers();
   if (pullToTargetSession && event.key === "Escape") {
     event.preventDefault();
@@ -1698,6 +1696,7 @@ window.addEventListener("keyup", event => {
   gameplayKeys.delete(event.code);
   if (event.key === "Shift") isShiftHeld = false;
   if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
+  syncBoneRotationSnap();
   updateScaleModifierMarkers();
   if (event.code !== "Space") return;
   spaceCameraMode = false;
@@ -1709,6 +1708,7 @@ window.addEventListener("blur", () => {
   gameplayKeys.clear();
   isShiftHeld = false;
   isCtrlHeld = false;
+  syncBoneRotationSnap();
   updateScaleModifierMarkers();
   finishDragPushSession();
   finishScaleDragSession();

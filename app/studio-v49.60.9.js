@@ -32285,7 +32285,6 @@ void main() {
   var frontBoneCanvas = document.querySelector("#frontBoneCanvas");
   var sideBoneCanvas = document.querySelector("#sideBoneCanvas");
   var gameplayCanvas = document.querySelector("#gameplayCanvas");
-  var viewportCompassCamera = document.querySelector("#viewportCompassCamera");
   var renderer = new WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
@@ -32331,14 +32330,6 @@ void main() {
   orbit.maxDistance = 5e5;
   orbit.target.set(0, 1, 0);
   var modelTileCameraLocked = false;
-  function updateViewportCompass() {
-    if (!viewportCompassCamera) return;
-    const x = camera.position.x - orbit.target.x;
-    const z = camera.position.z - orbit.target.z;
-    if (Math.hypot(x, z) < 1e-6) return;
-    const angle = MathUtils.radToDeg(Math.atan2(x, z));
-    viewportCompassCamera.style.transform = `rotate(${angle}deg) translateY(-22px)`;
-  }
   function applyModelTileCameraLock() {
     const azimuth = Number(els.modelTileCameraAzimuthInput?.value) || 45;
     const elevation = Math.max(-89, Math.min(89, Number(els.modelTileCameraElevationInput?.value) || 35.264));
@@ -32899,6 +32890,8 @@ void main() {
     boneAxisZBtn: document.querySelector("#boneAxisZBtn"),
     boneModeMoveBtn: document.querySelector("#boneModeMoveBtn"),
     boneModeRotateBtn: document.querySelector("#boneModeRotateBtn"),
+    boneRotationStepInput: document.querySelector("#boneRotationStepInput"),
+    boneRotationStepStatus: document.querySelector("#boneRotationStepStatus"),
     glueBoneBtn: document.querySelector("#glueBoneBtn"),
     selectedBoneLabel: document.querySelector("#selectedBoneLabel"),
     addRootBoneBtn: document.querySelector("#addRootBoneBtn"),
@@ -34158,12 +34151,72 @@ void main() {
       disposeObject3DTree(child);
     }
   }
+  function makeGuideLabelTexture(text) {
+    const labelCanvas = document.createElement("canvas");
+    labelCanvas.width = 512;
+    labelCanvas.height = 160;
+    const ctx = labelCanvas.getContext("2d");
+    if (!ctx) return null;
+    ctx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+    ctx.fillStyle = "rgba(9,12,17,.82)";
+    ctx.fillRect(4, 4, labelCanvas.width - 8, labelCanvas.height - 8);
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = "rgba(64,199,165,.95)";
+    ctx.strokeRect(4, 4, labelCanvas.width - 8, labelCanvas.height - 8);
+    ctx.fillStyle = "#f3f7fb";
+    ctx.font = "700 78px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, labelCanvas.width / 2, labelCanvas.height / 2 + 4);
+    const texture = new CanvasTexture(labelCanvas);
+    texture.needsUpdate = true;
+    texture.colorSpace = SRGBColorSpace;
+    return texture;
+  }
+  function makeFlatGuideLabel(text, width = 2.2, height = 0.7) {
+    const material = new MeshBasicMaterial({
+      map: makeGuideLabelTexture(text),
+      transparent: true,
+      alphaTest: 0.08,
+      depthTest: true,
+      depthWrite: true,
+      side: DoubleSide
+    });
+    const mesh = new Mesh(new PlaneGeometry(width, height), material);
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.renderOrder = -900;
+    return mesh;
+  }
   function buildGridLabels() {
     clearGuideGroup(gridLabelGroup);
-    gridLabelGroup.visible = false;
+    for (const [text, axis] of [["FRONT", "front"], ["BACK", "back"], ["LEFT", "left"], ["RIGHT", "right"]]) {
+      const mesh = makeFlatGuideLabel(text);
+      mesh.userData.axis = axis;
+      gridLabelGroup.add(mesh);
+    }
   }
   function updateGridLabels() {
-    gridLabelGroup.visible = false;
+    const scale = grid.scale.x || 1;
+    const halfSize = 9 * scale;
+    const offset = Math.max(0.9, halfSize * 0.12);
+    const labelY = 0.012;
+    for (const mesh of gridLabelGroup.children) {
+      mesh.scale.setScalar(scale);
+      mesh.rotation.set(-Math.PI / 2, 0, 0);
+      if (mesh.userData.axis === "front") {
+        mesh.position.set(0, labelY, halfSize + offset);
+        mesh.rotation.z = Math.PI;
+      } else if (mesh.userData.axis === "back") {
+        mesh.position.set(0, labelY, -halfSize - offset);
+      } else if (mesh.userData.axis === "left") {
+        mesh.position.set(-halfSize - offset, labelY, 0);
+        mesh.rotation.z = Math.PI / 2;
+      } else if (mesh.userData.axis === "right") {
+        mesh.position.set(halfSize + offset, labelY, 0);
+        mesh.rotation.z = -Math.PI / 2;
+      }
+    }
+    gridLabelGroup.visible = grid.visible;
   }
   var selectionOutlineTargets = /* @__PURE__ */ new WeakMap();
   var selectionOutlinePadding = new Vector3(1.025, 1.025, 1.025);
@@ -48875,7 +48928,7 @@ void main() {
     selectObject(null);
     selectedBoneId = null;
     if (els.showBonesInput) els.showBonesInput.checked = false;
-    setBoneGizmoEnabled(false, "rotate");
+    setBoneGizmoEnabled(false, "translate");
     rebuildBoneVisuals();
     syncBonePanel();
     activeTransformMode = null;
@@ -49400,7 +49453,7 @@ void main() {
     els.roughInput.value = selected.material.roughness;
     els.roughValue.value = Number(selected.material.roughness).toFixed(2);
     const baseMaterialState = typeof rigModelBaseMaterialState === "function" ? rigModelBaseMaterialState(selected.material) : null;
-    const inspectorOpacity = baseMaterialState?.opacity ?? selected.material.opacity ?? 1;
+    const inspectorOpacity = typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive ? rigModelOpacity : baseMaterialState?.opacity ?? selected.material.opacity ?? 1;
     els.opacityInput.value = inspectorOpacity;
     els.opacityValue.value = Number(inspectorOpacity).toFixed(2);
     if (selected.userData.cuts?.bottom !== void 0) {
@@ -49482,18 +49535,22 @@ void main() {
     const reapplyRigOpacity = typeof restoreRigModelMaterials === "function" && restoreRigModelMaterials();
     selected.material.roughness = +els.roughInput.value;
     const opacity = Math.max(0.05, Math.min(1, Number(els.opacityInput.value) || 1));
-    selected.material.transparent = opacity < 0.999 || !!selected.userData.textureHasTransparency;
-    selected.material.opacity = opacity;
+    const editsRigPreviewOpacity = typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive && rigBones.length > 0;
+    if (!editsRigPreviewOpacity) {
+      selected.material.transparent = opacity < 0.999 || !!selected.userData.textureHasTransparency;
+      selected.material.opacity = opacity;
+      selected.material.depthWrite = opacity >= 0.9;
+      selected.userData.opacity = opacity;
+    }
     selected.material.wireframe = false;
-    selected.material.depthWrite = opacity >= 0.9;
     selected.material.needsUpdate = true;
     selected.userData.color = normalizedColor;
     selected.userData.roughness = +els.roughInput.value;
-    selected.userData.opacity = opacity;
     syncMeshRenderCulling(selected);
     els.roughValue.value = Number(selected.material.roughness).toFixed(2);
     els.opacityValue.value = opacity.toFixed(2);
-    if (reapplyRigOpacity) applyRigModelOpacity();
+    if (editsRigPreviewOpacity) setRigModelOpacity(opacity);
+    else if (reapplyRigOpacity) applyRigModelOpacity();
     updateAll();
   }
   function importJsonData(data, fileName = "JSON") {
@@ -55298,14 +55355,14 @@ ${new OBJExporter().parse(group)}`;
   var boneToolMode = null;
   var boneMoveAxis = null;
   var boneDrag = null;
-  var boneGizmoToolMode = "rotate";
-  var boneGizmoEnabled = true;
+  var boneGizmoToolMode = "translate";
+  var boneGizmoEnabled = false;
   var boneGuideScale = 0.4;
   var mirrorBoneEdits = false;
   var boneTransformLooseStart = null;
   var rigModelOpacity = 1;
   var rigModelMaterialState = /* @__PURE__ */ new Map();
-  var boneAimDrag = null;
+  var boneRotationStepDegrees = 15;
   var bonesGlued = false;
   var animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {}, clips: { idle: { name: "Idle", fps: 24, end: 48, keys: {} } }, activeClipId: "idle", bindingRest: null };
   var bwsAnimationSequence = [];
@@ -55358,123 +55415,11 @@ ${new OBJExporter().parse(group)}`;
   boneJoystickGroup.userData.editorHelper = true;
   boneJoystickGroup.visible = false;
   scene.add(boneJoystickGroup);
-  var boneJoystickShaft = new Mesh(
-    new CylinderGeometry(0.03, 0.03, 1, 8),
-    new MeshBasicMaterial({ color: 16765562, depthTest: false, transparent: true, opacity: 0.9 })
-  );
-  boneJoystickShaft.renderOrder = 10004;
-  boneJoystickGroup.add(boneJoystickShaft);
-  var boneJoystickHandle = new Mesh(
-    new SphereGeometry(0.11, 16, 12),
-    new MeshBasicMaterial({ color: 16765562, depthTest: false })
-  );
-  boneJoystickHandle.renderOrder = 10005;
-  boneJoystickHandle.userData.boneJoystick = true;
-  boneJoystickGroup.add(boneJoystickHandle);
-  var boneJoystickHit = new Mesh(
-    new SphereGeometry(0.2, 8, 6),
-    new MeshBasicMaterial({ visible: false })
-  );
-  boneJoystickHit.userData.boneJoystick = true;
-  boneJoystickGroup.add(boneJoystickHit);
-  function boneJoystickLength() {
-    return Math.max(0.6, boneRigBounds().getSize(new Vector3()).length() * 0.06);
-  }
-  function boneAimDir(bone) {
-    const directChild = rigBones.find((candidate) => candidate.parentId === bone.id);
-    const tail = directChild ? directChild.displayPosition || directChild.position : bone.displayTail || bone.tail;
-    const base = bone.displayPosition || bone.position;
-    const dir = tail ? tail.clone().sub(base) : new Vector3(0, 1, 0);
-    return dir.lengthSq() > 1e-6 ? dir.normalize() : new Vector3(0, 1, 0);
-  }
   function syncBoneJoystick() {
-    const bone = selectedBone();
-    const show = !!bone && boneRigGroup.visible && boneGizmoEnabled && boneGizmoToolMode === "rotate";
-    boneJoystickGroup.visible = show;
-    if (!show) return;
-    const base = bone.displayPosition || bone.position;
-    const dir = boneAimDir(bone);
-    const len = boneJoystickLength();
-    boneJoystickGroup.position.copy(base);
-    boneJoystickShaft.scale.y = len;
-    boneJoystickShaft.position.copy(dir.clone().multiplyScalar(len / 2));
-    boneJoystickShaft.quaternion.setFromUnitVectors(new Vector3(0, 1, 0), dir);
-    boneJoystickHandle.position.copy(dir.clone().multiplyScalar(len));
-    boneJoystickHit.position.copy(boneJoystickHandle.position);
-  }
-  function pickBoneJoystick(event) {
-    if (!boneJoystickGroup.visible) return false;
-    const rect = renderer.domElement.getBoundingClientRect();
-    bonePointer.x = (event.clientX - rect.left) / Math.max(1, rect.width) * 2 - 1;
-    bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
-    mainBoneRaycaster.setFromCamera(bonePointer, camera);
-    return mainBoneRaycaster.intersectObjects([boneJoystickHandle, boneJoystickHit, boneJoystickShaft], false).length > 0;
+    boneJoystickGroup.visible = false;
   }
   function recordBoneHistory(label) {
     if (typeof recordHistory === "function" && !(typeof isRestoring !== "undefined" && isRestoring)) recordHistory(label);
-  }
-  function beginBoneAimDrag(event) {
-    const bone = selectedBone();
-    if (!bone) return false;
-    recordBoneHistory("bone rotate");
-    prepareLooseBoneHierarchy();
-    const base = (bone.displayPosition || bone.position).clone();
-    boneAimDrag = {
-      pointerId: event.pointerId,
-      boneId: bone.id,
-      base,
-      startQuat: new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")),
-      startRotation: bone.rotation.clone(),
-      mirrorId: boneById(mirroredBoneId(bone.id))?.id || null,
-      mirrorRotation: boneById(mirroredBoneId(bone.id))?.rotation.clone() || null,
-      // The visible joystick and limb share the same direction, so a clockwise
-      // drag produces a clockwise bone turn from the user's point of view.
-      startDir: boneAimDir(bone)
-    };
-    orbit.enabled = false;
-    renderer.domElement.setPointerCapture?.(event.pointerId);
-    event.preventDefault();
-    return true;
-  }
-  function moveBoneAimDrag(event) {
-    if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
-    const bone = boneById(boneAimDrag.boneId);
-    if (!bone) return;
-    const rect = renderer.domElement.getBoundingClientRect();
-    bonePointer.x = (event.clientX - rect.left) / Math.max(1, rect.width) * 2 - 1;
-    bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
-    mainBoneRaycaster.setFromCamera(bonePointer, camera);
-    const camDir = new Vector3();
-    camera.getWorldDirection(camDir);
-    boneDragPlane.setFromNormalAndCoplanarPoint(camDir, boneAimDrag.base);
-    if (!mainBoneRaycaster.ray.intersectPlane(boneDragPlane, boneDragHit)) return;
-    const handleDir = boneDragHit.clone().sub(boneAimDrag.base);
-    if (handleDir.lengthSq() < 1e-6) return;
-    handleDir.normalize();
-    const delta = new Quaternion().setFromUnitVectors(boneAimDrag.startDir, handleDir);
-    const worldQuat = delta.clone().multiply(boneAimDrag.startQuat);
-    const e = new Euler().setFromQuaternion(worldQuat, "XYZ");
-    bone.rotation.set(e.x, e.y, e.z);
-    applyCurrentRigPose({ resolveLooseHierarchy: true });
-    rebuildBoneVisuals();
-    syncBonePanel();
-    event.preventDefault();
-  }
-  function endBoneAimDrag(event) {
-    if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
-    const drag = boneAimDrag;
-    const bone = boneById(boneAimDrag.boneId);
-    renderer.domElement.releasePointerCapture?.(event.pointerId);
-    boneAimDrag = null;
-    orbit.enabled = true;
-    if (bone && mirrorBoneEdits) {
-      mirrorBoneEdit(bone, { position: false, rotation: true, tail: false });
-      applyCurrentRigPose({ resolveLooseHierarchy: true });
-      rebuildBoneVisuals();
-      syncBonePanel();
-    }
-    if (bone) commitLooseBoneRotation(bone.id, drag.startRotation);
-    if (drag.mirrorId && drag.mirrorRotation) commitLooseBoneRotation(drag.mirrorId, drag.mirrorRotation);
   }
   var boneTransform = new TransformControls(camera, renderer.domElement);
   boneTransform.visible = false;
@@ -55534,6 +55479,7 @@ ${new OBJExporter().parse(group)}`;
   function setBoneGizmoEnabled(enabled, mode = boneGizmoToolMode) {
     boneGizmoToolMode = mode === "translate" ? "translate" : "rotate";
     boneGizmoEnabled = !!enabled;
+    boneToolMode = boneGizmoEnabled && boneGizmoToolMode === "translate" && boneMoveAxis ? "move" : null;
     els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
     els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
   }
@@ -55554,6 +55500,22 @@ ${new OBJExporter().parse(group)}`;
     boneTransform.showY = free || boneMoveAxis === "y";
     boneTransform.showZ = free || boneMoveAxis === "z";
   }
+  function normalizedBoneRotationStep(value = els.boneRotationStepInput?.value) {
+    return MathUtils.clamp(Math.round(Number(value) || 15), 1, 90);
+  }
+  function syncBoneRotationSnap() {
+    boneRotationStepDegrees = normalizedBoneRotationStep();
+    if (els.boneRotationStepInput && document.activeElement !== els.boneRotationStepInput) {
+      els.boneRotationStepInput.value = String(boneRotationStepDegrees);
+    }
+    const stepped = boneGizmoEnabled && boneGizmoToolMode === "rotate" && (isCtrlHeld || isShiftHeld);
+    const radians = stepped ? MathUtils.degToRad(boneRotationStepDegrees) : null;
+    if (typeof boneTransform.setRotationSnap === "function") boneTransform.setRotationSnap(radians);
+    else boneTransform.rotationSnap = radians;
+    if (els.boneRotationStepStatus) {
+      els.boneRotationStepStatus.textContent = stepped ? `Stepping ${boneRotationStepDegrees} degrees` : "Hold Ctrl or Shift for steps";
+    }
+  }
   function syncBoneTransformGizmo() {
     const bone = selectedBone();
     if (!bone || !boneRigGroup.visible || !boneGizmoEnabled) {
@@ -55567,6 +55529,7 @@ ${new OBJExporter().parse(group)}`;
     boneTransform.setMode(mode);
     boneTransform.setSpace(mode === "rotate" ? "local" : "world");
     applyBoneAxisLock();
+    syncBoneRotationSnap();
     if (!boneTransform.dragging) {
       boneTransformProxy.position.copy(bone.displayPosition || bone.position);
       boneTransformProxy.rotation.set(bone.rotation.x, bone.rotation.y, bone.rotation.z);
@@ -55589,7 +55552,6 @@ ${new OBJExporter().parse(group)}`;
     const bone = boneById(boneId);
     if (!bone) return;
     selectedBoneId = boneId;
-    setBoneGizmoEnabled(true, "rotate");
     if (typeof selectObject === "function") selectObject(null);
     rebuildBoneVisuals();
     syncBonePanel();
@@ -56093,6 +56055,8 @@ ${new OBJExporter().parse(group)}`;
     const pelvis = bones.find((bone) => bone.name === "Pelvis");
     const chest = bones.find((bone) => bone.name === "Chest");
     const foot = bones.find((bone) => bone.name === `Foot ${side}`);
+    const hand = bones.find((bone) => bone.name === `Hand ${side}`);
+    const forearm = bones.find((bone) => bone.name === `Forearm ${side}`);
     const pelvisY = pelvis?.bindPosition?.y ?? 0.9;
     const chestY = chest?.bindPosition?.y ?? 1.2;
     const footY = foot?.bindPosition?.y ?? 0.08;
@@ -56101,7 +56065,13 @@ ${new OBJExporter().parse(group)}`;
       return named([`Thigh ${side}`, `Shin ${side}`, "Pelvis", "Root"]);
     }
     const armThreshold = point.y > chestY - 0.06 ? 0.24 : 0.34;
-    if (Math.abs(point.x) > armThreshold) return named([`Upper Arm ${side}`, `Forearm ${side}`, "Chest"]);
+    if (Math.abs(point.x) > armThreshold) {
+      const handX = Math.abs(hand?.bindPosition?.x ?? hand?.position?.x ?? Infinity);
+      const forearmX = Math.abs(forearm?.bindPosition?.x ?? forearm?.position?.x ?? handX);
+      const wristStart = forearmX + Math.max(0, handX - forearmX) * 0.65;
+      if (hand && Math.abs(point.x) >= wristStart) return named([`Hand ${side}`, `Forearm ${side}`]);
+      return named([`Forearm ${side}`, `Upper Arm ${side}`, "Chest"]);
+    }
     if (point.y > chestY + 0.26) return named(["Head", "Neck", "Chest"]);
     return named(["Chest", "Spine", "Root"]);
   }
@@ -56593,7 +56563,6 @@ ${new OBJExporter().parse(group)}`;
     }));
     els.animationTrackList.querySelectorAll("[data-animation-bone]").forEach((button) => button.addEventListener("click", () => {
       selectedBoneId = button.dataset.animationBone || null;
-      if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
       syncBonePanel();
       rebuildBoneVisuals();
       updateAnimationPanel();
@@ -56869,7 +56838,6 @@ ${new OBJExporter().parse(group)}`;
     if (bone && visible) addSelectedBoneGizmos(bone);
     syncBoneTransformGizmo();
     syncBoneJoystick();
-    syncBoneJoystick();
   }
   function setBoneGuideScale(value) {
     boneGuideScale = MathUtils.clamp(Number(value) || 0.4, 0.2, 1);
@@ -56920,6 +56888,10 @@ ${new OBJExporter().parse(group)}`;
   function syncRigModelOpacityUi() {
     if (els.rigModelOpacityInput) els.rigModelOpacityInput.value = String(rigModelOpacity);
     if (els.rigModelOpacityValue) els.rigModelOpacityValue.textContent = `${Math.round(rigModelOpacity * 100)}%`;
+    if (typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive && selected && els.opacityInput) {
+      els.opacityInput.value = String(rigModelOpacity);
+      if (els.opacityValue) els.opacityValue.value = rigModelOpacity.toFixed(2);
+    }
   }
   function setRigModelOpacity(value) {
     rigModelOpacity = MathUtils.clamp(Number(value) || 1, 0.1, 1);
@@ -56949,7 +56921,7 @@ ${new OBJExporter().parse(group)}`;
   }
   function setBoneMoveAxis(axis) {
     boneMoveAxis = boneMoveAxis === axis ? null : axis;
-    boneToolMode = boneMoveAxis ? "move" : null;
+    boneToolMode = boneGizmoEnabled && boneGizmoToolMode === "translate" && boneMoveAxis ? "move" : null;
     els.boneAxisFreeBtn?.classList.toggle("active", boneMoveAxis === "free");
     els.boneAxisXBtn?.classList.toggle("active", boneMoveAxis === "x");
     els.boneAxisYBtn?.classList.toggle("active", boneMoveAxis === "y");
@@ -56984,7 +56956,6 @@ ${new OBJExporter().parse(group)}`;
       row.append(hideBtn);
       row.addEventListener("click", () => {
         selectedBoneId = selectedBoneId === bone2.id ? null : bone2.id;
-        if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
         rebuildBoneVisuals();
         syncBonePanel();
       });
@@ -57303,7 +57274,6 @@ ${new OBJExporter().parse(group)}`;
     const hit = boneRaycaster.intersectObjects(boneRigGroup.children.filter((child) => child.userData.boneJoint), false)[0];
     if (!hit) return;
     selectedBoneId = hit.object.userData.boneId;
-    setBoneGizmoEnabled(true, "rotate");
     const bone = selectedBone();
     if (!bone) return;
     recordBoneHistory("bone move");
@@ -58402,6 +58372,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
       rebuildBoneVisuals();
       updateAnimationPanel();
     }
+    if (selected && typeof syncInspector === "function") syncInspector();
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event("resize"));
       if (typeof resize === "function") resize();
@@ -58621,7 +58592,6 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     boneGridAxisGroup.visible = !!els.showGridInput?.checked;
     syncActiveJointCamera();
     orbit.update();
-    updateViewportCompass();
     syncCameraDirectorVisibility();
     syncSelectionOutlineTransforms();
     if (lineSketchMode && lineSketchPoints.length) updateLineSketchGuide();
@@ -58814,6 +58784,11 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.boneAxisZBtn?.addEventListener("click", () => setBoneMoveAxis("z"));
   els.boneModeMoveBtn?.addEventListener("click", () => setBoneGizmoToolMode("translate"));
   els.boneModeRotateBtn?.addEventListener("click", () => setBoneGizmoToolMode("rotate"));
+  els.boneRotationStepInput?.addEventListener("input", syncBoneRotationSnap);
+  els.boneRotationStepInput?.addEventListener("change", (event) => {
+    event.target.value = String(normalizedBoneRotationStep(event.target.value));
+    syncBoneRotationSnap();
+  });
   els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
   els.armorMountBtn?.addEventListener("click", toggleSelectedArmorMount);
   els.markSkinBtn?.addEventListener("click", () => markCheckedRigRole("skin"));
@@ -59866,10 +59841,6 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     }
     if (spaceCameraMode) return;
     pendingScenePick = null;
-    if (typeof pickBoneJoystick === "function" && pickBoneJoystick(event)) {
-      beginBoneAimDrag(event);
-      return;
-    }
     if (knifeCutMode) {
       addKnifeCutPointFromHit(hitFromPointerEvent(event));
       return;
@@ -59939,10 +59910,6 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     };
   });
   canvas.addEventListener("pointermove", (event) => {
-    if (typeof moveBoneAimDrag === "function" && boneAimDrag) {
-      moveBoneAimDrag(event);
-      return;
-    }
     const rect = renderer.domElement.getBoundingClientRect();
     lastCanvasPointer.x = (event.clientX - rect.left) / rect.width * 2 - 1;
     lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
@@ -59970,7 +59937,6 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     paintTriangleFromPointer(event);
   });
   window.addEventListener("pointerup", (event) => {
-    if (typeof endBoneAimDrag === "function") endBoneAimDrag(event);
     finishDragPushSession(event.pointerId);
     finishAreaSelection(event);
     finishTrianglePainting(event.pointerId);
@@ -60036,6 +60002,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     }
     if (event.key === "Shift") isShiftHeld = true;
     if (event.key === "Control" || event.key === "Meta") isCtrlHeld = true;
+    syncBoneRotationSnap();
     updateScaleModifierMarkers();
     if (pullToTargetSession && event.key === "Escape") {
       event.preventDefault();
@@ -60106,6 +60073,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     gameplayKeys.delete(event.code);
     if (event.key === "Shift") isShiftHeld = false;
     if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
+    syncBoneRotationSnap();
     updateScaleModifierMarkers();
     if (event.code !== "Space") return;
     spaceCameraMode = false;
@@ -60117,6 +60085,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     gameplayKeys.clear();
     isShiftHeld = false;
     isCtrlHeld = false;
+    syncBoneRotationSnap();
     updateScaleModifierMarkers();
     finishDragPushSession();
     finishScaleDragSession();

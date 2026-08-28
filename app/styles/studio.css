@@ -923,63 +923,6 @@ label {
   background: #0b0e10;
 }
 
-.viewport-compass {
-  position: absolute;
-  z-index: 11;
-  right: 12px;
-  bottom: 12px;
-  width: 72px;
-  height: 72px;
-  border: 1px solid rgba(126, 148, 158, .65);
-  border-radius: 50%;
-  background: rgba(8, 13, 16, .78);
-  box-shadow: 0 2px 12px rgba(0, 0, 0, .34);
-  pointer-events: none;
-  user-select: none;
-}
-
-.viewport-compass::before,
-.viewport-compass::after {
-  content: "";
-  position: absolute;
-  background: rgba(126, 148, 158, .28);
-}
-
-.viewport-compass::before { left: 35px; top: 9px; width: 1px; height: 52px; }
-.viewport-compass::after { left: 9px; top: 35px; width: 52px; height: 1px; }
-
-.viewport-compass-label {
-  position: absolute;
-  z-index: 2;
-  color: #b9c7cd;
-  font-size: 10px;
-  font-weight: 700;
-  line-height: 1;
-}
-
-.viewport-compass-front { top: 5px; left: 33px; color: var(--accent); }
-.viewport-compass-back { bottom: 5px; left: 33px; }
-.viewport-compass-left { left: 6px; top: 31px; }
-.viewport-compass-right { right: 6px; top: 31px; }
-
-.viewport-compass-center,
-.viewport-compass-camera {
-  position: absolute;
-  z-index: 3;
-  left: 32px;
-  top: 32px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.viewport-compass-center { background: #91a3aa; }
-.viewport-compass-camera {
-  background: #e7b84f;
-  box-shadow: 0 0 0 2px rgba(8, 13, 16, .8);
-  transform-origin: 4px 4px;
-}
-
 .reference-image-overlay {
   position: absolute;
   inset: 0;

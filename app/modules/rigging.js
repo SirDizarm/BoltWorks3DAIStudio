@@ -8,32 +8,6 @@ boneGridAxisGroup.name = "Grid Axis Directions";
 boneGridAxisGroup.userData.editorHelper = true;
 scene.add(boneGridAxisGroup);
 
-function makeGridAxisLabel(text, color) {
-  const labelCanvas = document.createElement("canvas");
-  labelCanvas.width = 96;
-  labelCanvas.height = 96;
-  const context = labelCanvas.getContext("2d");
-  context.clearRect(0, 0, 96, 96);
-  context.fillStyle = "rgba(8, 12, 14, .82)";
-  context.beginPath();
-  context.arc(48, 48, 34, 0, Math.PI * 2);
-  context.fill();
-  context.strokeStyle = color;
-  context.lineWidth = 5;
-  context.stroke();
-  context.fillStyle = color;
-  context.font = "700 46px sans-serif";
-  context.textAlign = "center";
-  context.textBaseline = "middle";
-  context.fillText(text, 48, 51);
-  const texture = new THREE.CanvasTexture(labelCanvas);
-  texture.colorSpace = THREE.SRGBColorSpace;
-  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false }));
-  sprite.scale.set(.55, .55, .55);
-  sprite.renderOrder = 9000;
-  return sprite;
-}
-
 function buildGridAxisDirections() {
   const extent = 8;
   const lift = .006;
@@ -69,12 +43,12 @@ let selectedBoneId = null;
 let boneToolMode = null;
 let boneMoveAxis = null;
 let boneDrag = null;
-// Bone-local gizmo mode: "rotate" (default) or "translate". Independent of the
+// Bone-local gizmo mode: "rotate" or "translate". Independent of the
 // mesh toolbar so rotating a bone doesn't require enabling the mesh Move tool.
-let boneGizmoToolMode = "rotate";
+let boneGizmoToolMode = "translate";
 // Whether the bone gizmo is shown at all; the Move/Rotate buttons toggle this
 // off when you click the already-active mode (like the Free/X/Y/Z lock).
-let boneGizmoEnabled = true;
+let boneGizmoEnabled = false;
 // The guides are only an editor overlay. Keep them small by default so their
 // centres can be judged against the model rather than hiding it.
 let boneGuideScale = .4;
@@ -82,8 +56,7 @@ let mirrorBoneEdits = false;
 let boneTransformLooseStart = null;
 let rigModelOpacity = 1;
 const rigModelMaterialState = new Map();
-// Joystick aim-drag state for precise bone rotation.
-let boneAimDrag = null;
+let boneRotationStepDegrees = 15;
 // Whether the rig is glued to the model (bound parts follow the bones live).
 let bonesGlued = false;
 const animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {}, clips: { idle: { name: "Idle", fps: 24, end: 48, keys: {} } }, activeClipId: "idle", bindingRest: null };
@@ -138,155 +111,25 @@ function buildBoneRingGuides() {
 }
 buildBoneRingGuides();
 
-// Joystick handle: a lever sticking out of the parent ball ending in a ball you
-// grab and drag to aim the bone precisely (1:1, no wild spinning).
+// Kept only so older export code can preserve helper visibility without
+// breaking. The former joystick geometry and pointer handling were removed;
+// TransformControls now owns all bone rotation interaction.
 const boneJoystickGroup = new THREE.Group();
 boneJoystickGroup.name = "Bone Rotation Joystick";
 boneJoystickGroup.userData.editorHelper = true;
 boneJoystickGroup.visible = false;
 scene.add(boneJoystickGroup);
 
-const boneJoystickShaft = new THREE.Mesh(
-  new THREE.CylinderGeometry(.03, .03, 1, 8),
-  new THREE.MeshBasicMaterial({ color: 0xffd27a, depthTest: false, transparent: true, opacity: .9 })
-);
-boneJoystickShaft.renderOrder = 10004;
-boneJoystickGroup.add(boneJoystickShaft);
-
-const boneJoystickHandle = new THREE.Mesh(
-  new THREE.SphereGeometry(.11, 16, 12),
-  new THREE.MeshBasicMaterial({ color: 0xffd27a, depthTest: false })
-);
-boneJoystickHandle.renderOrder = 10005;
-boneJoystickHandle.userData.boneJoystick = true;
-boneJoystickGroup.add(boneJoystickHandle);
-
-// Larger invisible grab sphere so the handle is easy to click.
-const boneJoystickHit = new THREE.Mesh(
-  new THREE.SphereGeometry(.2, 8, 6),
-  new THREE.MeshBasicMaterial({ visible: false })
-);
-boneJoystickHit.userData.boneJoystick = true;
-boneJoystickGroup.add(boneJoystickHit);
-
-function boneJoystickLength() {
-  return Math.max(.6, boneRigBounds().getSize(new THREE.Vector3()).length() * .06);
-}
-
-function boneAimDir(bone) {
-  // Current aim = direction the bone points (toward its child / tail).
-  const directChild = rigBones.find(candidate => candidate.parentId === bone.id);
-  const tail = directChild ? (directChild.displayPosition || directChild.position) : (bone.displayTail || bone.tail);
-  const base = bone.displayPosition || bone.position;
-  const dir = tail ? tail.clone().sub(base) : new THREE.Vector3(0, 1, 0);
-  return dir.lengthSq() > 1e-6 ? dir.normalize() : new THREE.Vector3(0, 1, 0);
-}
-
 function syncBoneJoystick() {
-  const bone = selectedBone();
-  const show = !!bone && boneRigGroup.visible && boneGizmoEnabled && boneGizmoToolMode === "rotate";
-  boneJoystickGroup.visible = show;
-  if (!show) return;
-  const base = bone.displayPosition || bone.position;
-  // Keep the handle on the bone's aiming side. A handle behind the joint is
-  // visually convenient but makes a drag appear reversed, because the handle
-  // and the limb point in opposite directions.
-  const dir = boneAimDir(bone);
-  const len = boneJoystickLength();
-  boneJoystickGroup.position.copy(base);
-  // Shaft from base to handle.
-  boneJoystickShaft.scale.y = len;
-  boneJoystickShaft.position.copy(dir.clone().multiplyScalar(len / 2));
-  boneJoystickShaft.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), dir);
-  boneJoystickHandle.position.copy(dir.clone().multiplyScalar(len));
-  boneJoystickHit.position.copy(boneJoystickHandle.position);
-}
-
-function pickBoneJoystick(event) {
-  if (!boneJoystickGroup.visible) return false;
-  const rect = renderer.domElement.getBoundingClientRect();
-  bonePointer.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
-  bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
-  mainBoneRaycaster.setFromCamera(bonePointer, camera);
-  return mainBoneRaycaster.intersectObjects([boneJoystickHandle, boneJoystickHit, boneJoystickShaft], false).length > 0;
+  // Retained as a hidden export helper for older project files. Rotation is
+  // now handled exclusively by TransformControls' standard RGB rings.
+  boneJoystickGroup.visible = false;
 }
 
 function recordBoneHistory(label) {
   if (typeof recordHistory === "function" && !(typeof isRestoring !== "undefined" && isRestoring)) recordHistory(label);
 }
 
-function beginBoneAimDrag(event) {
-  const bone = selectedBone();
-  if (!bone) return false;
-  recordBoneHistory("bone rotate");
-  prepareLooseBoneHierarchy();
-  const base = (bone.displayPosition || bone.position).clone();
-  boneAimDrag = {
-    pointerId: event.pointerId,
-    boneId: bone.id,
-    base,
-    startQuat: new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")),
-    startRotation: bone.rotation.clone(),
-    mirrorId: boneById(mirroredBoneId(bone.id))?.id || null,
-    mirrorRotation: boneById(mirroredBoneId(bone.id))?.rotation.clone() || null,
-    // The visible joystick and limb share the same direction, so a clockwise
-    // drag produces a clockwise bone turn from the user's point of view.
-    startDir: boneAimDir(bone)
-  };
-  orbit.enabled = false;
-  renderer.domElement.setPointerCapture?.(event.pointerId);
-  event.preventDefault();
-  return true;
-}
-
-function moveBoneAimDrag(event) {
-  if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
-  const bone = boneById(boneAimDrag.boneId);
-  if (!bone) return;
-  const rect = renderer.domElement.getBoundingClientRect();
-  bonePointer.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
-  bonePointer.y = -((event.clientY - rect.top) / Math.max(1, rect.height)) * 2 + 1;
-  mainBoneRaycaster.setFromCamera(bonePointer, camera);
-  // Orbit around the base at a fixed radius, on the sphere the handle lives on:
-  // project the cursor ray onto the plane through the base facing the camera,
-  // then normalize to a direction. The handle follows the cursor exactly, and
-  // the bone swings by the same rotation as the handle.
-  const camDir = new THREE.Vector3();
-  camera.getWorldDirection(camDir);
-  boneDragPlane.setFromNormalAndCoplanarPoint(camDir, boneAimDrag.base);
-  if (!mainBoneRaycaster.ray.intersectPlane(boneDragPlane, boneDragHit)) return;
-  const handleDir = boneDragHit.clone().sub(boneAimDrag.base);
-  if (handleDir.lengthSq() < 1e-6) return;
-  handleDir.normalize();
-  const delta = new THREE.Quaternion().setFromUnitVectors(boneAimDrag.startDir, handleDir);
-  const worldQuat = delta.clone().multiply(boneAimDrag.startQuat);
-  const e = new THREE.Euler().setFromQuaternion(worldQuat, "XYZ");
-  bone.rotation.set(e.x, e.y, e.z);
-  applyCurrentRigPose({ resolveLooseHierarchy: true });
-  rebuildBoneVisuals();
-  syncBonePanel();
-  event.preventDefault();
-}
-
-function endBoneAimDrag(event) {
-  if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
-  const drag = boneAimDrag;
-  const bone = boneById(boneAimDrag.boneId);
-  renderer.domElement.releasePointerCapture?.(event.pointerId);
-  boneAimDrag = null;
-  orbit.enabled = true;
-  // Live hierarchy updates can reattach a TransformControls proxy underneath
-  // the pointer. Mirror once the handle is released, keeping the joystick
-  // drag isolated while still giving the opposite limb the same final pose.
-  if (bone && mirrorBoneEdits) {
-    mirrorBoneEdit(bone, { position: false, rotation: true, tail: false });
-    applyCurrentRigPose({ resolveLooseHierarchy: true });
-    rebuildBoneVisuals();
-    syncBonePanel();
-  }
-  if (bone) commitLooseBoneRotation(bone.id, drag.startRotation);
-  if (drag.mirrorId && drag.mirrorRotation) commitLooseBoneRotation(drag.mirrorId, drag.mirrorRotation);
-}
 
 const boneTransform = new TransformControls(camera, renderer.domElement);
 boneTransform.visible = false;
@@ -348,6 +191,7 @@ function boneGizmoMode() {
 function setBoneGizmoEnabled(enabled, mode = boneGizmoToolMode) {
   boneGizmoToolMode = mode === "translate" ? "translate" : "rotate";
   boneGizmoEnabled = !!enabled;
+  boneToolMode = boneGizmoEnabled && boneGizmoToolMode === "translate" && boneMoveAxis ? "move" : null;
   els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
   els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
 }
@@ -372,6 +216,26 @@ function applyBoneAxisLock() {
   boneTransform.showZ = free || boneMoveAxis === "z";
 }
 
+function normalizedBoneRotationStep(value = els.boneRotationStepInput?.value) {
+  return THREE.MathUtils.clamp(Math.round(Number(value) || 15), 1, 90);
+}
+
+function syncBoneRotationSnap() {
+  boneRotationStepDegrees = normalizedBoneRotationStep();
+  if (els.boneRotationStepInput && document.activeElement !== els.boneRotationStepInput) {
+    els.boneRotationStepInput.value = String(boneRotationStepDegrees);
+  }
+  const stepped = boneGizmoEnabled && boneGizmoToolMode === "rotate" && (isCtrlHeld || isShiftHeld);
+  const radians = stepped ? THREE.MathUtils.degToRad(boneRotationStepDegrees) : null;
+  if (typeof boneTransform.setRotationSnap === "function") boneTransform.setRotationSnap(radians);
+  else boneTransform.rotationSnap = radians;
+  if (els.boneRotationStepStatus) {
+    els.boneRotationStepStatus.textContent = stepped
+      ? `Stepping ${boneRotationStepDegrees} degrees`
+      : "Hold Ctrl or Shift for steps";
+  }
+}
+
 function syncBoneTransformGizmo() {
   const bone = selectedBone();
   if (!bone || !boneRigGroup.visible || !boneGizmoEnabled) {
@@ -385,13 +249,14 @@ function syncBoneTransformGizmo() {
   boneTransform.setMode(mode);
   boneTransform.setSpace(mode === "rotate" ? "local" : "world");
   applyBoneAxisLock();
+  syncBoneRotationSnap();
   if (!boneTransform.dragging) {
     boneTransformProxy.position.copy(bone.displayPosition || bone.position);
     boneTransformProxy.rotation.set(bone.rotation.x, bone.rotation.y, bone.rotation.z);
     boneTransform.attach(boneTransformProxy);
     boneTransform.visible = true;
   }
-  // Dashed axis guide rings removed — the joystick is the rotation control.
+  // TransformControls supplies the familiar red X, green Y, and blue Z rings.
   boneRingGuideGroup.visible = false;
   syncBoneJoystick();
 }
@@ -410,7 +275,6 @@ function selectBoneFromViewport(boneId) {
   const bone = boneById(boneId);
   if (!bone) return;
   selectedBoneId = boneId;
-  setBoneGizmoEnabled(true, "rotate");
   if (typeof selectObject === "function") selectObject(null);
   rebuildBoneVisuals();
   syncBonePanel();
@@ -962,6 +826,8 @@ function skinCandidatesForVertex(point, bones) {
   const pelvis = bones.find(bone => bone.name === "Pelvis");
   const chest = bones.find(bone => bone.name === "Chest");
   const foot = bones.find(bone => bone.name === `Foot ${side}`);
+  const hand = bones.find(bone => bone.name === `Hand ${side}`);
+  const forearm = bones.find(bone => bone.name === `Forearm ${side}`);
   const pelvisY = pelvis?.bindPosition?.y ?? .9;
   const chestY = chest?.bindPosition?.y ?? 1.2;
   const footY = foot?.bindPosition?.y ?? .08;
@@ -976,7 +842,15 @@ function skinCandidatesForVertex(point, bones) {
     return named([`Thigh ${side}`, `Shin ${side}`, "Pelvis", "Root"]);
   }
   const armThreshold = point.y > chestY - .06 ? .24 : .34;
-  if (Math.abs(point.x) > armThreshold) return named([`Upper Arm ${side}`, `Forearm ${side}`, "Chest"]);
+  if (Math.abs(point.x) > armThreshold) {
+    // Palm, thumb, and fingers must follow the hand bone. Previously every
+    // hand vertex belonged to Forearm, so wrist rotation moved only the guide.
+    const handX = Math.abs(hand?.bindPosition?.x ?? hand?.position?.x ?? Infinity);
+    const forearmX = Math.abs(forearm?.bindPosition?.x ?? forearm?.position?.x ?? handX);
+    const wristStart = forearmX + Math.max(0, handX - forearmX) * .65;
+    if (hand && Math.abs(point.x) >= wristStart) return named([`Hand ${side}`, `Forearm ${side}`]);
+    return named([`Forearm ${side}`, `Upper Arm ${side}`, "Chest"]);
+  }
   if (point.y > chestY + .26) return named(["Head", "Neck", "Chest"]);
   return named(["Chest", "Spine", "Root"]);
 }
@@ -1515,7 +1389,6 @@ function bindAnimationTimelineEvents() {
   }));
   els.animationTrackList.querySelectorAll("[data-animation-bone]").forEach(button => button.addEventListener("click", () => {
     selectedBoneId = button.dataset.animationBone || null;
-    if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
     syncBonePanel();
     rebuildBoneVisuals();
     updateAnimationPanel();
@@ -1801,7 +1674,6 @@ function rebuildBoneVisuals() {
   if (bone && visible) addSelectedBoneGizmos(bone);
   syncBoneTransformGizmo();
   syncBoneJoystick();
-  syncBoneJoystick();
 }
 
 function setBoneGuideScale(value) {
@@ -1860,6 +1732,10 @@ function applyRigModelOpacity() {
 function syncRigModelOpacityUi() {
   if (els.rigModelOpacityInput) els.rigModelOpacityInput.value = String(rigModelOpacity);
   if (els.rigModelOpacityValue) els.rigModelOpacityValue.textContent = `${Math.round(rigModelOpacity * 100)}%`;
+  if (typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive && selected && els.opacityInput) {
+    els.opacityInput.value = String(rigModelOpacity);
+    if (els.opacityValue) els.opacityValue.value = rigModelOpacity.toFixed(2);
+  }
 }
 
 function setRigModelOpacity(value) {
@@ -1889,12 +1765,12 @@ function addSelectedBoneGizmos(bone) {
     });
     return;
   }
-  // Dotted rotation rings removed — the joystick handle is the rotate control.
+  // Rotation rings are supplied by TransformControls in the main viewport.
 }
 
 function setBoneMoveAxis(axis) {
   boneMoveAxis = boneMoveAxis === axis ? null : axis;
-  boneToolMode = boneMoveAxis ? "move" : null;
+  boneToolMode = boneGizmoEnabled && boneGizmoToolMode === "translate" && boneMoveAxis ? "move" : null;
   els.boneAxisFreeBtn?.classList.toggle("active", boneMoveAxis === "free");
   els.boneAxisXBtn?.classList.toggle("active", boneMoveAxis === "x");
   els.boneAxisYBtn?.classList.toggle("active", boneMoveAxis === "y");
@@ -1931,7 +1807,6 @@ function syncBonePanel() {
     row.addEventListener("click", () => {
       // Clicking the already-selected bone again unselects it.
       selectedBoneId = selectedBoneId === bone.id ? null : bone.id;
-      if (selectedBoneId) setBoneGizmoEnabled(true, "rotate");
       rebuildBoneVisuals();
       syncBonePanel();
     });
@@ -2263,7 +2138,6 @@ function beginBoneDrag(event, view, referenceCanvas, referenceCamera) {
   const hit = boneRaycaster.intersectObjects(boneRigGroup.children.filter(child => child.userData.boneJoint), false)[0];
   if (!hit) return;
   selectedBoneId = hit.object.userData.boneId;
-  setBoneGizmoEnabled(true, "rotate");
   const bone = selectedBone();
   if (!bone) return;
   recordBoneHistory("bone move");

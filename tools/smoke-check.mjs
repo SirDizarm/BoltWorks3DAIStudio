@@ -1509,6 +1509,11 @@ for (const required of [
   "applyRotationSnap",
   "setTranslationSnap",
   "setRotationSnap",
+  "boneRotationStepInput",
+  "Hold Ctrl or Shift for steps",
+  "function syncBoneRotationSnap",
+  "boneTransform.setRotationSnap(radians)",
+  "boneJoystickGroup.visible = false",
   "setScaleSnap",
   "markerBtn",
   "clearTriBtn",
@@ -2082,9 +2087,9 @@ for (const clipName of ["Walk", "Run", "Sprint"]) {
     throw new Error("The Minecraft Wave preset must keep the left arm raised beside the head throughout its loop.");
   }
 }
-if (!moduleSources.get("rigging")?.includes('if (selectedBoneId) setBoneGizmoEnabled(true, "rotate")')
-  || !moduleSources.get("rigging")?.includes('setBoneGizmoEnabled(true, "rotate");')) {
-  throw new Error("Explicitly selecting a rig bone must restore its rotation lever.");
+if (!moduleSources.get("rigging")?.includes('let boneGizmoToolMode = "translate"')
+  || !moduleSources.get("rigging")?.includes("let boneGizmoEnabled = false")) {
+  throw new Error("The bone gizmo must begin inactive in Move mode and preserve the user's explicit tool choice.");
 }
 if ((moduleSources.get("meshes").match(/syncMinecraftTextureRendering\(mesh\);/g) || []).length < 2) {
   throw new Error("Minecraft pixel filtering must be reapplied when textured meshes are created or restored by Undo.");
@@ -2316,10 +2321,20 @@ if (!moduleSources.get("viewport")?.includes("frontBoneCamera.position.set(0, 0,
 if (!moduleSources.get("rigging")?.includes("referenceCamera.position.set(center.x, center.y, center.z + 100)")) {
   throw new Error("Fitting the Front X/Y reference camera must preserve the canonical front direction.");
 }
-if (!documentSource.includes('class="viewport-compass"')
-  || !moduleSources.get("viewport")?.includes("function updateViewportCompass")
-  || !moduleSources.get("meshes")?.includes("gridLabelGroup.visible = false")) {
-  throw new Error("World directions must use the viewport compass instead of scene-intersecting floor labels.");
+if (!moduleSources.get("meshes")?.includes('[["FRONT", "front"], ["BACK", "back"], ["LEFT", "left"], ["RIGHT", "right"]]')
+  || !moduleSources.get("meshes")?.includes("alphaTest: .08")
+  || !moduleSources.get("meshes")?.includes("mesh.renderOrder = -900")) {
+  throw new Error("World directions must use readable depth-tested markings on the grid.");
+}
+if (moduleSources.get("rigging")?.includes('setBoneGizmoEnabled(true, "rotate")')) {
+  throw new Error("Selecting a bone must not reactivate Rotate or its joystick.");
+}
+if (!moduleSources.get("rigging")?.includes('return named([`Hand ${side}`, `Forearm ${side}`])')) {
+  throw new Error("Hand vertices must be weighted to the hand bone so wrist twists deform the mesh.");
+}
+if (!moduleSources.get("import-export")?.includes("? rigModelOpacity")
+  || !moduleSources.get("import-export")?.includes("editsRigPreviewOpacity")) {
+  throw new Error("Animator inspector opacity must mirror and control the visible rig opacity.");
 }
 if (!html.includes('id="flat2dLookInput"') || !moduleSources.get("panels")?.includes("function setFlat2dLook") || !moduleSources.get("panels")?.includes("new THREE.MeshBasicMaterial")) {
   throw new Error("Flat 2D Look must provide a visible toggle and unlit model rendering.");

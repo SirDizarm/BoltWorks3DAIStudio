@@ -703,13 +703,76 @@ function clearGuideGroup(group) {
   }
 }
 
+function makeGuideLabelTexture(text) {
+  const labelCanvas = document.createElement("canvas");
+  labelCanvas.width = 512;
+  labelCanvas.height = 160;
+  const ctx = labelCanvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.clearRect(0, 0, labelCanvas.width, labelCanvas.height);
+  ctx.fillStyle = "rgba(9,12,17,.82)";
+  ctx.fillRect(4, 4, labelCanvas.width - 8, labelCanvas.height - 8);
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = "rgba(64,199,165,.95)";
+  ctx.strokeRect(4, 4, labelCanvas.width - 8, labelCanvas.height - 8);
+  ctx.fillStyle = "#f3f7fb";
+  ctx.font = "700 78px system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(text, labelCanvas.width / 2, labelCanvas.height / 2 + 4);
+  const texture = new THREE.CanvasTexture(labelCanvas);
+  texture.needsUpdate = true;
+  texture.colorSpace = THREE.SRGBColorSpace;
+  return texture;
+}
+
+function makeFlatGuideLabel(text, width = 2.2, height = .7) {
+  const material = new THREE.MeshBasicMaterial({
+    map: makeGuideLabelTexture(text),
+    transparent: true,
+    alphaTest: .08,
+    depthTest: true,
+    depthWrite: true,
+    side: THREE.DoubleSide
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(width, height), material);
+  mesh.rotation.x = -Math.PI / 2;
+  // These are ground markings, not overlays. Scene geometry must occlude them.
+  mesh.renderOrder = -900;
+  return mesh;
+}
+
 function buildGridLabels() {
   clearGuideGroup(gridLabelGroup);
-  gridLabelGroup.visible = false;
+  for (const [text, axis] of [["FRONT", "front"], ["BACK", "back"], ["LEFT", "left"], ["RIGHT", "right"]]) {
+    const mesh = makeFlatGuideLabel(text);
+    mesh.userData.axis = axis;
+    gridLabelGroup.add(mesh);
+  }
 }
 
 function updateGridLabels() {
-  gridLabelGroup.visible = false;
+  const scale = grid.scale.x || 1;
+  const halfSize = 9 * scale;
+  const offset = Math.max(.9, halfSize * .12);
+  const labelY = .012;
+  for (const mesh of gridLabelGroup.children) {
+    mesh.scale.setScalar(scale);
+    mesh.rotation.set(-Math.PI / 2, 0, 0);
+    if (mesh.userData.axis === "front") {
+      mesh.position.set(0, labelY, halfSize + offset);
+      mesh.rotation.z = Math.PI;
+    } else if (mesh.userData.axis === "back") {
+      mesh.position.set(0, labelY, -halfSize - offset);
+    } else if (mesh.userData.axis === "left") {
+      mesh.position.set(-halfSize - offset, labelY, 0);
+      mesh.rotation.z = Math.PI / 2;
+    } else if (mesh.userData.axis === "right") {
+      mesh.position.set(halfSize + offset, labelY, 0);
+      mesh.rotation.z = -Math.PI / 2;
+    }
+  }
+  gridLabelGroup.visible = grid.visible;
 }
 
 function makeGuideCircle(radius = 1, color = 0x55ff99, segments = 40) {

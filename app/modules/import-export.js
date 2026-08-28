@@ -603,7 +603,7 @@ function applyProjectEditorState(editor = {}) {
   selectObject(null);
   selectedBoneId = null;
   if (els.showBonesInput) els.showBonesInput.checked = false;
-  setBoneGizmoEnabled(false, "rotate");
+  setBoneGizmoEnabled(false, "translate");
   rebuildBoneVisuals();
   syncBonePanel();
 
@@ -1164,7 +1164,9 @@ function syncInspector() {
   els.roughInput.value = selected.material.roughness;
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
   const baseMaterialState = typeof rigModelBaseMaterialState === "function" ? rigModelBaseMaterialState(selected.material) : null;
-  const inspectorOpacity = baseMaterialState?.opacity ?? selected.material.opacity ?? 1;
+  const inspectorOpacity = typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive
+    ? rigModelOpacity
+    : (baseMaterialState?.opacity ?? selected.material.opacity ?? 1);
   els.opacityInput.value = inspectorOpacity;
   els.opacityValue.value = Number(inspectorOpacity).toFixed(2);
   if (selected.userData.cuts?.bottom !== undefined) {
@@ -1248,18 +1250,22 @@ function applyInspector({ record = true } = {}) {
   const reapplyRigOpacity = typeof restoreRigModelMaterials === "function" && restoreRigModelMaterials();
   selected.material.roughness = +els.roughInput.value;
   const opacity = Math.max(.05, Math.min(1, Number(els.opacityInput.value) || 1));
-  selected.material.transparent = opacity < .999 || !!selected.userData.textureHasTransparency;
-  selected.material.opacity = opacity;
+  const editsRigPreviewOpacity = typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive && rigBones.length > 0;
+  if (!editsRigPreviewOpacity) {
+    selected.material.transparent = opacity < .999 || !!selected.userData.textureHasTransparency;
+    selected.material.opacity = opacity;
+    selected.material.depthWrite = opacity >= .9;
+    selected.userData.opacity = opacity;
+  }
   selected.material.wireframe = false;
-  selected.material.depthWrite = opacity >= .9;
   selected.material.needsUpdate = true;
   selected.userData.color = normalizedColor;
   selected.userData.roughness = +els.roughInput.value;
-  selected.userData.opacity = opacity;
   syncMeshRenderCulling(selected);
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
   els.opacityValue.value = opacity.toFixed(2);
-  if (reapplyRigOpacity) applyRigModelOpacity();
+  if (editsRigPreviewOpacity) setRigModelOpacity(opacity);
+  else if (reapplyRigOpacity) applyRigModelOpacity();
   updateAll();
 }
 

@@ -2,7 +2,6 @@ const canvas = document.querySelector("#canvas");
 const frontBoneCanvas = document.querySelector("#frontBoneCanvas");
 const sideBoneCanvas = document.querySelector("#sideBoneCanvas");
 const gameplayCanvas = document.querySelector("#gameplayCanvas");
-const viewportCompassCamera = document.querySelector("#viewportCompassCamera");
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
@@ -56,15 +55,6 @@ orbit.minDistance = 0.05;
 orbit.maxDistance = 500000;
 orbit.target.set(0, 1, 0);
 let modelTileCameraLocked = false;
-
-function updateViewportCompass() {
-  if (!viewportCompassCamera) return;
-  const x = camera.position.x - orbit.target.x;
-  const z = camera.position.z - orbit.target.z;
-  if (Math.hypot(x, z) < 1e-6) return;
-  const angle = THREE.MathUtils.radToDeg(Math.atan2(x, z));
-  viewportCompassCamera.style.transform = `rotate(${angle}deg) translateY(-22px)`;
-}
 
 function applyModelTileCameraLock() {
   const azimuth = Number(els.modelTileCameraAzimuthInput?.value) || 45;
@@ -655,6 +645,8 @@ const els = {
   boneAxisZBtn: document.querySelector("#boneAxisZBtn"),
   boneModeMoveBtn: document.querySelector("#boneModeMoveBtn"),
   boneModeRotateBtn: document.querySelector("#boneModeRotateBtn"),
+  boneRotationStepInput: document.querySelector("#boneRotationStepInput"),
+  boneRotationStepStatus: document.querySelector("#boneRotationStepStatus"),
   glueBoneBtn: document.querySelector("#glueBoneBtn"),
   selectedBoneLabel: document.querySelector("#selectedBoneLabel"),
   addRootBoneBtn: document.querySelector("#addRootBoneBtn"),

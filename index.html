@@ -217,14 +217,6 @@
     <section class="viewport" aria-label="3D and bone placement viewports">
       <div class="viewport-pane">
         <canvas id="canvas"></canvas>
-        <div class="viewport-compass" aria-label="World direction compass" title="World directions; the gold marker shows the camera position around the model">
-          <span class="viewport-compass-label viewport-compass-front">F</span>
-          <span class="viewport-compass-label viewport-compass-back">B</span>
-          <span class="viewport-compass-label viewport-compass-left">L</span>
-          <span class="viewport-compass-label viewport-compass-right">R</span>
-          <span class="viewport-compass-center" aria-hidden="true"></span>
-          <span id="viewportCompassCamera" class="viewport-compass-camera" aria-hidden="true"></span>
-        </div>
         <div class="work-view-controls" aria-label="Orthographic work views">
           <button id="workViewFrontBtn" type="button" title="Use Front as the main constrained X/Y work view">Front Work</button>
           <button id="workViewSideBtn" type="button" title="Use Side as the main constrained Z/Y work view">Side Work</button>
@@ -544,7 +536,7 @@
           <div class="compact-row bone-axis-row" aria-label="Bone transform mode">
             <span class="api-note">Bone tool:</span>
             <button id="boneModeMoveBtn" type="button">Move</button>
-            <button id="boneModeRotateBtn" type="button" class="active">Rotate</button>
+            <button id="boneModeRotateBtn" type="button">Rotate</button>
             <span id="selectedBoneLabel" class="api-note">Selected: None</span>
           </div>
           <div class="compact-row bone-axis-row" aria-label="Bone axis lock">
@@ -553,6 +545,12 @@
             <button id="boneAxisXBtn" type="button" style="color:#ff5b5b;border-color:#b83b3b;">X</button>
             <button id="boneAxisYBtn" type="button" style="color:#62df82;border-color:#318f4c;">Y</button>
             <button id="boneAxisZBtn" type="button" style="color:#5da9ff;border-color:#326fae;">Z</button>
+          </div>
+          <div class="compact-row bone-axis-row" aria-label="Bone rotation stepping">
+            <label class="api-note" for="boneRotationStepInput">Rotation step</label>
+            <input id="boneRotationStepInput" type="number" min="1" max="90" step="1" value="15" style="width:64px;" aria-label="Rotation step in degrees">
+            <span class="api-note">degrees</span>
+            <span id="boneRotationStepStatus" class="api-note">Hold Ctrl or Shift for steps</span>
           </div>
           <div class="compact-row">
             <button id="addRootBoneBtn" type="button">Add Root</button>

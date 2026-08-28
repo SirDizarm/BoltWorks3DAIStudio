@@ -48,6 +48,7 @@ function setAnimatorWorkspace(active) {
     rebuildBoneVisuals();
     updateAnimationPanel();
   }
+  if (selected && typeof syncInspector === "function") syncInspector();
   requestAnimationFrame(() => {
     window.dispatchEvent(new Event("resize"));
     if (typeof resize === "function") resize();
