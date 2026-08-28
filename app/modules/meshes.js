@@ -3364,7 +3364,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3415,6 +3415,9 @@ function createMesh(spec = {}) {
     groupId: typeof groupId === "string" && groupId.trim() ? groupId.trim() : null,
     groupName: typeof groupName === "string" && groupName.trim() ? groupName.trim() : null,
     rigBoneId: typeof rigBoneId === "string" && rigBoneId.trim() ? rigBoneId.trim() : null,
+    rigRole: rigRole === "armor" ? "armor" : (rigRole === "skin" ? "skin" : null),
+    rigArmorMountId: typeof rigArmorMountId === "string" && rigArmorMountId.trim() ? rigArmorMountId.trim() : null,
+    rigAttachment: rigAttachment === "rigidArmor" ? "rigidArmor" : null,
     bevel,
     depth,
     direction,
@@ -16996,14 +16999,28 @@ function exportCharacterPackage() {
   const firstMetadata = targets.find(target => target.userData.gameAsset)?.userData.gameAsset || gameAssetFormData();
   const assetId = firstMetadata.id || String(targets[0].name || "boltworks-character").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "boltworks-character";
   const rig = serializeBoneRig();
+  const armorMounts = rig.bones.filter(bone => bone.armorMount && bone.armorMountId).map(bone => ({
+    id: bone.armorMountId,
+    boneId: bone.id,
+    boneName: bone.name
+  }));
   const packageData = {
     kind: "boltworks-character-package",
     version: 1,
     asset: { id: assetId, icon: firstMetadata.icon || null, inventory: firstMetadata.inventory || { width: 1, height: 1 }, type: firstMetadata.type || "character" },
     renderProfile: { source: "model-tile-kit", projection: "orthographic", azimuthDegrees: Number(els.modelTileCameraAzimuthInput?.value) || 45, elevationDegrees: Number(els.modelTileCameraElevationInput?.value) || 35.264, anchor: "editor-origin", sheetViews: ["NE", "SE", "SW", "NW"] },
-    rig: { bones: rig.bones, animation: rig.animation },
-    parts: targets.map(target => ({ model: serializeObject(target), equipment: target.userData.gameAsset || null })),
-    runtimeContract: { rigidAttachment: "Attach a part with equipment.attachBoneId to that rig bone.", skinnedAttachment: "A skinned part may share the exported rig bones by ID.", hideParts: "Hide matching base-part IDs or names while the equipment is equipped." }
+    rig: { bones: rig.bones, armorMounts, animation: rig.animation },
+    parts: targets.map(target => ({
+      model: serializeObject(target),
+      role: target.userData.rigRole || "skin",
+      armorMountId: target.userData.rigArmorMountId || null,
+      equipment: target.userData.gameAsset || null
+    })),
+    runtimeContract: {
+      skinAndBone: "Parts with role skin are the flexible character mesh and may use the exported bone rig.",
+      rigidArmor: "Parts with role armor resolve armorMountId to rig.armorMounts, then use that mount's bone transform as one rigid transform. Never skin or stretch armor vertices.",
+      hideParts: "Hide matching base-part IDs or names while the equipment is equipped."
+    }
   };
   download(`${assetId}.boltcharacter.json`, JSON.stringify(packageData, null, 2), "application/json");
   if (els.gameAssetStatus) els.gameAssetStatus.textContent = `Exported ${assetId}.boltcharacter.json with ${packageData.parts.length} part${packageData.parts.length === 1 ? "" : "s"}, ${rig.bones.length} bone${rig.bones.length === 1 ? "" : "s"}, and shared animation keys.`;

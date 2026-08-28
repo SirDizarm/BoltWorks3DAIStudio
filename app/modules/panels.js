@@ -423,6 +423,10 @@ els.boneAxisZBtn?.addEventListener("click", () => setBoneMoveAxis("z"));
 els.boneModeMoveBtn?.addEventListener("click", () => setBoneGizmoToolMode("translate"));
 els.boneModeRotateBtn?.addEventListener("click", () => setBoneGizmoToolMode("rotate"));
 els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
+els.armorMountBtn?.addEventListener("click", toggleSelectedArmorMount);
+els.markSkinBtn?.addEventListener("click", () => markCheckedRigRole("skin"));
+els.markArmorBtn?.addEventListener("click", () => markCheckedRigRole("armor"));
+els.attachArmorBtn?.addEventListener("click", attachCheckedArmorToSelectedBone);
 // boneList is now a row-based list; selection happens per-row in syncBonePanel.
 [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ].forEach(control => {
   control?.addEventListener("change", applyBonePanelValues);

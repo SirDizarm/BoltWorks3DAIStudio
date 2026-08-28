@@ -743,6 +743,8 @@ function serializeBoneRig() {
       blockbenchUuid: bone.blockbenchUuid || null,
       blockbenchSourcePosition: bone.blockbenchSourcePosition?.toArray().map(round) || null,
       blockbenchLocalRotation: bone.blockbenchLocalRotation?.toArray().map(round) || null,
+      armorMount: !!bone.armorMount,
+      armorMountId: bone.armorMountId || null,
       hidden: !!bone.hidden
     })),
     animation: {
@@ -771,6 +773,8 @@ function restoreBoneRig(data = {}) {
     blockbenchUuid: bone.blockbenchUuid || null,
     blockbenchSourcePosition: Array.isArray(bone.blockbenchSourcePosition) ? new THREE.Vector3().fromArray(bone.blockbenchSourcePosition) : null,
     blockbenchLocalRotation: Array.isArray(bone.blockbenchLocalRotation) ? new THREE.Vector3().fromArray(bone.blockbenchLocalRotation) : null,
+    armorMount: !!bone.armorMount,
+    armorMountId: typeof bone.armorMountId === "string" ? bone.armorMountId : null,
     hidden: !!bone.hidden
   }));
   for (const bone of rigBones) {
@@ -1216,7 +1220,8 @@ function applyCurrentRigPose({ resolveLooseHierarchy = false } = {}) {
 function collectAnimationBindings() {
   const bindings = rigBones.filter(bone => bone.avatarObjectId && typeof findObject === "function").map(bone => ({ bone, object: findObject(bone.avatarObjectId) })).filter(item => item.object);
   for (const object of objects) {
-    const boneId = object.userData?.rigBoneId || object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
+    const mountBoneId = object.userData?.rigArmorMountId ? rigBones.find(bone => bone.armorMountId === object.userData.rigArmorMountId)?.id : null;
+    const boneId = mountBoneId || object.userData?.rigBoneId || object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
     const bone = boneById(boneId);
     if (bone) bindings.push({ bone, object });
   }
@@ -1742,6 +1747,24 @@ function rebuildBoneVisuals() {
       cone.layers.enable(1);
       cone.layers.enable(2);
       boneRigGroup.add(cone);
+      if (bone.armorMount) {
+        const mountLength = Math.max(.14, Math.min(.42, boneLength * .6));
+        const plate = new THREE.Mesh(
+          new THREE.PlaneGeometry(Math.max(.14, mountLength * .65), mountLength),
+          new THREE.MeshBasicMaterial({ color: 0x62dfd2, transparent: true, opacity: .7, side: THREE.DoubleSide, depthTest: false })
+        );
+        plate.position.copy(guidePosition).add(boneVector.clone().multiplyScalar(.5));
+        plate.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+        plate.renderOrder = 10001;
+        plate.userData.boneId = bone.id;
+        plate.userData.armorMount = true;
+        plate.userData.armorMountId = bone.armorMountId || null;
+        plate.userData.editorHelper = true;
+        plate.layers.enable(0);
+        plate.layers.enable(1);
+        plate.layers.enable(2);
+        boneRigGroup.add(plate);
+      }
     }
   }
   const bone = selectedBone();
@@ -1770,7 +1793,7 @@ function applyRigModelOpacity() {
     material.needsUpdate = true;
   }
   rigModelMaterialState.clear();
-  const roots = new Set(objects.filter(object => object && !object.userData?.editorHelper));
+  const roots = new Set(objects.filter(object => object && !object.userData?.editorHelper && object.userData?.rigRole !== "armor"));
   if (activeSkinRuntime?.avatar) roots.add(activeSkinRuntime.avatar);
   for (const root of roots) {
     root.traverse?.(part => {
@@ -1941,6 +1964,54 @@ function toggleGlueBones() {
   else glueBonesToSelected();
 }
 
+function toggleSelectedArmorMount() {
+  const bone = selectedBone();
+  if (!bone) { log("Select a bone before adding an armor mount."); return; }
+  recordBoneHistory("toggle armor mount");
+  bone.armorMount = !bone.armorMount;
+  if (bone.armorMount && !bone.armorMountId) bone.armorMountId = `armor-mount-${bone.id}`;
+  rebuildBoneVisuals();
+  log(`${bone.armorMount ? "Added" : "Removed"} rigid armor mount on ${bone.name}.`);
+}
+
+function markCheckedRigRole(role) {
+  const targets = (typeof checkedObjects === "function" ? checkedObjects() : []).filter(object => object && !object.userData?.editorHelper);
+  if (!targets.length) { log(`Check one or more objects before marking them as ${role === "armor" ? "armor" : "skin and bone"}.`); return; }
+  recordBoneHistory(`mark ${role}`);
+  targets.forEach(object => {
+    object.userData.rigRole = role;
+    if (role === "skin") {
+      delete object.userData.rigArmorMountId;
+      delete object.userData.rigAttachment;
+    }
+  });
+  applyRigModelOpacity();
+  updateAll();
+  log(`Marked ${targets.length} object${targets.length === 1 ? "" : "s"} as ${role === "armor" ? "separate rigid armor" : "skin and bone"}.`);
+}
+
+function attachCheckedArmorToSelectedBone() {
+  const bone = selectedBone();
+  if (!bone) { log("Select an armor-mount bone first."); return; }
+  if (!bone.armorMount || !bone.armorMountId) { log(`Add an armor mount to ${bone.name} before attaching armor.`); return; }
+  const targets = (typeof checkedObjects === "function" ? checkedObjects() : []).filter(object => object && !object.userData?.editorHelper);
+  if (!targets.length) { log("Check one or more armor objects, then click Attach Checked Armor."); return; }
+  recordBoneHistory("attach rigid armor");
+  targets.forEach(object => {
+    object.userData.rigBoneId = bone.id;
+    object.userData.rigRole = "armor";
+    object.userData.rigArmorMountId = bone.armorMountId;
+    object.userData.rigAttachment = "rigidArmor";
+  });
+  captureAnimationBindingRest();
+  bonesGlued = true;
+  applyCurrentRigPose();
+  rebuildBoneVisuals();
+  syncBonePanel();
+  updateGlueButton();
+  log(`Attached ${targets.length} armor part${targets.length === 1 ? "" : "s"} rigidly to ${bone.name}.`);
+}
+
 function glueBonesToSelected() {
   if (!rigBones.length) { log("Add or import bones first."); return; }
   captureRigBindPose();
@@ -2018,7 +2089,9 @@ function glueBonesToSelected() {
 function unglueBonesFromModel() {
   bonesGlued = false;
   animationState.bindingRest = null;
-  objects.forEach(object => { if (object.userData) delete object.userData.rigBoneId; });
+  objects.forEach(object => {
+    if (object.userData && object.userData.rigAttachment !== "rigidArmor") delete object.userData.rigBoneId;
+  });
   if (activeSkinRuntime) {
     const avatar = activeSkinRuntime.avatar;
     const plain = new THREE.Mesh(avatar.geometry.clone(), avatar.material);
@@ -2063,7 +2136,8 @@ function pruneBonesForRemovedObjects() {
   if (!rigBones.length) return;
   const minecraftBoneIds = new Set();
   for (const object of objects) {
-    const boneId = object.userData?.rigBoneId || object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
+    const mountBoneId = object.userData?.rigArmorMountId ? rigBones.find(bone => bone.armorMountId === object.userData.rigArmorMountId)?.id : null;
+    const boneId = mountBoneId || object.userData?.rigBoneId || object.userData?.minecraft?.boneId || object.userData?.minecraftBoneId;
     if (boneId) minecraftBoneIds.add(boneId);
   }
   const before = rigBones.length;
