@@ -16788,6 +16788,8 @@ async function exportModelTileKit() {
   const neighbourPreviewWasVisible = modelTileNeighbourPreviewGroup.visible;
   modelTileNeighbourPreviewGroup.visible = false;
   objects.forEach(target => { target.visible = exportTargetIds.has(target.userData.id); });
+  const tileShadowNormalBias = key.shadow.normalBias;
+  const tileShadowBias = key.shadow.bias;
   const materialSnapshots = new Map();
   for (const target of exportTargetsForRender) {
     target.traverse(part => {
@@ -16808,6 +16810,10 @@ async function exportModelTileKit() {
       }
     });
   }
+  // Preserve shadows, but bias the directional-light shadow map enough to
+  // avoid self-shadow acne along low-poly triangle edges in tile renders.
+  key.shadow.normalBias = Math.max(tileShadowNormalBias, 0.035);
+  key.shadow.bias = Math.max(tileShadowBias, -0.0002);
   const bounds = new THREE.Box3();
   exportTargetsForRender.forEach(target => bounds.expandByObject(target));
   const floorAnchorTargets = modelTileGroundTargets(exportTargetsForRender, bounds);
@@ -16912,6 +16918,8 @@ async function exportModelTileKit() {
     if ("specularIntensity" in material) material.specularIntensity = snapshot.specularIntensity;
     material.needsUpdate = true;
   }
+  key.shadow.normalBias = tileShadowNormalBias;
+  key.shadow.bias = tileShadowBias;
   if (anchorGuide) {
     scene.remove(anchorGuide);
     anchorGuide.geometry.dispose();

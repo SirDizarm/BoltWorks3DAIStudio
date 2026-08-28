@@ -59,6 +59,8 @@ same assembly pivot in every Unity-facing view.
   it and cannot recenter or resize the tile.
 - Tile-sheet renders temporarily remove material specular and environment
   reflections, preventing a moving sun-glare spot from appearing on the ground.
+- Tile-sheet shadows remain enabled, with a temporary normal-bias adjustment
+  that prevents jagged self-shadow artefacts on low-poly triangle edges.
 - The exporter frames the complete selected assembly and uses a transparent
   background.
 
