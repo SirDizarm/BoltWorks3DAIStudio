@@ -3364,7 +3364,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, playerAvatar = false, playerHeadOffset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3399,6 +3399,7 @@ function createMesh(spec = {}) {
     tileTextureRepeatU: normalizedTileTextureValue(tileTextureRepeatU),
     tileTextureRepeatV: normalizedTileTextureValue(tileTextureRepeatV),
     tileTextureEdgeTrim: normalizedTileTextureEdgeTrim(tileTextureEdgeTrim),
+    gameAsset: gameAsset && typeof gameAsset === "object" ? JSON.parse(JSON.stringify(gameAsset)) : null,
     textureHasTransparency: !!textureHasTransparency,
     roughnessTextureUrl,
     roughnessTextureName,
@@ -16954,4 +16955,56 @@ function rotateModelTileFacing() {
   });
   updateAll();
   if (els.modelTileStatus) els.modelTileStatus.textContent = `Wall facing: ${select.value}; rotated ${targets.length} model part${targets.length === 1 ? "" : "s"} 90° around the editor center.`;
+}
+
+function selectedGameAssetTargets() {
+  const targets = resolveSelectionTargets("meshes");
+  return targets.length ? targets : (selected ? [selected] : []);
+}
+
+function gameAssetFormData() {
+  const safeId = String(els.gameAssetIdInput?.value || "").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-").replace(/^-|-$/g, "");
+  const hideParts = String(els.gameAssetHidePartsInput?.value || "").split(",").map(value => value.trim()).filter(Boolean);
+  return {
+    id: safeId,
+    icon: String(els.gameAssetIconInput?.value || "").trim() || null,
+    inventory: {
+      width: Math.max(1, Math.min(12, Math.round(Number(els.gameAssetInventoryWidthInput?.value) || 1))),
+      height: Math.max(1, Math.min(12, Math.round(Number(els.gameAssetInventoryHeightInput?.value) || 1)))
+    },
+    type: ["prop", "equipment", "character"].includes(els.gameAssetTypeSelect?.value) ? els.gameAssetTypeSelect.value : "prop",
+    slot: String(els.gameAssetSlotSelect?.value || "") || null,
+    attachBoneId: String(els.gameAssetBoneInput?.value || "").trim() || null,
+    hideParts
+  };
+}
+
+function saveGameAssetMetadata() {
+  const targets = selectedGameAssetTargets();
+  const metadata = gameAssetFormData();
+  if (!targets.length) { if (els.gameAssetStatus) els.gameAssetStatus.textContent = "Select a mesh, group, or multiple parts first."; return; }
+  if (!metadata.id) { if (els.gameAssetStatus) els.gameAssetStatus.textContent = "Give the game asset an ID first."; return; }
+  recordHistory("save game asset metadata");
+  targets.forEach(target => { target.userData.gameAsset = JSON.parse(JSON.stringify(metadata)); });
+  updateAll();
+  if (els.gameAssetStatus) els.gameAssetStatus.textContent = `Saved ${metadata.id}: ${metadata.inventory.width}×${metadata.inventory.height} inventory footprint on ${targets.length} selected part${targets.length === 1 ? "" : "s"}.`;
+}
+
+function exportCharacterPackage() {
+  const targets = selectedGameAssetTargets();
+  if (!targets.length) { if (els.gameAssetStatus) els.gameAssetStatus.textContent = "Select a character, equipment item, group, or multiple parts first."; return; }
+  const firstMetadata = targets.find(target => target.userData.gameAsset)?.userData.gameAsset || gameAssetFormData();
+  const assetId = firstMetadata.id || String(targets[0].name || "boltworks-character").trim().toLowerCase().replace(/[^a-z0-9_-]+/g, "-") || "boltworks-character";
+  const rig = serializeBoneRig();
+  const packageData = {
+    kind: "boltworks-character-package",
+    version: 1,
+    asset: { id: assetId, icon: firstMetadata.icon || null, inventory: firstMetadata.inventory || { width: 1, height: 1 }, type: firstMetadata.type || "character" },
+    renderProfile: { source: "model-tile-kit", projection: "orthographic", azimuthDegrees: Number(els.modelTileCameraAzimuthInput?.value) || 45, elevationDegrees: Number(els.modelTileCameraElevationInput?.value) || 35.264, anchor: "editor-origin", sheetViews: ["NE", "SE", "SW", "NW"] },
+    rig: { bones: rig.bones, animation: rig.animation },
+    parts: targets.map(target => ({ model: serializeObject(target), equipment: target.userData.gameAsset || null })),
+    runtimeContract: { rigidAttachment: "Attach a part with equipment.attachBoneId to that rig bone.", skinnedAttachment: "A skinned part may share the exported rig bones by ID.", hideParts: "Hide matching base-part IDs or names while the equipment is equipped." }
+  };
+  download(`${assetId}.boltcharacter.json`, JSON.stringify(packageData, null, 2), "application/json");
+  if (els.gameAssetStatus) els.gameAssetStatus.textContent = `Exported ${assetId}.boltcharacter.json with ${packageData.parts.length} part${packageData.parts.length === 1 ? "" : "s"}, ${rig.bones.length} bone${rig.bones.length === 1 ? "" : "s"}, and shared animation keys.`;
 }

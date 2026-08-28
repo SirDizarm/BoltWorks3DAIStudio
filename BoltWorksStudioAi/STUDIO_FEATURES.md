@@ -5,6 +5,19 @@ AI Studio. Update this document whenever a visible tool or exporter behavior is
 added or changed. The project-format and authoring documents remain the format
 contract; this file explains how to use the current editor.
 
+## Game Asset Kit
+
+The **Game Asset Kit** stores game-facing data on a selected mesh, group, or
+multiple parts: a stable asset ID, icon key, inventory width and height,
+asset type, equipment slot, attachment bone ID, and base parts to hide or
+replace. This metadata is saved inside `.modelerproj` files.
+
+**Export Character Package** writes a `.boltcharacter.json` package containing
+the selected editable parts, their game metadata, the complete BWS rig, and
+the keyed animation data. It declares the Model Tile Kit's fixed orthographic
+isometric render profile, so the game runtime can assemble equipment onto the
+same skeleton while keeping the established game view.
+
 ## Model Tile Kit
 
 The **Model Tile Kit** packages one mesh, a selected group, or multiple selected

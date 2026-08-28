@@ -686,6 +686,8 @@ els.exportUvPngBtn?.addEventListener("click", exportSelectedUvPngs);
 els.uvPngExportSelect?.addEventListener("change", () => syncUvUnwrapUi());
 els.modelTileRotateBtn?.addEventListener("click", rotateModelTileFacing);
 els.modelTileExportBtn?.addEventListener("click", exportModelTileKit);
+els.gameAssetSaveBtn?.addEventListener("click", saveGameAssetMetadata);
+els.gameAssetExportBtn?.addEventListener("click", exportCharacterPackage);
 els.addColorToSceneBtn?.addEventListener("click", () => {
   if (!selected) return;
   selected.userData.colorApplied = true;

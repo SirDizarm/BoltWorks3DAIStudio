@@ -39,6 +39,7 @@ function serializeObject(mesh) {
     emissiveTextureName: mesh.userData.emissiveTextureName || null,
     playerAvatar: !!mesh.userData.playerAvatar,
     playerHeadOffset: Array.isArray(mesh.userData.playerHeadOffset) ? [...mesh.userData.playerHeadOffset] : null,
+    gameAsset: mesh.userData.gameAsset ? JSON.parse(JSON.stringify(mesh.userData.gameAsset)) : null,
     liveMirror: mesh.userData.liveMirror?.enabled ? {
       enabled: true,
       axis: ["x", "y", "z"].includes(mesh.userData.liveMirror.axis) ? mesh.userData.liveMirror.axis : "x",
