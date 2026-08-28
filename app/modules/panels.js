@@ -452,10 +452,12 @@ els.animationStopBtn?.addEventListener("click", () => { if (typeof cancelMinecra
 els.animationPrevBtn?.addEventListener("click", () => animationSetFrame(animationState.frame - 1));
 els.animationNextBtn?.addEventListener("click", () => animationSetFrame(animationState.frame + 1));
 els.animationResetBtn?.addEventListener("click", () => { animationState.playing = false; animationSetFrame(0); });
+els.animationClipSelect?.addEventListener("change", event => setActiveAnimationClip(event.target.value));
+els.animationClipAddBtn?.addEventListener("click", addAnimationClip);
 els.animationScrubber?.addEventListener("input", event => animationSetFrame(event.target.value));
 els.animationKeyBtn?.addEventListener("click", keyAnimationPose);
 els.animationDeleteFrameBtn?.addEventListener("click", deleteAnimationFrameKeys);
-els.animationClearBtn?.addEventListener("click", () => { restoreAnimationBindPose(); animationState.keys = {}; animationState.frame = 0; animationState.playing = false; updateAnimationPanel(); });
+els.animationClearBtn?.addEventListener("click", () => { restoreAnimationBindPose(); animationState.keys = {}; syncActiveAnimationClip(); animationState.frame = 0; animationState.playing = false; updateAnimationPanel(); });
 els.animationExportBtn?.addEventListener("click", exportAnimationJson);
 els.animationSheetExportBtn?.addEventListener("click", async () => saveAnimationMotionSheets({
   view: els.animationSheetViewSelect?.value || "left",
@@ -471,8 +473,8 @@ els.animationMp4ExportBtn?.addEventListener("click", async () => {
   catch (error) { log(error?.message || "MP4 export failed."); }
 });
 els.referenceViewportsToggleBtn?.addEventListener("click", () => setReferenceViewportsCollapsed(!referenceViewportsCollapsed));
-els.animationFpsInput?.addEventListener("change", event => { animationState.fps = Math.max(1, Math.min(120, Number(event.target.value) || 24)); updateAnimationPanel(); });
-els.animationEndInput?.addEventListener("change", event => { animationState.end = Math.max(1, Math.min(9999, Number(event.target.value) || 48)); animationState.frame = Math.min(animationState.frame, animationState.end); updateAnimationPanel(); });
+els.animationFpsInput?.addEventListener("change", event => { animationState.fps = Math.max(1, Math.min(120, Number(event.target.value) || 24)); syncActiveAnimationClip(); updateAnimationPanel(); });
+els.animationEndInput?.addEventListener("change", event => { animationState.end = Math.max(1, Math.min(9999, Number(event.target.value) || 48)); animationState.frame = Math.min(animationState.frame, animationState.end); syncActiveAnimationClip(); updateAnimationPanel(); });
 els.animationVideoLengthModeSelect?.addEventListener("change", () => { if (els.animationVideoDurationInput) els.animationVideoDurationInput.disabled = els.animationVideoLengthModeSelect.value === "clips"; });
 updateAnimationPanel();
 document.querySelector("#groupBtn").addEventListener("click", groupCheckedParts);

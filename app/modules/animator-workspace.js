@@ -17,6 +17,13 @@ function moveAnimatorPanels(active) {
 
 function syncAnimatorClipSelect() {
   if (!els.animatorClipSelect || !els.minecraftAnimationSelect) return;
+  if (typeof hasBwsAnimationClips === "function" && hasBwsAnimationClips()) {
+    els.animatorClipSelect.innerHTML = Object.entries(animationState.clips).map(([id, clip]) => `<option value="${id}">${clip.name || id}</option>`).join("");
+    els.animatorClipSelect.disabled = false;
+    els.animatorClipSelect.value = animationState.activeClipId;
+    els.animatorClipSelect.dataset.source = "bws";
+    return;
+  }
   els.animatorClipSelect.innerHTML = els.minecraftAnimationSelect.innerHTML;
   els.animatorClipSelect.disabled = els.minecraftAnimationSelect.disabled;
   els.animatorClipSelect.value = els.minecraftAnimationSelect.value;
@@ -50,7 +57,8 @@ function setAnimatorWorkspace(active) {
 function initializeAnimatorWorkspace() {
   els.animatorWorkspaceOpenBtn?.addEventListener("click", () => setAnimatorWorkspace(!animatorWorkspaceActive));
   els.animatorClipSelect?.addEventListener("change", event => {
-    activateMinecraftAnimation(event.target.value);
+    if (event.target.dataset.source === "bws") setActiveAnimationClip(event.target.value);
+    else activateMinecraftAnimation(event.target.value);
     syncAnimatorClipSelect();
   });
   window.addEventListener("keydown", event => {

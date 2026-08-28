@@ -861,14 +861,16 @@ function initializeMinecraftTools() {
     if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();
   });
   els.animationSequenceAddBtn?.addEventListener("click", () => {
+    if (typeof hasBwsAnimationClips === "function" && hasBwsAnimationClips()) { addBwsAnimationSequenceClip(els.animationSequenceClipSelect?.value); return; }
     const clipIndex = Number(els.animationSequenceClipSelect?.value);
     if (!Number.isInteger(clipIndex) || !minecraftAnimationClips[clipIndex]) return;
     minecraftAnimationSequence.push(clipIndex);
     renderMinecraftAnimationSequence();
   });
-  els.animationSequenceClearBtn?.addEventListener("click", () => { cancelMinecraftAnimationSequencePreview(); minecraftAnimationSequence = []; renderMinecraftAnimationSequence(); });
+  els.animationSequenceClearBtn?.addEventListener("click", () => { if (typeof hasBwsAnimationClips === "function" && hasBwsAnimationClips()) { bwsAnimationSequence = []; renderBwsAnimationSequence(); return; } cancelMinecraftAnimationSequencePreview(); minecraftAnimationSequence = []; renderMinecraftAnimationSequence(); });
   els.animationSequencePreviewBtn?.addEventListener("click", () => {
-    if (els.animationSequencePreviewBtn.textContent.includes("Stop")) cancelMinecraftAnimationSequencePreview();
+    if (typeof hasBwsAnimationClips === "function" && hasBwsAnimationClips()) previewBwsAnimationSequence();
+    else if (els.animationSequencePreviewBtn.textContent.includes("Stop")) cancelMinecraftAnimationSequencePreview();
     else previewMinecraftAnimationSequence();
   });
   els.animationSequenceList?.addEventListener("click", event => {

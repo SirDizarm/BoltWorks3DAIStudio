@@ -664,6 +664,8 @@ const els = {
   showBonesInput: document.querySelector("#showBonesInput"),
   animationSection: document.querySelector("#animationSection"),
   animationToggle: document.querySelector("#animationToggle"),
+  animationClipSelect: document.querySelector("#animationClipSelect"),
+  animationClipAddBtn: document.querySelector("#animationClipAddBtn"),
   animationPlayBtn: document.querySelector("#animationPlayBtn"),
   animationStopBtn: document.querySelector("#animationStopBtn"),
   animationPrevBtn: document.querySelector("#animationPrevBtn"),

@@ -79,7 +79,8 @@ let boneGizmoEnabled = true;
 let boneAimDrag = null;
 // Whether the rig is glued to the model (bound parts follow the bones live).
 let bonesGlued = false;
-const animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {}, bindingRest: null };
+const animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {}, clips: { idle: { name: "Idle", fps: 24, end: 48, keys: {} } }, activeClipId: "idle", bindingRest: null };
+let bwsAnimationSequence = [];
 let activeSkinRuntime = null;
 const boneRaycaster = new THREE.Raycaster();
 boneRaycaster.layers.enable(1);
@@ -407,6 +408,81 @@ function freshBoneId() {
   return `bone-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function syncActiveAnimationClip() {
+  const id = animationState.activeClipId || "idle";
+  animationState.activeClipId = id;
+  animationState.clips ||= {};
+  animationState.clips[id] = {
+    name: animationState.clips[id]?.name || id,
+    fps: animationState.fps,
+    end: animationState.end,
+    keys: animationState.keys
+  };
+}
+
+function setActiveAnimationClip(id) {
+  if (!id || !animationState.clips?.[id] || id === animationState.activeClipId) return;
+  syncActiveAnimationClip();
+  const clip = animationState.clips[id];
+  animationState.activeClipId = id;
+  animationState.fps = Math.max(1, Math.min(120, Number(clip.fps) || 24));
+  animationState.end = Math.max(1, Math.min(9999, Number(clip.end) || 48));
+  animationState.keys = clip.keys && typeof clip.keys === "object" ? clip.keys : {};
+  animationState.frame = 0;
+  animationState.playing = false;
+  animationSetFrame(0);
+}
+
+function addAnimationClip() {
+  syncActiveAnimationClip();
+  let count = Object.keys(animationState.clips).length + 1;
+  let id = `clip-${count}`;
+  while (animationState.clips[id]) id = `clip-${++count}`;
+  animationState.clips[id] = { name: `Clip ${count}`, fps: animationState.fps, end: animationState.end, keys: {} };
+  setActiveAnimationClip(id);
+  log(`Created animation clip ${animationState.clips[id].name}.`);
+}
+
+function syncAnimationClipUi() {
+  if (!els.animationClipSelect) return;
+  syncActiveAnimationClip();
+  els.animationClipSelect.innerHTML = Object.entries(animationState.clips)
+    .map(([id, clip]) => `<option value="${animationTimelineEscape(id)}">${animationTimelineEscape(clip.name || id)}</option>`)
+    .join("");
+  els.animationClipSelect.value = animationState.activeClipId;
+  renderBwsAnimationSequence();
+}
+
+function hasBwsAnimationClips() { return Object.keys(animationState.clips || {}).length > 1; }
+function renderBwsAnimationSequence() {
+  if (!hasBwsAnimationClips() || !els.animationSequenceClipSelect) return;
+  const clips = animationState.clips;
+  els.animationSequenceClipSelect.disabled = false;
+  els.animationSequenceClipSelect.innerHTML = Object.entries(clips).map(([id, clip]) => `<option value="${animationTimelineEscape(id)}">${animationTimelineEscape(clip.name || id)}</option>`).join("");
+  if (!els.animationSequenceList) return;
+  bwsAnimationSequence = bwsAnimationSequence.filter(id => clips[id]);
+  els.animationSequenceList.innerHTML = bwsAnimationSequence.length
+    ? bwsAnimationSequence.map(id => `<span class="animation-sequence-item">${animationTimelineEscape(clips[id].name || id)}</span>`).join('<span class="animation-sequence-arrow">→</span>')
+    : '<span class="api-note">Add clips in any order, for example Idle → Walk → Reach.</span>';
+}
+function addBwsAnimationSequenceClip(id) {
+  if (!animationState.clips?.[id]) return;
+  bwsAnimationSequence.push(id);
+  renderBwsAnimationSequence();
+}
+async function previewBwsAnimationSequence() {
+  if (!bwsAnimationSequence.length) { log("Add clips to the connected animation first."); return; }
+  const original = animationState.activeClipId;
+  for (const id of bwsAnimationSequence) {
+    setActiveAnimationClip(id);
+    for (let frame = 0; frame <= animationState.end; frame += 1) {
+      animationSetFrame(frame);
+      await new Promise(resolve => setTimeout(resolve, 1000 / animationState.fps));
+    }
+  }
+  setActiveAnimationClip(original);
+}
+
 // Build the baseline game-character skeleton from the selected mesh rather
 // than from a mesh's own pivot.  This keeps a saved mannequin usable as the
 // neutral character template: all equipment identifies stable semantic bone
@@ -494,6 +570,7 @@ function createHumanoidTestRig() {
 }
 
 function serializeBoneRig() {
+  syncActiveAnimationClip();
   return {
     selectedBoneId,
     showGuides: els.showBonesInput?.checked ?? true,
@@ -520,6 +597,8 @@ function serializeBoneRig() {
       end: animationState.end,
       frame: animationState.frame,
       keys: animationState.keys,
+      clips: animationState.clips,
+      activeClipId: animationState.activeClipId,
       bindingRest: serializeAnimationBindingRest()
     }
   };
@@ -578,10 +657,20 @@ function restoreBoneRig(data = {}) {
     }
   });
   selectedBoneId = boneById(data.selectedBoneId)?.id || rigBones[0]?.id || null;
-  animationState.fps = Math.max(1, Math.min(120, Number(data.animation?.fps) || 24));
-  animationState.end = Math.max(1, Math.min(9999, Number(data.animation?.end) || 48));
+  const savedClips = data.animation?.clips && typeof data.animation.clips === "object" ? data.animation.clips : null;
+  animationState.clips = savedClips && Object.keys(savedClips).length
+    ? savedClips
+    : { idle: { name: "Idle", fps: data.animation?.fps, end: data.animation?.end, keys: data.animation?.keys || {} } };
+  animationState.activeClipId = animationState.clips[data.animation?.activeClipId]
+    ? data.animation.activeClipId
+    : Object.keys(animationState.clips)[0];
+  const activeClip = animationState.clips[animationState.activeClipId] || {};
+  animationState.fps = Math.max(1, Math.min(120, Number(activeClip.fps) || Number(data.animation?.fps) || 24));
+  animationState.end = Math.max(1, Math.min(9999, Number(activeClip.end) || Number(data.animation?.end) || 48));
   animationState.frame = Math.max(0, Math.min(animationState.end, Number(data.animation?.frame) || 0));
-  animationState.keys = data.animation?.keys && typeof data.animation.keys === "object" ? data.animation.keys : {};
+  animationState.keys = activeClip.keys && typeof activeClip.keys === "object"
+    ? activeClip.keys
+    : (data.animation?.keys && typeof data.animation.keys === "object" ? data.animation.keys : {});
   animationState.bindingRest = null;
   if (els.showBonesInput) els.showBonesInput.checked = data.showGuides ?? true;
   setupSkinnedRig();
@@ -1274,6 +1363,7 @@ function syncAnimationScrubberToTimeline() {
 }
 function updateAnimationPanel() {
   if (!els.animationScrubber) return;
+  syncAnimationClipUi();
   els.animationFpsInput.value = animationState.fps;
   els.animationEndInput.value = animationState.end;
   els.animationScrubber.max = animationState.end;
