@@ -665,6 +665,8 @@ const els = {
   boneGuideScaleInput: document.querySelector("#boneGuideScaleInput"),
   boneGuideScaleValue: document.querySelector("#boneGuideScaleValue"),
   mirrorBoneEditsInput: document.querySelector("#mirrorBoneEditsInput"),
+  rigModelOpacityInput: document.querySelector("#rigModelOpacityInput"),
+  rigModelOpacityValue: document.querySelector("#rigModelOpacityValue"),
   animationSection: document.querySelector("#animationSection"),
   animationToggle: document.querySelector("#animationToggle"),
   animationClipSelect: document.querySelector("#animationClipSelect"),

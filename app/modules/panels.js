@@ -430,6 +430,7 @@ els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
 els.showBonesInput?.addEventListener("change", rebuildBoneVisuals);
 els.boneGuideScaleInput?.addEventListener("input", event => setBoneGuideScale(event.target.value));
 els.mirrorBoneEditsInput?.addEventListener("change", event => { mirrorBoneEdits = event.target.checked; });
+els.rigModelOpacityInput?.addEventListener("input", event => setRigModelOpacity(event.target.value));
 frontBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "front", frontBoneCanvas, frontBoneCamera));
 sideBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "side", sideBoneCanvas, sideBoneCamera));
 frontBoneCanvas.addEventListener("pointermove", moveBoneDrag);

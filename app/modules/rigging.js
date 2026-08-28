@@ -80,6 +80,8 @@ let boneGizmoEnabled = true;
 let boneGuideScale = .4;
 let mirrorBoneEdits = false;
 let boneTransformLooseStart = null;
+let rigModelOpacity = 1;
+const rigModelMaterialState = new Map();
 // Joystick aim-drag state for precise bone rotation.
 let boneAimDrag = null;
 // Whether the rig is glued to the model (bound parts follow the bones live).
@@ -724,6 +726,7 @@ function serializeBoneRig() {
     showGuides: els.showBonesInput?.checked ?? true,
     guideScale: round(boneGuideScale),
     mirrorBoneEdits,
+    modelOpacity: round(rigModelOpacity),
     bones: rigBones.map(bone => ({
       id: bone.id,
       name: bone.name,
@@ -809,8 +812,10 @@ function restoreBoneRig(data = {}) {
   selectedBoneId = boneById(data.selectedBoneId)?.id || rigBones[0]?.id || null;
   boneGuideScale = THREE.MathUtils.clamp(Number(data.guideScale) || .4, .2, 1);
   mirrorBoneEdits = !!data.mirrorBoneEdits;
+  rigModelOpacity = THREE.MathUtils.clamp(Number(data.modelOpacity) || 1, .1, 1);
   syncBoneGuideScaleUi();
   if (els.mirrorBoneEditsInput) els.mirrorBoneEditsInput.checked = mirrorBoneEdits;
+  syncRigModelOpacityUi();
   const savedClips = data.animation?.clips && typeof data.animation.clips === "object" ? data.animation.clips : null;
   animationState.clips = savedClips && Object.keys(savedClips).length
     ? savedClips
@@ -847,6 +852,7 @@ function restoreBoneRig(data = {}) {
     if (bonesGlued && !activeSkinRuntime && !animationState.bindingRest) captureAnimationBindingRest();
   }
   rebuildBoneVisuals();
+  applyRigModelOpacity();
   syncBonePanel();
   updateGlueButton();
 }
@@ -1754,6 +1760,46 @@ function setBoneGuideScale(value) {
 function syncBoneGuideScaleUi() {
   if (els.boneGuideScaleInput) els.boneGuideScaleInput.value = String(boneGuideScale);
   if (els.boneGuideScaleValue) els.boneGuideScaleValue.textContent = `${Math.round(boneGuideScale * 100)}%`;
+}
+
+function applyRigModelOpacity() {
+  for (const [material, state] of rigModelMaterialState) {
+    material.opacity = state.opacity;
+    material.transparent = state.transparent;
+    material.depthWrite = state.depthWrite;
+    material.needsUpdate = true;
+  }
+  rigModelMaterialState.clear();
+  const roots = new Set(objects.filter(object => object && !object.userData?.editorHelper));
+  if (activeSkinRuntime?.avatar) roots.add(activeSkinRuntime.avatar);
+  for (const root of roots) {
+    root.traverse?.(part => {
+      if (!part.isMesh) return;
+      for (const material of (Array.isArray(part.material) ? part.material : [part.material])) {
+        if (!material || rigModelMaterialState.has(material)) continue;
+        rigModelMaterialState.set(material, {
+          opacity: material.opacity,
+          transparent: material.transparent,
+          depthWrite: material.depthWrite
+        });
+        material.opacity *= rigModelOpacity;
+        material.transparent = material.transparent || rigModelOpacity < .999;
+        material.depthWrite = rigModelOpacity >= .999 ? material.depthWrite : false;
+        material.needsUpdate = true;
+      }
+    });
+  }
+}
+
+function syncRigModelOpacityUi() {
+  if (els.rigModelOpacityInput) els.rigModelOpacityInput.value = String(rigModelOpacity);
+  if (els.rigModelOpacityValue) els.rigModelOpacityValue.textContent = `${Math.round(rigModelOpacity * 100)}%`;
+}
+
+function setRigModelOpacity(value) {
+  rigModelOpacity = THREE.MathUtils.clamp(Number(value) || 1, .1, 1);
+  syncRigModelOpacityUi();
+  applyRigModelOpacity();
 }
 
 function setObjectLayer(object, layer) {
