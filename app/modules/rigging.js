@@ -75,6 +75,11 @@ let boneGizmoToolMode = "rotate";
 // Whether the bone gizmo is shown at all; the Move/Rotate buttons toggle this
 // off when you click the already-active mode (like the Free/X/Y/Z lock).
 let boneGizmoEnabled = true;
+// The guides are only an editor overlay. Keep them small by default so their
+// centres can be judged against the model rather than hiding it.
+let boneGuideScale = .4;
+let mirrorBoneEdits = false;
+let boneTransformLooseStart = null;
 // Joystick aim-drag state for precise bone rotation.
 let boneAimDrag = null;
 // Whether the rig is glued to the model (bound parts follow the bones live).
@@ -212,12 +217,16 @@ function beginBoneAimDrag(event) {
   const bone = selectedBone();
   if (!bone) return false;
   recordBoneHistory("bone rotate");
+  prepareLooseBoneHierarchy();
   const base = (bone.displayPosition || bone.position).clone();
   boneAimDrag = {
     pointerId: event.pointerId,
     boneId: bone.id,
     base,
     startQuat: new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")),
+    startRotation: bone.rotation.clone(),
+    mirrorId: boneById(mirroredBoneId(bone.id))?.id || null,
+    mirrorRotation: boneById(mirroredBoneId(bone.id))?.rotation.clone() || null,
     // The handle sits on the opposite side from the bone, so rotate relative to
     // the handle's own start direction (which the cursor grabs).
     startDir: boneAimDir(bone).negate()
@@ -251,7 +260,7 @@ function moveBoneAimDrag(event) {
   const worldQuat = delta.clone().multiply(boneAimDrag.startQuat);
   const e = new THREE.Euler().setFromQuaternion(worldQuat, "XYZ");
   bone.rotation.set(e.x, e.y, e.z);
-  applyCurrentRigPose();
+  applyCurrentRigPose({ resolveLooseHierarchy: true });
   rebuildBoneVisuals();
   syncBonePanel();
   event.preventDefault();
@@ -259,9 +268,22 @@ function moveBoneAimDrag(event) {
 
 function endBoneAimDrag(event) {
   if (!boneAimDrag || event.pointerId !== boneAimDrag.pointerId) return;
+  const drag = boneAimDrag;
+  const bone = boneById(boneAimDrag.boneId);
   renderer.domElement.releasePointerCapture?.(event.pointerId);
   boneAimDrag = null;
   orbit.enabled = true;
+  // Live hierarchy updates can reattach a TransformControls proxy underneath
+  // the pointer. Mirror once the handle is released, keeping the joystick
+  // drag isolated while still giving the opposite limb the same final pose.
+  if (bone && mirrorBoneEdits) {
+    mirrorBoneEdit(bone, { position: false, rotation: true, tail: false });
+    applyCurrentRigPose({ resolveLooseHierarchy: true });
+    rebuildBoneVisuals();
+    syncBonePanel();
+  }
+  if (bone) commitLooseBoneRotation(bone.id, drag.startRotation);
+  if (drag.mirrorId && drag.mirrorRotation) commitLooseBoneRotation(drag.mirrorId, drag.mirrorRotation);
 }
 
 const boneTransform = new TransformControls(camera, renderer.domElement);
@@ -269,19 +291,49 @@ boneTransform.visible = false;
 boneTransform.setSize(.9);
 boneTransform.addEventListener("dragging-changed", event => {
   orbit.enabled = !event.value;
-  if (event.value && selectedBone()) recordBoneHistory("bone transform");
+  if (event.value && selectedBone()) {
+    recordBoneHistory("bone transform");
+    if (!bonesGlued && !activeSkinRuntime) {
+      const bone = selectedBone();
+      const mirror = boneById(mirroredBoneId(bone.id));
+      boneTransformLooseStart = {
+        boneId: bone.id,
+        mode: boneTransform.mode,
+        position: bone.position.clone(),
+        rotation: bone.rotation.clone(),
+        mirrorId: mirror?.id || null,
+        mirrorPosition: mirror?.position.clone() || null,
+        mirrorRotation: mirror?.rotation.clone() || null
+      };
+    }
+    if (boneTransform.mode === "rotate") prepareLooseBoneHierarchy();
+  } else if (!event.value && boneTransformLooseStart) {
+    const start = boneTransformLooseStart;
+    boneTransformLooseStart = null;
+    if (start.mode === "rotate") {
+      commitLooseBoneRotation(start.boneId, start.rotation);
+      if (start.mirrorId && start.mirrorRotation) commitLooseBoneRotation(start.mirrorId, start.mirrorRotation);
+    } else {
+      commitLooseBonePosition(start.boneId, start.position);
+      if (start.mirrorId && start.mirrorPosition) commitLooseBonePosition(start.mirrorId, start.mirrorPosition);
+    }
+  }
 });
 boneTransform.addEventListener("objectChange", () => {
   const bone = selectedBone();
   if (!bone || !boneTransform.dragging) return;
   if (boneTransform.mode === "translate") {
     bone.position.copy(boneTransformProxy.position);
+    applyCurrentRigPose();
+    mirrorBoneEdit(bone, { position: true, rotation: false, tail: true });
   } else {
     bone.rotation.x = boneTransformProxy.rotation.x;
     bone.rotation.y = boneTransformProxy.rotation.y;
     bone.rotation.z = boneTransformProxy.rotation.z;
+    applyCurrentRigPose({ resolveLooseHierarchy: true });
+    mirrorBoneEdit(bone, { position: false, rotation: true, tail: false });
   }
-  applyCurrentRigPose();
+  if (mirrorBoneEdits) applyCurrentRigPose({ resolveLooseHierarchy: boneTransform.mode === "rotate" });
   rebuildBoneVisuals();
   syncBonePanel();
 });
@@ -365,6 +417,88 @@ function selectBoneFromViewport(boneId) {
 
 function boneById(id) {
   return rigBones.find(bone => bone.id === id) || null;
+}
+
+function mirroredBoneId(id) {
+  if (typeof id !== "string") return null;
+  if (id.includes("left_")) return id.replace("left_", "right_");
+  if (id.includes("right_")) return id.replace("right_", "left_");
+  if (id.endsWith("_l")) return `${id.slice(0, -2)}_r`;
+  if (id.endsWith("_r")) return `${id.slice(0, -2)}_l`;
+  return null;
+}
+
+function mirrorBoneEdit(source, { position = true, rotation = true, tail = true } = {}) {
+  if (!mirrorBoneEdits) return null;
+  const target = boneById(mirroredBoneId(source.id));
+  if (!target) return null;
+  if (position) target.position.set(-source.position.x, source.position.y, source.position.z);
+  if (tail) target.tail.set(-source.tail.x, source.tail.y, source.tail.z);
+  if (rotation) {
+    // The model is mirrored over the X=0 centre plane. Keep the bend around
+    // the limb axis and invert the two axes whose handedness changes. This is
+    // stable during a live joystick drag (unlike matrix-to-Euler conversion).
+    target.rotation.set(source.rotation.x, -source.rotation.y, -source.rotation.z);
+  }
+  return target;
+}
+
+function prepareLooseBoneHierarchy() {
+  if (bonesGlued || activeSkinRuntime) return;
+  // Keep every manually placed joint exactly where it is as the new loose rest
+  // pose before a rotation swings its descendant chain.
+  rigBones.forEach(bone => {
+    bone.bindPosition = bone.position.clone();
+    bone.bindRotation = bone.rotation.clone();
+    bone.bindTail = bone.tail.clone();
+    initializeBoneRestState(bone);
+  });
+}
+
+function commitLooseBonePosition(boneId, startPosition) {
+  if (bonesGlued || activeSkinRuntime || !startPosition) return;
+  const bone = boneById(boneId);
+  if (!bone) return;
+  const delta = bone.position.clone().sub(startPosition);
+  if (delta.lengthSq() < 1e-10) return;
+  // A loose bone placement is a rest-pose edit, not an animation frame. Move
+  // its bind point and every saved clip by the same amount so restore/Undo
+  // cannot immediately overwrite the newly positioned joint with old keys.
+  bone.bindPosition = (bone.bindPosition || startPosition).clone().add(delta);
+  bone.bindTail = (bone.bindTail || bone.tail).clone().add(delta);
+  bone.tail.copy((bone.tail || bone.bindTail).clone().add(delta));
+  bone.tailOffset = bone.bindTail.clone().sub(bone.bindPosition);
+  syncActiveAnimationClip();
+  for (const clip of Object.values(animationState.clips || {})) {
+    for (const key of clip?.keys?.[bone.id] || []) {
+      if (!Array.isArray(key.position)) continue;
+      key.position = [key.position[0] + delta.x, key.position[1] + delta.y, key.position[2] + delta.z];
+    }
+  }
+}
+
+function commitLooseBoneRotation(boneId, startRotation) {
+  if (bonesGlued || activeSkinRuntime || !startRotation) return;
+  const bone = boneById(boneId);
+  if (!bone) return;
+  const before = new THREE.Quaternion().setFromEuler(new THREE.Euler(startRotation.x, startRotation.y, startRotation.z, "XYZ"));
+  const after = new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
+  const delta = after.clone().multiply(before.invert());
+  if (Math.abs(delta.x) + Math.abs(delta.y) + Math.abs(delta.z) < 1e-8 && Math.abs(delta.w - 1) < 1e-8) return;
+  bone.bindRotation = bone.rotation.clone();
+  if (bone.tail) {
+    bone.bindTail = bone.tail.clone();
+    bone.tailOffset = bone.bindTail.clone().sub(bone.bindPosition || bone.position);
+  }
+  syncActiveAnimationClip();
+  for (const clip of Object.values(animationState.clips || {})) {
+    for (const key of clip?.keys?.[bone.id] || []) {
+      if (!Array.isArray(key.rotation)) continue;
+      const keyQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(key.rotation[0], key.rotation[1], key.rotation[2], "XYZ"));
+      const updated = new THREE.Euler().setFromQuaternion(delta.clone().multiply(keyQuaternion), "XYZ");
+      key.rotation = [updated.x, updated.y, updated.z];
+    }
+  }
 }
 
 function selectedBone() {
@@ -588,6 +722,8 @@ function serializeBoneRig() {
   return {
     selectedBoneId,
     showGuides: els.showBonesInput?.checked ?? true,
+    guideScale: round(boneGuideScale),
+    mirrorBoneEdits,
     bones: rigBones.map(bone => ({
       id: bone.id,
       name: bone.name,
@@ -671,6 +807,10 @@ function restoreBoneRig(data = {}) {
     }
   });
   selectedBoneId = boneById(data.selectedBoneId)?.id || rigBones[0]?.id || null;
+  boneGuideScale = THREE.MathUtils.clamp(Number(data.guideScale) || .4, .2, 1);
+  mirrorBoneEdits = !!data.mirrorBoneEdits;
+  syncBoneGuideScaleUi();
+  if (els.mirrorBoneEditsInput) els.mirrorBoneEditsInput.checked = mirrorBoneEdits;
   const savedClips = data.animation?.clips && typeof data.animation.clips === "object" ? data.animation.clips : null;
   animationState.clips = savedClips && Object.keys(savedClips).length
     ? savedClips
@@ -1047,12 +1187,13 @@ function poseRigHierarchy() {
   });
 }
 
-function applyCurrentRigPose() {
+function applyCurrentRigPose({ resolveLooseHierarchy = false } = {}) {
   // While the rig is loose, bone edits define the placement/rest pose. Do not
   // resolve children from stale bind data: that was the source of new bones
   // jumping away while the user was positioning a rig before gluing it.
   if (!bonesGlued && !activeSkinRuntime) {
-    rigBones.forEach(bone => initializeBoneRestState(bone));
+    if (resolveLooseHierarchy) poseRigHierarchy();
+    else rigBones.forEach(bone => initializeBoneRestState(bone));
     return;
   }
   poseRigHierarchy();
@@ -1534,6 +1675,7 @@ function rebuildBoneVisuals() {
     child.material?.dispose?.();
   }
   const visible = els.showBonesInput?.checked ?? true;
+  const guideScale = THREE.MathUtils.clamp(boneGuideScale, .2, 1);
   boneRigGroup.visible = visible;
   boneRigGroup.layers.enable(0);
   boneRigGroup.layers.enable(1);
@@ -1549,7 +1691,7 @@ function rebuildBoneVisuals() {
     const boneVector = guideTail.clone().sub(guidePosition);
     const boneLength = boneVector.length();
     const childBone = rigBones.find(candidate => boneById(candidate.parentId)?.id === bone.id);
-    const jointRadius = selectedGuide ? .11 : .085;
+    const jointRadius = (selectedGuide ? .11 : .085) * guideScale;
     // Parent joint = sphere (yellow in your sketch). The cone above is the
     // child; its tip meets the next parent sphere, so the chain reads
     // sphere → cone → sphere with no gaps.
@@ -1581,7 +1723,7 @@ function rebuildBoneVisuals() {
       // Parent = ball. Child = the cone: flat base connected to the parent's
       // ball, point aimed at the child's end. The next ball (if a bone attaches
       // there) is placed at that point, so the chain reads ball → cone → ball.
-      const coneRadius = Math.min(Math.max(boneLength * .18, .06), .22);
+      const coneRadius = Math.min(Math.max(boneLength * .18 * guideScale, .018), .22 * guideScale);
       const cone = new THREE.Mesh(
         new THREE.ConeGeometry(coneRadius, boneLength, 12, 1, false),
         new THREE.MeshStandardMaterial({ color: selectedGuide ? 0xffc547 : 0x9aa7ad, depthTest: true, roughness: .8, metalness: 0 })
@@ -1601,6 +1743,17 @@ function rebuildBoneVisuals() {
   syncBoneTransformGizmo();
   syncBoneJoystick();
   syncBoneJoystick();
+}
+
+function setBoneGuideScale(value) {
+  boneGuideScale = THREE.MathUtils.clamp(Number(value) || .4, .2, 1);
+  syncBoneGuideScaleUi();
+  rebuildBoneVisuals();
+}
+
+function syncBoneGuideScaleUi() {
+  if (els.boneGuideScaleInput) els.boneGuideScaleInput.value = String(boneGuideScale);
+  if (els.boneGuideScaleValue) els.boneGuideScaleValue.textContent = `${Math.round(boneGuideScale * 100)}%`;
 }
 
 function setObjectLayer(object, layer) {
@@ -1698,6 +1851,12 @@ function applyBonePanelValues() {
   const bone = selectedBone();
   if (!bone) return;
   recordBoneHistory("bone edit");
+  const startPosition = bone.position.clone();
+  const startRotation = bone.rotation.clone();
+  const mirror = boneById(mirroredBoneId(bone.id));
+  const mirrorStartPosition = mirror?.position.clone() || null;
+  const mirrorStartRotation = mirror?.rotation.clone() || null;
+  prepareLooseBoneHierarchy();
   bone.name = els.boneNameInput.value.trim() || bone.name;
   bone.parentId = els.boneParentSelect.value || null;
   bone.position.set(
@@ -1710,7 +1869,13 @@ function applyBonePanelValues() {
     THREE.MathUtils.degToRad(Number(els.boneRotY.value) || 0),
     THREE.MathUtils.degToRad(Number(els.boneRotZ.value) || 0)
   );
-  applyCurrentRigPose();
+  applyCurrentRigPose({ resolveLooseHierarchy: true });
+  mirrorBoneEdit(bone);
+  if (mirrorBoneEdits) applyCurrentRigPose({ resolveLooseHierarchy: true });
+  commitLooseBonePosition(bone.id, startPosition);
+  if (mirror?.id && mirrorStartPosition) commitLooseBonePosition(mirror.id, mirrorStartPosition);
+  commitLooseBoneRotation(bone.id, startRotation);
+  if (mirror?.id && mirrorStartRotation) commitLooseBoneRotation(mirror.id, mirrorStartRotation);
   rebuildBoneVisuals();
   syncBonePanel();
 }
@@ -1953,6 +2118,8 @@ function beginBoneDrag(event, view, referenceCanvas, referenceCamera) {
     startClientX: event.clientX,
     startClientY: event.clientY,
     startPosition: bone.position.clone(),
+    startMirrorId: boneById(mirroredBoneId(bone.id))?.id || null,
+    startMirrorPosition: boneById(mirroredBoneId(bone.id))?.position.clone() || null,
     lockedAxis: null,
     startAngle,
     startRotation: bone.rotation.clone()
@@ -1984,6 +2151,8 @@ function moveBoneDrag(event) {
     return;
   }
   applyCurrentRigPose();
+  mirrorBoneEdit(bone, { position: true, rotation: false, tail: true });
+  if (mirrorBoneEdits) applyCurrentRigPose();
   rebuildBoneVisuals();
   syncBonePanel();
   event.preventDefault();
@@ -1991,6 +2160,8 @@ function moveBoneDrag(event) {
 
 function endBoneDrag(event) {
   if (!boneDrag || event.pointerId !== boneDrag.pointerId) return;
+  commitLooseBonePosition(selectedBoneId, boneDrag.startPosition);
+  if (boneDrag.startMirrorId && boneDrag.startMirrorPosition) commitLooseBonePosition(boneDrag.startMirrorId, boneDrag.startMirrorPosition);
   boneDrag.canvas.releasePointerCapture?.(event.pointerId);
   boneDrag = null;
 }

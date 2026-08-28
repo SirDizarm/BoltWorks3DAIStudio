@@ -428,6 +428,8 @@ els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
   control?.addEventListener("change", applyBonePanelValues);
 });
 els.showBonesInput?.addEventListener("change", rebuildBoneVisuals);
+els.boneGuideScaleInput?.addEventListener("input", event => setBoneGuideScale(event.target.value));
+els.mirrorBoneEditsInput?.addEventListener("change", event => { mirrorBoneEdits = event.target.checked; });
 frontBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "front", frontBoneCanvas, frontBoneCamera));
 sideBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "side", sideBoneCanvas, sideBoneCamera));
 frontBoneCanvas.addEventListener("pointermove", moveBoneDrag);
