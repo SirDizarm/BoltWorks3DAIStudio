@@ -4472,6 +4472,7 @@ function toggleSurfaceValueMode() {
 }
 
 function setSurfaceSelectionMode(mode = "face") {
+  connectedTrianglePickMode = false;
   if (knifeCutMode) setKnifeCutMode(false);
   const normalized = ["vertex", "edge", "triangle", "face"].includes(mode) ? mode : "face";
   const releasingActiveMode = surfaceSelectionSource === "surface" && surfaceComponentMode === normalized;
@@ -4515,7 +4516,9 @@ function toggleClassicTriangleSelection() {
   const releasing = surfaceSelectionSource === "classic"
     && facePickMode
     && surfaceComponentMode === "triangle"
-    && !coplanarFacePickMode;
+    && !coplanarFacePickMode
+    && !connectedTrianglePickMode;
+  connectedTrianglePickMode = false;
   releaseSurfaceInteractionForClassicSelection();
   if (releasing) {
     surfaceComponentMode = "none";
@@ -4536,6 +4539,7 @@ function toggleClassicTriangleSelection() {
 }
 
 function toggleClassicFaceSelection() {
+  connectedTrianglePickMode = false;
   if (knifeCutMode) setKnifeCutMode(false);
   const releasing = surfaceSelectionSource === "classic"
     && facePickMode
@@ -6149,6 +6153,7 @@ function clearTriangleBuild({ silent = false, keepMode = false } = {}) {
 function setTriangleBuildMode(enabled) {
   triangleBuildMode = !!enabled;
   if (triangleBuildMode) {
+    connectedTrianglePickMode = false;
     clearLineSketch({ silent: true, keepMode: false });
     facePickMode = false;
     coplanarFacePickMode = false;
@@ -6407,6 +6412,7 @@ function clearLineSketch({ silent = false, keepMode = false } = {}) {
 function setLineSketchMode(enabled) {
   lineSketchMode = !!enabled;
   if (lineSketchMode) {
+    connectedTrianglePickMode = false;
     clearTriangleBuild({ silent: true, keepMode: false });
     facePickMode = false;
     coplanarFacePickMode = false;
@@ -6727,6 +6733,8 @@ function cutHoleFromLineSketch() {
 function updateFacePickHud() {
   els.facePickBtn.classList.toggle("active", facePickMode);
   els.faceRegionBtn.classList.toggle("active", coplanarFacePickMode);
+  els.selectConnectedBtn?.classList.toggle("active", connectedTrianglePickMode);
+  els.selectConnectedBtn?.setAttribute("aria-pressed", String(connectedTrianglePickMode));
   els.openingPickBtn?.classList.toggle("active", openingPickMode);
   els.areaTriBtn.classList.toggle("active", facePickMode && els.areaTriInput.checked);
   els.paintTriBtn?.classList.toggle("active", facePickMode && els.paintTriInput.checked);
@@ -6752,6 +6760,10 @@ function updateFacePickHud() {
     els.hudText.textContent = "Opening mode: hover a hole edge and click to lock the opening Fill Hole should cap | Shift-click picks another opening without clearing triangle work";
     return;
   }
+  if (connectedTrianglePickMode) {
+    els.hudText.textContent = "Connected mode: click one triangle to select its complete connected island | Shift/Ctrl adds another island";
+    return;
+  }
   els.hudText.textContent = facePickMode
     ? (surfaceComponentMode === "vertex"
       ? "Vertex mode: click the nearest corner | Shift/Ctrl adds vertices | use the X/Y/Z arrows to move"
@@ -6771,6 +6783,7 @@ function updateFacePickHud() {
 
 function setFacePickMode(enabled) {
   facePickMode = enabled;
+  if (!facePickMode) connectedTrianglePickMode = false;
   if (facePickMode) {
     clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
@@ -6795,6 +6808,7 @@ function setCoplanarFacePickMode(enabled, { activatePicker = true } = {}) {
 function setOpeningPickMode(enabled) {
   openingPickMode = !!enabled;
   if (openingPickMode) {
+    connectedTrianglePickMode = false;
     clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
     coplanarFacePickMode = false;
@@ -6806,6 +6820,28 @@ function setOpeningPickMode(enabled) {
   }
   updateOpeningPickGuide();
   updateFacePickHud();
+}
+
+function setConnectedTrianglePickMode(enabled) {
+  connectedTrianglePickMode = !!enabled;
+  if (connectedTrianglePickMode) {
+    if (knifeCutMode) setKnifeCutMode(false);
+    releaseSurfaceInteractionForClassicSelection();
+    clearTriangleBuild({ silent: true, keepMode: false });
+    clearLineSketch({ silent: true, keepMode: false });
+    openingPickMode = false;
+    coplanarFacePickMode = false;
+    surfaceComponentMode = "triangle";
+    surfaceSelectionSource = "classic";
+    els.paintTriInput.checked = false;
+    els.areaTriInput.checked = false;
+    setFacePickMode(true);
+    log("Select Connected enabled. Click one triangle to select its complete connected island.");
+  } else {
+    updateFacePickHud();
+    log("Select Connected disabled.");
+  }
+  return connectedTrianglePickMode;
 }
 
 function dominantAxis(vector) {

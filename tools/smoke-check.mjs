@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.30.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.31.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -38,6 +38,17 @@ if (
   || !/input, textarea[^}]*user-select:\s*text/s.test(styleSource)
 ) {
   throw new Error("Editor mouse interactions must suppress browser menus and accidental text selection while preserving text inputs and name copying.");
+}
+
+if (
+  !documentSource.includes('id="selectConnectedBtn"')
+  || !documentSource.includes("Select Connected")
+  || !meshesSource.includes("function setConnectedTrianglePickMode")
+  || !panelsSource.includes("if (connectedTrianglePickMode && hit)")
+  || !panelsSource.includes("selectConnectedTrianglesFromHit(hit, { append: additiveSelectionRequested(event) })")
+  || panelsSource.includes("Released the current surface selection with a double-click.")
+) {
+  throw new Error("Selection Tools must provide Select Connected, and double-click must still expand to the complete connected triangle island.");
 }
 
 if (
@@ -1279,7 +1290,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.30.js?v=49.60.30"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.31.js?v=49.60.31"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1320,7 +1331,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.30",
+  "tool-docking.js?v=49.60.31",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2107,8 +2118,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.30 Experimental") || !documentSource.includes("v49.60.30 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.30 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.31 Experimental") || !documentSource.includes("v49.60.31 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.31 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

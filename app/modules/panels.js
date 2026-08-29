@@ -586,6 +586,7 @@ els.pivotBtn.addEventListener("click", () => setPivotEditMode(!pivotEditMode));
 els.centerPivotBtn.addEventListener("click", centerSharedPivot);
 document.querySelector("#facePickBtn").addEventListener("click", toggleClassicTriangleSelection);
 els.faceRegionBtn.addEventListener("click", toggleClassicFaceSelection);
+els.selectConnectedBtn?.addEventListener("click", () => setConnectedTrianglePickMode(!connectedTrianglePickMode));
 els.openingPickBtn?.addEventListener("click", () => setOpeningPickMode(!openingPickMode));
 els.lineToolBtn.addEventListener("click", () => setLineSketchMode(!lineSketchMode));
 els.triangleBuildBtn?.addEventListener("click", () => setTriangleBuildMode(!triangleBuildMode));
@@ -675,6 +676,7 @@ document.querySelector("#removeMarksBtn").addEventListener("click", removeMarker
 document.querySelector("#copyTriBtn").addEventListener("click", copySelectedTriangles);
 document.querySelector("#pasteTriBtn").addEventListener("click", pasteCopiedTriangles);
 els.paintTriInput.addEventListener("change", () => {
+  if (els.paintTriInput.checked) connectedTrianglePickMode = false;
   if (els.paintTriInput.checked) {
     releaseSurfaceInteractionForClassicSelection();
     if (surfaceComponentMode !== "triangle" || !facePickMode || coplanarFacePickMode) {
@@ -697,6 +699,7 @@ els.paintTriBtn?.addEventListener("click", () => {
 els.areaTriBtn.addEventListener("click", () => {
   els.areaTriInput.checked = !els.areaTriInput.checked;
   if (els.areaTriInput.checked) {
+    connectedTrianglePickMode = false;
     els.paintTriInput.checked = false;
     coplanarFacePickMode = false;
   }
@@ -1624,6 +1627,10 @@ canvas.addEventListener("pointerdown", event => {
     paintTriangleFromPointer(event);
     return;
   }
+  if (connectedTrianglePickMode && hit) {
+    selectConnectedTrianglesFromHit(hit, { append: additiveSelectionRequested(event) });
+    return;
+  }
   if (facePickMode && hit) {
     pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
     return;
@@ -1721,12 +1728,6 @@ canvas.addEventListener("dblclick", event => {
   const hit = hitFromPointerEvent(event);
   if (!hit) return;
   event.preventDefault();
-  if (selectedFaces.length || selectedSurfaceVertices.length || selectedSurfaceEdges.length) {
-    clearSelectedTriangles();
-    updateAll();
-    log("Released the current surface selection with a double-click.");
-    return;
-  }
   if (surfaceComponentMode === "vertex" || surfaceComponentMode === "edge") {
     pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
   } else {

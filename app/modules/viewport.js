@@ -446,6 +446,7 @@ const liveMirrorPreviewBySourceId = new Map();
 let selected = null;
 let facePickMode = false;
 let coplanarFacePickMode = false;
+let connectedTrianglePickMode = false;
 let openingPickMode = false;
 let lineSketchMode = false;
 let triangleBuildMode = false;
@@ -909,6 +910,7 @@ const els = {
   rotationSnapSelect: document.querySelector("#rotationSnapSelect"),
   facePickBtn: document.querySelector("#facePickBtn"),
   faceRegionBtn: document.querySelector("#faceRegionBtn"),
+  selectConnectedBtn: document.querySelector("#selectConnectedBtn"),
   openingPickBtn: document.querySelector("#openingPickBtn"),
   lineToolBtn: document.querySelector("#lineToolBtn"),
   triangleBuildBtn: document.querySelector("#triangleBuildBtn"),
