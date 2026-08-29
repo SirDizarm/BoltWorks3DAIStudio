@@ -1579,6 +1579,27 @@ label {
 .pose-straightener-softness output { min-width: 34px; text-align: right; color: #74e9d0; }
 .pose-straightener-commit-row button:first-child { border-color: #38d6ba; }
 
+.auto-save-status {
+  align-self: center;
+  color: #8fa1a9;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.auto-save-status.saved { color: #74e9d0; }
+.auto-save-status.problem { color: #ffb76d; }
+
+.update-available-btn {
+  border-color: #e1b14b;
+  background: rgba(225, 177, 75, .16);
+  color: #ffd86f;
+  animation: update-available-pulse 1.8s ease-in-out infinite;
+}
+
+@keyframes update-available-pulse {
+  50% { box-shadow: 0 0 0 3px rgba(225, 177, 75, .16); }
+}
+
 .model-tools-body .toolbar-group {
   position: relative;
   display: flex;

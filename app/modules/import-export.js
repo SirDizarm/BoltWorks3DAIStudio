@@ -1337,6 +1337,7 @@ function updateState() {
   els.stateOutput.textContent = `Scene: ${totalObjects} object${totalObjects === 1 ? "" : "s"} | Selected mesh: ${selectedName} | Model triangles: ${selected ? selectedModelTriangles : "—"} | Selected faces: ${selectedFaceCount} | Selected components: ${componentCount} | Marks: ${markerCount}`;
   const exportSelectedObjBtn = document.querySelector("#exportSelectedObjBtn");
   if (exportSelectedObjBtn) exportSelectedObjBtn.disabled = !selected?.geometry;
+  if (typeof scheduleProjectAutoSave === "function") scheduleProjectAutoSave();
 }
 
 function updateAll() {

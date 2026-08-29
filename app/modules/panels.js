@@ -1574,13 +1574,18 @@ canvas.addEventListener("pointerdown", event => {
   const rect = renderer.domElement.getBoundingClientRect();
   lastCanvasPointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
   lastCanvasPointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
-  if (event.button !== 0 || transform.dragging || surfaceTransform.dragging || boneTransform.dragging) return;
-  if ((transform.visible && transform.axis) || (surfaceTransform.visible && surfaceTransform.axis) || (boneTransform.visible && boneTransform.axis)) {
+  if (event.button !== 0 || transform.dragging || surfaceTransform.dragging || boneTransform.dragging || poseStraightenerTransform.dragging) return;
+  if ((transform.visible && transform.axis) || (surfaceTransform.visible && surfaceTransform.axis) || (boneTransform.visible && boneTransform.axis) || (poseStraightenerTransform.visible && poseStraightenerTransform.axis)) {
     pendingScenePick = null;
     return;
   }
   if (spaceCameraMode) return;
   pendingScenePick = null;
+  if (typeof poseStraightenerSelectJointFromEvent === "function" && poseStraightenerSelectJointFromEvent(event)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   if (typeof poseStraightenerAddPointFromEvent === "function" && poseStraightenerAddPointFromEvent(event)) {
     event.preventDefault();
     event.stopImmediatePropagation();
@@ -2035,8 +2040,13 @@ selectObject(null);
 frameSelected();
 detectLocalHost().then(async localHost => {
   const loaded = localHost ? await tryLoadPendingProjectFromHost() : false;
+  const recovered = !loaded && typeof restoreAutoSavedProjectIfBlank === "function"
+    ? await restoreAutoSavedProjectIfBlank()
+    : false;
   log(loaded
     ? "Ready. Loaded project from the installed app host."
+    : recovered
+      ? "Ready. Restored the latest automatic recovery save."
     : localHost
       ? "Ready. Blank scene loaded from the local app host."
       : "Ready. Blank scene loaded.");

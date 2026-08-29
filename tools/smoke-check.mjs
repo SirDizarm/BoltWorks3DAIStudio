@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.38.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.39.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -27,6 +27,7 @@ const viewportSource = moduleSources.get("viewport") || "";
 const aiViewerSource = moduleSources.get("ai-viewer") || "";
 const minecraftSource = moduleSources.get("minecraft") || "";
 const poseStraightenerSource = moduleSources.get("pose-straightener") || "";
+const autoSaveUpdateSource = moduleSources.get("autosave-update") || "";
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolDockingSource}\n${applicationSource}`;
@@ -34,15 +35,37 @@ const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolD
 if (
   !studioModuleOrder.includes("pose-straightener")
   || !documentSource.includes('id="poseStraightenerPanel"')
+  || !documentSource.includes('id="poseStraightenerFinishBtn"')
   || !documentSource.includes('id="poseStraightenerStraightenBtn"')
   || !documentSource.includes('id="poseStraightenerApplyBtn"')
   || !poseStraightenerSource.includes("function poseStraightenerAddPointFromEvent")
+  || !poseStraightenerSource.includes("function poseStraightenerSelectJointFromEvent")
+  || !poseStraightenerSource.includes("const poseStraightenerTransform = new TransformControls")
+  || !poseStraightenerSource.includes("function finishPoseStraightenerChain")
   || !poseStraightenerSource.includes("function straightenPoseStraightenerChain")
   || !poseStraightenerSource.includes('recordHistory("pose straighten mesh")')
   || !panelsSource.includes("poseStraightenerAddPointFromEvent(event)")
   || !styleSource.includes(".pose-straightener-panel")
 ) {
-  throw new Error("Pose Straightener must provide a temporary four-joint mesh deformation workflow under Model Tools.");
+  throw new Error("Pose Straightener must provide a manual variable-joint mesh deformation workflow with direct node rotation under Model Tools.");
+}
+
+if (
+  !studioModuleOrder.includes("autosave-update")
+  || studioModuleOrder.indexOf("autosave-update") <= studioModuleOrder.indexOf("import-export")
+  || studioModuleOrder.indexOf("autosave-update") >= studioModuleOrder.indexOf("panels")
+  || !documentSource.includes('id="autoSaveStatus"')
+  || !documentSource.includes('id="updateAvailableBtn"')
+  || !autoSaveUpdateSource.includes('indexedDB.open(BWS_RECOVERY_DB_NAME, 1)')
+  || !autoSaveUpdateSource.includes("function saveProjectAutoRecoveryNow")
+  || !autoSaveUpdateSource.includes("function restoreAutoSavedProjectIfBlank")
+  || !autoSaveUpdateSource.includes("function checkForBwsUpdate")
+  || !autoSaveUpdateSource.includes('location.replace(nextUrl.href)')
+  || !moduleSources.get("import-export")?.includes("scheduleProjectAutoSave")
+  || !panelsSource.includes("restoreAutoSavedProjectIfBlank")
+  || !styleSource.includes(".update-available-btn")
+) {
+  throw new Error("Online mode must auto-save projects locally and offer a recovery-safe update button without silently reloading the page.");
 }
 
 if (
@@ -1422,7 +1445,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.38.js?v=49.60.38"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.39.js?v=49.60.39"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1468,7 +1491,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.38",
+  "tool-docking.js?v=49.60.39",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2274,8 +2297,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.38 Experimental") || !documentSource.includes("v49.60.38 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.38 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.39 Experimental") || !documentSource.includes("v49.60.39 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.39 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

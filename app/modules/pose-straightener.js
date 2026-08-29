@@ -1,5 +1,6 @@
 const poseStraightenerUi = {
   start: document.querySelector("#poseStraightenerStartBtn"),
+  finish: document.querySelector("#poseStraightenerFinishBtn"),
   cancel: document.querySelector("#poseStraightenerClearBtn"),
   status: document.querySelector("#poseStraightenerStatus"),
   previous: document.querySelector("#poseStraightenerPrevBtn"),
@@ -25,11 +26,86 @@ const poseStraightenerState = {
   selectedJoint: 0,
   helperGroup: null,
   jointMarkers: [],
-  boneLines: null
+  boneLines: null,
+  dragStartPoints: null,
+  dragStartQuaternion: null,
+  dragMeshWorldQuaternion: null,
+  syncingGizmo: false
 };
+
+const poseStraightenerPivot = new THREE.Object3D();
+poseStraightenerPivot.name = "pose straightener rotation pivot";
+poseStraightenerPivot.userData.editorHelper = true;
+scene.add(poseStraightenerPivot);
+
+const poseStraightenerTransform = new TransformControls(camera, renderer.domElement);
+poseStraightenerTransform.name = "pose straightener rotation joystick";
+poseStraightenerTransform.setMode("rotate");
+poseStraightenerTransform.setSpace("world");
+poseStraightenerTransform.setSize(.78);
+poseStraightenerTransform.visible = false;
+scene.add(poseStraightenerTransform);
+
+poseStraightenerTransform.addEventListener("dragging-changed", event => {
+  orbit.enabled = !event.value;
+});
+
+poseStraightenerTransform.addEventListener("mouseDown", () => {
+  const state = poseStraightenerState;
+  if (!state.active || state.placing || state.restPoints.length < 2) return;
+  state.dragStartPoints = state.posedPoints.map(point => point.clone());
+  state.dragStartQuaternion = poseStraightenerPivot.quaternion.clone();
+  state.target.updateWorldMatrix(true, false);
+  state.dragMeshWorldQuaternion = state.target.getWorldQuaternion(new THREE.Quaternion());
+});
+
+poseStraightenerTransform.addEventListener("objectChange", () => {
+  const state = poseStraightenerState;
+  if (state.syncingGizmo || !state.dragStartPoints || !state.dragStartQuaternion || !state.dragMeshWorldQuaternion) return;
+  const deltaWorld = poseStraightenerPivot.quaternion.clone().multiply(state.dragStartQuaternion.clone().invert());
+  const meshWorld = state.dragMeshWorldQuaternion;
+  const deltaLocal = meshWorld.clone().invert().multiply(deltaWorld).multiply(meshWorld);
+  state.posedPoints = state.dragStartPoints.map(point => point.clone());
+  const pivot = state.posedPoints[state.selectedJoint].clone();
+  for (let index = state.selectedJoint + 1; index < state.posedPoints.length; index += 1) {
+    state.posedPoints[index].sub(pivot).applyQuaternion(deltaLocal).add(pivot);
+  }
+  poseStraightenerDeform();
+});
+
+poseStraightenerTransform.addEventListener("mouseUp", () => {
+  const state = poseStraightenerState;
+  state.dragStartPoints = null;
+  state.dragStartQuaternion = null;
+  state.dragMeshWorldQuaternion = null;
+  if (!poseStraightenerTransform.dragging) poseStraightenerSyncGizmo();
+  poseStraightenerSetStatus(`Joint ${state.selectedJoint + 1} rotated with the joystick. Apply to keep it or Cancel to restore the mesh.`);
+});
 
 function poseStraightenerSetStatus(message) {
   if (poseStraightenerUi.status) poseStraightenerUi.status.textContent = message;
+}
+
+function poseStraightenerReady() {
+  const state = poseStraightenerState;
+  return state.active && !state.placing && state.restPoints.length >= 2;
+}
+
+function poseStraightenerSyncGizmo() {
+  const state = poseStraightenerState;
+  if (!poseStraightenerReady() || !state.target || !state.posedPoints[state.selectedJoint]) {
+    poseStraightenerTransform.detach();
+    poseStraightenerTransform.visible = false;
+    return;
+  }
+  state.syncingGizmo = true;
+  const worldPoint = state.target.localToWorld(state.posedPoints[state.selectedJoint].clone());
+  poseStraightenerPivot.position.copy(worldPoint);
+  poseStraightenerPivot.quaternion.identity();
+  poseStraightenerPivot.updateMatrixWorld(true);
+  poseStraightenerTransform.attach(poseStraightenerPivot);
+  poseStraightenerTransform.visible = true;
+  state.syncingGizmo = false;
 }
 
 function poseStraightenerTargetIsUsable(mesh) {
@@ -47,6 +123,8 @@ function poseStraightenerDisposeHelpers() {
   poseStraightenerState.helperGroup = null;
   poseStraightenerState.jointMarkers = [];
   poseStraightenerState.boneLines = null;
+  poseStraightenerTransform.detach();
+  poseStraightenerTransform.visible = false;
 }
 
 function poseStraightenerMarkerRadius() {
@@ -86,8 +164,8 @@ function poseStraightenerRefreshHelpers() {
     );
     marker.name = `pose straightener joint ${index + 1}`;
     marker.userData.editorHelper = true;
+    marker.userData.poseStraightenerJointIndex = index;
     marker.renderOrder = 1251;
-    marker.raycast = () => null;
     state.helperGroup.add(marker);
     state.jointMarkers.push(marker);
   }
@@ -106,19 +184,21 @@ function poseStraightenerRefreshHelpers() {
   for (let index = 0; index < state.posedPoints.length - 1; index += 1) points.push(state.posedPoints[index], state.posedPoints[index + 1]);
   state.boneLines.geometry.dispose();
   state.boneLines.geometry = new THREE.BufferGeometry().setFromPoints(points);
+  poseStraightenerSyncGizmo();
 }
 
 function poseStraightenerUpdateUi() {
   const state = poseStraightenerState;
-  const ready = state.active && state.restPoints.length === 4;
+  const ready = poseStraightenerReady();
   if (poseStraightenerUi.start) {
-    poseStraightenerUi.start.textContent = state.placing ? `Place Joint ${state.restPoints.length + 1} of 4` : "Place 4 Joints";
+    poseStraightenerUi.start.textContent = state.placing ? `Restart Placement (${state.restPoints.length})` : "Start Joint Chain";
     poseStraightenerUi.start.classList.toggle("active", state.placing);
   }
+  if (poseStraightenerUi.finish) poseStraightenerUi.finish.disabled = !state.placing || state.restPoints.length < 2;
   if (poseStraightenerUi.cancel) poseStraightenerUi.cancel.disabled = !state.active;
   if (poseStraightenerUi.previous) poseStraightenerUi.previous.disabled = !ready;
   if (poseStraightenerUi.next) poseStraightenerUi.next.disabled = !ready;
-  if (poseStraightenerUi.rotate) poseStraightenerUi.rotate.disabled = !ready || state.selectedJoint === 0;
+  if (poseStraightenerUi.rotate) poseStraightenerUi.rotate.disabled = !ready || state.selectedJoint >= state.restPoints.length - 1;
   if (poseStraightenerUi.straighten) poseStraightenerUi.straighten.disabled = !ready;
   if (poseStraightenerUi.softness) poseStraightenerUi.softness.disabled = !ready;
   if (poseStraightenerUi.apply) poseStraightenerUi.apply.disabled = !ready;
@@ -204,7 +284,7 @@ function poseStraightenerDeform() {
 function startPoseStraightener() {
   if (poseStraightenerState.active) cancelPoseStraightener({ announce: false });
   if (!poseStraightenerTargetIsUsable(selected)) {
-    poseStraightenerSetStatus("Select one editable mesh first, then press Place 4 Joints.");
+    poseStraightenerSetStatus("Select one editable mesh first, then press Start Joint Chain.");
     log("Pose Straightener needs one editable mesh selected.");
     return;
   }
@@ -218,9 +298,27 @@ function startPoseStraightener() {
     posedPoints: [],
     selectedJoint: 0
   });
-  poseStraightenerSetStatus("Click joint 1 of 4 on the selected mesh. Place them in order through the part.");
+  transform.detach();
+  transform.visible = false;
+  poseStraightenerSetStatus("Click joint 1 on the selected mesh. Keep adding as many as needed, then press Finish Chain.");
   poseStraightenerUpdateUi();
-  log(`Pose Straightener armed for ${selected.name}. Place four joints in order.`);
+  log(`Pose Straightener armed for ${selected.name}. Place any number of joints, then finish the chain.`);
+}
+
+function poseStraightenerSelectJointFromEvent(event) {
+  const state = poseStraightenerState;
+  if (!poseStraightenerReady() || poseStraightenerTransform.dragging) return false;
+  const rect = renderer.domElement.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+  pointer.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+  raycaster.setFromCamera(pointer, camera);
+  const hit = raycaster.intersectObjects(state.jointMarkers, false)[0];
+  if (!hit) return false;
+  state.selectedJoint = Number(hit.object.userData.poseStraightenerJointIndex) || 0;
+  const terminalNote = state.selectedJoint === state.restPoints.length - 1 ? " This is the end joint, so it has no following section to rotate." : " Drag the rotation joystick to bend every following section.";
+  poseStraightenerSetStatus(`Joint ${state.selectedJoint + 1} selected directly.${terminalNote}`);
+  poseStraightenerUpdateUi();
+  return true;
 }
 
 function poseStraightenerAddPointFromEvent(event) {
@@ -239,21 +337,24 @@ function poseStraightenerAddPointFromEvent(event) {
   state.restPoints.push(localPoint.clone());
   state.posedPoints.push(localPoint.clone());
   state.selectedJoint = state.restPoints.length - 1;
-  if (state.restPoints.length === 4) {
-    state.placing = false;
-    state.selectedJoint = 1;
-    poseStraightenerSetStatus("Chain ready. Joint 2 selected (usually the knee). Straighten it or enter a rotation.");
-    log("Pose Straightener chain ready. Preview changes can now be adjusted, applied, or cancelled.");
-  } else {
-    poseStraightenerSetStatus(`Joint ${state.restPoints.length} placed. Click joint ${state.restPoints.length + 1} of 4.`);
-  }
+  poseStraightenerSetStatus(`Joint ${state.restPoints.length} placed. Click to add another, or press Finish Chain.`);
   poseStraightenerUpdateUi();
   return true;
 }
 
+function finishPoseStraightenerChain() {
+  const state = poseStraightenerState;
+  if (!state.active || !state.placing || state.restPoints.length < 2) return;
+  state.placing = false;
+  state.selectedJoint = state.restPoints.length > 2 ? 1 : 0;
+  poseStraightenerSetStatus(`Chain ready with ${state.restPoints.length} joints. Click any joint sphere and rotate it with the joystick.`);
+  poseStraightenerUpdateUi();
+  log(`Pose Straightener chain ready with ${state.restPoints.length} joints. Manual node rotation is active.`);
+}
+
 function poseStraightenerSelectJoint(delta) {
   const state = poseStraightenerState;
-  if (state.restPoints.length !== 4) return;
+  if (!poseStraightenerReady()) return;
   state.selectedJoint = (state.selectedJoint + delta + state.restPoints.length) % state.restPoints.length;
   poseStraightenerSetStatus(`Joint ${state.selectedJoint + 1} selected. Rotation moves every following section.`);
   poseStraightenerUpdateUi();
@@ -261,7 +362,7 @@ function poseStraightenerSelectJoint(delta) {
 
 function rotatePoseStraightenerJoint() {
   const state = poseStraightenerState;
-  if (!state.active || state.restPoints.length !== 4 || state.selectedJoint <= 0) return;
+  if (!poseStraightenerReady() || state.selectedJoint >= state.restPoints.length - 1) return;
   const degrees = [poseStraightenerUi.rotateX, poseStraightenerUi.rotateY, poseStraightenerUi.rotateZ].map(input => Number(input?.value || 0));
   if (!degrees.every(Number.isFinite) || degrees.every(value => Math.abs(value) < 1e-6)) {
     poseStraightenerSetStatus("Enter a non-zero X, Y, or Z rotation for the selected joint.");
@@ -277,13 +378,13 @@ function rotatePoseStraightenerJoint() {
 
 function straightenPoseStraightenerChain() {
   const state = poseStraightenerState;
-  if (!state.active || state.restPoints.length !== 4) return;
-  let direction = state.posedPoints[3].clone().sub(state.posedPoints[0]);
+  if (!poseStraightenerReady()) return;
+  let direction = state.posedPoints[state.posedPoints.length - 1].clone().sub(state.posedPoints[0]);
   if (direction.lengthSq() < 1e-10) direction = state.restPoints[1].clone().sub(state.restPoints[0]);
   if (direction.lengthSq() < 1e-10) direction.set(0, -1, 0);
   direction.normalize();
   const straight = [state.posedPoints[0].clone()];
-  for (let index = 0; index < 3; index += 1) straight.push(straight[index].clone().addScaledVector(direction, state.restPoints[index].distanceTo(state.restPoints[index + 1])));
+  for (let index = 0; index < state.restPoints.length - 1; index += 1) straight.push(straight[index].clone().addScaledVector(direction, state.restPoints[index].distanceTo(state.restPoints[index + 1])));
   state.posedPoints = straight;
   poseStraightenerDeform();
   poseStraightenerSetStatus("Chain straightened. Use joint rotation for the foot angle, then Apply to Mesh.");
@@ -303,30 +404,34 @@ function cancelPoseStraightener({ announce = true } = {}) {
   const state = poseStraightenerState;
   if (state.active && state.target && state.sourcePositions) poseStraightenerWritePositions(state.sourcePositions);
   poseStraightenerDisposeHelpers();
-  Object.assign(state, { active: false, placing: false, target: null, sourcePositions: null, restPoints: [], posedPoints: [], selectedJoint: 0 });
+  Object.assign(state, { active: false, placing: false, target: null, sourcePositions: null, restPoints: [], posedPoints: [], selectedJoint: 0, dragStartPoints: null, dragStartQuaternion: null, dragMeshWorldQuaternion: null });
   poseStraightenerSetStatus("Select one mesh, then place joints from the top of the part to its end.");
   poseStraightenerUpdateUi();
+  updateTransformAttachment();
   if (announce) log("Pose Straightener cancelled. The original mesh was restored.");
 }
 
 function applyPoseStraightener() {
   const state = poseStraightenerState;
   const position = state.target?.geometry?.getAttribute?.("position");
-  if (!state.active || !position || state.restPoints.length !== 4) return;
+  if (!poseStraightenerReady() || !position) return;
   const finalPositions = position.array.slice();
   poseStraightenerWritePositions(state.sourcePositions);
   recordHistory("pose straighten mesh");
   poseStraightenerWritePositions(finalPositions);
   const targetName = state.target.name;
+  state.target.userData.geometry = geometryToData(state.target.geometry);
   poseStraightenerDisposeHelpers();
-  Object.assign(state, { active: false, placing: false, target: null, sourcePositions: null, restPoints: [], posedPoints: [], selectedJoint: 0 });
+  Object.assign(state, { active: false, placing: false, target: null, sourcePositions: null, restPoints: [], posedPoints: [], selectedJoint: 0, dragStartPoints: null, dragStartQuaternion: null, dragMeshWorldQuaternion: null });
   poseStraightenerSetStatus("Applied. Select another mesh or place a new chain to continue.");
   poseStraightenerUpdateUi();
+  updateTransformAttachment();
   updateAll();
   log(`Pose Straightener baked the new shape into ${targetName}.`, { mesh: targetName, undoReady: true });
 }
 
 poseStraightenerUi.start?.addEventListener("click", startPoseStraightener);
+poseStraightenerUi.finish?.addEventListener("click", finishPoseStraightenerChain);
 poseStraightenerUi.cancel?.addEventListener("click", () => cancelPoseStraightener());
 poseStraightenerUi.previous?.addEventListener("click", () => poseStraightenerSelectJoint(-1));
 poseStraightenerUi.next?.addEventListener("click", () => poseStraightenerSelectJoint(1));
@@ -336,7 +441,15 @@ poseStraightenerUi.reset?.addEventListener("click", resetPoseStraightenerShape);
 poseStraightenerUi.apply?.addEventListener("click", applyPoseStraightener);
 poseStraightenerUi.softness?.addEventListener("input", () => {
   poseStraightenerUi.softnessOutput.textContent = `${poseStraightenerUi.softness.value}%`;
-  if (poseStraightenerState.active && poseStraightenerState.restPoints.length === 4) poseStraightenerDeform();
+  if (poseStraightenerReady()) poseStraightenerDeform();
 });
+
+// Joint spheres win over overlapping rotation rings. This capture listener lets
+// tightly spaced chains remain directly selectable without hiding the joystick.
+renderer.domElement.addEventListener("pointerdown", event => {
+  if (event.button !== 0 || !poseStraightenerSelectJointFromEvent(event)) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+}, true);
 
 poseStraightenerUpdateUi();
