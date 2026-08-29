@@ -2668,6 +2668,9 @@ if (!documentSource.includes('id="modelSelectTargetAllBtn"') || !documentSource.
 if (moduleSources.get("rigging")?.includes("restoreAnimationBindPose({ render: false });\n    applyCurrentRigPose();\n    log(\"T-Pose Fitting enabled") || !moduleSources.get("rigging")?.includes("T-Pose Fitting enabled without changing the current head, hand, foot, skin, or armor transforms") || !moduleSources.get("meshes")?.includes("const animatorRigObjectTransform") || !moduleSources.get("meshes")?.includes("const selectedStoredPivotActive = !animatorRigObjectTransform")) {
   throw new Error("Entering T-Pose Fitting must preserve the visible pose and keep an Animator skin/armor Rotate gizmo attached to the selected object.");
 }
+if (!moduleSources.get("rigging")?.includes("function rebaseAnimationKeysToBindPose(previousBindPose)") || !moduleSources.get("rigging")?.includes("const animationDelta = keyedQuaternion.multiply(oldBindQuaternion.clone().invert())") || !moduleSources.get("rigging")?.includes("const rebasedQuaternion = animationDelta.multiply(newBindQuaternion)") || !moduleSources.get("rigging")?.includes("rebaseAnimationKeysToBindPose(previousBindPose);")) {
+  throw new Error("T-Pose Fitting and Glue must rebase every animation clip onto the newly fitted bind pose instead of restoring old absolute bone transforms.");
+}
 if (!documentSource.includes('id="centerPivotBtn"') || !moduleSources.get("meshes")?.includes('["translate", "rotate", "scale"].includes(activeTransformMode)') || !moduleSources.get("meshes")?.includes("transform.attach(groupPivot)")) {
   throw new Error("A stored or centered single-mesh pivot must position the Move, Rotate, and Scale gizmos consistently.");
 }

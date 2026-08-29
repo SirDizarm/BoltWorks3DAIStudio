@@ -59233,12 +59233,15 @@ ${new OBJExporter().parse(group)}`;
   }
   function commitTPoseBoneFitting() {
     if (!tPoseFittingMode) return;
+    const previousBindPose = snapshotRigBindPose();
     for (const bone of rigBones) {
       bone.bindPosition = bone.position.clone();
       bone.bindRotation = bone.rotation.clone();
       bone.bindTail = (bone.tail || bone.position.clone().add(new Vector3(0, 0.12, 0))).clone();
       bone.tailOffset = bone.bindTail.clone().sub(bone.bindPosition);
     }
+    rigBones.forEach((bone) => initializeBoneRestState(bone));
+    rebaseAnimationKeysToBindPose(previousBindPose);
     if (activeSkinRuntime) setupSkinnedRig();
     captureAnimationBindingRest();
     applyCurrentRigPose();
@@ -59400,7 +59403,63 @@ ${new OBJExporter().parse(group)}`;
     bone.restLocalPosition = parent ? bone.bindPosition.clone().sub(parent.bindPosition || parent.position) : bone.bindPosition.clone();
     return bone;
   }
+  function snapshotRigBindPose() {
+    return new Map(rigBones.map((bone) => [bone.id, {
+      position: (bone.bindPosition || bone.position).clone(),
+      rotation: (bone.bindRotation || bone.rotation).clone()
+    }]));
+  }
+  function rebaseAnimationKeysToBindPose(previousBindPose) {
+    if (!(previousBindPose instanceof Map) || !previousBindPose.size) return;
+    const keyCollections = /* @__PURE__ */ new Set([animationState.keys]);
+    Object.values(animationState.clips || {}).forEach((clip) => {
+      if (clip?.keys && typeof clip.keys === "object") keyCollections.add(clip.keys);
+    });
+    for (const keysByBone of keyCollections) {
+      if (!keysByBone || typeof keysByBone !== "object") continue;
+      for (const bone of rigBones) {
+        const oldBind = previousBindPose.get(bone.id);
+        const frames = keysByBone[bone.id];
+        if (!oldBind || !Array.isArray(frames)) continue;
+        const newBindPosition = bone.bindPosition || bone.position;
+        const newBindRotation = bone.bindRotation || bone.rotation;
+        const order = bone.blockbenchLocalRotation ? "ZYX" : "XYZ";
+        const oldBindQuaternion = new Quaternion().setFromEuler(new Euler(
+          oldBind.rotation.x,
+          oldBind.rotation.y,
+          oldBind.rotation.z,
+          order
+        ));
+        const newBindQuaternion = new Quaternion().setFromEuler(new Euler(
+          newBindRotation.x,
+          newBindRotation.y,
+          newBindRotation.z,
+          order
+        ));
+        for (const frame of frames) {
+          if (Array.isArray(frame.position) && frame.position.length >= 3) {
+            const offset = new Vector3().fromArray(frame.position).sub(oldBind.position);
+            frame.position = newBindPosition.clone().add(offset).toArray();
+          }
+          if (Array.isArray(frame.rotation) && frame.rotation.length >= 3) {
+            const keyedQuaternion = new Quaternion().setFromEuler(new Euler(
+              Number(frame.rotation[0]) || 0,
+              Number(frame.rotation[1]) || 0,
+              Number(frame.rotation[2]) || 0,
+              order
+            ));
+            const animationDelta = keyedQuaternion.multiply(oldBindQuaternion.clone().invert());
+            const rebasedQuaternion = animationDelta.multiply(newBindQuaternion);
+            const rebasedEuler = new Euler().setFromQuaternion(rebasedQuaternion, order);
+            frame.rotation = [rebasedEuler.x, rebasedEuler.y, rebasedEuler.z];
+          }
+        }
+      }
+    }
+    syncActiveAnimationClip();
+  }
   function captureRigBindPose() {
+    const previousBindPose = snapshotRigBindPose();
     rigBones.forEach((bone) => {
       if (!bone.tail) bone.tail = bone.position.clone().add(new Vector3(0, 0.12, 0));
       bone.bindPosition = bone.position.clone();
@@ -59408,6 +59467,7 @@ ${new OBJExporter().parse(group)}`;
       bone.bindTail = bone.tail.clone();
     });
     rigBones.forEach((bone) => initializeBoneRestState(bone));
+    rebaseAnimationKeysToBindPose(previousBindPose);
     animationState.bindingRest = null;
   }
   function freshBoneId() {

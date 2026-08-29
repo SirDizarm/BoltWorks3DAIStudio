@@ -472,12 +472,15 @@ function setTPoseFittingMode(enabled) {
 
 function commitTPoseBoneFitting() {
   if (!tPoseFittingMode) return;
+  const previousBindPose = snapshotRigBindPose();
   for (const bone of rigBones) {
     bone.bindPosition = bone.position.clone();
     bone.bindRotation = bone.rotation.clone();
     bone.bindTail = (bone.tail || bone.position.clone().add(new THREE.Vector3(0, .12, 0))).clone();
     bone.tailOffset = bone.bindTail.clone().sub(bone.bindPosition);
   }
+  rigBones.forEach(bone => initializeBoneRestState(bone));
+  rebaseAnimationKeysToBindPose(previousBindPose);
   if (activeSkinRuntime) setupSkinnedRig();
   captureAnimationBindingRest();
   applyCurrentRigPose();
@@ -655,10 +658,64 @@ function initializeBoneRestState(bone, { capture = false } = {}) {
   return bone;
 }
 
+function snapshotRigBindPose() {
+  return new Map(rigBones.map(bone => [bone.id, {
+    position: (bone.bindPosition || bone.position).clone(),
+    rotation: (bone.bindRotation || bone.rotation).clone()
+  }]));
+}
+
+function rebaseAnimationKeysToBindPose(previousBindPose) {
+  if (!(previousBindPose instanceof Map) || !previousBindPose.size) return;
+  // The active key object normally aliases its clip, but imported/legacy files
+  // may keep a separate copy. Visit each distinct key collection once.
+  const keyCollections = new Set([animationState.keys]);
+  Object.values(animationState.clips || {}).forEach(clip => {
+    if (clip?.keys && typeof clip.keys === "object") keyCollections.add(clip.keys);
+  });
+  for (const keysByBone of keyCollections) {
+    if (!keysByBone || typeof keysByBone !== "object") continue;
+    for (const bone of rigBones) {
+      const oldBind = previousBindPose.get(bone.id);
+      const frames = keysByBone[bone.id];
+      if (!oldBind || !Array.isArray(frames)) continue;
+      const newBindPosition = bone.bindPosition || bone.position;
+      const newBindRotation = bone.bindRotation || bone.rotation;
+      const order = bone.blockbenchLocalRotation ? "ZYX" : "XYZ";
+      const oldBindQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+        oldBind.rotation.x, oldBind.rotation.y, oldBind.rotation.z, order
+      ));
+      const newBindQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+        newBindRotation.x, newBindRotation.y, newBindRotation.z, order
+      ));
+      for (const frame of frames) {
+        if (Array.isArray(frame.position) && frame.position.length >= 3) {
+          const offset = new THREE.Vector3().fromArray(frame.position).sub(oldBind.position);
+          frame.position = newBindPosition.clone().add(offset).toArray();
+        }
+        if (Array.isArray(frame.rotation) && frame.rotation.length >= 3) {
+          const keyedQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+            Number(frame.rotation[0]) || 0,
+            Number(frame.rotation[1]) || 0,
+            Number(frame.rotation[2]) || 0,
+            order
+          ));
+          const animationDelta = keyedQuaternion.multiply(oldBindQuaternion.clone().invert());
+          const rebasedQuaternion = animationDelta.multiply(newBindQuaternion);
+          const rebasedEuler = new THREE.Euler().setFromQuaternion(rebasedQuaternion, order);
+          frame.rotation = [rebasedEuler.x, rebasedEuler.y, rebasedEuler.z];
+        }
+      }
+    }
+  }
+  syncActiveAnimationClip();
+}
+
 function captureRigBindPose() {
   // Freeze exactly what the user placed. This must happen before hierarchy
   // resolution; otherwise a newly-created child can snap back to its original
   // default location as soon as Glue is pressed.
+  const previousBindPose = snapshotRigBindPose();
   rigBones.forEach(bone => {
     if (!bone.tail) bone.tail = bone.position.clone().add(new THREE.Vector3(0, .12, 0));
     bone.bindPosition = bone.position.clone();
@@ -666,6 +723,7 @@ function captureRigBindPose() {
     bone.bindTail = bone.tail.clone();
   });
   rigBones.forEach(bone => initializeBoneRestState(bone));
+  rebaseAnimationKeysToBindPose(previousBindPose);
   animationState.bindingRest = null;
 }
 
