@@ -676,6 +676,7 @@ document.querySelector("#digIntoBtn").addEventListener("click", digIntoSelectedF
 document.querySelector("#removeMarksBtn").addEventListener("click", removeMarkersForSelection);
 document.querySelector("#copyTriBtn").addEventListener("click", copySelectedTriangles);
 document.querySelector("#pasteTriBtn").addEventListener("click", pasteCopiedTriangles);
+els.pasteMirroredTriBtn?.addEventListener("click", pasteCopiedTrianglesMirrored);
 els.paintTriInput.addEventListener("change", () => {
   if (els.paintTriInput.checked) connectedTrianglePickMode = false;
   if (els.paintTriInput.checked) {
@@ -1934,6 +1935,7 @@ window.ModelerStudio = {
   selectConnectedTrianglesFromHit,
   copySelectedTriangles,
   pasteCopiedTriangles,
+  pasteCopiedTrianglesMirrored,
   fillSelectedHole,
   flipSelectedParts,
   extendSelectedFaces,

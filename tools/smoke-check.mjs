@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.33.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.34.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -239,6 +239,44 @@ function functionSource(source, name) {
   built.geometry.dispose();
   sourceGeometry.dispose();
   nonManifoldGeometry.dispose();
+}
+
+{
+  const context = { THREE, geometryToData: () => ({}) };
+  vm.createContext(context);
+  vm.runInContext([
+    "axisIndex",
+    "component",
+    "setComponent",
+    "swapAttributeVertices",
+    "mirrorMeshAcrossWorldPlane"
+  ].map(name => functionSource(meshesSource, name)).join("\n"), context);
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute([
+    -.5, 0, 0, .5, 0, 0, 0, 1, 0
+  ], 3));
+  geometry.setAttribute("uv", new THREE.Float32BufferAttribute([0, 0, 1, 0, .5, 1], 2));
+  const mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial());
+  mesh.position.set(-2, 3, 4);
+  mesh.updateWorldMatrix(true, false);
+  const before = [0, 1, 2].map(index => new THREE.Vector3().fromBufferAttribute(mesh.geometry.getAttribute("position"), index).applyMatrix4(mesh.matrixWorld));
+  context.mirrorMeshAcrossWorldPlane(mesh, "x", new THREE.Vector3(0, 0, 0));
+  mesh.updateWorldMatrix(true, false);
+  const after = [0, 1, 2].map(index => new THREE.Vector3().fromBufferAttribute(mesh.geometry.getAttribute("position"), index).applyMatrix4(mesh.matrixWorld));
+  const exactOpposite = before.every(point => after.some(candidate => (
+    Math.abs(candidate.x + point.x) < 1e-6
+    && Math.abs(candidate.y - point.y) < 1e-6
+    && Math.abs(candidate.z - point.z) < 1e-6
+  )));
+  if (!exactOpposite || Math.abs(mesh.position.x - 2) > 1e-6) {
+    throw new Error(`Mirrored triangle patches must keep Y/Z and land at the exact opposite X coordinates. ${JSON.stringify({
+      position: mesh.position.toArray(),
+      before: before.map(point => point.toArray()),
+      after: after.map(point => point.toArray())
+    })}`);
+  }
+  mesh.geometry.dispose();
+  mesh.material.dispose();
 }
 
 {
@@ -1369,7 +1407,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.33.js?v=49.60.33"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.34.js?v=49.60.34"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1410,7 +1448,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.33",
+  "tool-docking.js?v=49.60.34",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1873,6 +1911,9 @@ for (const required of [
   "updateSelectionBox",
   "copySelectedTriangles",
   "pasteCopiedTriangles",
+  "pasteCopiedTrianglesMirrored",
+  "pasteMirroredTriBtn",
+  "Paste Mirrored",
   "fillSelectedHole",
   "copiedTrianglePatch",
   "makeTrianglePatchSpec",
@@ -2209,8 +2250,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.33 Experimental") || !documentSource.includes("v49.60.33 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.33 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.34 Experimental") || !documentSource.includes("v49.60.34 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.34 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

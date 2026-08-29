@@ -8096,6 +8096,37 @@ function pasteCopiedTriangles() {
   return mesh;
 }
 
+function pasteCopiedTrianglesMirrored() {
+  if (!copiedTrianglePatch) {
+    log("Copy selected triangles first, then press Paste Mirrored.");
+    return null;
+  }
+  const axis = ["x", "y", "z"].includes(els.symmetryAxisSelect?.value) ? els.symmetryAxisSelect.value : "x";
+  const plane = Number(els.symmetryPlaneInput?.value) || 0;
+  copiedTrianglePatch.pasteCount++;
+  const spec = JSON.parse(JSON.stringify(copiedTrianglePatch.spec));
+  spec.name = `${spec.name} ${axis.toUpperCase()} mirror ${copiedTrianglePatch.pasteCount}`;
+  recordHistory(`paste mirrored triangle patch ${axis}`);
+  const mesh = addObject(spec, { record: false, select: false, update: false });
+  const center = new THREE.Vector3();
+  center[axis] = plane;
+  mirrorMeshAcrossWorldPlane(mesh, axis, center);
+  checkedIds.clear();
+  activeGroupIds = [];
+  selectedGroupRecordId = null;
+  selectObject(mesh);
+  updateAll();
+  log(`Pasted ${copiedTrianglePatch.count} copied triangle${copiedTrianglePatch.count === 1 ? "" : "s"} at the exact opposite ${axis.toUpperCase()} position across ${axis.toUpperCase()}=${round(plane)}.`, {
+    part: mesh.name,
+    axis: axis.toUpperCase(),
+    symmetryPlane: round(plane),
+    position: mesh.getWorldPosition(new THREE.Vector3()).toArray().map(round),
+    pasteOffsetAdded: false,
+    undoReady: true
+  });
+  return mesh;
+}
+
 function boundaryLoopsFromWorldTriangles(triangles) {
   const vertexPoints = new Map();
   const edgeMap = new Map();

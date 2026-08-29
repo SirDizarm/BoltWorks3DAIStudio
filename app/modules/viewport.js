@@ -950,6 +950,7 @@ const els = {
   removeMarksBtn: document.querySelector("#removeMarksBtn"),
   copyTriBtn: document.querySelector("#copyTriBtn"),
   pasteTriBtn: document.querySelector("#pasteTriBtn"),
+  pasteMirroredTriBtn: document.querySelector("#pasteMirroredTriBtn"),
   extendFaceBtn: document.querySelector("#extendFaceBtn"),
   pullFaceBtn: document.querySelector("#pullFaceBtn"),
   pullToTargetBtn: document.querySelector("#pullToTargetBtn"),
