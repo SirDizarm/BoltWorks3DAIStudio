@@ -56,10 +56,51 @@ let referenceViewPanDrag = null;
 
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
-orbit.minDistance = 0.05;
+orbit.minDistance = 0.0005;
 orbit.maxDistance = 500000;
+orbit.zoomSpeed = 1.1;
+orbit.screenSpacePanning = true;
+orbit.zoomToCursor = true;
 orbit.target.set(0, 1, 0);
 let modelTileCameraLocked = false;
+
+function closeCameraNavigationPlan(distance, near) {
+  const safeDistance = Math.max(0, Number(distance) || 0);
+  const safeNear = Math.max(.0001, Number(near) || .05);
+  const triggerDistance = Math.max(.015, Math.min(.08, safeNear * 2));
+  if (safeDistance > triggerDistance) return null;
+  const targetDistance = Math.max(.12, triggerDistance * 5);
+  return {
+    triggerDistance,
+    targetDistance,
+    near: Math.max(.0001, Math.min(safeNear, targetDistance / 1000))
+  };
+}
+
+function syncCloseCameraPanSpeed() {
+  const distance = Math.max(.0005, camera.position.distanceTo(orbit.target));
+  orbit.panSpeed = THREE.MathUtils.clamp(.3 / distance, 1, 12);
+}
+
+function keepCloseCameraNavigationResponsive() {
+  const distance = camera.position.distanceTo(orbit.target);
+  const plan = closeCameraNavigationPlan(distance, camera.near);
+  if (!plan) return false;
+  const forward = camera.getWorldDirection(new THREE.Vector3()).normalize();
+  orbit.target.copy(camera.position).addScaledVector(forward, plan.targetDistance);
+  camera.near = plan.near;
+  camera.updateProjectionMatrix();
+  syncCloseCameraPanSpeed();
+  orbit.update();
+  return true;
+}
+
+orbit.addEventListener("change", syncCloseCameraPanSpeed);
+syncCloseCameraPanSpeed();
+canvas.addEventListener("wheel", event => {
+  if (event.deltaY >= 0 || !orbit.enabled || modelTileCameraLocked) return;
+  requestAnimationFrame(keepCloseCameraNavigationResponsive);
+}, { passive: true });
 
 function applyModelTileCameraLock() {
   const azimuth = Number(els.modelTileCameraAzimuthInput?.value) || 45;
@@ -524,6 +565,7 @@ scene.add(knifeCutGuideGroup);
 const selectionOutlineGroup = new THREE.Group();
 selectionOutlineGroup.name = "selected object silhouette";
 scene.add(selectionOutlineGroup);
+let selectionHighlightVisible = localStorage.getItem("boltworks.selectionHighlightVisible") === "true";
 const openingPickGuideGroup = new THREE.Group();
 openingPickGuideGroup.name = "opening pick preview";
 openingPickGuideGroup.visible = false;
@@ -767,6 +809,7 @@ const els = {
   modelSelectTargetSkinBtn: document.querySelector("#modelSelectTargetSkinBtn"),
   modelSelectTargetArmorBtn: document.querySelector("#modelSelectTargetArmorBtn"),
   modelSelectTargetBoneBtn: document.querySelector("#modelSelectTargetBoneBtn"),
+  selectionHighlightToggleBtn: document.querySelector("#selectionHighlightToggleBtn"),
   rigModelOpacityInput: document.querySelector("#rigModelOpacityInput"),
   rigModelOpacityValue: document.querySelector("#rigModelOpacityValue"),
   animationSection: document.querySelector("#animationSection"),

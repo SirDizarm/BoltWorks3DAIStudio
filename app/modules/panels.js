@@ -500,6 +500,8 @@ els.modelSelectTargetAllBtn?.addEventListener("click", () => setModelingSelectio
 els.modelSelectTargetSkinBtn?.addEventListener("click", () => setModelingSelectionTarget("skin"));
 els.modelSelectTargetArmorBtn?.addEventListener("click", () => setModelingSelectionTarget("armor"));
 els.modelSelectTargetBoneBtn?.addEventListener("click", () => setModelingSelectionTarget("bone"));
+els.selectionHighlightToggleBtn?.addEventListener("click", () => setSelectionHighlightVisible(!selectionHighlightVisible));
+setSelectionHighlightVisible(selectionHighlightVisible, { silent: true });
 // boneList is now a row-based list; selection happens per-row in syncBonePanel.
 [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ].forEach(control => {
   control?.addEventListener("change", applyBonePanelValues);

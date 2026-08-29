@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.29.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.30.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -23,6 +23,7 @@ const minecraftRigSmoke = JSON.parse(readFileSync(new URL("../samples/assets/min
 const raptorRig = JSON.parse(readFileSync(new URL("../samples/assets/raptor-rigged.bbmodel", import.meta.url), "utf8"));
 const panelsSource = moduleSources.get("panels") || "";
 const meshesSource = moduleSources.get("meshes") || "";
+const viewportSource = moduleSources.get("viewport") || "";
 const aiViewerSource = moduleSources.get("ai-viewer") || "";
 const minecraftSource = moduleSources.get("minecraft") || "";
 // Preserve the existing checks while testing the new canonical modular source as
@@ -37,6 +38,16 @@ if (
   || !/input, textarea[^}]*user-select:\s*text/s.test(styleSource)
 ) {
   throw new Error("Editor mouse interactions must suppress browser menus and accidental text selection while preserving text inputs and name copying.");
+}
+
+if (
+  !documentSource.includes('id="selectionHighlightToggleBtn"')
+  || !meshesSource.includes("function setSelectionHighlightVisible")
+  || !meshesSource.includes("if (!selectionHighlightVisible) return;")
+  || !panelsSource.includes("setSelectionHighlightVisible(!selectionHighlightVisible)")
+  || !viewportSource.includes('localStorage.getItem("boltworks.selectionHighlightVisible") === "true"')
+) {
+  throw new Error("The selected-mesh blue silhouette must have a remembered, non-destructive visibility toggle.");
 }
 
 if (
@@ -149,6 +160,27 @@ function functionSource(source, name) {
     if (depth === 0) return source.slice(start, index + 1);
   }
   throw new Error(`Could not isolate ${name} from the mesh module.`);
+}
+
+{
+  const context = {};
+  vm.createContext(context);
+  vm.runInContext(functionSource(viewportSource, "closeCameraNavigationPlan"), context);
+  if (context.closeCameraNavigationPlan(.5, .01) !== null) {
+    throw new Error("Normal camera distances must not retarget the orbit focus.");
+  }
+  const closePlan = context.closeCameraNavigationPlan(.005, .01);
+  if (!closePlan || closePlan.targetDistance < .12 || closePlan.near > .001) {
+    throw new Error("Very close camera zoom must move the focus forward and reduce the near plane instead of locking.");
+  }
+  if (
+    !viewportSource.includes("orbit.minDistance = 0.0005")
+    || !viewportSource.includes("orbit.zoomToCursor = true")
+    || !viewportSource.includes("requestAnimationFrame(keepCloseCameraNavigationResponsive)")
+    || !viewportSource.includes("orbit.panSpeed = THREE.MathUtils.clamp")
+  ) {
+    throw new Error("Orbit controls must keep close-up zooming and panning responsive.");
+  }
 }
 
 {
@@ -1247,7 +1279,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.29.js?v=49.60.29"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.30.js?v=49.60.30"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1288,7 +1320,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.29",
+  "tool-docking.js?v=49.60.30",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2075,8 +2107,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.29 Experimental") || !documentSource.includes("v49.60.29 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.29 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.30 Experimental") || !documentSource.includes("v49.60.30 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.30 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

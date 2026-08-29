@@ -824,6 +824,8 @@ function syncSelectionOutlineTransforms() {
 
 function updateSelectionOutline() {
   clearSelectionOutline();
+  selectionOutlineGroup.visible = selectionHighlightVisible;
+  if (!selectionHighlightVisible) return;
   for (const mesh of selectedObjectOutlineTargets()) {
     const outline = new THREE.Mesh(
       mesh.geometry.clone(),
@@ -844,6 +846,18 @@ function updateSelectionOutline() {
     selectionOutlineGroup.add(outline);
   }
   syncSelectionOutlineTransforms();
+}
+
+function setSelectionHighlightVisible(visible, { silent = false } = {}) {
+  selectionHighlightVisible = !!visible;
+  localStorage.setItem("boltworks.selectionHighlightVisible", String(selectionHighlightVisible));
+  if (els.selectionHighlightToggleBtn) {
+    els.selectionHighlightToggleBtn.textContent = selectionHighlightVisible ? "Highlight On" : "Highlight Off";
+    els.selectionHighlightToggleBtn.classList.toggle("active", selectionHighlightVisible);
+    els.selectionHighlightToggleBtn.setAttribute("aria-pressed", String(selectionHighlightVisible));
+  }
+  updateSelectionOutline();
+  if (!silent) log(`Selection highlight ${selectionHighlightVisible ? "shown" : "hidden"}. Selection and editing remain active.`);
 }
 
 function updateCrashPreview() {
