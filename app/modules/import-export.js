@@ -1541,6 +1541,321 @@ function makeZip(entries = []) {
   return new Blob([...chunks, ...centralChunks, endHeader], { type: "application/zip" });
 }
 
+function gameCharacterSafeName(value, fallback = "item") {
+  const cleaned = String(value || fallback).trim().replace(/[^a-zA-Z0-9_-]+/g, "_").replace(/^_+|_+$/g, "");
+  return cleaned || fallback;
+}
+
+function gameCharacterArmorBinding(object) {
+  const mountBoneId = object.userData?.rigArmorMountId
+    ? rigBones.find(bone => bone.armorMountId === object.userData.rigArmorMountId)?.id
+    : null;
+  const boneId = mountBoneId || object.userData?.rigBoneId || null;
+  const bone = boneById(boneId);
+  if (!bone) return null;
+  const key = `rigid:${bone.id}:${object.userData?.id || object.uuid}`;
+  const rest = animationState.bindingRest instanceof Map ? animationState.bindingRest.get(key) : null;
+  return { bone, rest };
+}
+
+function gameCharacterCompactGlbSkins(source) {
+  const input = new Uint8Array(source);
+  const inputView = new DataView(input.buffer, input.byteOffset, input.byteLength);
+  if (inputView.getUint32(0, true) !== 0x46546C67 || inputView.getUint32(4, true) !== 2) return source;
+  const chunks = [];
+  let offset = 12;
+  while (offset + 8 <= input.byteLength) {
+    const length = inputView.getUint32(offset, true);
+    const type = inputView.getUint32(offset + 4, true);
+    chunks.push({ type, data: input.slice(offset + 8, offset + 8 + length) });
+    offset += 8 + length;
+  }
+  const jsonChunk = chunks.find(chunk => chunk.type === 0x4E4F534A);
+  if (!jsonChunk) return source;
+  const gltf = JSON.parse(new TextDecoder().decode(jsonChunk.data).replace(/[\u0000\u0020]+$/g, ""));
+  if (!Array.isArray(gltf.skins) || gltf.skins.length <= 1) return source;
+  for (const node of gltf.nodes || []) if (Number.isInteger(node.skin)) node.skin = 0;
+  gltf.skins = [gltf.skins[0]];
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(gltf));
+  const paddedJson = new Uint8Array((jsonBytes.length + 3) & ~3);
+  paddedJson.fill(0x20);
+  paddedJson.set(jsonBytes);
+  jsonChunk.data = paddedJson;
+  const totalLength = 12 + chunks.reduce((sum, chunk) => sum + 8 + chunk.data.length, 0);
+  const output = new Uint8Array(totalLength);
+  const outputView = new DataView(output.buffer);
+  outputView.setUint32(0, 0x46546C67, true);
+  outputView.setUint32(4, 2, true);
+  outputView.setUint32(8, totalLength, true);
+  offset = 12;
+  for (const chunk of chunks) {
+    outputView.setUint32(offset, chunk.data.length, true);
+    outputView.setUint32(offset + 4, chunk.type, true);
+    output.set(chunk.data, offset + 8);
+    offset += 8 + chunk.data.length;
+  }
+  return output.buffer;
+}
+
+function gameCharacterAnimationClips(exportBoneNames) {
+  syncActiveAnimationClip();
+  const clips = [];
+  for (const [clipId, sourceClip] of Object.entries(animationState.clips || {})) {
+    setActiveAnimationClip(clipId);
+    const fps = Math.max(1, Number(animationState.fps) || 24);
+    const end = Math.max(1, Number(animationState.end) || 1);
+    const times = Array.from({ length: end + 1 }, (_, frame) => frame / fps);
+    const samples = new Map([...exportBoneNames.keys()].map(id => [id, { position: [], quaternion: [] }]));
+    for (let frame = 0; frame <= end; frame += 1) {
+      animationSetFrame(frame, { render: false, lightweightPanel: true });
+      for (const [boneId] of exportBoneNames) {
+        const liveBone = activeSkinRuntime?.threeBones?.get(boneId);
+        const sample = samples.get(boneId);
+        if (!liveBone || !sample) continue;
+        sample.position.push(liveBone.position.x, liveBone.position.y, liveBone.position.z);
+        sample.quaternion.push(liveBone.quaternion.x, liveBone.quaternion.y, liveBone.quaternion.z, liveBone.quaternion.w);
+      }
+    }
+    const tracks = [];
+    for (const [boneId, exportName] of exportBoneNames) {
+      const sample = samples.get(boneId);
+      if (!sample?.position.length) continue;
+      tracks.push(new THREE.VectorKeyframeTrack(`${exportName}.position`, times, sample.position));
+      tracks.push(new THREE.QuaternionKeyframeTrack(`${exportName}.quaternion`, times, sample.quaternion));
+    }
+    clips.push(new THREE.AnimationClip(gameCharacterSafeName(sourceClip?.name || clipId, clipId), end / fps, tracks));
+  }
+  return clips;
+}
+
+function gameCharacterManifest(baseName, glbName, rig, armorObjects, lods = []) {
+  const sockets = rig.bones.filter(bone => bone.armorMount || bone.armorMountId).map(bone => ({
+    id: bone.armorMountId || `socket-${bone.id}`,
+    boneId: bone.id,
+    name: bone.name,
+    purpose: "equipment"
+  }));
+  const armor = armorObjects.map((object, index) => ({
+    id: object.userData?.id || object.uuid,
+    name: object.name || "Armor",
+    boneId: gameCharacterArmorBinding(object)?.bone?.id || null,
+    mountId: object.userData?.rigArmorMountId || null,
+    attachment: "rigid",
+    meshIndex: index + 1,
+    materialIndex: index + 1,
+    detachable: true
+  }));
+  const clips = Object.entries(rig.animation?.clips || {}).map(([id, clip]) => ({
+    id,
+    name: gameCharacterSafeName(clip?.name || id, id),
+    fps: Math.max(1, Number(clip?.fps) || 24),
+    frameCount: Math.max(1, Number(clip?.end) || 1) + 1,
+    durationSeconds: Math.max(1, Number(clip?.end) || 1) / Math.max(1, Number(clip?.fps) || 24)
+  }));
+  return {
+    kind: "boltworks-game-character",
+    formatVersion: 1,
+    generator: "BoltWorks 3D AI Studio",
+    generatedAt: new Date().toISOString(),
+    name: baseName,
+    model: { file: glbName, format: "glTF-binary-2.0", animationSource: "embedded", lods },
+    coordinateSystem: { handedness: "right-handed", units: "meters", upAxis: "+Y", groundPlane: "XZ" },
+    skeleton: {
+      rootBoneIds: rig.bones.filter(bone => !bone.parentId).map(bone => bone.id),
+      bones: rig.bones.map(bone => ({
+        id: bone.id,
+        name: bone.name,
+        parentId: bone.parentId,
+        role: bone.role,
+        bindPosition: bone.bindPosition || bone.position,
+        bindRotation: bone.bindRotation || bone.rotation,
+        tail: bone.bindTail || bone.tail,
+        detachable: bone.role !== "camera"
+      }))
+    },
+    animations: clips,
+    sockets,
+    armor,
+    gameplay: {
+      supportsDetachedLimbs: true,
+      detachRule: "Detach a bone subtree; attached armor and sockets stay with that subtree.",
+      skinPolicy: "Skinned body and rigid armor share the embedded glTF skeleton."
+    }
+  };
+}
+
+function gameCharacterSimplifiedGeometry(source, keepRatio, skinBones = null) {
+  let geometry = source.clone();
+  const triangles = Math.floor((geometry.index?.count || geometry.getAttribute("position")?.count || 0) / 3);
+  if (keepRatio < .999 && triangles >= 160) {
+    try {
+      geometry = mergeVertices(geometry, 1e-5);
+      const vertexCount = geometry.getAttribute("position")?.count || 0;
+      const removeCount = Math.max(0, Math.floor(vertexCount * (1 - keepRatio)));
+      if (removeCount > 0 && vertexCount - removeCount >= 12) {
+        const reduced = new SimplifyModifier().modify(geometry, removeCount);
+        geometry.dispose();
+        geometry = reduced;
+      }
+    } catch (error) {
+      geometry.dispose();
+      geometry = source.clone();
+      console.warn("Realtime character LOD simplification was skipped:", error);
+    }
+  }
+  if (skinBones?.length) addSkinAttributes(geometry, skinBones);
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+async function gameCharacterBuildGlb({ baseName, avatar, armorObjects, clips, keepRatio, level }) {
+  avatar.updateMatrixWorld(true);
+  const exportAvatar = cloneSkeleton(avatar);
+  exportAvatar.name = `${baseName}_Skin_LOD${level}`;
+  exportAvatar.userData = { ...exportAvatar.userData, bwsRole: "skin", bwsLodLevel: level };
+  exportAvatar.geometry = gameCharacterSimplifiedGeometry(avatar.geometry, keepRatio, activeSkinRuntime.bones);
+  const exportBonesById = new Map();
+  exportAvatar.traverse(node => {
+    const id = node.userData?.rigBoneId;
+    if (!node.isBone || !id) return;
+    node.name = `BWS_${gameCharacterSafeName(id, "bone")}`;
+    exportBonesById.set(id, node);
+  });
+  const avatarWorldInverse = avatar.matrixWorld.clone().invert();
+  for (const object of armorObjects) {
+    const binding = gameCharacterArmorBinding(object);
+    const targetBone = exportBonesById.get(binding.bone.id);
+    const boneIndex = exportAvatar.skeleton.bones.indexOf(targetBone);
+    if (!targetBone || boneIndex < 0) continue;
+    const restWorld = new THREE.Matrix4();
+    if (binding.rest?.objectPosition) {
+      restWorld.compose(
+        binding.rest.objectPosition,
+        binding.rest.objectQuaternion || new THREE.Quaternion().setFromEuler(binding.rest.objectRotation),
+        object.scale
+      );
+    } else {
+      object.updateMatrixWorld(true);
+      restWorld.copy(object.matrixWorld);
+    }
+    const geometry = gameCharacterSimplifiedGeometry(object.geometry, keepRatio)
+      .applyMatrix4(avatarWorldInverse.clone().multiply(restWorld));
+    const count = geometry.getAttribute("position").count;
+    const indices = new Uint16Array(count * 4);
+    const weights = new Float32Array(count * 4);
+    for (let vertex = 0; vertex < count; vertex += 1) {
+      indices[vertex * 4] = boneIndex;
+      weights[vertex * 4] = 1;
+    }
+    geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(indices, 4));
+    geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(weights, 4));
+    const sourceMaterial = Array.isArray(object.material) ? object.material[0] : object.material;
+    const armorMesh = new THREE.SkinnedMesh(geometry, sourceMaterial.clone());
+    armorMesh.name = gameCharacterSafeName(object.name, "Armor");
+    armorMesh.userData = {
+      bwsRole: "armor",
+      bwsObjectId: object.userData?.id || object.uuid,
+      bwsBoneId: binding.bone.id,
+      bwsMountId: object.userData?.rigArmorMountId || null,
+      bwsLodLevel: level
+    };
+    exportAvatar.add(armorMesh);
+    armorMesh.bind(exportAvatar.skeleton, exportAvatar.bindMatrix);
+  }
+  exportAvatar.userData.bwsMeshSlots = [
+    { role: "skin", index: 0, id: avatar.userData?.id || avatar.uuid },
+    ...armorObjects.map((object, index) => ({
+      role: "armor",
+      index: index + 1,
+      id: object.userData?.id || object.uuid,
+      boneId: gameCharacterArmorBinding(object)?.bone?.id || null
+    }))
+  ];
+  const root = new THREE.Group();
+  root.name = `${baseName}_LOD${level}`;
+  root.add(exportAvatar);
+  const rawBinary = await new GLTFExporter().parseAsync(root, {
+    binary: true,
+    animations: clips,
+    onlyVisible: false,
+    trs: true,
+    includeCustomExtensions: true
+  });
+  return gameCharacterCompactGlbSkins(rawBinary);
+}
+
+async function exportGameCharacterPackage() {
+  if (!activeSkinRuntime?.avatar?.isSkinnedMesh || !activeSkinRuntime?.skeleton) {
+    log("Export Game Character needs a glued Skin & Bone model with an active skeleton.");
+    return;
+  }
+  syncActiveAnimationClip();
+  const originalClipId = animationState.activeClipId;
+  const originalFrame = animationState.frame;
+  const originalPlaying = animationState.playing;
+  const baseName = gameCharacterSafeName(currentProjectBaseName(), "boltworks-character");
+  const glbName = `${baseName}.glb`;
+  try {
+    animationState.playing = false;
+    if (!(animationState.bindingRest instanceof Map)) prepareAnimationBindingRest();
+    const avatar = activeSkinRuntime.avatar;
+    const exportBoneNames = new Map(activeSkinRuntime.bones.map(bone => [
+      bone.id,
+      `BWS_${gameCharacterSafeName(bone.id, "bone")}`
+    ]));
+    const armorObjects = objects.filter(object => object.geometry?.getAttribute?.("position")
+      && (object.userData?.rigRole === "armor" || object.userData?.rigAttachment === "rigidArmor")
+      && gameCharacterArmorBinding(object));
+    const clips = gameCharacterAnimationClips(exportBoneNames);
+    const useLods = els.gameCharacterLodInput?.checked !== false;
+    const mediumRatio = Math.max(.2, Math.min(.9, Number(els.gameOptimizeRatioInput?.value || 65) / 100));
+    const levels = useLods
+      ? [
+          { level: 0, keepRatio: 1, file: glbName, minDistance: 0 },
+          { level: 1, keepRatio: mediumRatio, file: `${baseName}-lod1.glb`, minDistance: 12 },
+          { level: 2, keepRatio: Math.max(.2, mediumRatio * .5), file: `${baseName}-lod2.glb`, minDistance: 28 }
+        ]
+      : [{ level: 0, keepRatio: 1, file: glbName, minDistance: 0 }];
+    const binaries = [];
+    for (const level of levels) {
+      const binary = await gameCharacterBuildGlb({ baseName, avatar, armorObjects, clips, ...level });
+      binaries.push({ ...level, binary });
+    }
+    const rig = serializeBoneRig();
+    const manifestLods = levels.map(level => ({
+      level: level.level,
+      file: level.file,
+      minDistance: level.minDistance,
+      keepDetailPercent: Math.round(level.keepRatio * 100)
+    }));
+    const manifest = gameCharacterManifest(baseName, glbName, rig, armorObjects, manifestLods);
+    const readme = [
+      "BoltWorks Game Character Package v1",
+      "",
+      `${glbName} contains the full-detail live skinned body, rigidly weighted armor, skeleton, embedded materials, and realtime skeletal animations.`,
+      useLods ? "LOD1 and LOD2 contain progressively lighter skinned body and armor geometry for distance-based rendering." : "No distance LOD files were requested.",
+      `${baseName}.bws-character.json contains stable bone IDs, sockets, armor ownership, and gameplay metadata.`,
+      "Raylib can load the GLB with LoadModel and drive its bones every game frame with LoadModelAnimations and UpdateModelAnimation."
+    ].join("\n");
+    const zip = makeZip([
+      ...binaries.map(level => ({ name: level.file, data: new Uint8Array(level.binary) })),
+      { name: `${baseName}.bws-character.json`, data: JSON.stringify(manifest, null, 2) },
+      { name: "README.txt", data: readme }
+    ]);
+    downloadBlob(`${baseName}.bws-character.zip`, zip);
+    log(`Exported ${baseName}.bws-character.zip with ${levels.length} realtime LOD level${levels.length === 1 ? "" : "s"}, ${rig.bones.length} bones, ${clips.length} clips, and ${armorObjects.length} bound armor pieces.`);
+  } catch (error) {
+    console.error(error);
+    log(`Game Character export failed: ${error?.message || error}`);
+  } finally {
+    if (animationState.clips?.[originalClipId]) setActiveAnimationClip(originalClipId);
+    animationSetFrame(originalFrame, { render: true });
+    animationState.playing = originalPlaying;
+  }
+}
+
 function safeFileName(name, fallback = "mesh") {
   return String(name || fallback)
     .trim()

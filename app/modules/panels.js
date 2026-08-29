@@ -990,6 +990,7 @@ document.querySelector("#exportSelectedObjBtn")?.addEventListener("click", () =>
 });
 document.querySelector("#exportObjPartsBtn").addEventListener("click", exportObjParts);
 els.exportBolt2dBtn?.addEventListener("click", exportBolt2dPackage);
+document.querySelector("#exportGameCharacterBtn")?.addEventListener("click", exportGameCharacterPackage);
 document.querySelector("#exportDaeBtn").addEventListener("click", () => {
   const pkg = exportColladaPackage();
   for (const [name, dataUrl] of pkg.textureAssets) downloadDataUrl(name, dataUrl);

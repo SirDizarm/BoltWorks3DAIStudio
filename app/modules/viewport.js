@@ -682,6 +682,7 @@ const els = {
   customCameraTargetZ: document.querySelector("#customCameraTargetZ"),
   showCustomCamerasInput: document.querySelector("#showCustomCamerasInput"),
   gameOptimizeRatioInput: document.querySelector("#gameOptimizeRatioInput"),
+  gameCharacterLodInput: document.querySelector("#gameCharacterLodInput"),
   exportGameCopyBtn: document.querySelector("#exportGameCopyBtn"),
   pixelRenderWidthInput: document.querySelector("#pixelRenderWidthInput"),
   pixelTransparentInput: document.querySelector("#pixelTransparentInput"),
