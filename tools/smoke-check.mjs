@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.40.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.41.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1445,7 +1445,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.40.js?v=49.60.40"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.41.js?v=49.60.41"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1491,7 +1491,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.40",
+  "tool-docking.js?v=49.60.41",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1883,7 +1883,8 @@ for (const required of [
   "const oldBoneObjects = new Set(activeSkinRuntime.threeBones.values())",
   "function setSkeletonMode(enabled)",
   "function addSimplifiedSkeletonVisuals()",
-  "Skeleton Mode enabled. The simplified anatomy uses the same selectable rig",
+  "function skeletonModeUsesDetailedModel()",
+  "Using the loaded detailed skeleton meshes as the anatomy display",
   "new THREE.TubeGeometry(ribCurve, 16, .0075 * thickness, 6, false)",
   "const spreadVector = new THREE.Vector3(0, spread, 0)",
   "Grip hands fitted: added ${added} and realigned ${realigned}",
@@ -2297,8 +2298,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.40 Experimental") || !documentSource.includes("v49.60.40 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.40 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.41 Experimental") || !documentSource.includes("v49.60.41 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.41 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2670,6 +2671,9 @@ if (documentSource.includes('id="tPoseFittingBtn"') || !moduleSources.get("riggi
 }
 if (!moduleSources.get("rigging")?.includes("function rebaseAnimationKeysToBindPose(previousBindPose)") || !moduleSources.get("rigging")?.includes("const animationDelta = keyedQuaternion.multiply(oldBindQuaternion.clone().invert())") || !moduleSources.get("rigging")?.includes("const rebasedQuaternion = animationDelta.multiply(newBindQuaternion)") || !moduleSources.get("rigging")?.includes("rebaseAnimationKeysToBindPose(previousBindPose);")) {
   throw new Error("T-Pose Fitting and Glue must rebase every animation clip onto the newly fitted bind pose instead of restoring old absolute bone transforms.");
+}
+if (!moduleSources.get("rigging")?.includes("function repairMissingAnimationBindingRest()") || !moduleSources.get("rigging")?.includes("repairMissingAnimationBindingRest();") || !moduleSources.get("rigging")?.includes("if (!tPoseFittingMode) setTPoseFittingMode(true);") || !moduleSources.get("rigging")?.includes("Bone-to-part assignments were preserved so every limb can be glued again.")) {
+  throw new Error("Glue must repair missing rigid limb bindings and always capture its rest state from T-Pose / Rig Fitting.");
 }
 if (!documentSource.includes('id="centerPivotBtn"') || !moduleSources.get("meshes")?.includes('["translate", "rotate", "scale"].includes(activeTransformMode)') || !moduleSources.get("meshes")?.includes("transform.attach(groupPivot)")) {
   throw new Error("A stored or centered single-mesh pivot must position the Move, Rotate, and Scale gizmos consistently.");

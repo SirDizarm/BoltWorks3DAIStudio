@@ -1059,6 +1059,7 @@ function restoreBoneRig(data = {}) {
   // only for projects that do not have a skinned avatar runtime.
   animationState.bindingRest = restoreSerializedAnimationBindingRest(data.animation?.bindingRest);
   if (!animationState.bindingRest && !activeSkinRuntime) animationState.bindingRest = rebuildMinecraftAnimationBindingRest();
+  if (bonesGlued && !activeSkinRuntime) repairMissingAnimationBindingRest();
   if (animationState.bindingRest) {
     // Undo/project snapshots already contain the exact live mesh and bone pose.
     // Keep that pose instead of evaluating the current keyframe again: the user
@@ -1605,6 +1606,61 @@ function restoreSerializedAnimationBindingRest(entries) {
   return restored.size ? restored : null;
 }
 
+function repairMissingAnimationBindingRest() {
+  const bindings = collectAnimationBindings();
+  if (!bindings.length) return 0;
+  if (!(animationState.bindingRest instanceof Map)) animationState.bindingRest = new Map();
+  const grouped = new Map();
+  for (const binding of bindings) {
+    const id = binding.object.userData?.id;
+    if (!grouped.has(id)) grouped.set(id, []);
+    grouped.get(id).push(binding);
+  }
+  const missing = bindings.filter(({ bone, object }) => {
+    if ((grouped.get(object.userData?.id) || []).length !== 1) return false;
+    return !animationState.bindingRest.has(`rigid:${bone.id}:${object.userData?.id || object.uuid}`);
+  });
+  if (!missing.length) return 0;
+
+  // Older/partially-glued projects can contain valid bone IDs but no saved rest
+  // transform for one or more rigid body pieces. Reconstruct those entries from
+  // the fitted bind skeleton and the untouched mesh pose. Without this repair,
+  // applyAnimationBindings silently skips the missing pieces (most visibly the
+  // separate upper-arm and forearm meshes) while their bone guides keep moving.
+  const livePose = new Map(rigBones.map(bone => [bone.id, {
+    position: bone.position.clone(),
+    rotation: bone.rotation.clone()
+  }]));
+  for (const bone of rigBones) {
+    bone.position.copy(bone.bindPosition);
+    bone.rotation.copy(bone.bindRotation);
+    bone.poseWorldQuaternion = null;
+  }
+  poseRigHierarchy();
+  for (const { bone, object } of missing) {
+    const key = `rigid:${bone.id}:${object.userData?.id || object.uuid}`;
+    animationState.bindingRest.set(key, {
+      object,
+      bonePosition: bone.position.clone(),
+      boneRotation: bone.rotation.clone(),
+      boneQuaternion: (bone.poseWorldQuaternion
+        || new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"))).clone(),
+      objectPosition: object.position.clone(),
+      objectRotation: object.rotation.clone(),
+      objectQuaternion: object.quaternion.clone()
+    });
+  }
+  for (const bone of rigBones) {
+    const live = livePose.get(bone.id);
+    if (!live) continue;
+    bone.position.copy(live.position);
+    bone.rotation.copy(live.rotation);
+    bone.poseWorldQuaternion = null;
+  }
+  poseRigHierarchy();
+  return missing.length;
+}
+
 function rebuildMinecraftAnimationBindingRest() {
   if (typeof blockbenchBindTransform !== "function") return null;
   const bindings = collectAnimationBindings().filter(({ object }) => object.userData?.minecraft);
@@ -1672,6 +1728,7 @@ function applyAnimationBindings() {
     animationSetFrame(requestedFrame, { render: false });
     return;
   }
+  repairMissingAnimationBindingRest();
   const grouped = new Map();
   for (const binding of bindings) {
     const id = binding.object.userData?.id;
@@ -2033,6 +2090,27 @@ function skeletonBoneColor(bone, selected = false) {
   return 0xd8cfaa;
 }
 
+function detailedSkeletonModelParts() {
+  return objects.filter(object => {
+    if (!object?.geometry?.getAttribute?.("position") || object.userData?.rigRole === "armor") return false;
+    const label = `${object.name || ""} ${object.userData?.rigBoneId || ""}`.toLowerCase();
+    return /skull|head|ribcage|rib|spine|pelvis|upper arm|forearm|thigh|shin|foot|hand|finger|thumb|index|middle|ring|pinky|neck/.test(label);
+  });
+}
+
+function skeletonModeUsesDetailedModel() {
+  const labels = detailedSkeletonModelParts().map(object => `${object.name || ""} ${object.userData?.rigBoneId || ""}`.toLowerCase());
+  const has = pattern => labels.some(label => pattern.test(label));
+  return labels.length >= 8
+    && has(/skull|head/)
+    && has(/ribcage|rib|chest/)
+    && has(/pelvis/)
+    && has(/upper arm/)
+    && has(/forearm/)
+    && has(/thigh/)
+    && has(/shin|lower leg/);
+}
+
 function normalizedBoneAnatomyScale(bone) {
   const source = bone?.anatomyScale;
   return new THREE.Vector3(
@@ -2298,7 +2376,11 @@ function rebuildBoneVisuals() {
   boneRigGroup.layers.enable(1);
   boneRigGroup.layers.enable(2);
   if (skeletonDisplayMode) {
-    addSimplifiedSkeletonVisuals();
+    // A detailed, separately-modelled skeleton is already a much better anatomy
+    // display than the old generated cylinders and spheres. Use those real mesh
+    // parts directly when the loaded project supplies a complete skeleton; keep
+    // the procedural display only as a fallback for ordinary character meshes.
+    if (!skeletonModeUsesDetailedModel()) addSimplifiedSkeletonVisuals();
     const selectedSkeletonBone = selectedBone();
     if (selectedSkeletonBone && visible) addSelectedBoneGizmos(selectedSkeletonBone);
     syncBoneTransformGizmo();
@@ -2392,10 +2474,14 @@ function setSkeletonMode(enabled) {
   if (els.skeletonModeInput) els.skeletonModeInput.checked = skeletonDisplayMode;
   if (skeletonDisplayMode) {
     skeletonPreviousOpacity = rigModelOpacity;
-    if (rigModelOpacity > .45) setRigModelOpacity(.35);
+    const detailedModel = skeletonModeUsesDetailedModel();
+    if (detailedModel) setRigModelOpacity(1);
+    else if (rigModelOpacity > .45) setRigModelOpacity(.35);
     if (els.showBonesInput) els.showBonesInput.checked = true;
     if (!tPoseFittingMode) setTPoseFittingMode(true);
-    log("Skeleton Mode enabled. The simplified anatomy uses the same selectable rig and is shown inside the faded model.");
+    log(detailedModel
+      ? "Skeleton Mode enabled. Using the loaded detailed skeleton meshes as the anatomy display."
+      : "Skeleton Mode enabled. No complete skeleton mesh was found, so the generated anatomy fallback is shown inside the faded model.");
   } else {
     if (Number.isFinite(skeletonPreviousOpacity)) setRigModelOpacity(skeletonPreviousOpacity);
     skeletonPreviousOpacity = null;
@@ -2866,6 +2952,10 @@ function finishArmorFittingTransform(controlObject) {
 
 function glueBonesToSelected() {
   if (!rigBones.length) { log("Add or import bones first."); return; }
+  // Glue always describes the fitted/rest pose. If a real clip is active, move
+  // back to the authoritative T-pose first so an Idle/Walk arm bend cannot be
+  // captured as the new bind orientation.
+  if (!tPoseFittingMode) setTPoseFittingMode(true);
   captureRigBindPose();
   const groupTargets = selectedGroupRecordId && typeof descendantMeshesForGroup === "function"
     ? descendantMeshesForGroup(selectedGroupRecordId)
@@ -2941,9 +3031,9 @@ function glueBonesToSelected() {
 function unglueBonesFromModel() {
   bonesGlued = false;
   animationState.bindingRest = null;
-  objects.forEach(object => {
-    if (object.userData && object.userData.rigAttachment !== "rigidArmor") delete object.userData.rigBoneId;
-  });
+  // rigBoneId is the user's semantic part assignment, not transient glue data.
+  // Keep it when releasing the live rig so a segmented model can be glued again
+  // without losing its upper-arm, forearm, hand, finger, leg, or socket mapping.
   if (activeSkinRuntime) {
     const avatar = activeSkinRuntime.avatar;
     const plain = new THREE.Mesh(avatar.geometry.clone(), avatar.material);
@@ -2974,7 +3064,7 @@ function unglueBonesFromModel() {
   rebuildBoneVisuals();
   syncBonePanel();
   updateGlueButton();
-  log("Unglued the rig from the model. You can now move bones freely.");
+  log("Unglued the rig from the model. Bone-to-part assignments were preserved so every limb can be glued again.");
 }
 
 function updateGlueButton() {
