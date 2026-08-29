@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.25.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.26.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -580,6 +580,38 @@ function createSingleTriangleUvHoleFixture() {
   source.dispose();
   repaired.dispose();
 
+  const curvedPoints = Array.from({ length: 13 }, (_, index) => {
+    const angle = index / 13 * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(angle), Math.sin(angle), Math.sin(angle * 3) * .085);
+  });
+  const curvedLoop = {
+    points: curvedPoints,
+    keys: curvedPoints.map(point => context.vertexKey(point)),
+    edgeSignatures: new Set(curvedPoints.map((point, index) => [
+      context.vertexKey(point),
+      context.vertexKey(curvedPoints[(index + 1) % curvedPoints.length])
+    ].sort().join("|")))
+  };
+  const curvedSource = new THREE.BufferGeometry();
+  curvedSource.setAttribute("position", new THREE.Float32BufferAttribute([], 3));
+  const curvedBasis = context.basisFromPoints(curvedPoints);
+  const curvedBox = new THREE.Box3().setFromPoints(curvedPoints);
+  const curvedDiagonal = curvedBox.getSize(new THREE.Vector3()).length();
+  const curvedDeviation = curvedPoints.reduce((maximum, point) => Math.max(
+    maximum,
+    Math.abs(point.clone().sub(curvedBasis.center).dot(curvedBasis.zAxis))
+  ), 0) / curvedDiagonal;
+  const curvedPlan = context.safeHoleCapPlan(curvedSource, curvedLoop, { projection: "auto" });
+  if (curvedDeviation <= .02 || curvedDeviation >= .05 || !curvedPlan.safe || curvedPlan.triangles.length !== 11) {
+    throw new Error(`Find and Repair Holes must accept gently curved imported openings without accepting strongly folded loops. ${JSON.stringify({
+      curvedDeviation,
+      safe: curvedPlan.safe,
+      reason: curvedPlan.reason,
+      triangles: curvedPlan.triangles?.length
+    })}`);
+  }
+  curvedSource.dispose();
+
   const singleTriangleFixture = createSingleTriangleUvHoleFixture();
   const triangleSource = singleTriangleFixture.geometry;
   const triangleBefore = context.bridgeBoundaryTopology(triangleSource);
@@ -1129,7 +1161,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.25.js?v=49.60.25"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.26.js?v=49.60.26"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1170,7 +1202,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.25",
+  "tool-docking.js?v=49.60.26",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1947,8 +1979,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.25 Experimental") || !documentSource.includes("v49.60.25 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.25 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.26 Experimental") || !documentSource.includes("v49.60.26 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.26 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

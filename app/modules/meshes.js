@@ -10334,7 +10334,10 @@ function safeHoleCapPlan(source, loop, uvOptions = null) {
   const diagonal = Math.max(box.getSize(new THREE.Vector3()).length(), 1e-6);
   const maxPlaneDistance = loop.points.reduce((max, point) =>
     Math.max(max, Math.abs(point.clone().sub(center).dot(zAxis))), 0);
-  if (maxPlaneDistance > Math.max(1e-4, diagonal * .02)) {
+  // Imported organic meshes often leave a gently curved opening rather than a
+  // perfectly planar CAD-style loop. A five-percent best-fit-plane tolerance
+  // accepts those real holes while still refusing strongly folded boundaries.
+  if (maxPlaneDistance > Math.max(1e-4, diagonal * .05)) {
     return { safe: false, reason: "boundary is too twisted to cap safely" };
   }
   for (let a = 0; a < contour.length; a++) {
