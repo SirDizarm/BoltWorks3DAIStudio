@@ -156,6 +156,7 @@ function renderGameplayPreview() {
     surfaceSideTransform,
     faceMarker,
     selectionOutlineGroup,
+    connectVerticesGuideGroup,
     openingPickGuideGroup,
     markerGroup,
     cameraDirectorGroup,
@@ -724,6 +725,7 @@ els.surfaceEditorCloseBtn?.addEventListener("click", () => requestAnimationFrame
 els.surfaceSelectTriangleBtn?.addEventListener("click", () => setSurfaceSelectionMode("triangle"));
 els.surfaceSelectFaceBtn?.addEventListener("click", () => setSurfaceSelectionMode("face"));
 els.surfaceSelectVertexBtn?.addEventListener("click", () => setSurfaceSelectionMode("vertex"));
+els.connectVerticesBtn?.addEventListener("click", handleConnectVerticesButton);
 els.surfaceSelectEdgeBtn?.addEventListener("click", () => setSurfaceSelectionMode("edge"));
 els.surfaceMouseModeBtn?.addEventListener("click", toggleSurfaceMouseMode);
 els.surfaceValueModeBtn?.addEventListener("click", toggleSurfaceValueMode);
@@ -1552,6 +1554,10 @@ function prioritizeUnselectedSurfaceTriangle(event) {
     event.preventDefault();
     event.stopImmediatePropagation();
     if (pullToTargetSession && pullSelectedRegionToHit(hit)) return;
+    if (connectVerticesMode) {
+      pickConnectVertexTargetFromHit(hit);
+      return;
+    }
     pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
   }
 }
@@ -1629,6 +1635,10 @@ canvas.addEventListener("pointerdown", event => {
   }
   if (connectedTrianglePickMode && hit) {
     selectConnectedTrianglesFromHit(hit, { append: additiveSelectionRequested(event) });
+    return;
+  }
+  if (connectVerticesMode && hit) {
+    pickConnectVertexTargetFromHit(hit);
     return;
   }
   if (facePickMode && hit) {
@@ -1728,6 +1738,10 @@ canvas.addEventListener("dblclick", event => {
   const hit = hitFromPointerEvent(event);
   if (!hit) return;
   event.preventDefault();
+  if (connectVerticesMode) {
+    pickConnectVertexTargetFromHit(hit);
+    return;
+  }
   if (surfaceComponentMode === "vertex" || surfaceComponentMode === "edge") {
     pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
   } else {
@@ -1758,6 +1772,11 @@ window.addEventListener("keydown", event => {
     event.preventDefault();
     setPullToTargetSession(false);
     log("Pull to Target cancelled.");
+    return;
+  }
+  if (connectVerticesMode && event.key === "Escape") {
+    event.preventDefault();
+    cancelConnectVertices("Connect Vertices cancelled. The source vertex remains selected.");
     return;
   }
   if (knifeCutMode && event.key === "Escape") {

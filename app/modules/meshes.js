@@ -4352,6 +4352,18 @@ function syncSurfaceEditorUi() {
   els.surfaceSelectEdgeBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "edge");
   els.surfaceSelectTriangleBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "triangle");
   els.surfaceSelectFaceBtn?.classList.toggle("active", surfaceSelectionSource === "surface" && facePickMode && surfaceComponentMode === "face");
+  if (els.connectVerticesBtn) {
+    const sourceReady = surfaceComponentMode === "vertex" && selectedSurfaceVertices.length === 1;
+    els.connectVerticesBtn.classList.toggle("active", connectVerticesMode);
+    els.connectVerticesBtn.setAttribute("aria-pressed", String(connectVerticesMode));
+    els.connectVerticesBtn.disabled = !connectVerticesMode && !sourceReady;
+    els.connectVerticesBtn.textContent = connectVerticesTarget ? "Apply Connection" : connectVerticesMode ? "Choose Target Vertex" : "Connect Vertices";
+    els.connectVerticesBtn.title = connectVerticesTarget
+      ? "Apply the previewed vertex connection. Click another vertex first to replace the target."
+      : connectVerticesMode
+        ? "Click the destination vertex. Press Escape or click this button again to cancel."
+        : "Select one source vertex, click here, choose a target vertex, then apply.";
+  }
   if (els.deleteSelectedSurfaceBtn) {
     const canDeleteSelectedFace = (surfaceComponentMode === "triangle" || surfaceComponentMode === "face") && selectedFaces.length > 0;
     els.deleteSelectedSurfaceBtn.disabled = !canDeleteSelectedFace;
@@ -4472,6 +4484,7 @@ function toggleSurfaceValueMode() {
 }
 
 function setSurfaceSelectionMode(mode = "face") {
+  if (connectVerticesMode) cancelConnectVertices(null, { sync: false });
   connectedTrianglePickMode = false;
   if (knifeCutMode) setKnifeCutMode(false);
   const normalized = ["vertex", "edge", "triangle", "face"].includes(mode) ? mode : "face";
@@ -7230,23 +7243,84 @@ function updateSurfaceComponentMarker() {
     }
   }
   surfaceComponentMarker.visible = surfaceComponentMarker.children.length > 0;
+  updateConnectVerticesGuide();
   updateModelingEdgesOverlay();
 }
 
+function clearConnectVerticesGuide() {
+  while (connectVerticesGuideGroup.children.length) {
+    const child = connectVerticesGuideGroup.children.pop();
+    disposeObject3D(child);
+  }
+  connectVerticesGuideGroup.visible = false;
+}
+
+function connectVertexMarker(point, color, radius = .032) {
+  const marker = new THREE.Mesh(
+    new THREE.SphereGeometry(radius, 14, 10),
+    new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: .95 })
+  );
+  marker.position.copy(point);
+  marker.renderOrder = 1007;
+  marker.userData.editorHelper = true;
+  return marker;
+}
+
+function updateConnectVerticesGuide() {
+  clearConnectVerticesGuide();
+  if (!connectVerticesMode || selectedSurfaceVertices.length !== 1) return;
+  const source = selectedSurfaceVertices[0];
+  source.mesh.updateWorldMatrix(true, false);
+  const sourceWorld = source.localPoint.clone().applyMatrix4(source.mesh.matrixWorld);
+  connectVerticesGuideGroup.add(connectVertexMarker(sourceWorld, "#ffd36a"));
+  if (connectVerticesTarget) {
+    connectVerticesTarget.mesh.updateWorldMatrix(true, false);
+    const targetWorld = connectVerticesTarget.localPoint.clone().applyMatrix4(connectVerticesTarget.mesh.matrixWorld);
+    connectVerticesGuideGroup.add(connectVertexMarker(targetWorld, "#55e7ff", .038));
+    const geometry = new THREE.BufferGeometry();
+    geometry.setFromPoints([sourceWorld, targetWorld]);
+    const line = new THREE.Line(
+      geometry,
+      new THREE.LineDashedMaterial({ color: "#55e7ff", dashSize: .08, gapSize: .045, depthTest: false, transparent: true, opacity: .9 })
+    );
+    line.computeLineDistances();
+    line.renderOrder = 1006;
+    line.userData.editorHelper = true;
+    connectVerticesGuideGroup.add(line);
+  }
+  connectVerticesGuideGroup.visible = connectVerticesGuideGroup.children.length > 0;
+}
+
+function cancelConnectVertices(message = null, { sync = true } = {}) {
+  connectVerticesMode = false;
+  connectVerticesTarget = null;
+  clearConnectVerticesGuide();
+  if (sync) {
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+  }
+  if (message) log(message);
+}
+
 function clearSelectedSurfaceComponents() {
+  if (connectVerticesMode) cancelConnectVertices(null, { sync: false });
   selectedSurfaceVertices.length = 0;
   selectedSurfaceEdges.length = 0;
   updateSurfaceComponentMarker();
 }
 
-function pickSurfaceVertex(hit, { append = false } = {}) {
+function nearestSurfaceVertexFromHit(hit) {
   if (!hit?.object || !hit.face) return null;
   hit.object.updateWorldMatrix(true, false);
   const localPoints = triangleLocalPoints(hit);
-  const localPoint = localPoints.reduce((best, point) => {
+  return localPoints.reduce((best, point) => {
     const distance = point.clone().applyMatrix4(hit.object.matrixWorld).distanceToSquared(hit.point);
     return !best || distance < best.distance ? { point, distance } : best;
-  }, null)?.point;
+  }, null)?.point || null;
+}
+
+function pickSurfaceVertex(hit, { append = false } = {}) {
+  const localPoint = nearestSurfaceVertexFromHit(hit);
   if (!localPoint) return null;
   if (!append) selectedSurfaceVertices.length = 0;
   selectedSurfaceEdges.length = 0;
@@ -7263,6 +7337,65 @@ function pickSurfaceVertex(hit, { append = false } = {}) {
   armContextualSurfaceDrag();
   log(`${append ? "Updated" : "Selected"} vertex on ${hit.object.name}.`, { selected: selectedSurfaceVertices.length });
   return localPoint;
+}
+
+function pickConnectVertexTargetFromHit(hit) {
+  if (!connectVerticesMode || selectedSurfaceVertices.length !== 1) return false;
+  const source = selectedSurfaceVertices[0];
+  const localPoint = nearestSurfaceVertexFromHit(hit);
+  if (!localPoint) return false;
+  if (hit.object !== source.mesh) {
+    log("Choose the target vertex on the same mesh. Separate objects can be aligned, but they cannot share real vertex topology.");
+    return false;
+  }
+  const key = surfaceVertexKey(hit.object, localPoint);
+  if (key === source.key) {
+    log("That is the source vertex. Choose a different target vertex.");
+    return false;
+  }
+  connectVerticesTarget = { mesh: hit.object, localPoint: localPoint.clone(), key };
+  updateConnectVerticesGuide();
+  syncSurfaceEditorUi();
+  els.hudText.textContent = "Connection preview ready: cyan is the target. Click another vertex to replace it, or press Apply Connection.";
+  log("Target vertex previewed. Nothing has moved yet; press Apply Connection to accept.");
+  return true;
+}
+
+function handleConnectVerticesButton() {
+  if (!connectVerticesMode) {
+    if (surfaceComponentMode !== "vertex" || selectedSurfaceVertices.length !== 1) {
+      log("Choose Vertex and select exactly one source vertex before using Connect Vertices.");
+      return false;
+    }
+    connectVerticesMode = true;
+    connectVerticesTarget = null;
+    connectedTrianglePickMode = false;
+    if (dragPushMode) setDragPushMode(false, { silent: true });
+    updateConnectVerticesGuide();
+    syncSurfaceEditorUi();
+    updateSurfaceGizmoAttachment();
+    els.hudText.textContent = "Connect Vertices: source is yellow. Click a target vertex on the same mesh; nothing moves until Apply Connection.";
+    log("Connect Vertices armed. Click the target vertex on the same mesh.");
+    return true;
+  }
+  if (!connectVerticesTarget) {
+    cancelConnectVertices("Connect Vertices cancelled. The source vertex remains selected.");
+    return false;
+  }
+  const source = selectedSurfaceVertices[0];
+  const target = connectVerticesTarget;
+  const result = weldSelectedVertices({
+    vertices: [source, target],
+    targetOverride: target.localPoint,
+    historyLabel: "connect vertices",
+    successLabel: "Connected the source vertex to the chosen target"
+  });
+  connectVerticesMode = false;
+  connectVerticesTarget = null;
+  clearConnectVerticesGuide();
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  return result.length > 0;
 }
 
 function pointToSegmentDistanceSquared(point, start, end) {
@@ -15475,26 +15608,29 @@ function dissolveSelectedSurfaceComponent() {
   return [];
 }
 
-function weldSelectedVertices() {
-  if (surfaceComponentMode !== "vertex" || selectedSurfaceVertices.length < 2) {
+function weldSelectedVertices(options = {}) {
+  const requestedVertices = Array.isArray(options?.vertices) ? options.vertices : selectedSurfaceVertices;
+  if (surfaceComponentMode !== "vertex" || requestedVertices.length < 2) {
     log("Choose Vertex and select at least two vertices with Shift or Ctrl before using Weld Vertices.");
     return [];
   }
-  const meshes = [...new Set(selectedSurfaceVertices.map(vertex => vertex.mesh).filter(Boolean))];
+  const meshes = [...new Set(requestedVertices.map(vertex => vertex.mesh).filter(Boolean))];
   if (meshes.length !== 1) {
     log("Weld Vertices works on vertices from one mesh at a time.");
     return [];
   }
   const mesh = meshes[0];
-  const vertices = selectedSurfaceVertices.filter(vertex => vertex.mesh === mesh);
+  const vertices = requestedVertices.filter(vertex => vertex.mesh === mesh);
   const uniqueVertices = [...new Map(vertices.map(vertex => [vertex.key, vertex])).values()];
   if (uniqueVertices.length < 2) {
     log("Select two different vertices before using Weld Vertices.");
     return [];
   }
 
-  const targetMode = weldVertexTargetMode();
-  const target = targetMode === "first"
+  const targetMode = options?.targetOverride ? "chosen target" : weldVertexTargetMode();
+  const target = options?.targetOverride
+    ? options.targetOverride.clone()
+    : targetMode === "first"
     ? uniqueVertices[0].localPoint.clone()
     : targetMode === "last"
       ? uniqueVertices.at(-1).localPoint.clone()
@@ -15601,7 +15737,7 @@ function weldSelectedVertices() {
 
   const geometry = geometryFromWeldedTriangles(source, nextTriangles);
   source.dispose();
-  recordHistory("weld selected vertices");
+  recordHistory(options?.historyLabel || "weld selected vertices");
   replaceEditableMeshGeometry(mesh, geometry);
   mesh.userData.edgeBevelProtectedEdges = [...protectedEdges];
   mesh.updateMatrixWorld(true);
@@ -15619,8 +15755,8 @@ function weldSelectedVertices() {
   updateAll();
   syncSurfaceEditorUi();
   updateSurfaceGizmoAttachment();
-  const placementLabel = targetMode === "first" ? "the first selected position" : targetMode === "last" ? "the last selected position" : "the center";
-  log(`Welded ${uniqueVertices.length} vertices at ${placementLabel}. The new vertex remains selected.`, {
+  const placementLabel = targetMode === "first" ? "the first selected position" : targetMode === "last" ? "the last selected position" : targetMode === "chosen target" ? "the chosen target" : "the center";
+  log(`${options?.successLabel || `Welded ${uniqueVertices.length} vertices at ${placementLabel}`}. The connected vertex remains selected.`, {
     beforeTriangles: beforeTopologyTriangles.length,
     afterTriangles: nextTriangles.length,
     removedDegenerate,

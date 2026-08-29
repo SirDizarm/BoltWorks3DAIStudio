@@ -470,6 +470,8 @@ let surfaceComponentMode = "none";
 let surfaceSelectionSource = "none";
 const selectedSurfaceVertices = [];
 const selectedSurfaceEdges = [];
+let connectVerticesMode = false;
+let connectVerticesTarget = null;
 let copiedTrianglePatch = null;
 let isPaintingTriangles = false;
 let isAreaSelectingTriangles = false;
@@ -555,6 +557,11 @@ const surfaceComponentMarker = new THREE.Group();
 surfaceComponentMarker.name = "selected vertex and edge markers";
 surfaceComponentMarker.visible = false;
 scene.add(surfaceComponentMarker);
+const connectVerticesGuideGroup = new THREE.Group();
+connectVerticesGuideGroup.name = "connect vertices preview";
+connectVerticesGuideGroup.userData.editorHelper = true;
+connectVerticesGuideGroup.visible = false;
+scene.add(connectVerticesGuideGroup);
 const modelingEdgesOverlay = new THREE.Group();
 modelingEdgesOverlay.name = "visible modeling edges";
 modelingEdgesOverlay.visible = false;
@@ -951,6 +958,7 @@ const els = {
   surfaceEditorCloseBtn: document.querySelector("#surfaceEditorCloseBtn"),
   surfaceEditorSelection: document.querySelector("#surfaceEditorSelection"),
   surfaceSelectVertexBtn: document.querySelector("#surfaceSelectVertexBtn"),
+  connectVerticesBtn: document.querySelector("#connectVerticesBtn"),
   surfaceSelectEdgeBtn: document.querySelector("#surfaceSelectEdgeBtn"),
   surfaceSelectTriangleBtn: document.querySelector("#surfaceSelectTriangleBtn"),
   surfaceSelectFaceBtn: document.querySelector("#surfaceSelectFaceBtn"),

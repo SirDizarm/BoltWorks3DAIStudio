@@ -5408,6 +5408,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   const oldTransformVisible = transform.visible;
   const oldFaceMarkerVisible = faceMarker.visible;
   const oldSurfaceComponentMarkerVisible = surfaceComponentMarker.visible;
+  const oldConnectVerticesGuideVisible = connectVerticesGuideGroup.visible;
   const oldModelingEdgesOverlayVisible = modelingEdgesOverlay.visible;
   const oldKnifeCutGuideVisible = knifeCutGuideGroup.visible;
   const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
@@ -5462,6 +5463,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   boneRigGroup.children.filter(child => child.userData?.boneGizmo).forEach(child => { child.visible = false; });
   faceMarker.visible = false;
   surfaceComponentMarker.visible = false;
+  connectVerticesGuideGroup.visible = false;
   modelingEdgesOverlay.visible = false;
   knifeCutGuideGroup.visible = false;
   selectionOutlineGroup.visible = false;
@@ -5539,6 +5541,7 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   oldBoneChildVisibility.forEach(([child, visible]) => { child.visible = visible; });
   faceMarker.visible = oldFaceMarkerVisible;
   surfaceComponentMarker.visible = oldSurfaceComponentMarkerVisible;
+  connectVerticesGuideGroup.visible = oldConnectVerticesGuideVisible;
   modelingEdgesOverlay.visible = oldModelingEdgesOverlayVisible;
   knifeCutGuideGroup.visible = oldKnifeCutGuideVisible;
   selectionOutlineGroup.visible = oldSelectionOutlineVisible;
@@ -5796,7 +5799,7 @@ async function savePixelRenderPng() {
   const transparent = !!els.pixelTransparentInput.checked;
   const oldSceneBackground = scene.background;
   const oldClearAlpha = renderer.getClearAlpha();
-  const oldVisibility = [transform, faceMarker, selectionOutlineGroup, openingPickGuideGroup, markerGroup, cameraDirectorGroup, grid, gridLabelGroup, boneRigGroup]
+  const oldVisibility = [transform, faceMarker, connectVerticesGuideGroup, selectionOutlineGroup, openingPickGuideGroup, markerGroup, cameraDirectorGroup, grid, gridLabelGroup, boneRigGroup]
     .map(object => [object, object.visible]);
   oldVisibility.forEach(([object]) => { object.visible = false; });
   if (transparent) {
@@ -6225,6 +6228,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   const oldTransformVisible = transform.visible;
   const oldBoneTransformVisible = boneTransform.visible;
   const oldFaceMarkerVisible = faceMarker.visible;
+  const oldConnectVerticesGuideVisible = connectVerticesGuideGroup.visible;
   const oldSelectionOutlineVisible = selectionOutlineGroup.visible;
   const oldOpeningPickGuideVisible = openingPickGuideGroup.visible;
   const oldMarkerGroupVisible = markerGroup.visible;
@@ -6238,6 +6242,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   transform.visible = false;
   boneTransform.visible = false;
   faceMarker.visible = false;
+  connectVerticesGuideGroup.visible = false;
   selectionOutlineGroup.visible = false;
   openingPickGuideGroup.visible = false;
   markerGroup.visible = false;
@@ -6288,6 +6293,7 @@ function captureBolt2dRightFacingLayers({ prefix = currentProjectBaseName() } = 
   transform.visible = oldTransformVisible;
   boneTransform.visible = oldBoneTransformVisible;
   faceMarker.visible = oldFaceMarkerVisible;
+  connectVerticesGuideGroup.visible = oldConnectVerticesGuideVisible;
   selectionOutlineGroup.visible = oldSelectionOutlineVisible;
   openingPickGuideGroup.visible = oldOpeningPickGuideVisible;
   markerGroup.visible = oldMarkerGroupVisible;
