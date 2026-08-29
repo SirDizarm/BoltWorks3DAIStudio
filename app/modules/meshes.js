@@ -9747,6 +9747,7 @@ function buildProtectedLodPlan(source, options = {}) {
   const sourcePosition = source?.getAttribute?.("position");
   const originalTriangles = Math.floor((source?.index?.count || sourcePosition?.count || 0) / 3);
   const levels = [];
+  let usedUvSeamFallback = false;
   if (originalTriangles < 8) {
     return { settings, originalTriangles, levels, safe: false, reason: "At least eight triangles are needed to create a useful LOD set." };
   }
@@ -9759,13 +9760,26 @@ function buildProtectedLodPlan(source, options = {}) {
     let attempts = 0;
     while (workingTriangles > targetTriangles && attempts < 12) {
       const relativeReduction = Math.min(90, Math.max(1, (workingTriangles - targetTriangles) / workingTriangles * 100));
-      const step = protectedDecimatePlan(working, {
+      let step = protectedDecimatePlan(working, {
         reduction: relativeReduction,
         featureAngle: settings.featureAngle,
         preserveBoundaries: settings.preserveBoundaries,
         preserveUvSeams: settings.preserveUvSeams,
         preserveMaterials: settings.preserveMaterials
       });
+      if ((!step.safe || step.afterTriangles >= workingTriangles) && settings.preserveUvSeams) {
+        const fallback = protectedDecimatePlan(working, {
+          reduction: relativeReduction,
+          featureAngle: settings.featureAngle,
+          preserveBoundaries: settings.preserveBoundaries,
+          preserveUvSeams: false,
+          preserveMaterials: settings.preserveMaterials
+        });
+        if (fallback.safe && fallback.afterTriangles < workingTriangles) {
+          step = fallback;
+          usedUvSeamFallback = true;
+        }
+      }
       if (!step.safe || step.afterTriangles >= workingTriangles) break;
       const next = geometryFromWeldedTriangles(working, step.triangles);
       working.dispose();
@@ -9797,11 +9811,43 @@ function buildProtectedLodPlan(source, options = {}) {
     settings,
     originalTriangles,
     levels,
+    usedUvSeamFallback,
     safe,
     reason: safe
-      ? `Safe LOD preview: ${counts.length} models total — ${previewSummary}.`
+      ? `Safe LOD preview: ${counts.length} models total — ${previewSummary}.${usedUvSeamFallback ? " Imported UV seams covered every reducible edge, so LOD retained UVs per surviving triangle instead of locking every seam." : ""}`
       : `Only ${levels.length} of 3 LOD preview models could be created safely with the current detail protections.`
   };
+}
+
+function buildLodMeshRepairPlan(source) {
+  const editable = source?.index ? source.toNonIndexed() : source?.clone?.();
+  if (!editable) return {
+    safe: false,
+    changed: false,
+    reason: "The mesh has no editable triangle geometry.",
+    triangles: []
+  };
+  const plan = removeDoublesPlan(editable, .000001);
+  editable.dispose();
+  const repairs = [];
+  if (plan.removedDuplicate) repairs.push(`${plan.removedDuplicate} overlapping duplicate face${plan.removedDuplicate === 1 ? "" : "s"}`);
+  if (plan.removedDegenerate) repairs.push(`${plan.removedDegenerate} collapsed face${plan.removedDegenerate === 1 ? "" : "s"}`);
+  if (plan.mergedVertices) repairs.push(`${plan.mergedVertices} near-coincident vert${plan.mergedVertices === 1 ? "ex" : "ices"}`);
+  return {
+    ...plan,
+    reason: plan.safe
+      ? `Safe mesh repair available: remove ${repairs.join(", ")}.`
+      : plan.reason
+  };
+}
+
+function lodRepairPlansForTarget(target) {
+  if (!target) return [];
+  return target.meshes.map(mesh => ({
+    meshId: mesh.userData.id,
+    name: mesh.name,
+    plan: buildLodMeshRepairPlan(mesh.geometry)
+  })).filter(entry => entry.plan.safe && entry.plan.changed);
 }
 
 function syncLodGeneratorUi(message = null) {
@@ -9809,12 +9855,17 @@ function syncLodGeneratorUi(message = null) {
     els.lodGeneratorStatus.textContent = message || lodGeneratorState.plan?.reason
       || "Select one editable mesh, then analyze a protected LOD set.";
   }
+  if (els.repairLodMeshBtn) {
+    els.repairLodMeshBtn.disabled = !lodRepairState.plans.length
+      || lodRepairState.targetKey !== lodGeneratorState.targetKey;
+  }
   if (els.generateLodGeneratorBtn) els.generateLodGeneratorBtn.disabled = !lodGeneratorState.plan?.safe;
 }
 
 function invalidateLodGeneratorAnalysis() {
   disposeLodPlan(lodGeneratorState.plan);
   lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
+  lodRepairState = { targetKey: "", plans: [] };
   syncLodGeneratorUi("Settings changed. Analyze the LOD set again before generating it.");
 }
 
@@ -9880,6 +9931,7 @@ function analyzeSelectedMeshLodSet({ announce = true } = {}) {
   disposeLodPlan(lodGeneratorState.plan);
   if (!target) {
     lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
+    lodRepairState = { targetKey: "", plans: [] };
     syncLodGeneratorUi();
     if (announce) log("LOD Generator needs one selected editable mesh or one selected model group.");
     return null;
@@ -9888,7 +9940,13 @@ function analyzeSelectedMeshLodSet({ announce = true } = {}) {
   const plan = target.kind === "group"
     ? buildGroupLodPlan(target, settings)
     : { ...buildProtectedLodPlan(target.meshes[0].geometry, settings), kind: "mesh", targetKey: target.key };
+  const repairPlans = plan.safe ? [] : lodRepairPlansForTarget(target);
+  if (repairPlans.length) {
+    const repairSummary = repairPlans.map(entry => entry.plan.reason.replace(/^Safe mesh repair available:\s*/i, "")).join(" ");
+    plan.reason = `${plan.reason} Repair Mesh for LOD can safely clean ${repairPlans.length === 1 ? "this mesh" : `${repairPlans.length} affected parts`}: ${repairSummary}`;
+  }
   lodGeneratorState = { targetKey: target.key, settingsKey: lodSettingsKey(settings), plan };
+  lodRepairState = { targetKey: target.key, plans: repairPlans };
   syncLodGeneratorUi();
   if (announce) log(`LOD Generator analysis on ${target.name}: ${plan.reason}`, {
     geometryChanged: false,
@@ -9904,6 +9962,73 @@ function analyzeSelectedMeshLodSet({ announce = true } = {}) {
       }))
   });
   return plan;
+}
+
+function repairSelectedMeshForLod() {
+  const target = lodSelectionTarget();
+  if (!target || target.key !== lodRepairState.targetKey) {
+    analyzeSelectedMeshLodSet();
+    return [];
+  }
+  const repairs = lodRepairPlansForTarget(target);
+  if (!repairs.length) {
+    lodRepairState = { targetKey: target.key, plans: [] };
+    syncLodGeneratorUi("No safe automatic mesh repair is available for the selected LOD source.");
+    log("Repair Mesh for LOD made no changes because no safe duplicate or degenerate faces were found.");
+    return [];
+  }
+
+  recordHistory("repair mesh for LOD");
+  const repairedMeshes = [];
+  let removedDuplicate = 0;
+  let removedDegenerate = 0;
+  let mergedVertices = 0;
+  for (const entry of repairs) {
+    const mesh = findObject(entry.meshId);
+    if (!mesh?.geometry) continue;
+    const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const geometry = geometryFromWeldedTriangles(source, entry.plan.triangles);
+    source.dispose();
+    replaceEditableMeshGeometry(mesh, geometry);
+    mesh.userData.edgeBevelProtectedEdges = [];
+    mesh.userData.dissolvedSurfaceEdges = [];
+    removedDuplicate += entry.plan.removedDuplicate;
+    removedDegenerate += entry.plan.removedDegenerate;
+    mergedVertices += entry.plan.mergedVertices;
+    repairedMeshes.push(mesh);
+  }
+  selectedSurfaceVertices.length = 0;
+  selectedSurfaceEdges.length = 0;
+  selectedFaces.length = 0;
+  selectedFace = null;
+  updateFaceMarker();
+  updateSurfaceComponentMarker();
+  clearMeshIntegrityReport();
+  disposeLodPlan(lodGeneratorState.plan);
+  lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
+  lodRepairState = { targetKey: "", plans: [] };
+  updateAll();
+  syncSurfaceEditorUi();
+  updateSurfaceGizmoAttachment();
+  const nextPlan = analyzeSelectedMeshLodSet({ announce: false });
+  const summary = [
+    removedDuplicate ? `${removedDuplicate} duplicate face${removedDuplicate === 1 ? "" : "s"}` : "",
+    removedDegenerate ? `${removedDegenerate} collapsed face${removedDegenerate === 1 ? "" : "s"}` : "",
+    mergedVertices ? `${mergedVertices} near-coincident vert${mergedVertices === 1 ? "ex" : "ices"}` : ""
+  ].filter(Boolean).join(", ");
+  const resultMessage = nextPlan?.safe
+    ? `Repaired ${summary}. The LOD set is now ready to generate. Undo is ready.`
+    : `Repaired ${summary}. Remaining topology still prevents a complete safe LOD set. Undo is ready.`;
+  syncLodGeneratorUi(resultMessage);
+  log(`Repair Mesh for LOD repaired ${repairedMeshes.length} mesh${repairedMeshes.length === 1 ? "" : "es"}.`, {
+    removedDuplicateFaces: removedDuplicate,
+    removedDegenerateFaces: removedDegenerate,
+    mergedNearCoincidentVertices: mergedVertices,
+    lodReady: !!nextPlan?.safe,
+    uvAndMaterialAttributesPreservedPerTriangleCorner: true,
+    undoReady: true
+  });
+  return repairedMeshes;
 }
 
 function cloneLodGroupHierarchy(sourceGroupId, level, parentId) {

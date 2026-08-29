@@ -793,6 +793,7 @@ for (const input of [
   els.decimatePreserveMaterialsInput
 ]) input?.addEventListener("input", invalidateDecimateAnalysis);
 els.analyzeLodGeneratorBtn?.addEventListener("click", () => analyzeSelectedMeshLodSet());
+els.repairLodMeshBtn?.addEventListener("click", repairSelectedMeshForLod);
 els.generateLodGeneratorBtn?.addEventListener("click", generateAnalyzedLodSet);
 for (const input of [
   els.lod1ReductionInput,

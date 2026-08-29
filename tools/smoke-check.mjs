@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.32.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.33.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -977,6 +977,7 @@ function createSingleTriangleUvHoleFixture() {
     "topologyIsClosedTriangleMesh",
     "materialIndexForTriangle",
     "removeDoublesPreciseKey",
+    "removeDoublesPlan",
     "geometryFromWeldedTriangles",
     "decimateNormalizedSettings",
     "decimateAttributeKey",
@@ -1028,12 +1029,14 @@ function createSingleTriangleUvHoleFixture() {
     "topologyIsClosedTriangleMesh",
     "materialIndexForTriangle",
     "removeDoublesPreciseKey",
+    "removeDoublesPlan",
     "geometryFromWeldedTriangles",
     "decimateNormalizedSettings",
     "decimateAttributeKey",
     "protectedDecimatePlan",
     "lodNormalizedSettings",
     "buildProtectedLodPlan",
+    "buildLodMeshRepairPlan",
     "lodPartLevel",
     "buildGroupLodPlan"
   ].map(name => functionSource(meshesSource, name)).join("\n"), context);
@@ -1074,6 +1077,76 @@ function createSingleTriangleUvHoleFixture() {
       reason: plan.reason
     })}`);
   }
+  const allSeamSource = source.clone();
+  const allSeamUvs = new Float32Array(allSeamSource.getAttribute("position").count * 2);
+  for (let triangle = 0; triangle < allSeamSource.getAttribute("position").count / 3; triangle++) {
+    const base = triangle * 6;
+    const offset = (triangle % 97) / 100;
+    allSeamUvs.set([offset, 0, Math.min(1, offset + .01), 0, offset, .01], base);
+  }
+  allSeamSource.setAttribute("uv", new THREE.BufferAttribute(allSeamUvs, 2));
+  const allSeamPlan = context.buildProtectedLodPlan(allSeamSource, {
+    lod1: 10,
+    lod2: 25,
+    lod3: 65,
+    featureAngle: 50,
+    preserveBoundaries: true,
+    preserveUvSeams: true,
+    preserveMaterials: true
+  });
+  if (!allSeamPlan.safe || !allSeamPlan.usedUvSeamFallback || !allSeamPlan.reason.includes("UV seams covered every reducible edge")) {
+    throw new Error(`LOD Generator must retain usable imported UVs without letting a pathological all-seam layout block every level. ${JSON.stringify({
+      safe: allSeamPlan.safe,
+      usedUvSeamFallback: allSeamPlan.usedUvSeamFallback,
+      levels: allSeamPlan.levels.length,
+      reason: allSeamPlan.reason
+    })}`);
+  }
+  const duplicateSource = new THREE.BufferGeometry();
+  const sourcePositions = [...source.getAttribute("position").array];
+  const sourceUvs = [...source.getAttribute("uv").array];
+  duplicateSource.setAttribute("position", new THREE.Float32BufferAttribute([...sourcePositions, ...sourcePositions], 3));
+  duplicateSource.setAttribute("uv", new THREE.Float32BufferAttribute([...sourceUvs, ...sourceUvs], 2));
+  const blockedDuplicatePlan = context.buildProtectedLodPlan(duplicateSource, {
+    lod1: 10,
+    lod2: 25,
+    lod3: 65,
+    featureAngle: 50,
+    preserveBoundaries: true,
+    preserveUvSeams: true,
+    preserveMaterials: true
+  });
+  const repairPlan = context.buildLodMeshRepairPlan(duplicateSource);
+  const repairedDuplicateSource = context.geometryFromWeldedTriangles(duplicateSource, repairPlan.triangles);
+  const repairedLodPlan = context.buildProtectedLodPlan(repairedDuplicateSource, {
+    lod1: 10,
+    lod2: 25,
+    lod3: 65,
+    featureAngle: 50,
+    preserveBoundaries: true,
+    preserveUvSeams: true,
+    preserveMaterials: true
+  });
+  if (
+    blockedDuplicatePlan.safe
+    || !repairPlan.safe
+    || repairPlan.removedDuplicate !== plan.originalTriangles
+    || repairPlan.afterTriangles !== plan.originalTriangles
+    || repairPlan.nonManifoldEdgeCount !== 0
+    || !repairedLodPlan.safe
+    || repairedLodPlan.levels.length !== 3
+    || repairedDuplicateSource.getAttribute("uv").count !== repairedDuplicateSource.getAttribute("position").count
+  ) {
+    throw new Error(`Repair Mesh for LOD must safely remove imported overlapping face layers and unblock protected LOD generation. ${JSON.stringify({
+      blockedBeforeRepair: !blockedDuplicatePlan.safe,
+      repairSafe: repairPlan.safe,
+      removedDuplicate: repairPlan.removedDuplicate,
+      expectedDuplicate: plan.originalTriangles,
+      nonManifoldEdgesAfter: repairPlan.nonManifoldEdgeCount,
+      lodSafeAfterRepair: repairedLodPlan.safe,
+      levelsAfterRepair: repairedLodPlan.levels.length
+    })}`);
+  }
   const cube = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
   const groupPlan = context.buildGroupLodPlan({
     key: "group:test",
@@ -1107,6 +1180,12 @@ function createSingleTriangleUvHoleFixture() {
   }
   groupPlan.parts.forEach(part => part.plan.levels.forEach(level => level.geometry.dispose()));
   plan.levels.forEach(level => level.geometry.dispose());
+  blockedDuplicatePlan.levels.forEach(level => level.geometry.dispose());
+  repairedLodPlan.levels.forEach(level => level.geometry.dispose());
+  allSeamPlan.levels.forEach(level => level.geometry.dispose());
+  allSeamSource.dispose();
+  repairedDuplicateSource.dispose();
+  duplicateSource.dispose();
   cube.dispose();
   source.dispose();
 }
@@ -1290,7 +1369,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.32.js?v=49.60.32"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.33.js?v=49.60.33"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1331,7 +1410,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.32",
+  "tool-docking.js?v=49.60.33",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1907,6 +1986,10 @@ for (const required of [
   "analyzeDoublesBtn",
   "removeDoublesBtn",
   "removeDoublesPlan",
+  "buildLodMeshRepairPlan",
+  "repairSelectedMeshForLod",
+  "repairLodMeshBtn",
+  "Repair Mesh for LOD",
   "analyzeSelectedMeshDoubles",
   "removeAnalyzedDoubles",
   "Remove Doubles",
@@ -2126,8 +2209,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.32 Experimental") || !documentSource.includes("v49.60.32 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.32 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.33 Experimental") || !documentSource.includes("v49.60.33 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.33 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

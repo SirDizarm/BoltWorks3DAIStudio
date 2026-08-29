@@ -589,6 +589,7 @@ let removeDoublesState = { meshId: null, tolerance: null, plan: null };
 let meshStatisticsState = { meshId: null, stats: null, text: "" };
 let decimateState = { meshId: null, settingsKey: "", plan: null };
 let lodGeneratorState = { targetKey: "", settingsKey: "", plan: null };
+let lodRepairState = { targetKey: "", plans: [] };
 let uvUnwrapState = { meshId: null, settingsKey: "", plan: null };
 let lastBakedTextureAtlas = { meshId: null, dataUrl: null, fileName: null, atlasSize: 0, sourceTextureUrl: null, sourceTextureName: null };
 let hoveredHoleLoopInfo = null;
@@ -1056,6 +1057,7 @@ const els = {
   lodPreserveMaterialsInput: document.querySelector("#lodPreserveMaterialsInput"),
   lodHideGeneratedInput: document.querySelector("#lodHideGeneratedInput"),
   analyzeLodGeneratorBtn: document.querySelector("#analyzeLodGeneratorBtn"),
+  repairLodMeshBtn: document.querySelector("#repairLodMeshBtn"),
   generateLodGeneratorBtn: document.querySelector("#generateLodGeneratorBtn"),
   uvUnwrapStatus: document.querySelector("#uvUnwrapStatus"),
   uvUnwrapSeamAngleInput: document.querySelector("#uvUnwrapSeamAngleInput"),
