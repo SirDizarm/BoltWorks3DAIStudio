@@ -184,14 +184,12 @@ boneTransform.addEventListener("objectChange", () => {
     bone.position.copy(boneTransformProxy.position);
     const channel = rigPoseChannels.get(bone.id) || {};
     rigPoseChannels.set(bone.id, { position: bone.position.clone(), rotation: (channel.rotation || bone.rotation).clone() });
-    applyCurrentRigPose();
     mirrorBoneEdit(bone, { position: true, rotation: false, tail: true });
   } else {
     setBoneRotationFromWorldQuaternion(bone, boneTransformProxy.quaternion);
-    applyCurrentRigPose({ resolveLooseHierarchy: true });
     mirrorBoneEdit(bone, { position: false, rotation: true, tail: false });
   }
-  if (mirrorBoneEdits) applyCurrentRigPose({ resolveLooseHierarchy: boneTransform.mode === "rotate" });
+  applyCurrentRigPose({ resolveLooseHierarchy: boneTransform.mode === "rotate" });
   rebuildBoneVisuals();
   syncBonePanel();
 });
@@ -444,6 +442,11 @@ function mirrorBoneEdit(source, { position = true, rotation = true, tail = true 
     // stable during a live joystick drag (unlike matrix-to-Euler conversion).
     target.rotation.set(source.rotation.x, -source.rotation.y, -source.rotation.z);
   }
+  const channel = rigPoseChannels.get(target.id) || {};
+  rigPoseChannels.set(target.id, {
+    position: (position ? target.position : (channel.position || target.position)).clone(),
+    rotation: (rotation ? target.rotation : (channel.rotation || target.rotation)).clone()
+  });
   return target;
 }
 
@@ -2752,9 +2755,12 @@ function applyBonePanelValues() {
     THREE.MathUtils.degToRad(Number(els.boneRotY.value) || 0),
     THREE.MathUtils.degToRad(Number(els.boneRotZ.value) || 0)
   );
-  applyCurrentRigPose({ resolveLooseHierarchy: true });
+  rigPoseChannels.set(bone.id, {
+    position: bone.position.clone(),
+    rotation: bone.rotation.clone()
+  });
   mirrorBoneEdit(bone);
-  if (mirrorBoneEdits) applyCurrentRigPose({ resolveLooseHierarchy: true });
+  applyCurrentRigPose({ resolveLooseHierarchy: true });
   if (tPoseFittingMode) commitTPoseBoneFitting();
   commitLooseBonePosition(bone.id, startPosition);
   if (mirror?.id && mirrorStartPosition) commitLooseBonePosition(mirror.id, mirrorStartPosition);
@@ -3362,9 +3368,13 @@ function moveBoneDrag(event) {
   } else {
     return;
   }
-  applyCurrentRigPose();
+  const channel = rigPoseChannels.get(bone.id) || {};
+  rigPoseChannels.set(bone.id, {
+    position: bone.position.clone(),
+    rotation: (channel.rotation || bone.rotation).clone()
+  });
   mirrorBoneEdit(bone, { position: true, rotation: false, tail: true });
-  if (mirrorBoneEdits) applyCurrentRigPose();
+  applyCurrentRigPose();
   rebuildBoneVisuals();
   syncBonePanel();
   event.preventDefault();

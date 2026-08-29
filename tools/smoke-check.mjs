@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.43.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.44.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -209,6 +209,40 @@ function functionSource(source, name) {
     if (depth === 0) return source.slice(start, index + 1);
   }
   throw new Error(`Could not isolate ${name} from the mesh module.`);
+}
+
+{
+  const context = { THREE, rigBones: [], rigPoseChannels: new Map(), mirrorBoneEdits: true };
+  context.boneById = id => context.rigBones.find(bone => bone.id === id) || null;
+  vm.createContext(context);
+  vm.runInContext([
+    "mirroredBoneId",
+    "mirrorBoneEdit"
+  ].map(name => functionSource(riggingSource, name)).join("\n"), context);
+  const leftShin = {
+    id: "left_shin",
+    position: new THREE.Vector3(1.1, 2.4, -.2),
+    rotation: new THREE.Vector3(.2, .3, -.4),
+    tail: new THREE.Vector3(1.1, 1.2, -.2)
+  };
+  const rightShin = {
+    id: "right_shin",
+    position: new THREE.Vector3(-.8, 2.2, 0),
+    rotation: new THREE.Vector3(),
+    tail: new THREE.Vector3(-.8, 1, 0)
+  };
+  context.rigBones.push(leftShin, rightShin);
+  context.mirrorBoneEdit(leftShin);
+  const mirroredChannel = context.rigPoseChannels.get("right_shin");
+  if (!mirroredChannel
+      || Math.abs(mirroredChannel.position.x + 1.1) > 1e-6
+      || Math.abs(mirroredChannel.position.y - 2.4) > 1e-6
+      || Math.abs(mirroredChannel.position.z + .2) > 1e-6
+      || Math.abs(mirroredChannel.rotation.x - .2) > 1e-6
+      || Math.abs(mirroredChannel.rotation.y + .3) > 1e-6
+      || Math.abs(mirroredChannel.rotation.z - .4) > 1e-6) {
+    throw new Error("Mirrored T-Pose edits must update the opposite joint's branch-local pose channel before hierarchy solving.");
+  }
 }
 
 {
@@ -1482,7 +1516,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.43.js?v=49.60.43"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.44.js?v=49.60.44"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1528,7 +1562,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.43",
+  "tool-docking.js?v=49.60.44",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2335,8 +2369,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.43 Experimental") || !documentSource.includes("v49.60.43 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.43 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.44 Experimental") || !documentSource.includes("v49.60.44 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.44 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
