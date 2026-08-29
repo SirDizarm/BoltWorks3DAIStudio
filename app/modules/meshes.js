@@ -4242,7 +4242,7 @@ function updateTransformAttachment() {
     && ["skin", "armor"].includes(selected?.userData?.rigRole || "");
   const selectedStoredPivotActive = !animatorRigObjectTransform
     && selected
-    && activeTransformMode === "rotate"
+    && ["translate", "rotate", "scale"].includes(activeTransformMode)
     && Array.isArray(selected.userData?.pivot)
     && selected.userData.pivot.length === 3;
   if (pivotEditMode && !pivotTargets.length) {
