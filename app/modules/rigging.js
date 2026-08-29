@@ -1151,9 +1151,18 @@ function animationHasKeys() {
   return Object.values(animationState.keys || {}).some(keys => Array.isArray(keys) && keys.length > 0);
 }
 function restoreAnimationBindPose({ render = true } = {}) {
+  // A real clip leaves its local pose channels cached for hierarchy solving.
+  // Entering T-Pose must replace those channels with the fitted bind pose;
+  // otherwise applyCurrentRigPose immediately reapplies the last animation and
+  // makes the T-Pose menu appear to do nothing.
+  rigPoseChannels.clear();
   for (const bone of rigBones) {
     if (bone.bindPosition) bone.position.copy(bone.bindPosition);
     if (bone.bindRotation) bone.rotation.copy(bone.bindRotation);
+    rigPoseChannels.set(bone.id, {
+      position: bone.position.clone(),
+      rotation: bone.rotation.clone()
+    });
     bone.tail.copy(bone.position).add(bone.tailOffset.clone().applyEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")));
   }
   if (activeSkinRuntime) applySkinnedPose(new Map(rigBones.map(bone => [bone.id, {

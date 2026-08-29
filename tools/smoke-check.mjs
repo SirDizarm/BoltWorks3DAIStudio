@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.42.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.43.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1482,7 +1482,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.42.js?v=49.60.42"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.43.js?v=49.60.43"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1528,7 +1528,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.42",
+  "tool-docking.js?v=49.60.43",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2335,8 +2335,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.42 Experimental") || !documentSource.includes("v49.60.42 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.42 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.43 Experimental") || !documentSource.includes("v49.60.43 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.43 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2705,6 +2705,9 @@ if (!documentSource.includes('id="modelSelectTargetAllBtn"') || !documentSource.
 }
 if (documentSource.includes('id="tPoseFittingBtn"') || !moduleSources.get("rigging")?.includes('const T_POSE_CLIP_ID = "__t_pose_fitting__"') || !moduleSources.get("rigging")?.includes("T-Pose / Rig Fitting</option>") || !moduleSources.get("animator-workspace")?.includes("T-Pose / Rig Fitting</option>") || !moduleSources.get("rigging")?.includes("restoreAnimationBindPose({ render: false });") || !moduleSources.get("rigging")?.includes("if (tPoseFittingMode) {\n    animationState.playing = false;") || !moduleSources.get("meshes")?.includes("const animatorRigObjectTransform") || !moduleSources.get("meshes")?.includes("const selectedStoredPivotActive = !animatorRigObjectTransform")) {
   throw new Error("T-Pose must be a dedicated Animation Clip menu state that restores and holds the fitted bind pose instead of a separate mode button.");
+}
+if (!moduleSources.get("rigging")?.includes("function restoreAnimationBindPose({ render = true } = {}) {\n  // A real clip leaves its local pose channels cached") || !moduleSources.get("rigging")?.includes("rigPoseChannels.set(bone.id, {\n      position: bone.position.clone(),\n      rotation: bone.rotation.clone()")) {
+  throw new Error("T-Pose restore must replace stale animation channels with the fitted bind pose before hierarchy resolution.");
 }
 if (!moduleSources.get("rigging")?.includes("function rebaseAnimationKeysToBindPose(previousBindPose)") || !moduleSources.get("rigging")?.includes("const animationDelta = keyedQuaternion.multiply(oldBindQuaternion.clone().invert())") || !moduleSources.get("rigging")?.includes("const rebasedQuaternion = animationDelta.multiply(newBindQuaternion)") || !moduleSources.get("rigging")?.includes("rebaseAnimationKeysToBindPose(previousBindPose);")) {
   throw new Error("T-Pose Fitting and Glue must rebase every animation clip onto the newly fitted bind pose instead of restoring old absolute bone transforms.");
