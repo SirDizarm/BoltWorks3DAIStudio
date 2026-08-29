@@ -1581,6 +1581,11 @@ canvas.addEventListener("pointerdown", event => {
   }
   if (spaceCameraMode) return;
   pendingScenePick = null;
+  if (typeof poseStraightenerAddPointFromEvent === "function" && poseStraightenerAddPointFromEvent(event)) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    return;
+  }
   if (knifeCutMode) {
     addKnifeCutPointFromHit(hitFromPointerEvent(event));
     return;

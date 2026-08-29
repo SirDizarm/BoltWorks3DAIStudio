@@ -1029,6 +1029,16 @@ function restoreAnimationBindPose({ render = true } = {}) {
 function animationJumpLift(frame = animationState.frame) {
   const clipLabel = els.minecraftAnimationSelect?.selectedOptions?.[0]?.textContent?.trim().toLowerCase() || "";
   if (!clipLabel.includes("jump")) return 0;
+  const hasAuthoredLift = rigBones.filter(candidate => !candidate.parentId).some(bone => {
+    const restY = bone.bindPosition?.y ?? bone.position?.y ?? 0;
+    return (animationState.keys[bone.id] || []).some(pose =>
+      Array.isArray(pose.position) && Math.abs((Number(pose.position[1]) || 0) - restY) > 1e-4
+    );
+  });
+  // Root-height keys define the clip's exact jump arc. Adding the automatic
+  // preview lift on top made authored characters hover far above the ground
+  // and made the editor disagree with exported realtime animation.
+  if (hasAuthoredLift) return 0;
   const phase = Math.max(0, Math.min(1, frame / Math.max(1, animationState.end)));
   const modelBounds = new THREE.Box3();
   for (const object of objects) modelBounds.expandByObject(object);
@@ -1102,9 +1112,20 @@ function pointSegmentDistanceSquared(point, start, end) {
 }
 
 function skinCandidatesForVertex(point, bones) {
-  const side = point.x < 0 ? "L" : "R";
   const byName = name => bones.findIndex(bone => bone.name === name);
   const named = names => names.map(byName).filter(index => index >= 0);
+  const leftReference = bones.find(bone => bone.name === "Hand L")
+    || bones.find(bone => bone.name === "Thigh L");
+  const rightReference = bones.find(bone => bone.name === "Hand R")
+    || bones.find(bone => bone.name === "Thigh R");
+  const leftX = leftReference?.bindPosition?.x ?? leftReference?.position?.x;
+  const rightX = rightReference?.bindPosition?.x ?? rightReference?.position?.x;
+  // Imported tools disagree about whether the model's left side is +X or -X.
+  // Pick the named chain whose placed joints are physically closest instead of
+  // assigning weights from a hard-coded axis sign.
+  const side = Number.isFinite(leftX) && Number.isFinite(rightX)
+    ? (Math.abs(point.x - leftX) <= Math.abs(point.x - rightX) ? "L" : "R")
+    : (point.x < 0 ? "L" : "R");
   const pelvis = bones.find(bone => bone.name === "Pelvis");
   const chest = bones.find(bone => bone.name === "Chest");
   const foot = bones.find(bone => bone.name === `Foot ${side}`);

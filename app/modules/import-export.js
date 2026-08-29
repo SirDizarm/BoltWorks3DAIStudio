@@ -1628,23 +1628,25 @@ function gameCharacterAnimationClips(exportBoneNames) {
   return clips;
 }
 
-function gameCharacterManifest(baseName, glbName, rig, armorObjects, lods = []) {
-  const sockets = rig.bones.filter(bone => bone.armorMount || bone.armorMountId).map(bone => ({
+function gameCharacterManifest(baseName, glbName, rig, boundObjects, lods = []) {
+  const sockets = rig.bones.filter(bone => bone.role === "itemSocket" || bone.armorMount || bone.armorMountId).map(bone => ({
     id: bone.armorMountId || `socket-${bone.id}`,
     boneId: bone.id,
     name: bone.name,
     purpose: "equipment"
   }));
-  const armor = armorObjects.map((object, index) => ({
+  const attachments = boundObjects.map((object, index) => ({
     id: object.userData?.id || object.uuid,
-    name: object.name || "Armor",
+    name: object.name || "Bound Part",
     boneId: gameCharacterArmorBinding(object)?.bone?.id || null,
     mountId: object.userData?.rigArmorMountId || null,
+    role: object.userData?.rigRole === "armor" ? "equipment" : "rigidPart",
     attachment: "rigid",
     meshIndex: index + 1,
     materialIndex: index + 1,
     detachable: true
   }));
+  const armor = attachments.filter(item => item.role === "equipment");
   const clips = Object.entries(rig.animation?.clips || {}).map(([id, clip]) => ({
     id,
     name: gameCharacterSafeName(clip?.name || id, id),
@@ -1675,6 +1677,7 @@ function gameCharacterManifest(baseName, glbName, rig, armorObjects, lods = []) 
     },
     animations: clips,
     sockets,
+    attachments,
     armor,
     gameplay: {
       supportsDetachedLimbs: true,
@@ -1710,7 +1713,7 @@ function gameCharacterSimplifiedGeometry(source, keepRatio, skinBones = null) {
   return geometry;
 }
 
-async function gameCharacterBuildGlb({ baseName, avatar, armorObjects, clips, keepRatio, level }) {
+async function gameCharacterBuildGlb({ baseName, avatar, boundObjects, clips, keepRatio, level }) {
   avatar.updateMatrixWorld(true);
   const exportAvatar = cloneSkeleton(avatar);
   exportAvatar.name = `${baseName}_Skin_LOD${level}`;
@@ -1724,7 +1727,7 @@ async function gameCharacterBuildGlb({ baseName, avatar, armorObjects, clips, ke
     exportBonesById.set(id, node);
   });
   const avatarWorldInverse = avatar.matrixWorld.clone().invert();
-  for (const object of armorObjects) {
+  for (const object of boundObjects) {
     const binding = gameCharacterArmorBinding(object);
     const targetBone = exportBonesById.get(binding.bone.id);
     const boneIndex = exportAvatar.skeleton.bones.indexOf(targetBone);
@@ -1753,9 +1756,9 @@ async function gameCharacterBuildGlb({ baseName, avatar, armorObjects, clips, ke
     geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(weights, 4));
     const sourceMaterial = Array.isArray(object.material) ? object.material[0] : object.material;
     const armorMesh = new THREE.SkinnedMesh(geometry, sourceMaterial.clone());
-    armorMesh.name = gameCharacterSafeName(object.name, "Armor");
+    armorMesh.name = gameCharacterSafeName(object.name, "Bound_Part");
     armorMesh.userData = {
-      bwsRole: "armor",
+      bwsRole: object.userData?.rigRole === "armor" ? "equipment" : "rigidPart",
       bwsObjectId: object.userData?.id || object.uuid,
       bwsBoneId: binding.bone.id,
       bwsMountId: object.userData?.rigArmorMountId || null,
@@ -1766,8 +1769,8 @@ async function gameCharacterBuildGlb({ baseName, avatar, armorObjects, clips, ke
   }
   exportAvatar.userData.bwsMeshSlots = [
     { role: "skin", index: 0, id: avatar.userData?.id || avatar.uuid },
-    ...armorObjects.map((object, index) => ({
-      role: "armor",
+    ...boundObjects.map((object, index) => ({
+      role: object.userData?.rigRole === "armor" ? "equipment" : "rigidPart",
       index: index + 1,
       id: object.userData?.id || object.uuid,
       boneId: gameCharacterArmorBinding(object)?.bone?.id || null
@@ -1797,6 +1800,7 @@ async function exportGameCharacterPackage() {
   const originalPlaying = animationState.playing;
   const baseName = gameCharacterSafeName(currentProjectBaseName(), "boltworks-character");
   const glbName = `${baseName}.glb`;
+  let exportStage = "prepare animation bindings";
   try {
     animationState.playing = false;
     if (!(animationState.bindingRest instanceof Map)) prepareAnimationBindingRest();
@@ -1805,9 +1809,11 @@ async function exportGameCharacterPackage() {
       bone.id,
       `BWS_${gameCharacterSafeName(bone.id, "bone")}`
     ]));
-    const armorObjects = objects.filter(object => object.geometry?.getAttribute?.("position")
-      && (object.userData?.rigRole === "armor" || object.userData?.rigAttachment === "rigidArmor")
+    const boundObjects = objects.filter(object => object !== avatar
+      && object.geometry?.getAttribute?.("position")
+      && !object.userData?.editorHelper
       && gameCharacterArmorBinding(object));
+    exportStage = "sample animation clips";
     const clips = gameCharacterAnimationClips(exportBoneNames);
     const useLods = els.gameCharacterLodInput?.checked !== false;
     const mediumRatio = Math.max(.2, Math.min(.9, Number(els.gameOptimizeRatioInput?.value || 65) / 100));
@@ -1820,9 +1826,11 @@ async function exportGameCharacterPackage() {
       : [{ level: 0, keepRatio: 1, file: glbName, minDistance: 0 }];
     const binaries = [];
     for (const level of levels) {
-      const binary = await gameCharacterBuildGlb({ baseName, avatar, armorObjects, clips, ...level });
+      exportStage = `build LOD ${level.level}`;
+      const binary = await gameCharacterBuildGlb({ baseName, avatar, boundObjects, clips, ...level });
       binaries.push({ ...level, binary });
     }
+    exportStage = "build character manifest";
     const rig = serializeBoneRig();
     const manifestLods = levels.map(level => ({
       level: level.level,
@@ -1830,25 +1838,26 @@ async function exportGameCharacterPackage() {
       minDistance: level.minDistance,
       keepDetailPercent: Math.round(level.keepRatio * 100)
     }));
-    const manifest = gameCharacterManifest(baseName, glbName, rig, armorObjects, manifestLods);
+    const manifest = gameCharacterManifest(baseName, glbName, rig, boundObjects, manifestLods);
     const readme = [
       "BoltWorks Game Character Package v1",
       "",
-      `${glbName} contains the full-detail live skinned body, rigidly weighted armor, skeleton, embedded materials, and realtime skeletal animations.`,
-      useLods ? "LOD1 and LOD2 contain progressively lighter skinned body and armor geometry for distance-based rendering." : "No distance LOD files were requested.",
-      `${baseName}.bws-character.json contains stable bone IDs, sockets, armor ownership, and gameplay metadata.`,
+      `${glbName} contains the full-detail live skinned body, detachable rigid parts, equipment previews, skeleton, embedded materials, and realtime skeletal animations.`,
+      useLods ? "LOD1 and LOD2 contain progressively lighter body, rigid-part, and equipment geometry for distance-based rendering." : "No distance LOD files were requested.",
+      `${baseName}.bws-character.json contains stable bone IDs, hand/item sockets, detachable-part ownership, and gameplay metadata.`,
       "Raylib can load the GLB with LoadModel and drive its bones every game frame with LoadModelAnimations and UpdateModelAnimation."
     ].join("\n");
+    exportStage = "assemble character archive";
     const zip = makeZip([
       ...binaries.map(level => ({ name: level.file, data: new Uint8Array(level.binary) })),
       { name: `${baseName}.bws-character.json`, data: JSON.stringify(manifest, null, 2) },
       { name: "README.txt", data: readme }
     ]);
     downloadBlob(`${baseName}.bws-character.zip`, zip);
-    log(`Exported ${baseName}.bws-character.zip with ${levels.length} realtime LOD level${levels.length === 1 ? "" : "s"}, ${rig.bones.length} bones, ${clips.length} clips, and ${armorObjects.length} bound armor pieces.`);
+    log(`Exported ${baseName}.bws-character.zip with ${levels.length} realtime LOD level${levels.length === 1 ? "" : "s"}, ${rig.bones.length} bones, ${clips.length} clips, and ${boundObjects.length} detachable bound parts.`);
   } catch (error) {
     console.error(error);
-    log(`Game Character export failed: ${error?.message || error}`);
+    log(`Game Character export failed during ${exportStage}: ${error?.message || error}`);
   } finally {
     if (animationState.clips?.[originalClipId]) setActiveAnimationClip(originalClipId);
     animationSetFrame(originalFrame, { render: true });

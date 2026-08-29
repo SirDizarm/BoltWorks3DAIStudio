@@ -10,6 +10,7 @@ export const studioModuleOrder = Object.freeze([
   "rigging",
   "minecraft",
   "animator-workspace",
+  "pose-straightener",
   "panels"
 ]);
 
