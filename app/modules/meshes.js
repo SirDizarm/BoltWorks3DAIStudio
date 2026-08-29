@@ -4224,11 +4224,18 @@ function updateTransformAttachment() {
   finishScaleDragSession();
   const transformTargets = transformTargetObjects();
   const pivotTargets = pivotManagedObjects();
+  const animatorRigObjectTransform = document.body.classList.contains("animator-workspace-active")
+    && ["skin", "armor"].includes(selected?.userData?.rigRole || "");
+  const selectedStoredPivotActive = !animatorRigObjectTransform
+    && selected
+    && activeTransformMode === "rotate"
+    && Array.isArray(selected.userData?.pivot)
+    && selected.userData.pivot.length === 3;
   if (pivotEditMode && !pivotTargets.length) {
     pivotEditMode = false;
     els.pivotBtn.classList.remove("active");
   }
-  if (pivotTargets.length && (pivotEditMode || transformTargets.length > 1 || (selected && activeTransformMode === "rotate" && Array.isArray(selected.userData?.pivot) && selected.userData.pivot.length === 3))) {
+  if (pivotTargets.length && (pivotEditMode || transformTargets.length > 1 || selectedStoredPivotActive)) {
     syncGroupPivotToObjects(pivotTargets);
     if (!activeTransformMode && !pivotEditMode) return;
     transform.setMode(pivotEditMode ? "translate" : activeTransformMode);
@@ -4247,6 +4254,10 @@ function updateTransformAttachment() {
 }
 
 function setTransformMode(mode) {
+  if (["translate", "rotate", "scale"].includes(mode) && surfaceTransformTarget === "selection" && surfaceSelectionSource === "surface" && surfaceComponentSelectionCount() > 0) {
+    setSurfaceGizmoMode(mode, { toggle: true });
+    return;
+  }
   const nextMode = activeTransformMode === mode ? null : mode;
   if (pivotEditMode) setPivotEditMode(false, { silent: true });
   if (nextMode && dragPushMode) setDragPushMode(false, { silent: true });
@@ -4277,7 +4288,7 @@ function setTransformMode(mode) {
 function setDragPushMode(enabled, { silent = false } = {}) {
   finishDragPushSession();
   dragPushMode = !!enabled;
-  els.dragPushBtn?.classList.toggle("active", dragPushMode);
+  syncSurfaceGizmoModeUi();
   if (dragPushMode) {
     if (activeTransformMode) setTransformMode(activeTransformMode);
     setFacePickMode(true);
@@ -4288,6 +4299,7 @@ function setDragPushMode(enabled, { silent = false } = {}) {
       : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
   }
   updateSurfaceGizmoAttachment();
+  syncSurfaceGizmoModeUi();
   if (!silent) log(dragPushMode ? "Drag/Push mode enabled." : "Drag/Push mode disabled.");
 }
 
@@ -4373,6 +4385,7 @@ function syncSurfaceEditorUi() {
   }
   syncHoleRepairUi();
   syncSurfaceAxisUi();
+  syncSurfaceGizmoModeUi();
   syncUvUnwrapUi();
   if (els.surfaceEditorSelection) {
     if (surfaceComponentMode === "none") {
@@ -4560,9 +4573,147 @@ function configureSurfaceTransformAxis() {
   syncSurfaceAxisUi();
 }
 
+function syncSurfaceGizmoModeUi() {
+  const selectionActive = surfaceTransformTarget === "selection" && dragPushMode;
+  els.surfaceTransformModelBtn?.classList.toggle("active", surfaceTransformTarget === "model");
+  els.surfaceTransformSelectionBtn?.classList.toggle("active", surfaceTransformTarget === "selection");
+  els.dragPushBtn?.classList.toggle("active", selectionActive && surfaceGizmoMode === "translate");
+  els.surfaceRotateGizmoBtn?.classList.toggle("active", selectionActive && surfaceGizmoMode === "rotate");
+  els.surfaceScaleGizmoBtn?.classList.toggle("active", selectionActive && surfaceGizmoMode === "scale");
+  els.surfaceScaleAllAxesBtn?.classList.toggle("active", surfaceScaleAllAxes);
+  if (!activeTransformMode) {
+    document.querySelectorAll("[data-mode]").forEach(button => {
+      button.classList.toggle("active", selectionActive && button.dataset.mode === surfaceGizmoMode);
+    });
+  }
+}
+
+function setSurfaceScaleAllAxes(enabled) {
+  surfaceScaleAllAxes = !!enabled;
+  if (surfaceScaleAllAxes && surfaceGizmoMode !== "scale") setSurfaceGizmoMode("scale");
+  syncSurfaceGizmoModeUi();
+  updateSurfaceTransformGuides();
+  log(`Selected Area Scale All Axes ${surfaceScaleAllAxes ? "enabled" : "disabled"}.`);
+}
+
+function surfaceScaleHandleSigns(control = activeSurfaceTransform || surfaceTransform) {
+  const signs = { x: 1, y: 1, z: 1 };
+  if (!control?.axis) return signs;
+  const activeCamera = control === surfaceFrontTransform
+    ? frontBoneCamera
+    : control === surfaceSideTransform ? sideBoneCamera : camera;
+  raycaster.setFromCamera(lastCanvasPointer, activeCamera);
+  const hit = raycaster.intersectObject(control, true).find(entry => entry.object?.visible !== false);
+  if (!hit?.point) return signs;
+  const relative = hit.point.clone().sub(surfaceGizmoPivot.position);
+  const axis = String(control.axis || "").toUpperCase();
+  if (axis.includes("X")) signs.x = relative.x >= 0 ? 1 : -1;
+  if (axis.includes("Y")) signs.y = relative.y >= 0 ? 1 : -1;
+  if (axis.includes("Z")) signs.z = relative.z >= 0 ? 1 : -1;
+  return signs;
+}
+
+function surfacePointMapsScaleHandlePoint(byMesh, fallbackCenter, signMap = { x: 1, y: 1, z: 1 }, factors = null) {
+  const bounds = new THREE.Box3();
+  let count = 0;
+  for (const [mesh, points] of byMesh) {
+    mesh.updateWorldMatrix(true, false);
+    for (const point of points.values()) {
+      bounds.expandByPoint(point.clone().applyMatrix4(mesh.matrixWorld));
+      count++;
+    }
+  }
+  if (!count || bounds.isEmpty()) return fallbackCenter.clone();
+  const origin = fallbackCenter.clone();
+  const activeAxis = String(activeSurfaceTransform?.axis || "").toUpperCase();
+  for (const axis of ["x", "y", "z"]) {
+    const scalesAxis = surfaceScaleAllAxes || activeAxis.includes(axis.toUpperCase()) || (factors && Math.abs(factors[axis] - 1) > .000001);
+    if (scalesAxis) origin[axis] = signMap[axis] >= 0 ? bounds.max[axis] : bounds.min[axis];
+  }
+  return origin;
+}
+
+function updateSurfaceTransformGuides() {
+  const show = surfaceGizmoShouldShow();
+  surfaceTransformGuideGroup.visible = show;
+  if (!show) return;
+  const sourceMaps = selectedSurfacePointMaps();
+  const centered = selectedSurfaceWorldCenter() || surfaceGizmoPivot.position.clone();
+  const oneSided = surfaceGizmoMode === "scale" && (surfaceGizmoDragging ? surfaceGizmoOneSidedScale : (isShiftHeld && !isCtrlHeld));
+  const handleSigns = surfaceGizmoDragging ? surfaceGizmoScaleHandleSigns : surfaceScaleHandleSigns(activeSurfaceTransform);
+  const heldSide = oneSided
+    ? surfacePointMapsScaleHandlePoint(sourceMaps, centered, handleSigns)
+    : centered;
+  surfaceScaleOriginMarker.visible = surfaceGizmoMode === "scale" && !oneSided;
+  surfaceScaleOriginMarker.position.copy(centered);
+  surfaceScaleOriginMarker.material.color.setHex(0xffd35a);
+  surfaceScaleAnchorMarker.visible = surfaceGizmoMode === "scale" && oneSided;
+  surfaceScaleAnchorLine.visible = surfaceScaleAnchorMarker.visible;
+  if (surfaceScaleAnchorMarker.visible) {
+    surfaceScaleAnchorMarker.position.copy(heldSide);
+    const linePositions = surfaceScaleAnchorLine.geometry.getAttribute("position");
+    linePositions.setXYZ(0, centered.x, centered.y, centered.z);
+    linePositions.setXYZ(1, heldSide.x, heldSide.y, heldSide.z);
+    linePositions.needsUpdate = true;
+    surfaceScaleAnchorLine.geometry.computeBoundingSphere();
+  }
+  const mirroredMaps = mirroredSurfacePointMaps(sourceMaps);
+  const positions = [];
+  for (const [mesh, points] of mirroredMaps) {
+    mesh.updateWorldMatrix(true, false);
+    for (const point of points.values()) positions.push(...point.clone().applyMatrix4(mesh.matrixWorld).toArray());
+  }
+  surfaceMirrorGhostMarker.geometry.dispose();
+  surfaceMirrorGhostMarker.geometry = new THREE.BufferGeometry();
+  if (positions.length) surfaceMirrorGhostMarker.geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+  surfaceMirrorGhostMarker.visible = mirrorBoneEdits && positions.length > 0;
+}
+
+function setSurfaceGizmoMode(mode = "translate", { toggle = false } = {}) {
+  const next = ["translate", "rotate", "scale"].includes(mode) ? mode : "translate";
+  surfaceTransformTarget = "selection";
+  if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "mouse";
+  const shouldDisable = toggle && dragPushMode && surfaceGizmoMode === next;
+  surfaceGizmoMode = next;
+  if (shouldDisable) setDragPushMode(false, { silent: true });
+  else {
+    if (activeTransformMode) {
+      finishScaleDragSession();
+      activeTransformMode = null;
+      transform.detach();
+      transform.visible = false;
+      document.querySelectorAll("[data-mode]").forEach(button => button.classList.remove("active"));
+    }
+    setDragPushMode(true, { silent: true });
+  }
+  syncSurfaceGizmoModeUi();
+  updateSurfaceGizmoAttachment();
+  els.hudText.textContent = shouldDisable
+    ? "Surface transform gizmo off"
+    : (next === "scale"
+      ? "Surface scale active: drag the center cube for uniform scale or an axis handle for one direction"
+      : next === "rotate"
+        ? "Surface rotate active: drag an X, Y, or Z ring around the selected area center"
+        : "Surface move active: drag an X, Y, or Z arrow");
+}
+
+function setSurfaceTransformTarget(target = "model") {
+  surfaceTransformTarget = target === "selection" ? "selection" : "model";
+  if (surfaceTransformTarget === "model") {
+    if (dragPushMode) setDragPushMode(false, { silent: true });
+  } else {
+    if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "mouse";
+    if (surfaceComponentSelectionCount()) setSurfaceGizmoMode(surfaceGizmoMode);
+  }
+  syncSurfaceEditorUi();
+  syncSurfaceGizmoModeUi();
+  updateSurfaceGizmoAttachment();
+  log(`Transform target set to ${surfaceTransformTarget === "selection" ? "Selected Area" : "Full Model"}.`);
+}
+
 function surfaceGizmoShouldShow() {
-  return dragPushMode
-    && surfaceInteractionMode() === "mouse"
+  return surfaceTransformTarget === "selection"
+    && dragPushMode
     && surfaceComponentSelectionCount() > 0
     && !els.surfaceEditorWindow?.classList.contains("collapsed");
 }
@@ -4588,6 +4739,7 @@ function updateSurfaceGizmoAttachment() {
       control.visible = false;
     }
     surfaceGizmoPivot.visible = false;
+    surfaceTransformGuideGroup.visible = false;
     surfaceGizmoDragging = false;
     activeSurfaceTransform = surfaceTransform;
     return;
@@ -4600,16 +4752,22 @@ function updateSurfaceGizmoAttachment() {
   surfaceGizmoPivot.scale.set(1, 1, 1);
   surfaceGizmoPivot.updateMatrixWorld(true);
   surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
+  surfaceGizmoLastScale.set(1, 1, 1);
+  surfaceGizmoScaleCenter.copy(center);
+  surfaceGizmoLastQuaternion.identity();
   surfaceGizmoSyncing = false;
   configureSurfaceTransformAxis();
   for (const control of surfaceTransforms) {
-    control.setMode("translate");
+    control.setMode(surfaceGizmoMode);
     control.setTranslationSnap(transformSnapSettings().translation ?? dragPushStepSize());
+    control.setScaleSnap(transformSnapSettings().scale);
     control.enabled = true;
     control.attach(surfaceGizmoPivot);
     control.visible = true;
     hideSurfacePlaneHandles(control);
   }
+  syncSurfaceGizmoModeUi();
+  updateSurfaceTransformGuides();
 }
 
 function beginSurfaceGizmoDrag(event) {
@@ -4618,13 +4776,59 @@ function beginSurfaceGizmoDrag(event) {
   surfaceGizmoDragging = true;
   surfaceGizmoMovedDistance = 0;
   surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
-  recordHistory("move selected surface with gizmo");
-  els.hudText.textContent = "Surface arrows active: drag X, Y, or Z to move the selected surface";
+  surfaceGizmoLastScale.copy(surfaceGizmoPivot.scale);
+  surfaceGizmoScaleCenter.copy(surfaceGizmoPivot.position);
+  surfaceGizmoLastQuaternion.copy(surfaceGizmoPivot.quaternion);
+  if (surfaceGizmoMode === "scale") {
+    surfaceGizmoOneSidedScale = isShiftHeld && !isCtrlHeld;
+    surfaceGizmoScaleHandleSigns = surfaceScaleHandleSigns(activeSurfaceTransform);
+    updateSurfaceTransformGuides();
+  }
+  recordHistory(`${surfaceGizmoMode} selected surface with gizmo`);
+  els.hudText.textContent = surfaceGizmoMode === "scale"
+    ? "Surface scale active: drag the center cube or an X/Y/Z scale handle"
+    : surfaceGizmoMode === "rotate"
+      ? "Surface rotate active: drag an X, Y, or Z ring around the selected center"
+      : "Surface arrows active: drag X, Y, or Z to move the selected surface";
 }
 
 function applySurfaceGizmoDelta(event) {
   if (!surfaceGizmoDragging || surfaceGizmoSyncing || !surfaceComponentSelectionCount()) return;
   const control = event?.target || activeSurfaceTransform || surfaceTransform;
+  if (surfaceGizmoMode === "rotate") {
+    const nextQuaternion = surfaceGizmoPivot.quaternion.clone().normalize();
+    const deltaQuaternion = nextQuaternion.clone().multiply(surfaceGizmoLastQuaternion.clone().invert()).normalize();
+    const angle = 2 * Math.acos(THREE.MathUtils.clamp(Math.abs(deltaQuaternion.w), -1, 1));
+    if (!Number.isFinite(angle) || angle < .0000001) return;
+    const movedOccurrences = rotateSelectedSurfaceByWorldQuaternion(deltaQuaternion, surfaceGizmoScaleCenter);
+    surfaceGizmoMovedDistance += angle;
+    surfaceGizmoLastQuaternion.copy(nextQuaternion);
+    els.hudText.textContent = `Surface rotate: ${round(THREE.MathUtils.radToDeg(surfaceGizmoMovedDistance))}° | ${movedOccurrences} points`;
+    return;
+  }
+  if (surfaceGizmoMode === "scale") {
+    const nextScale = surfaceGizmoPivot.scale.clone();
+    const factors = new THREE.Vector3(
+      Math.abs(surfaceGizmoLastScale.x) > .000001 ? nextScale.x / surfaceGizmoLastScale.x : 1,
+      Math.abs(surfaceGizmoLastScale.y) > .000001 ? nextScale.y / surfaceGizmoLastScale.y : 1,
+      Math.abs(surfaceGizmoLastScale.z) > .000001 ? nextScale.z / surfaceGizmoLastScale.z : 1
+    );
+    if ([factors.x, factors.y, factors.z].some(value => !Number.isFinite(value) || value <= .0001)) return;
+    if (surfaceScaleAllAxes) {
+      const uniformFactor = [factors.x, factors.y, factors.z]
+        .reduce((best, value) => Math.abs(value - 1) > Math.abs(best - 1) ? value : best, 1);
+      factors.setScalar(uniformFactor);
+    }
+    const movedOccurrences = scaleSelectedSurfaceByWorldFactors(factors, surfaceGizmoScaleCenter, {
+      oneSided: surfaceGizmoOneSidedScale,
+      signMap: surfaceGizmoScaleHandleSigns
+    });
+    surfaceGizmoMovedDistance += Math.abs(factors.x - 1) + Math.abs(factors.y - 1) + Math.abs(factors.z - 1);
+    surfaceGizmoLastScale.copy(nextScale);
+    updateSurfaceTransformGuides();
+    els.hudText.textContent = `Surface scale: ${surfaceScaleAllAxes ? "ALL" : `X ${round(nextScale.x * 100)}% | Y ${round(nextScale.y * 100)}% | Z ${round(nextScale.z * 100)}%`} | ${surfaceGizmoOneSidedScale ? "held side only from center" : "centered on both sides"} | ${movedOccurrences} points`;
+    return;
+  }
   const delta = surfaceGizmoPivot.position.clone().sub(surfaceGizmoLastPosition);
   let axisMode = surfaceAxisMode();
   if (axisMode === "free") {
@@ -4641,6 +4845,7 @@ function applySurfaceGizmoDelta(event) {
   const softFalloff = els.surfaceMouseFalloffSelect?.value === "soft";
   const radius = Math.max(.01, Number(els.softRadiusInput?.value) || .25);
   const movement = axisDirection.clone().multiplyScalar(distance);
+  const mirroredMoveMaps = mirroredSurfacePointMaps(selectedSurfacePointMaps());
   if (surfaceComponentMode === "vertex" || surfaceComponentMode === "edge") {
     moveSelectedSurfaceComponentsByWorldDelta(movement);
   } else {
@@ -4654,6 +4859,11 @@ function applySurfaceGizmoDelta(event) {
       else moveSelectedVerticesAlongAxis(mesh, faces, distance, axisMode);
     }
   }
+  if (mirroredMoveMaps.size) {
+    const mirroredMovement = movement.clone();
+    mirroredMovement.x *= -1;
+    transformSurfacePointMaps(mirroredMoveMaps, worldPoint => worldPoint.add(mirroredMovement));
+  }
   surfaceGizmoMovedDistance += Math.abs(distance);
   surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
   updateFaceMarker();
@@ -4661,6 +4871,7 @@ function applySurfaceGizmoDelta(event) {
   updateTriangleHelpers();
   syncSelectionOutlineTransforms();
   updateState();
+  updateSurfaceTransformGuides();
   const shapeLabel = surfaceComponentMode === "vertex" || surfaceComponentMode === "edge"
     ? `${surfaceComponentMode} component`
     : softFalloff ? `Soft radius ${round(radius)}` : "Hard face";
@@ -4670,10 +4881,15 @@ function applySurfaceGizmoDelta(event) {
 function finishSurfaceGizmoDrag() {
   if (!surfaceGizmoDragging) return;
   surfaceGizmoDragging = false;
+  surfaceGizmoOneSidedScale = false;
   updateAll();
   updateSurfaceGizmoAttachment();
-  els.hudText.textContent = `Surface ready: ${surfaceAxisMode() === "free" ? "drag an X/Y/Z arrow" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow`} | ${els.surfaceMouseFalloffSelect?.value === "hard" ? "Hard face" : `Soft radius ${Number(els.softRadiusInput?.value || .25)}`}`;
-  log(`Moved selected surface with viewport arrows.`, { distance: round(surfaceGizmoMovedDistance) });
+  els.hudText.textContent = surfaceGizmoMode === "scale"
+    ? "Surface scale ready: drag the center cube or an X/Y/Z handle"
+    : surfaceGizmoMode === "rotate"
+      ? "Surface rotate ready: drag an X, Y, or Z ring"
+      : `Surface ready: ${surfaceAxisMode() === "free" ? "drag an X/Y/Z arrow" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow`} | ${els.surfaceMouseFalloffSelect?.value === "hard" ? "Hard face" : `Soft radius ${Number(els.softRadiusInput?.value || .25)}`}`;
+  log(`${surfaceGizmoMode[0].toUpperCase()}${surfaceGizmoMode.slice(1)} selected surface with the viewport gizmo.`, { amount: round(surfaceGizmoMovedDistance) });
   activeSurfaceTransform = surfaceTransform;
 }
 
@@ -14087,11 +14303,147 @@ function selectedSurfacePointMaps() {
   return byMesh;
 }
 
+function mirroredSurfacePointMaps(sourceMaps) {
+  const mirrored = new Map();
+  if (!mirrorBoneEdits || typeof mirroredArmorForObject !== "function") return mirrored;
+  for (const [source, sourcePoints] of sourceMaps) {
+    if (source?.userData?.rigRole !== "armor") continue;
+    const target = mirroredArmorForObject(source);
+    if (!target?.geometry || target === source) continue;
+    const sourceGeometry = source.geometry.index ? source.geometry.toNonIndexed() : source.geometry;
+    const targetGeometry = target.geometry.index ? target.geometry.toNonIndexed() : target.geometry;
+    const sourcePosition = sourceGeometry.getAttribute("position");
+    const targetPosition = targetGeometry.getAttribute("position");
+    if (!sourcePosition || !targetPosition || sourcePosition.count !== targetPosition.count) {
+      if (sourceGeometry !== source.geometry) sourceGeometry.dispose();
+      if (targetGeometry !== target.geometry) targetGeometry.dispose();
+      continue;
+    }
+    const sourceKeys = new Set(sourcePoints.keys());
+    const sourcePoint = new THREE.Vector3();
+    const targetPoint = new THREE.Vector3();
+    const targetPoints = new Map();
+    for (let index = 0; index < sourcePosition.count; index++) {
+      sourcePoint.fromBufferAttribute(sourcePosition, index);
+      if (!sourceKeys.has(vertexKey(sourcePoint))) continue;
+      targetPoint.fromBufferAttribute(targetPosition, index);
+      targetPoints.set(vertexKey(targetPoint), targetPoint.clone());
+    }
+    if (sourceGeometry !== source.geometry) sourceGeometry.dispose();
+    if (targetGeometry !== target.geometry) targetGeometry.dispose();
+    if (targetPoints.size) mirrored.set(target, targetPoints);
+  }
+  return mirrored;
+}
+
+function surfacePointMapWorldCenter(mesh, points) {
+  mesh.updateWorldMatrix(true, false);
+  const worldPoints = [...points.values()].map(point => point.clone().applyMatrix4(mesh.matrixWorld));
+  return worldPoints.length
+    ? worldPoints.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / worldPoints.length)
+    : null;
+}
+
+function transformSurfacePointMaps(byMesh, transformWorldPoint, { refreshSelection = false } = {}) {
+  let movedOccurrences = 0;
+  for (const [mesh, points] of byMesh) {
+    mesh.updateWorldMatrix(true, false);
+    const inverseWorld = mesh.matrixWorld.clone().invert();
+    const targets = new Map();
+    for (const [key, localPoint] of points) {
+      const transformedWorld = transformWorldPoint(localPoint.clone().applyMatrix4(mesh.matrixWorld), mesh, points);
+      targets.set(key, transformedWorld.applyMatrix4(inverseWorld));
+    }
+    const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+    const position = geometry.getAttribute("position");
+    const localPoint = new THREE.Vector3();
+    for (let index = 0; index < position.count; index++) {
+      localPoint.fromBufferAttribute(position, index);
+      const target = targets.get(vertexKey(localPoint));
+      if (!target) continue;
+      position.setXYZ(index, target.x, target.y, target.z);
+      movedOccurrences++;
+    }
+    position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    geometry.computeBoundingBox();
+    geometry.computeBoundingSphere();
+    replaceEditableMeshGeometry(mesh, geometry);
+    remapProtectedEdgesForTargets(mesh, targets);
+    if (refreshSelection) refreshScaledSurfaceSelection(mesh, targets);
+  }
+  return movedOccurrences;
+}
+
 function scaleSurfacePoint(worldPoint, worldCenter, factor, requestedAxis) {
   const scaled = worldPoint.clone();
   if (requestedAxis === "uniform") return scaled.sub(worldCenter).multiplyScalar(factor).add(worldCenter);
   scaled[requestedAxis] = worldCenter[requestedAxis] + (scaled[requestedAxis] - worldCenter[requestedAxis]) * factor;
   return scaled;
+}
+
+function scaleSelectedSurfaceByWorldFactors(factors, worldCenter, { oneSided = false, signMap = { x: 1, y: 1, z: 1 } } = {}) {
+  const byMesh = selectedSurfacePointMaps();
+  if (!byMesh.size || !worldCenter) return 0;
+  const mirroredByMesh = mirroredSurfacePointMaps(byMesh);
+  const scaleAroundCenter = center => worldPoint => worldPoint.sub(center)
+    .set(
+      (worldPoint.x) * factors.x,
+      (worldPoint.y) * factors.y,
+      (worldPoint.z) * factors.z
+    )
+    .add(center);
+  const scaleHeldSideFromCenter = (center, signs) => worldPoint => {
+    const scaled = worldPoint.clone();
+    for (const axis of ["x", "y", "z"]) {
+      if (Math.abs(factors[axis] - 1) <= .000001) continue;
+      const distance = worldPoint[axis] - center[axis];
+      if (distance * signs[axis] < -.000001) continue;
+      scaled[axis] = center[axis] + distance * factors[axis];
+    }
+    return scaled;
+  };
+  let movedOccurrences = transformSurfacePointMaps(
+    byMesh,
+    oneSided ? scaleHeldSideFromCenter(worldCenter, signMap) : scaleAroundCenter(worldCenter),
+    { refreshSelection: true }
+  );
+  const mirroredSigns = { x: -signMap.x, y: signMap.y, z: signMap.z };
+  for (const [mesh, points] of mirroredByMesh) {
+    const mirroredCenter = surfacePointMapWorldCenter(mesh, points);
+    if (!mirroredCenter) continue;
+    const meshPoints = new Map([[mesh, points]]);
+    movedOccurrences += transformSurfacePointMaps(
+      meshPoints,
+      oneSided ? scaleHeldSideFromCenter(mirroredCenter, mirroredSigns) : scaleAroundCenter(mirroredCenter)
+    );
+  }
+  updateFaceMarker();
+  updateSurfaceComponentMarker();
+  updateTriangleHelpers();
+  syncSelectionOutlineTransforms();
+  updateState();
+  return movedOccurrences;
+}
+
+function rotateSelectedSurfaceByWorldQuaternion(quaternion, worldCenter) {
+  const byMesh = selectedSurfacePointMaps();
+  if (!byMesh.size || !worldCenter) return 0;
+  const mirroredByMesh = mirroredSurfacePointMaps(byMesh);
+  const rotateAroundCenter = (center, rotation) => worldPoint => worldPoint.sub(center).applyQuaternion(rotation).add(center);
+  let movedOccurrences = transformSurfacePointMaps(byMesh, rotateAroundCenter(worldCenter, quaternion), { refreshSelection: true });
+  const mirroredQuaternion = new THREE.Quaternion(quaternion.x, -quaternion.y, -quaternion.z, quaternion.w).normalize();
+  for (const [mesh, points] of mirroredByMesh) {
+    const mirroredCenter = surfacePointMapWorldCenter(mesh, points);
+    if (!mirroredCenter) continue;
+    movedOccurrences += transformSurfacePointMaps(new Map([[mesh, points]]), rotateAroundCenter(mirroredCenter, mirroredQuaternion));
+  }
+  updateFaceMarker();
+  updateSurfaceComponentMarker();
+  updateTriangleHelpers();
+  syncSelectionOutlineTransforms();
+  updateState();
+  return movedOccurrences;
 }
 
 function pointFromVertexKey(key) {

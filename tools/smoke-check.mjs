@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.9.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.22.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1129,7 +1129,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.9.js?v=49.60.9"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.22.js?v=49.60.22"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 if ((documentSource.match(/id="animationSection"/g) || []).length !== 1 || documentSource.includes("animationSectionDuplicate")) {
@@ -1165,7 +1165,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.9",
+  "tool-docking.js?v=49.60.22",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1942,8 +1942,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.9 Experimental") || !documentSource.includes("v49.60.9 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.9 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.22 Experimental") || !documentSource.includes("v49.60.22 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.22 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2300,6 +2300,30 @@ if (!moduleSources.get("animator-workspace")?.includes("function setAnimatorWork
 }
 if (!moduleSources.get("animator-workspace")?.includes("setAnimatorWorkspace(!animatorWorkspaceActive)") || !moduleSources.get("animator-workspace")?.includes('"Back to Modeling" : "Animator Workspace"')) {
   throw new Error("The top Animator Workspace button must toggle both entering and leaving animation mode.");
+}
+if (!documentSource.includes('id="animatorTimelineCollapseBtn"') || !moduleSources.get("animator-workspace")?.includes("function setAnimatorTimelineCollapsed") || !styleSource.includes(".app.animator-mode.timeline-collapsed")) {
+  throw new Error("The Animator timeline must be minimizable while keeping the workspace open.");
+}
+if (!documentSource.includes('id="selectTargetBoneBtn"') || !documentSource.includes('id="selectTargetSkinBtn"') || !documentSource.includes('id="selectTargetArmorBtn"') || !moduleSources.get("rigging")?.includes("function rigTargetedObjectHit") || !moduleSources.get("panels")?.includes("viewportSelectionTarget === \"bone\"")) {
+  throw new Error("Animator viewport selection must be targetable to bones, skin, or armor.");
+}
+if (!documentSource.includes('id="modelSelectTargetAllBtn"') || !documentSource.includes('id="modelSelectTargetSkinBtn"') || !documentSource.includes('id="modelSelectTargetArmorBtn"') || !documentSource.includes('id="modelSelectTargetBoneBtn"') || !moduleSources.get("rigging")?.includes("function setModelingSelectionTarget") || !moduleSources.get("rigging")?.includes("function activeViewportSelectionTarget") || !moduleSources.get("rigging")?.includes("function viewportTargetedObjectHit") || !moduleSources.get("rigging")?.includes("if (!activeViewportSelectionTargetsBones()) return null") || !moduleSources.get("panels")?.includes("const viewportSelectionTarget = activeViewportSelectionTarget()")) {
+  throw new Error("Modeling and Animator viewport selection filters must prevent skin, armor, and bone picking from bypassing the chosen target.");
+}
+if (moduleSources.get("rigging")?.includes("restoreAnimationBindPose({ render: false });\n    applyCurrentRigPose();\n    log(\"T-Pose Fitting enabled") || !moduleSources.get("rigging")?.includes("T-Pose Fitting enabled without changing the current head, hand, foot, skin, or armor transforms") || !moduleSources.get("meshes")?.includes("const animatorRigObjectTransform") || !moduleSources.get("meshes")?.includes("const selectedStoredPivotActive = !animatorRigObjectTransform")) {
+  throw new Error("Entering T-Pose Fitting must preserve the visible pose and keep an Animator skin/armor Rotate gizmo attached to the selected object.");
+}
+if (!documentSource.includes('<span>Mirror L/R</span>') || !moduleSources.get("rigging")?.includes("function armorSide") || !moduleSources.get("rigging")?.includes("exactNameMatches") || !moduleSources.get("rigging")?.includes("rememberArmorMirrorPair") || !moduleSources.get("rigging")?.includes("function updateArmorBindingRest") || !moduleSources.get("rigging")?.includes("no opposite armor counterpart was found") || moduleSources.get("rigging")?.includes("if (!tPoseFittingMode || !mirrorBoneEdits) return null")) {
+  throw new Error("Armor fitting must expose Mirror L/R beside the target selectors, find opposite armor beyond strict bone assignments, and remain active outside T-Pose Fitting.");
+}
+if (!documentSource.includes('id="rigTransformToolLabel"') || !moduleSources.get("rigging")?.includes("function setRigTargetTransformMode") || !moduleSources.get("rigging")?.includes("function ensureRigObjectMoveTool") || !moduleSources.get("panels")?.includes('setRigTargetTransformMode("translate")')) {
+  throw new Error("Skin and armor selection must activate the regular object Move/Rotate gizmo from the Animator side panel.");
+}
+if (!documentSource.includes('id="boneModeScaleBtn"') || !moduleSources.get("panels")?.includes('setRigTargetTransformMode("scale")') || !documentSource.includes('id="surfaceTransformModelBtn"') || !documentSource.includes('id="surfaceTransformSelectionBtn"') || !documentSource.includes('id="surfaceScaleGizmoBtn"') || !documentSource.includes('id="surfaceRotateGizmoBtn"') || !documentSource.includes('id="surfaceScaleAllAxesBtn"') || !moduleSources.get("meshes")?.includes("function setSurfaceTransformTarget") || !moduleSources.get("meshes")?.includes("function setSurfaceScaleAllAxes") || !moduleSources.get("meshes")?.includes("function updateSurfaceTransformGuides") || !moduleSources.get("meshes")?.includes("function surfacePointMapsScaleHandlePoint") || !moduleSources.get("meshes")?.includes("function scaleSelectedSurfaceByWorldFactors") || !moduleSources.get("meshes")?.includes("scaleHeldSideFromCenter") || !moduleSources.get("meshes")?.includes("oneSided: surfaceGizmoOneSidedScale") || !moduleSources.get("meshes")?.includes("function rotateSelectedSurfaceByWorldQuaternion") || !moduleSources.get("meshes")?.includes("function mirroredSurfacePointMaps") || !moduleSources.get("meshes")?.includes("mirroredMovement.x *= -1") || !moduleSources.get("viewport")?.includes("surfaceScaleOriginMarker") || !moduleSources.get("viewport")?.includes("surfaceScaleAnchorMarker") || !moduleSources.get("viewport")?.includes("surfaceScaleAnchorLine") || !moduleSources.get("viewport")?.includes("surfaceMirrorDotTexture") || !moduleSources.get("viewport")?.includes("surfaceMirrorGhostMarker")) {
+  throw new Error("Animator armor/skin editing and Whole Face surface editing must provide model/selection transform targeting with interactive Move, Rotate, and Scale gizmos.");
+}
+if (!documentSource.includes('id="boneAnatomyScaleX"') || !documentSource.includes('id="boneAnatomyScaleY"') || !documentSource.includes('id="boneAnatomyScaleZ"') || !moduleSources.get("rigging")?.includes("function applySelectedBoneAnatomyScale") || !moduleSources.get("rigging")?.includes("anatomyScale:")) {
+  throw new Error("Selected simplified skeleton parts must expose persistent width, height, and depth controls.");
 }
 if (moduleSources.get("rigging")?.includes("min-width:${timelineWidth}px") || !moduleSources.get("rigging")?.includes("--timeline-grid-size:${timelineGridSize}%") || !styleSource.includes("overflow-x: hidden") || !styleSource.includes("grid-template-columns: var(--animation-track-label-width, clamp(130px, 14vw, 190px)) minmax(0, 1fr)")) {
   throw new Error("Animator bone tracks must scale to the available screen width without a horizontal scrollbar.");

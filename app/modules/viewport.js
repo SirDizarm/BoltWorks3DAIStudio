@@ -94,6 +94,47 @@ surfaceGizmoPivot.name = "surface edit pivot";
 surfaceGizmoPivot.visible = false;
 scene.add(surfaceGizmoPivot);
 
+const surfaceTransformGuideGroup = new THREE.Group();
+surfaceTransformGuideGroup.name = "surface transform guides";
+surfaceTransformGuideGroup.visible = false;
+scene.add(surfaceTransformGuideGroup);
+const surfaceScaleOriginMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(.018, 16, 10),
+  new THREE.MeshBasicMaterial({ color: 0xffd35a, transparent: true, opacity: .9, depthTest: false })
+);
+surfaceScaleOriginMarker.renderOrder = 1200;
+surfaceTransformGuideGroup.add(surfaceScaleOriginMarker);
+const surfaceScaleAnchorMarker = new THREE.Mesh(
+  new THREE.SphereGeometry(.012, 14, 8),
+  new THREE.MeshBasicMaterial({ color: 0xff8a4c, transparent: true, opacity: .92, depthTest: false })
+);
+surfaceScaleAnchorMarker.renderOrder = 1200;
+surfaceScaleAnchorMarker.visible = false;
+surfaceTransformGuideGroup.add(surfaceScaleAnchorMarker);
+const surfaceScaleAnchorLine = new THREE.Line(
+  new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]),
+  new THREE.LineBasicMaterial({ color: 0xff8a4c, transparent: true, opacity: .72, depthTest: false })
+);
+surfaceScaleAnchorLine.renderOrder = 1199;
+surfaceScaleAnchorLine.visible = false;
+surfaceTransformGuideGroup.add(surfaceScaleAnchorLine);
+const surfaceMirrorDotCanvas = document.createElement("canvas");
+surfaceMirrorDotCanvas.width = 32;
+surfaceMirrorDotCanvas.height = 32;
+const surfaceMirrorDotContext = surfaceMirrorDotCanvas.getContext("2d");
+surfaceMirrorDotContext.clearRect(0, 0, 32, 32);
+surfaceMirrorDotContext.fillStyle = "#ffffff";
+surfaceMirrorDotContext.beginPath();
+surfaceMirrorDotContext.arc(16, 16, 12, 0, Math.PI * 2);
+surfaceMirrorDotContext.fill();
+const surfaceMirrorDotTexture = new THREE.CanvasTexture(surfaceMirrorDotCanvas);
+const surfaceMirrorGhostMarker = new THREE.Points(
+  new THREE.BufferGeometry(),
+  new THREE.PointsMaterial({ color: 0x63e6ff, map: surfaceMirrorDotTexture, alphaTest: .2, size: .012, transparent: true, opacity: .72, depthTest: false, sizeAttenuation: true })
+);
+surfaceMirrorGhostMarker.renderOrder = 1199;
+surfaceTransformGuideGroup.add(surfaceMirrorGhostMarker);
+
 const transform = new TransformControls(camera, renderer.domElement);
 transform.visible = false;
 transform.addEventListener("dragging-changed", event => orbit.enabled = !event.value);
@@ -390,8 +431,16 @@ let dragPushSession = null;
 let surfaceGizmoDragging = false;
 let surfaceGizmoSyncing = false;
 let surfaceGizmoMovedDistance = 0;
+let surfaceGizmoMode = "translate";
+let surfaceTransformTarget = "model";
+let surfaceScaleAllAxes = false;
+let surfaceGizmoOneSidedScale = false;
+let surfaceGizmoScaleHandleSigns = { x: 1, y: 1, z: 1 };
 let activeSurfaceTransform = surfaceTransform;
 const surfaceGizmoLastPosition = new THREE.Vector3();
+const surfaceGizmoLastScale = new THREE.Vector3(1, 1, 1);
+const surfaceGizmoScaleCenter = new THREE.Vector3();
+const surfaceGizmoLastQuaternion = new THREE.Quaternion();
 let checkedIds = new Set();
 let activeGroupIds = [];
 const groupPivot = new THREE.Object3D();
@@ -650,6 +699,8 @@ const els = {
   boneAxisZBtn: document.querySelector("#boneAxisZBtn"),
   boneModeMoveBtn: document.querySelector("#boneModeMoveBtn"),
   boneModeRotateBtn: document.querySelector("#boneModeRotateBtn"),
+  boneModeScaleBtn: document.querySelector("#boneModeScaleBtn"),
+  rigTransformToolLabel: document.querySelector("#rigTransformToolLabel"),
   boneRotationStepInput: document.querySelector("#boneRotationStepInput"),
   boneRotationStepStatus: document.querySelector("#boneRotationStepStatus"),
   glueBoneBtn: document.querySelector("#glueBoneBtn"),
@@ -668,6 +719,10 @@ const els = {
   boneRotX: document.querySelector("#boneRotX"),
   boneRotY: document.querySelector("#boneRotY"),
   boneRotZ: document.querySelector("#boneRotZ"),
+  boneAnatomyScaleX: document.querySelector("#boneAnatomyScaleX"),
+  boneAnatomyScaleY: document.querySelector("#boneAnatomyScaleY"),
+  boneAnatomyScaleZ: document.querySelector("#boneAnatomyScaleZ"),
+  resetBoneAnatomyScaleBtn: document.querySelector("#resetBoneAnatomyScaleBtn"),
   showBonesInput: document.querySelector("#showBonesInput"),
   skeletonModeInput: document.querySelector("#skeletonModeInput"),
   boneGuideScaleInput: document.querySelector("#boneGuideScaleInput"),
@@ -677,6 +732,14 @@ const els = {
   markSkinBtn: document.querySelector("#markSkinBtn"),
   markArmorBtn: document.querySelector("#markArmorBtn"),
   attachArmorBtn: document.querySelector("#attachArmorBtn"),
+  selectTargetBoneBtn: document.querySelector("#selectTargetBoneBtn"),
+  selectTargetSkinBtn: document.querySelector("#selectTargetSkinBtn"),
+  selectTargetArmorBtn: document.querySelector("#selectTargetArmorBtn"),
+  selectTargetStatus: document.querySelector("#selectTargetStatus"),
+  modelSelectTargetAllBtn: document.querySelector("#modelSelectTargetAllBtn"),
+  modelSelectTargetSkinBtn: document.querySelector("#modelSelectTargetSkinBtn"),
+  modelSelectTargetArmorBtn: document.querySelector("#modelSelectTargetArmorBtn"),
+  modelSelectTargetBoneBtn: document.querySelector("#modelSelectTargetBoneBtn"),
   rigModelOpacityInput: document.querySelector("#rigModelOpacityInput"),
   rigModelOpacityValue: document.querySelector("#rigModelOpacityValue"),
   animationSection: document.querySelector("#animationSection"),
@@ -716,6 +779,7 @@ const els = {
   animationWebmExportBtn: document.querySelector("#animationWebmExportBtn"),
   animationMp4ExportBtn: document.querySelector("#animationMp4ExportBtn"),
   animatorWorkspaceOpenBtn: document.querySelector("#animatorWorkspaceOpenBtn"),
+  animatorTimelineCollapseBtn: document.querySelector("#animatorTimelineCollapseBtn"),
   animatorClipSelect: document.querySelector("#animatorClipSelect"),
   workspaceSelect: document.querySelector("#workspaceSelect"),
   importBbmodelBtn: document.querySelector("#importBbmodelBtn"),
@@ -818,6 +882,8 @@ const els = {
   deleteSelectedSurfaceBtn: document.querySelector("#deleteSelectedSurfaceBtn"),
   surfaceMouseModeBtn: document.querySelector("#surfaceMouseModeBtn"),
   surfaceValueModeBtn: document.querySelector("#surfaceValueModeBtn"),
+  surfaceTransformModelBtn: document.querySelector("#surfaceTransformModelBtn"),
+  surfaceTransformSelectionBtn: document.querySelector("#surfaceTransformSelectionBtn"),
   autoSurfaceDragInput: document.querySelector("#autoSurfaceDragInput"),
   showModelingEdgesInput: document.querySelector("#showModelingEdgesInput"),
   surfaceMouseFalloffSelect: document.querySelector("#surfaceMouseFalloffSelect"),
@@ -959,6 +1025,9 @@ const els = {
   surfaceScaleAxisSelect: document.querySelector("#surfaceScaleAxisSelect"),
   surfaceScaleAmountInput: document.querySelector("#surfaceScaleAmountInput"),
   surfaceScaleBtn: document.querySelector("#surfaceScaleBtn"),
+  surfaceScaleGizmoBtn: document.querySelector("#surfaceScaleGizmoBtn"),
+  surfaceRotateGizmoBtn: document.querySelector("#surfaceRotateGizmoBtn"),
+  surfaceScaleAllAxesBtn: document.querySelector("#surfaceScaleAllAxesBtn"),
   relaxModeSelect: document.querySelector("#relaxModeSelect"),
   relaxStrengthInput: document.querySelector("#relaxStrengthInput"),
   relaxIterationsInput: document.querySelector("#relaxIterationsInput"),

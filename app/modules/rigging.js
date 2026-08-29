@@ -56,6 +56,10 @@ let mirrorBoneEdits = false;
 let tPoseFittingMode = false;
 let skeletonDisplayMode = false;
 let skeletonPreviousOpacity = null;
+let rigSelectionTarget = "bone";
+let modelingSelectionTarget = ["all", "skin", "armor", "bone"].includes(localStorage.getItem("boltworks.modelingSelectionTarget"))
+  ? localStorage.getItem("boltworks.modelingSelectionTarget")
+  : "all";
 let boneTransformLooseStart = null;
 let rigModelOpacity = 1;
 const rigModelMaterialState = new Map();
@@ -199,6 +203,7 @@ function setBoneGizmoEnabled(enabled, mode = boneGizmoToolMode) {
   boneToolMode = boneGizmoEnabled && boneGizmoToolMode === "translate" && boneMoveAxis ? "move" : null;
   els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
   els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+  els.boneModeScaleBtn?.classList.remove("active");
 }
 
 function setBoneGizmoToolMode(mode) {
@@ -267,6 +272,7 @@ function syncBoneTransformGizmo() {
 }
 
 function pickBoneFromMainPointer(event) {
+  if (!activeViewportSelectionTargetsBones()) return null;
   if (!boneRigGroup.visible || !rigBones.length) return null;
   const rect = renderer.domElement.getBoundingClientRect();
   bonePointer.x = ((event.clientX - rect.left) / Math.max(1, rect.width)) * 2 - 1;
@@ -284,6 +290,125 @@ function selectBoneFromViewport(boneId) {
   rebuildBoneVisuals();
   syncBonePanel();
   log(`Selected bone: ${bone.name}. Drag the gizmo to ${boneGizmoMode() === "translate" ? "move" : "rotate"} it (Move/Rotate toolbar buttons switch mode).`);
+}
+
+function syncRigSelectionTargetUi() {
+  const labels = {
+    bone: "Viewport picks bones only",
+    skin: "Viewport picks skin only",
+    armor: "Viewport picks armor only"
+  };
+  els.selectTargetBoneBtn?.classList.toggle("active", rigSelectionTarget === "bone");
+  els.selectTargetSkinBtn?.classList.toggle("active", rigSelectionTarget === "skin");
+  els.selectTargetArmorBtn?.classList.toggle("active", rigSelectionTarget === "armor");
+  if (els.selectTargetStatus) els.selectTargetStatus.textContent = labels[rigSelectionTarget];
+  if (els.rigTransformToolLabel) els.rigTransformToolLabel.textContent = rigSelectionTarget === "bone" ? "Bone tool:" : `${rigSelectionTarget === "armor" ? "Armor" : "Skin"} tool:`;
+  if (rigSelectionTarget !== "bone" && typeof activeTransformMode !== "undefined") {
+    els.boneModeMoveBtn?.classList.toggle("active", activeTransformMode === "translate");
+    els.boneModeRotateBtn?.classList.toggle("active", activeTransformMode === "rotate");
+    els.boneModeScaleBtn?.classList.toggle("active", activeTransformMode === "scale");
+  }
+  if (els.boneModeScaleBtn) els.boneModeScaleBtn.disabled = rigSelectionTarget === "bone";
+}
+
+function syncModelSelectionTargetUi() {
+  els.modelSelectTargetAllBtn?.classList.toggle("active", modelingSelectionTarget === "all");
+  els.modelSelectTargetSkinBtn?.classList.toggle("active", modelingSelectionTarget === "skin");
+  els.modelSelectTargetArmorBtn?.classList.toggle("active", modelingSelectionTarget === "armor");
+  els.modelSelectTargetBoneBtn?.classList.toggle("active", modelingSelectionTarget === "bone");
+}
+
+function selectedObjectRigRole(object) {
+  return object?.userData?.rigRole || "skin";
+}
+
+function setModelingSelectionTarget(target) {
+  const next = ["all", "skin", "armor", "bone"].includes(target) ? target : "all";
+  modelingSelectionTarget = next;
+  localStorage.setItem("boltworks.modelingSelectionTarget", next);
+  if (next === "bone") {
+    if (typeof selectObject === "function") selectObject(null);
+  } else {
+    if (selectedBoneId) {
+      selectedBoneId = null;
+      rebuildBoneVisuals();
+      syncBonePanel();
+    }
+    if (next !== "all" && typeof selected !== "undefined" && selected && selectedObjectRigRole(selected) !== next) {
+      selectObject(null);
+    }
+  }
+  syncModelSelectionTargetUi();
+  log(`Modeling viewport selection now targets ${next}.`);
+}
+
+function setRigTargetTransformMode(mode) {
+  const next = ["translate", "rotate", "scale"].includes(mode) ? mode : "translate";
+  if (rigSelectionTarget === "bone") {
+    if (next === "scale") {
+      log("Select Skin or Armor to use the Scale tool. Bone anatomy size uses the Width, Height, and Depth controls.");
+      return;
+    }
+    setBoneGizmoToolMode(next);
+    return;
+  }
+  if (typeof setTransformMode !== "function") return;
+  if (activeTransformMode !== next) setTransformMode(next);
+  else if (typeof updateTransformAttachment === "function") updateTransformAttachment();
+  syncRigSelectionTargetUi();
+}
+
+function ensureRigObjectMoveTool() {
+  if (rigSelectionTarget === "bone" || typeof setTransformMode !== "function") return;
+  if (activeTransformMode !== "translate") setTransformMode("translate");
+  else if (typeof updateTransformAttachment === "function") updateTransformAttachment();
+  syncRigSelectionTargetUi();
+}
+
+function setRigSelectionTarget(target) {
+  const next = ["bone", "skin", "armor"].includes(target) ? target : "bone";
+  rigSelectionTarget = next;
+  if (next === "bone") {
+    if (typeof selectObject === "function") selectObject(null);
+  } else {
+    selectedBoneId = null;
+    rebuildBoneVisuals();
+    syncBonePanel();
+    if (typeof selected !== "undefined" && selected && selectedObjectRigRole(selected) !== next) {
+      selectObject(null);
+    }
+    ensureRigObjectMoveTool();
+  }
+  syncRigSelectionTargetUi();
+  log(`Viewport selection now targets ${next}.`);
+}
+
+function rigSelectionTargetsBones() {
+  return rigSelectionTarget === "bone";
+}
+
+function activeViewportSelectionTarget() {
+  return document.body.classList.contains("animator-workspace-active") ? rigSelectionTarget : modelingSelectionTarget;
+}
+
+function activeViewportSelectionTargetsBones() {
+  return activeViewportSelectionTarget() === "bone";
+}
+
+function rigTargetedObjectHit(event, target = rigSelectionTarget) {
+  if (!["skin", "armor"].includes(target) || typeof hitsFromPointerEvent !== "function") return null;
+  const hit = hitsFromPointerEvent(event).find(candidate => {
+    const role = candidate.object?.userData?.rigRole || "skin";
+    return role === target;
+  });
+  return hit || null;
+}
+
+function viewportTargetedObjectHit(event) {
+  const target = activeViewportSelectionTarget();
+  if (target === "all") return hitFromPointerEvent(event);
+  if (target === "bone") return null;
+  return rigTargetedObjectHit(event, target);
 }
 
 function boneById(id) {
@@ -331,10 +456,7 @@ function setTPoseFittingMode(enabled) {
   animationState.playing = false;
   tPoseFittingMode = next;
   if (tPoseFittingMode) {
-    animationState.frame = 0;
-    restoreAnimationBindPose({ render: false });
-    applyCurrentRigPose();
-    log("T-Pose Fitting enabled. Bone and attached armor edits now redefine their fitted rest offsets.");
+    log("T-Pose Fitting enabled without changing the current head, hand, foot, skin, or armor transforms. Edits now redefine their fitted rest offsets.");
   } else {
     captureAnimationBindingRest();
     log("T-Pose Fitting finished. Saved the fitted bone, armor, hand, and item-socket offsets.");
@@ -343,6 +465,9 @@ function setTPoseFittingMode(enabled) {
   syncBonePanel();
   updateAnimationPanel();
   syncTPoseFittingUi();
+  if (rigSelectionTarget !== "bone" && typeof updateTransformAttachment === "function") {
+    requestAnimationFrame(updateTransformAttachment);
+  }
 }
 
 function commitTPoseBoneFitting() {
@@ -731,6 +856,7 @@ function serializeBoneRig() {
     guideScale: round(boneGuideScale),
     mirrorBoneEdits,
     skeletonDisplayMode,
+    selectionTarget: rigSelectionTarget,
     modelOpacity: round(rigModelOpacity),
     bones: rigBones.map(bone => ({
       id: bone.id,
@@ -750,6 +876,7 @@ function serializeBoneRig() {
       blockbenchLocalRotation: bone.blockbenchLocalRotation?.toArray().map(round) || null,
       armorMount: !!bone.armorMount,
       armorMountId: bone.armorMountId || null,
+      anatomyScale: (bone.anatomyScale || new THREE.Vector3(1, 1, 1)).toArray().map(round),
       hidden: !!bone.hidden
     })),
     animation: {
@@ -780,6 +907,7 @@ function restoreBoneRig(data = {}) {
     blockbenchLocalRotation: Array.isArray(bone.blockbenchLocalRotation) ? new THREE.Vector3().fromArray(bone.blockbenchLocalRotation) : null,
     armorMount: !!bone.armorMount,
     armorMountId: typeof bone.armorMountId === "string" ? bone.armorMountId : null,
+    anatomyScale: new THREE.Vector3().fromArray(Array.isArray(bone.anatomyScale) ? bone.anatomyScale : [1, 1, 1]),
     hidden: !!bone.hidden
   }));
   for (const bone of rigBones) {
@@ -822,10 +950,13 @@ function restoreBoneRig(data = {}) {
   boneGuideScale = THREE.MathUtils.clamp(Number(data.guideScale) || .4, .2, 1);
   mirrorBoneEdits = !!data.mirrorBoneEdits;
   skeletonDisplayMode = !!data.skeletonDisplayMode;
+  rigSelectionTarget = ["bone", "skin", "armor"].includes(data.selectionTarget) ? data.selectionTarget : "bone";
   rigModelOpacity = THREE.MathUtils.clamp(Number(data.modelOpacity) || 1, .1, 1);
   syncBoneGuideScaleUi();
   if (els.mirrorBoneEditsInput) els.mirrorBoneEditsInput.checked = mirrorBoneEdits;
   if (els.skeletonModeInput) els.skeletonModeInput.checked = skeletonDisplayMode;
+  syncRigSelectionTargetUi();
+  requestAnimationFrame(ensureRigObjectMoveTool);
   syncRigModelOpacityUi();
   const savedClips = data.animation?.clips && typeof data.animation.clips === "object" ? data.animation.clips : null;
   animationState.clips = savedClips && Object.keys(savedClips).length
@@ -1797,7 +1928,34 @@ function skeletonBoneColor(bone, selected = false) {
   return 0xd8cfaa;
 }
 
+function normalizedBoneAnatomyScale(bone) {
+  const source = bone?.anatomyScale;
+  return new THREE.Vector3(
+    THREE.MathUtils.clamp(Number(source?.x) || 1, .25, 3),
+    THREE.MathUtils.clamp(Number(source?.y) || 1, .25, 3),
+    THREE.MathUtils.clamp(Number(source?.z) || 1, .25, 3)
+  );
+}
+
+function bakeSkeletonAnatomyScale(mesh, bone) {
+  const scale = normalizedBoneAnatomyScale(bone);
+  if (scale.distanceToSquared(new THREE.Vector3(1, 1, 1)) < 1e-8) return;
+  const pivot = (bone?.displayPosition || bone?.position || new THREE.Vector3()).clone();
+  mesh.updateMatrix();
+  const aroundPivot = new THREE.Matrix4()
+    .makeTranslation(pivot.x, pivot.y, pivot.z)
+    .multiply(new THREE.Matrix4().makeScale(scale.x, scale.y, scale.z))
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+  mesh.geometry.applyMatrix4(aroundPivot.multiply(mesh.matrix));
+  mesh.position.set(0, 0, 0);
+  mesh.rotation.set(0, 0, 0);
+  mesh.quaternion.identity();
+  mesh.scale.set(1, 1, 1);
+  mesh.updateMatrix();
+}
+
 function addSkeletonDisplayMesh(mesh, bone, { joint = false } = {}) {
+  bakeSkeletonAnatomyScale(mesh, bone);
   mesh.material = new THREE.MeshStandardMaterial({
     color: skeletonBoneColor(bone, bone?.id === selectedBoneId),
     roughness: .78,
@@ -1816,6 +1974,7 @@ function addSkeletonDisplayMesh(mesh, bone, { joint = false } = {}) {
 }
 
 function addSkeletonCavityMesh(mesh, bone) {
+  bakeSkeletonAnatomyScale(mesh, bone);
   mesh.material = new THREE.MeshBasicMaterial({
     color: 0x211b13,
     depthTest: true,
@@ -2138,6 +2297,7 @@ function setSkeletonMode(enabled) {
     log("Skeleton Mode disabled. Restored the standard rig guides.");
   }
   rebuildBoneVisuals();
+  syncBonePanel();
 }
 
 function restoreRigModelMaterials() {
@@ -2283,6 +2443,10 @@ function syncBonePanel() {
   }
   const disabled = !bone;
   [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ, els.deleteBoneBtn].forEach(control => control.disabled = disabled);
+  const anatomyDisabled = disabled || !skeletonDisplayMode;
+  [els.boneAnatomyScaleX, els.boneAnatomyScaleY, els.boneAnatomyScaleZ, els.resetBoneAnatomyScaleBtn].forEach(control => {
+    if (control) control.disabled = anatomyDisabled;
+  });
   if (els.armorMountBtn) {
     els.armorMountBtn.disabled = disabled;
     els.armorMountBtn.textContent = bone?.armorMount ? "Remove Armor Bone" : "Use Bone for Armor";
@@ -2298,6 +2462,30 @@ function syncBonePanel() {
   els.boneRotX.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.x))) : "";
   els.boneRotY.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.y))) : "";
   els.boneRotZ.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.z))) : "";
+  const anatomyScale = normalizedBoneAnatomyScale(bone);
+  if (els.boneAnatomyScaleX) els.boneAnatomyScaleX.value = bone ? String(round(anatomyScale.x)) : "1";
+  if (els.boneAnatomyScaleY) els.boneAnatomyScaleY.value = bone ? String(round(anatomyScale.y)) : "1";
+  if (els.boneAnatomyScaleZ) els.boneAnatomyScaleZ.value = bone ? String(round(anatomyScale.z)) : "1";
+}
+
+function applySelectedBoneAnatomyScale(reset = false) {
+  const bone = selectedBone();
+  if (!bone || !skeletonDisplayMode) return;
+  recordBoneHistory(reset ? "reset skeleton part size" : "resize skeleton part");
+  const next = reset
+    ? new THREE.Vector3(1, 1, 1)
+    : new THREE.Vector3(
+      THREE.MathUtils.clamp(Number(els.boneAnatomyScaleX?.value) || 1, .25, 3),
+      THREE.MathUtils.clamp(Number(els.boneAnatomyScaleY?.value) || 1, .25, 3),
+      THREE.MathUtils.clamp(Number(els.boneAnatomyScaleZ?.value) || 1, .25, 3)
+    );
+  bone.anatomyScale = next;
+  if (mirrorBoneEdits) {
+    const mirror = boneById(mirroredBoneId(bone.id));
+    if (mirror) mirror.anatomyScale = next.clone();
+  }
+  rebuildBoneVisuals();
+  syncBonePanel();
 }
 
 function applyBonePanelValues() {
@@ -2428,7 +2616,7 @@ function armorBoneForObject(object) {
 }
 
 function armorPairKey(object) {
-  return String(object?.name || object?.userData?.id || "")
+  return `${object?.userData?.groupName || ""} ${object?.name || object?.userData?.id || ""}`
     .toLowerCase()
     .replace(/\bleft\b|\bright\b/g, "")
     .replace(/(?:^|[\s_.-])[lr](?=$|[\s_.-])/g, " ")
@@ -2436,17 +2624,64 @@ function armorPairKey(object) {
     .trim();
 }
 
+const armorMirrorPairs = new Map();
+
+function armorObjectId(object) {
+  return object?.userData?.id || object?.uuid || null;
+}
+
+function rememberArmorMirrorPair(left, right) {
+  const leftId = armorObjectId(left);
+  const rightId = armorObjectId(right);
+  if (!leftId || !rightId) return;
+  armorMirrorPairs.set(leftId, rightId);
+  armorMirrorPairs.set(rightId, leftId);
+}
+
+function armorSide(object) {
+  const label = `${object?.userData?.groupName || ""} ${object?.name || ""}`.toLowerCase();
+  if (/\bleft\b|(?:^|[\s_.-])l(?=$|[\s_.-])/.test(label)) return "left";
+  if (/\bright\b|(?:^|[\s_.-])r(?=$|[\s_.-])/.test(label)) return "right";
+  return null;
+}
+
 function mirroredArmorForObject(source) {
+  const rememberedId = armorMirrorPairs.get(armorObjectId(source));
+  const remembered = rememberedId
+    ? objects.find(object => armorObjectId(object) === rememberedId && object.userData?.rigRole === "armor")
+    : null;
+  if (remembered) return remembered;
   const sourceBone = armorBoneForObject(source);
   const targetBone = sourceBone ? boneById(mirroredBoneId(sourceBone.id)) : null;
-  if (!targetBone) return null;
-  const candidates = objects.filter(object => object !== source
-    && object.userData?.rigRole === "armor"
-    && armorBoneForObject(object)?.id === targetBone.id);
+  const sourceSide = armorSide(source);
+  if (!targetBone && !sourceSide) return null;
+  const candidates = objects.filter(object => object !== source && object.userData?.rigRole === "armor");
   if (!candidates.length) return null;
   const sourceKey = armorPairKey(source);
-  return candidates.find(candidate => armorPairKey(candidate) === sourceKey)
-    || (candidates.length === 1 ? candidates[0] : null);
+  const oppositeSide = sourceSide === "left" ? "right" : (sourceSide === "right" ? "left" : null);
+  const expectedPosition = new THREE.Vector3(-source.position.x, source.position.y, source.position.z);
+  const exactNameMatches = sourceKey
+    ? candidates.filter(candidate => armorPairKey(candidate) === sourceKey && (!oppositeSide || armorSide(candidate) === oppositeSide))
+    : [];
+  const oppositeBoneMatches = targetBone
+    ? candidates.filter(candidate => armorBoneForObject(candidate)?.id === targetBone.id)
+    : [];
+  const eligible = exactNameMatches.length
+    ? exactNameMatches
+    : (oppositeBoneMatches.length ? oppositeBoneMatches : candidates.filter(candidate => !oppositeSide || armorSide(candidate) === oppositeSide));
+  const target = eligible
+    .map(candidate => {
+      const candidateBone = armorBoneForObject(candidate);
+      let score = candidate.position.distanceTo(expectedPosition) * 10;
+      if (sourceKey && armorPairKey(candidate) === sourceKey) score -= 1000;
+      if (targetBone && candidateBone?.id === targetBone.id) score -= 120;
+      if (oppositeSide && armorSide(candidate) === oppositeSide) score -= 80;
+      if (source.geometry?.type && candidate.geometry?.type === source.geometry.type) score -= 15;
+      return { candidate, score };
+    })
+    .sort((left, right) => left.score - right.score)[0]?.candidate || null;
+  if (target) rememberArmorMirrorPair(source, target);
+  return target;
 }
 
 function armorFittingTargets(controlObject) {
@@ -2454,11 +2689,11 @@ function armorFittingTargets(controlObject) {
   const candidates = controlObject === groupPivot && typeof activeGroupObjects === "function"
     ? activeGroupObjects()
     : [controlObject];
-  return candidates.filter(object => object?.userData?.rigRole === "armor" && armorBoneForObject(object));
+  return candidates.filter(object => object?.userData?.rigRole === "armor");
 }
 
 function mirrorArmorFittingObject(source) {
-  if (!tPoseFittingMode || !mirrorBoneEdits) return null;
+  if (!mirrorBoneEdits) return null;
   const target = mirroredArmorForObject(source);
   if (!target) return null;
   target.position.set(-source.position.x, source.position.y, source.position.z);
@@ -2469,19 +2704,59 @@ function mirrorArmorFittingObject(source) {
 }
 
 function updateArmorFittingMirror(controlObject) {
-  if (!tPoseFittingMode || !mirrorBoneEdits) return;
-  armorFittingTargets(controlObject).forEach(mirrorArmorFittingObject);
+  if (!mirrorBoneEdits) return 0;
+  return armorFittingTargets(controlObject).map(mirrorArmorFittingObject).filter(Boolean).length;
+}
+
+function updateArmorBindingRest(targets) {
+  if (!Array.isArray(targets) || !targets.length) return;
+  if (!(animationState.bindingRest instanceof Map)) animationState.bindingRest = new Map();
+  poseRigHierarchy();
+  for (const object of targets) {
+    const bone = armorBoneForObject(object);
+    if (!bone) continue;
+    const key = `rigid:${bone.id}:${object.userData?.id || object.uuid}`;
+    const previous = animationState.bindingRest.get(key);
+    const restBonePosition = previous?.bonePosition?.clone() || bone.bindPosition?.clone() || bone.position.clone();
+    const restBoneRotation = previous?.boneRotation?.clone() || bone.bindRotation?.clone() || bone.rotation.clone();
+    const restBoneQuaternion = previous?.boneQuaternion?.clone()
+      || new THREE.Quaternion().setFromEuler(new THREE.Euler(restBoneRotation.x, restBoneRotation.y, restBoneRotation.z, "XYZ"));
+    const skinnedBone = activeSkinRuntime?.threeBones?.get(bone.id) || null;
+    const currentBonePosition = skinnedBone
+      ? skinnedBone.getWorldPosition(new THREE.Vector3())
+      : bone.position.clone();
+    const currentBoneQuaternion = skinnedBone
+      ? skinnedBone.getWorldQuaternion(new THREE.Quaternion())
+      : (bone.poseWorldQuaternion?.clone()
+        || new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")));
+    const inverseDelta = currentBoneQuaternion.clone().multiply(restBoneQuaternion.clone().invert()).invert();
+    const objectPosition = object.position.clone().sub(currentBonePosition).applyQuaternion(inverseDelta).add(restBonePosition);
+    const objectQuaternion = inverseDelta.clone().multiply(object.quaternion).normalize();
+    const objectRotation = new THREE.Euler().setFromQuaternion(objectQuaternion, object.rotation.order || "XYZ");
+    animationState.bindingRest.set(key, {
+      object,
+      bonePosition: restBonePosition,
+      boneRotation: restBoneRotation,
+      boneQuaternion: restBoneQuaternion,
+      objectPosition,
+      objectRotation,
+      objectQuaternion
+    });
+  }
 }
 
 function finishArmorFittingTransform(controlObject) {
-  if (!tPoseFittingMode) return;
   const targets = armorFittingTargets(controlObject);
   if (!targets.length) return;
-  targets.forEach(mirrorArmorFittingObject);
-  captureAnimationBindingRest();
+  const mirroredTargets = targets.map(mirrorArmorFittingObject).filter(Boolean);
+  const mirroredCount = mirroredTargets.length;
+  updateArmorBindingRest([...new Set([...targets, ...mirroredTargets])]);
   applyCurrentRigPose();
   updateAll();
-  log(`Saved fitted armor offset${targets.length === 1 ? "" : "s"} relative to the assigned bone${mirrorBoneEdits ? " and mirrored the matching opposite-side armor" : ""}.`);
+  const mirrorResult = !mirrorBoneEdits
+    ? ""
+    : (mirroredCount ? ` and mirrored ${mirroredCount} matching opposite-side armor part${mirroredCount === 1 ? "" : "s"}` : "; no opposite armor counterpart was found");
+  log(`Saved fitted armor offset${targets.length === 1 ? "" : "s"} relative to the assigned bone${mirrorResult}.`);
 }
 
 function glueBonesToSelected() {
@@ -2688,6 +2963,8 @@ function bonePointerRay(event, referenceCanvas, referenceCamera) {
 }
 
 function beginBoneDrag(event, view, referenceCanvas, referenceCamera) {
+  const target = activeViewportSelectionTarget();
+  if (target !== "bone" && target !== "all") return;
   bonePointerRay(event, referenceCanvas, referenceCamera);
   const hit = boneRaycaster.intersectObjects(boneRigGroup.children.filter(child => child.userData.boneJoint), false)[0];
   if (!hit) return;
@@ -2762,3 +3039,5 @@ function endBoneDrag(event) {
 }
 
 syncTPoseFittingUi();
+syncRigSelectionTargetUi();
+syncModelSelectionTargetUi();

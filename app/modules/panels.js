@@ -420,8 +420,9 @@ els.boneAxisFreeBtn?.addEventListener("click", () => setBoneMoveAxis("free"));
 els.boneAxisXBtn?.addEventListener("click", () => setBoneMoveAxis("x"));
 els.boneAxisYBtn?.addEventListener("click", () => setBoneMoveAxis("y"));
 els.boneAxisZBtn?.addEventListener("click", () => setBoneMoveAxis("z"));
-els.boneModeMoveBtn?.addEventListener("click", () => setBoneGizmoToolMode("translate"));
-els.boneModeRotateBtn?.addEventListener("click", () => setBoneGizmoToolMode("rotate"));
+els.boneModeMoveBtn?.addEventListener("click", () => setRigTargetTransformMode("translate"));
+els.boneModeRotateBtn?.addEventListener("click", () => setRigTargetTransformMode("rotate"));
+els.boneModeScaleBtn?.addEventListener("click", () => setRigTargetTransformMode("scale"));
 els.boneRotationStepInput?.addEventListener("input", syncBoneRotationSnap);
 els.boneRotationStepInput?.addEventListener("change", event => {
   event.target.value = String(normalizedBoneRotationStep(event.target.value));
@@ -434,14 +435,28 @@ els.armorMountBtn?.addEventListener("click", toggleSelectedArmorMount);
 els.markSkinBtn?.addEventListener("click", () => markCheckedRigRole("skin"));
 els.markArmorBtn?.addEventListener("click", () => markCheckedRigRole("armor"));
 els.attachArmorBtn?.addEventListener("click", attachCheckedArmorToSelectedBone);
+els.selectTargetBoneBtn?.addEventListener("click", () => setRigSelectionTarget("bone"));
+els.selectTargetSkinBtn?.addEventListener("click", () => setRigSelectionTarget("skin"));
+els.selectTargetArmorBtn?.addEventListener("click", () => setRigSelectionTarget("armor"));
+els.modelSelectTargetAllBtn?.addEventListener("click", () => setModelingSelectionTarget("all"));
+els.modelSelectTargetSkinBtn?.addEventListener("click", () => setModelingSelectionTarget("skin"));
+els.modelSelectTargetArmorBtn?.addEventListener("click", () => setModelingSelectionTarget("armor"));
+els.modelSelectTargetBoneBtn?.addEventListener("click", () => setModelingSelectionTarget("bone"));
 // boneList is now a row-based list; selection happens per-row in syncBonePanel.
 [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ].forEach(control => {
   control?.addEventListener("change", applyBonePanelValues);
 });
+[els.boneAnatomyScaleX, els.boneAnatomyScaleY, els.boneAnatomyScaleZ].forEach(control => {
+  control?.addEventListener("change", () => applySelectedBoneAnatomyScale(false));
+});
+els.resetBoneAnatomyScaleBtn?.addEventListener("click", () => applySelectedBoneAnatomyScale(true));
 els.showBonesInput?.addEventListener("change", rebuildBoneVisuals);
 els.skeletonModeInput?.addEventListener("change", event => setSkeletonMode(event.target.checked));
 els.boneGuideScaleInput?.addEventListener("input", event => setBoneGuideScale(event.target.value));
-els.mirrorBoneEditsInput?.addEventListener("change", event => { mirrorBoneEdits = event.target.checked; });
+els.mirrorBoneEditsInput?.addEventListener("change", event => {
+  mirrorBoneEdits = event.target.checked;
+  if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
+});
 els.rigModelOpacityInput?.addEventListener("input", event => setRigModelOpacity(event.target.value));
 frontBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "front", frontBoneCanvas, frontBoneCamera));
 sideBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "side", sideBoneCanvas, sideBoneCamera));
@@ -612,7 +627,7 @@ els.pullToTargetBtn?.addEventListener("click", togglePullToTargetSession);
 document.querySelector("#pushFaceBtn").addEventListener("click", pushSelectedFaces);
 els.softPullBtn?.addEventListener("click", () => softMoveSelectedFaces(1));
 els.softPushBtn?.addEventListener("click", () => softMoveSelectedFaces(-1));
-els.dragPushBtn.addEventListener("click", () => setDragPushMode(!dragPushMode));
+els.dragPushBtn.addEventListener("click", () => setSurfaceGizmoMode("translate", { toggle: true }));
 els.surfaceEditorOpenBtn?.addEventListener("click", () => setSurfaceEditorOpen(true));
 els.surfaceEditorCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
   syncSurfaceEditorUi();
@@ -625,6 +640,8 @@ els.surfaceSelectVertexBtn?.addEventListener("click", () => setSurfaceSelectionM
 els.surfaceSelectEdgeBtn?.addEventListener("click", () => setSurfaceSelectionMode("edge"));
 els.surfaceMouseModeBtn?.addEventListener("click", toggleSurfaceMouseMode);
 els.surfaceValueModeBtn?.addEventListener("click", toggleSurfaceValueMode);
+els.surfaceTransformModelBtn?.addEventListener("click", () => setSurfaceTransformTarget("model"));
+els.surfaceTransformSelectionBtn?.addEventListener("click", () => setSurfaceTransformTarget("selection"));
 els.autoSurfaceDragInput?.addEventListener("change", () => {
   if (els.autoSurfaceDragInput.checked) armContextualSurfaceDrag();
   else if (dragPushMode) setDragPushMode(false, { silent: true });
@@ -744,6 +761,9 @@ els.planeCutResultSelect?.addEventListener("change", () => {
 });
 els.edgeSlideBtn?.addEventListener("click", slideSelectedEdges);
 els.surfaceScaleBtn?.addEventListener("click", scaleSelectedSurface);
+els.surfaceScaleGizmoBtn?.addEventListener("click", () => setSurfaceGizmoMode("scale", { toggle: true }));
+els.surfaceRotateGizmoBtn?.addEventListener("click", () => setSurfaceGizmoMode("rotate", { toggle: true }));
+els.surfaceScaleAllAxesBtn?.addEventListener("click", () => setSurfaceScaleAllAxes(!surfaceScaleAllAxes));
 els.relaxVerticesBtn?.addEventListener("click", relaxSelectedVertices);
 els.weldVerticesBtn?.addEventListener("click", weldSelectedVertices);
 els.dissolveSelectedBtn?.addEventListener("click", dissolveSelectedSurfaceComponent);
@@ -1469,7 +1489,8 @@ canvas.addEventListener("pointerdown", event => {
     addLineSketchPointFromEvent(event);
     return;
   }
-  const hit = hitFromPointerEvent(event);
+  const viewportSelectionTarget = activeViewportSelectionTarget();
+  const hit = viewportTargetedObjectHit(event);
   if (pullToTargetSession && hit?.face && pullSelectedRegionToHit(hit)) return;
   if (dragPushMode && canStartDragPushFromHit(hit)) {
     beginDragPushSession(event);
@@ -1514,7 +1535,7 @@ canvas.addEventListener("pointerdown", event => {
     pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
     return;
   }
-  if (!facePickMode) {
+  if (!facePickMode && viewportSelectionTarget === "bone") {
     const pickedBoneId = pickBoneFromMainPointer(event);
     if (pickedBoneId) {
       selectBoneFromViewport(pickedBoneId);
@@ -1629,6 +1650,7 @@ window.addEventListener("keydown", event => {
   if (event.key === "Control" || event.key === "Meta") isCtrlHeld = true;
   syncBoneRotationSnap();
   updateScaleModifierMarkers();
+  if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
   if (pullToTargetSession && event.key === "Escape") {
     event.preventDefault();
     setPullToTargetSession(false);
@@ -1701,6 +1723,7 @@ window.addEventListener("keyup", event => {
   if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
   syncBoneRotationSnap();
   updateScaleModifierMarkers();
+  if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
   if (event.code !== "Space") return;
   spaceCameraMode = false;
   if (facePickMode) {
@@ -1713,6 +1736,7 @@ window.addEventListener("blur", () => {
   isCtrlHeld = false;
   syncBoneRotationSnap();
   updateScaleModifierMarkers();
+  if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
   finishDragPushSession();
   finishScaleDragSession();
 });

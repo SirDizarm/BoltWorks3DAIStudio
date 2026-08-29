@@ -32365,6 +32365,46 @@ void main() {
   surfaceGizmoPivot.name = "surface edit pivot";
   surfaceGizmoPivot.visible = false;
   scene.add(surfaceGizmoPivot);
+  var surfaceTransformGuideGroup = new Group();
+  surfaceTransformGuideGroup.name = "surface transform guides";
+  surfaceTransformGuideGroup.visible = false;
+  scene.add(surfaceTransformGuideGroup);
+  var surfaceScaleOriginMarker = new Mesh(
+    new SphereGeometry(0.018, 16, 10),
+    new MeshBasicMaterial({ color: 16765786, transparent: true, opacity: 0.9, depthTest: false })
+  );
+  surfaceScaleOriginMarker.renderOrder = 1200;
+  surfaceTransformGuideGroup.add(surfaceScaleOriginMarker);
+  var surfaceScaleAnchorMarker = new Mesh(
+    new SphereGeometry(0.012, 14, 8),
+    new MeshBasicMaterial({ color: 16747084, transparent: true, opacity: 0.92, depthTest: false })
+  );
+  surfaceScaleAnchorMarker.renderOrder = 1200;
+  surfaceScaleAnchorMarker.visible = false;
+  surfaceTransformGuideGroup.add(surfaceScaleAnchorMarker);
+  var surfaceScaleAnchorLine = new Line(
+    new BufferGeometry().setFromPoints([new Vector3(), new Vector3()]),
+    new LineBasicMaterial({ color: 16747084, transparent: true, opacity: 0.72, depthTest: false })
+  );
+  surfaceScaleAnchorLine.renderOrder = 1199;
+  surfaceScaleAnchorLine.visible = false;
+  surfaceTransformGuideGroup.add(surfaceScaleAnchorLine);
+  var surfaceMirrorDotCanvas = document.createElement("canvas");
+  surfaceMirrorDotCanvas.width = 32;
+  surfaceMirrorDotCanvas.height = 32;
+  var surfaceMirrorDotContext = surfaceMirrorDotCanvas.getContext("2d");
+  surfaceMirrorDotContext.clearRect(0, 0, 32, 32);
+  surfaceMirrorDotContext.fillStyle = "#ffffff";
+  surfaceMirrorDotContext.beginPath();
+  surfaceMirrorDotContext.arc(16, 16, 12, 0, Math.PI * 2);
+  surfaceMirrorDotContext.fill();
+  var surfaceMirrorDotTexture = new CanvasTexture(surfaceMirrorDotCanvas);
+  var surfaceMirrorGhostMarker = new Points(
+    new BufferGeometry(),
+    new PointsMaterial({ color: 6547199, map: surfaceMirrorDotTexture, alphaTest: 0.2, size: 0.012, transparent: true, opacity: 0.72, depthTest: false, sizeAttenuation: true })
+  );
+  surfaceMirrorGhostMarker.renderOrder = 1199;
+  surfaceTransformGuideGroup.add(surfaceMirrorGhostMarker);
   var transform = new TransformControls(camera, renderer.domElement);
   transform.visible = false;
   transform.addEventListener("dragging-changed", (event) => orbit.enabled = !event.value);
@@ -32636,8 +32676,16 @@ void main() {
   var surfaceGizmoDragging = false;
   var surfaceGizmoSyncing = false;
   var surfaceGizmoMovedDistance = 0;
+  var surfaceGizmoMode = "translate";
+  var surfaceTransformTarget = "model";
+  var surfaceScaleAllAxes = false;
+  var surfaceGizmoOneSidedScale = false;
+  var surfaceGizmoScaleHandleSigns = { x: 1, y: 1, z: 1 };
   var activeSurfaceTransform = surfaceTransform;
   var surfaceGizmoLastPosition = new Vector3();
+  var surfaceGizmoLastScale = new Vector3(1, 1, 1);
+  var surfaceGizmoScaleCenter = new Vector3();
+  var surfaceGizmoLastQuaternion = new Quaternion();
   var checkedIds = /* @__PURE__ */ new Set();
   var activeGroupIds = [];
   var groupPivot = new Object3D();
@@ -32895,6 +32943,8 @@ void main() {
     boneAxisZBtn: document.querySelector("#boneAxisZBtn"),
     boneModeMoveBtn: document.querySelector("#boneModeMoveBtn"),
     boneModeRotateBtn: document.querySelector("#boneModeRotateBtn"),
+    boneModeScaleBtn: document.querySelector("#boneModeScaleBtn"),
+    rigTransformToolLabel: document.querySelector("#rigTransformToolLabel"),
     boneRotationStepInput: document.querySelector("#boneRotationStepInput"),
     boneRotationStepStatus: document.querySelector("#boneRotationStepStatus"),
     glueBoneBtn: document.querySelector("#glueBoneBtn"),
@@ -32913,6 +32963,10 @@ void main() {
     boneRotX: document.querySelector("#boneRotX"),
     boneRotY: document.querySelector("#boneRotY"),
     boneRotZ: document.querySelector("#boneRotZ"),
+    boneAnatomyScaleX: document.querySelector("#boneAnatomyScaleX"),
+    boneAnatomyScaleY: document.querySelector("#boneAnatomyScaleY"),
+    boneAnatomyScaleZ: document.querySelector("#boneAnatomyScaleZ"),
+    resetBoneAnatomyScaleBtn: document.querySelector("#resetBoneAnatomyScaleBtn"),
     showBonesInput: document.querySelector("#showBonesInput"),
     skeletonModeInput: document.querySelector("#skeletonModeInput"),
     boneGuideScaleInput: document.querySelector("#boneGuideScaleInput"),
@@ -32922,6 +32976,14 @@ void main() {
     markSkinBtn: document.querySelector("#markSkinBtn"),
     markArmorBtn: document.querySelector("#markArmorBtn"),
     attachArmorBtn: document.querySelector("#attachArmorBtn"),
+    selectTargetBoneBtn: document.querySelector("#selectTargetBoneBtn"),
+    selectTargetSkinBtn: document.querySelector("#selectTargetSkinBtn"),
+    selectTargetArmorBtn: document.querySelector("#selectTargetArmorBtn"),
+    selectTargetStatus: document.querySelector("#selectTargetStatus"),
+    modelSelectTargetAllBtn: document.querySelector("#modelSelectTargetAllBtn"),
+    modelSelectTargetSkinBtn: document.querySelector("#modelSelectTargetSkinBtn"),
+    modelSelectTargetArmorBtn: document.querySelector("#modelSelectTargetArmorBtn"),
+    modelSelectTargetBoneBtn: document.querySelector("#modelSelectTargetBoneBtn"),
     rigModelOpacityInput: document.querySelector("#rigModelOpacityInput"),
     rigModelOpacityValue: document.querySelector("#rigModelOpacityValue"),
     animationSection: document.querySelector("#animationSection"),
@@ -32961,6 +33023,7 @@ void main() {
     animationWebmExportBtn: document.querySelector("#animationWebmExportBtn"),
     animationMp4ExportBtn: document.querySelector("#animationMp4ExportBtn"),
     animatorWorkspaceOpenBtn: document.querySelector("#animatorWorkspaceOpenBtn"),
+    animatorTimelineCollapseBtn: document.querySelector("#animatorTimelineCollapseBtn"),
     animatorClipSelect: document.querySelector("#animatorClipSelect"),
     workspaceSelect: document.querySelector("#workspaceSelect"),
     importBbmodelBtn: document.querySelector("#importBbmodelBtn"),
@@ -33063,6 +33126,8 @@ void main() {
     deleteSelectedSurfaceBtn: document.querySelector("#deleteSelectedSurfaceBtn"),
     surfaceMouseModeBtn: document.querySelector("#surfaceMouseModeBtn"),
     surfaceValueModeBtn: document.querySelector("#surfaceValueModeBtn"),
+    surfaceTransformModelBtn: document.querySelector("#surfaceTransformModelBtn"),
+    surfaceTransformSelectionBtn: document.querySelector("#surfaceTransformSelectionBtn"),
     autoSurfaceDragInput: document.querySelector("#autoSurfaceDragInput"),
     showModelingEdgesInput: document.querySelector("#showModelingEdgesInput"),
     surfaceMouseFalloffSelect: document.querySelector("#surfaceMouseFalloffSelect"),
@@ -33204,6 +33269,9 @@ void main() {
     surfaceScaleAxisSelect: document.querySelector("#surfaceScaleAxisSelect"),
     surfaceScaleAmountInput: document.querySelector("#surfaceScaleAmountInput"),
     surfaceScaleBtn: document.querySelector("#surfaceScaleBtn"),
+    surfaceScaleGizmoBtn: document.querySelector("#surfaceScaleGizmoBtn"),
+    surfaceRotateGizmoBtn: document.querySelector("#surfaceRotateGizmoBtn"),
+    surfaceScaleAllAxesBtn: document.querySelector("#surfaceScaleAllAxesBtn"),
     relaxModeSelect: document.querySelector("#relaxModeSelect"),
     relaxStrengthInput: document.querySelector("#relaxStrengthInput"),
     relaxIterationsInput: document.querySelector("#relaxIterationsInput"),
@@ -36842,11 +36910,13 @@ void main() {
     finishScaleDragSession();
     const transformTargets = transformTargetObjects();
     const pivotTargets = pivotManagedObjects();
+    const animatorRigObjectTransform = document.body.classList.contains("animator-workspace-active") && ["skin", "armor"].includes(selected?.userData?.rigRole || "");
+    const selectedStoredPivotActive = !animatorRigObjectTransform && selected && activeTransformMode === "rotate" && Array.isArray(selected.userData?.pivot) && selected.userData.pivot.length === 3;
     if (pivotEditMode && !pivotTargets.length) {
       pivotEditMode = false;
       els.pivotBtn.classList.remove("active");
     }
-    if (pivotTargets.length && (pivotEditMode || transformTargets.length > 1 || selected && activeTransformMode === "rotate" && Array.isArray(selected.userData?.pivot) && selected.userData.pivot.length === 3)) {
+    if (pivotTargets.length && (pivotEditMode || transformTargets.length > 1 || selectedStoredPivotActive)) {
       syncGroupPivotToObjects(pivotTargets);
       if (!activeTransformMode && !pivotEditMode) return;
       transform.setMode(pivotEditMode ? "translate" : activeTransformMode);
@@ -36864,6 +36934,10 @@ void main() {
     }
   }
   function setTransformMode(mode) {
+    if (["translate", "rotate", "scale"].includes(mode) && surfaceTransformTarget === "selection" && surfaceSelectionSource === "surface" && surfaceComponentSelectionCount() > 0) {
+      setSurfaceGizmoMode(mode, { toggle: true });
+      return;
+    }
     const nextMode = activeTransformMode === mode ? null : mode;
     if (pivotEditMode) setPivotEditMode(false, { silent: true });
     if (nextMode && dragPushMode) setDragPushMode(false, { silent: true });
@@ -36891,7 +36965,7 @@ void main() {
   function setDragPushMode(enabled, { silent = false } = {}) {
     finishDragPushSession();
     dragPushMode = !!enabled;
-    els.dragPushBtn?.classList.toggle("active", dragPushMode);
+    syncSurfaceGizmoModeUi();
     if (dragPushMode) {
       if (activeTransformMode) setTransformMode(activeTransformMode);
       setFacePickMode(true);
@@ -36900,6 +36974,7 @@ void main() {
       els.hudText.textContent = facePickMode ? "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, Push, or Bevel Face" : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform tools: toggle Move/Rotate/Scale";
     }
     updateSurfaceGizmoAttachment();
+    syncSurfaceGizmoModeUi();
     if (!silent) log(dragPushMode ? "Drag/Push mode enabled." : "Drag/Push mode disabled.");
   }
   function surfaceInteractionMode() {
@@ -36969,6 +37044,7 @@ void main() {
     }
     syncHoleRepairUi();
     syncSurfaceAxisUi();
+    syncSurfaceGizmoModeUi();
     syncUvUnwrapUi();
     if (els.surfaceEditorSelection) {
       if (surfaceComponentMode === "none") {
@@ -37128,8 +37204,129 @@ void main() {
     }
     syncSurfaceAxisUi();
   }
+  function syncSurfaceGizmoModeUi() {
+    const selectionActive = surfaceTransformTarget === "selection" && dragPushMode;
+    els.surfaceTransformModelBtn?.classList.toggle("active", surfaceTransformTarget === "model");
+    els.surfaceTransformSelectionBtn?.classList.toggle("active", surfaceTransformTarget === "selection");
+    els.dragPushBtn?.classList.toggle("active", selectionActive && surfaceGizmoMode === "translate");
+    els.surfaceRotateGizmoBtn?.classList.toggle("active", selectionActive && surfaceGizmoMode === "rotate");
+    els.surfaceScaleGizmoBtn?.classList.toggle("active", selectionActive && surfaceGizmoMode === "scale");
+    els.surfaceScaleAllAxesBtn?.classList.toggle("active", surfaceScaleAllAxes);
+    if (!activeTransformMode) {
+      document.querySelectorAll("[data-mode]").forEach((button) => {
+        button.classList.toggle("active", selectionActive && button.dataset.mode === surfaceGizmoMode);
+      });
+    }
+  }
+  function setSurfaceScaleAllAxes(enabled) {
+    surfaceScaleAllAxes = !!enabled;
+    if (surfaceScaleAllAxes && surfaceGizmoMode !== "scale") setSurfaceGizmoMode("scale");
+    syncSurfaceGizmoModeUi();
+    updateSurfaceTransformGuides();
+    log(`Selected Area Scale All Axes ${surfaceScaleAllAxes ? "enabled" : "disabled"}.`);
+  }
+  function surfaceScaleHandleSigns(control = activeSurfaceTransform || surfaceTransform) {
+    const signs = { x: 1, y: 1, z: 1 };
+    if (!control?.axis) return signs;
+    const activeCamera = control === surfaceFrontTransform ? frontBoneCamera : control === surfaceSideTransform ? sideBoneCamera : camera;
+    raycaster.setFromCamera(lastCanvasPointer, activeCamera);
+    const hit = raycaster.intersectObject(control, true).find((entry) => entry.object?.visible !== false);
+    if (!hit?.point) return signs;
+    const relative = hit.point.clone().sub(surfaceGizmoPivot.position);
+    const axis = String(control.axis || "").toUpperCase();
+    if (axis.includes("X")) signs.x = relative.x >= 0 ? 1 : -1;
+    if (axis.includes("Y")) signs.y = relative.y >= 0 ? 1 : -1;
+    if (axis.includes("Z")) signs.z = relative.z >= 0 ? 1 : -1;
+    return signs;
+  }
+  function surfacePointMapsScaleHandlePoint(byMesh, fallbackCenter, signMap = { x: 1, y: 1, z: 1 }, factors = null) {
+    const bounds = new Box3();
+    let count = 0;
+    for (const [mesh, points] of byMesh) {
+      mesh.updateWorldMatrix(true, false);
+      for (const point of points.values()) {
+        bounds.expandByPoint(point.clone().applyMatrix4(mesh.matrixWorld));
+        count++;
+      }
+    }
+    if (!count || bounds.isEmpty()) return fallbackCenter.clone();
+    const origin = fallbackCenter.clone();
+    const activeAxis = String(activeSurfaceTransform?.axis || "").toUpperCase();
+    for (const axis of ["x", "y", "z"]) {
+      const scalesAxis = surfaceScaleAllAxes || activeAxis.includes(axis.toUpperCase()) || factors && Math.abs(factors[axis] - 1) > 1e-6;
+      if (scalesAxis) origin[axis] = signMap[axis] >= 0 ? bounds.max[axis] : bounds.min[axis];
+    }
+    return origin;
+  }
+  function updateSurfaceTransformGuides() {
+    const show = surfaceGizmoShouldShow();
+    surfaceTransformGuideGroup.visible = show;
+    if (!show) return;
+    const sourceMaps = selectedSurfacePointMaps();
+    const centered = selectedSurfaceWorldCenter() || surfaceGizmoPivot.position.clone();
+    const oneSided = surfaceGizmoMode === "scale" && (surfaceGizmoDragging ? surfaceGizmoOneSidedScale : isShiftHeld && !isCtrlHeld);
+    const handleSigns = surfaceGizmoDragging ? surfaceGizmoScaleHandleSigns : surfaceScaleHandleSigns(activeSurfaceTransform);
+    const heldSide = oneSided ? surfacePointMapsScaleHandlePoint(sourceMaps, centered, handleSigns) : centered;
+    surfaceScaleOriginMarker.visible = surfaceGizmoMode === "scale" && !oneSided;
+    surfaceScaleOriginMarker.position.copy(centered);
+    surfaceScaleOriginMarker.material.color.setHex(16765786);
+    surfaceScaleAnchorMarker.visible = surfaceGizmoMode === "scale" && oneSided;
+    surfaceScaleAnchorLine.visible = surfaceScaleAnchorMarker.visible;
+    if (surfaceScaleAnchorMarker.visible) {
+      surfaceScaleAnchorMarker.position.copy(heldSide);
+      const linePositions = surfaceScaleAnchorLine.geometry.getAttribute("position");
+      linePositions.setXYZ(0, centered.x, centered.y, centered.z);
+      linePositions.setXYZ(1, heldSide.x, heldSide.y, heldSide.z);
+      linePositions.needsUpdate = true;
+      surfaceScaleAnchorLine.geometry.computeBoundingSphere();
+    }
+    const mirroredMaps = mirroredSurfacePointMaps(sourceMaps);
+    const positions = [];
+    for (const [mesh, points] of mirroredMaps) {
+      mesh.updateWorldMatrix(true, false);
+      for (const point of points.values()) positions.push(...point.clone().applyMatrix4(mesh.matrixWorld).toArray());
+    }
+    surfaceMirrorGhostMarker.geometry.dispose();
+    surfaceMirrorGhostMarker.geometry = new BufferGeometry();
+    if (positions.length) surfaceMirrorGhostMarker.geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+    surfaceMirrorGhostMarker.visible = mirrorBoneEdits && positions.length > 0;
+  }
+  function setSurfaceGizmoMode(mode = "translate", { toggle = false } = {}) {
+    const next = ["translate", "rotate", "scale"].includes(mode) ? mode : "translate";
+    surfaceTransformTarget = "selection";
+    if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "mouse";
+    const shouldDisable = toggle && dragPushMode && surfaceGizmoMode === next;
+    surfaceGizmoMode = next;
+    if (shouldDisable) setDragPushMode(false, { silent: true });
+    else {
+      if (activeTransformMode) {
+        finishScaleDragSession();
+        activeTransformMode = null;
+        transform.detach();
+        transform.visible = false;
+        document.querySelectorAll("[data-mode]").forEach((button) => button.classList.remove("active"));
+      }
+      setDragPushMode(true, { silent: true });
+    }
+    syncSurfaceGizmoModeUi();
+    updateSurfaceGizmoAttachment();
+    els.hudText.textContent = shouldDisable ? "Surface transform gizmo off" : next === "scale" ? "Surface scale active: drag the center cube for uniform scale or an axis handle for one direction" : next === "rotate" ? "Surface rotate active: drag an X, Y, or Z ring around the selected area center" : "Surface move active: drag an X, Y, or Z arrow";
+  }
+  function setSurfaceTransformTarget(target = "model") {
+    surfaceTransformTarget = target === "selection" ? "selection" : "model";
+    if (surfaceTransformTarget === "model") {
+      if (dragPushMode) setDragPushMode(false, { silent: true });
+    } else {
+      if (els.surfaceEditorWindow) els.surfaceEditorWindow.dataset.interactionMode = "mouse";
+      if (surfaceComponentSelectionCount()) setSurfaceGizmoMode(surfaceGizmoMode);
+    }
+    syncSurfaceEditorUi();
+    syncSurfaceGizmoModeUi();
+    updateSurfaceGizmoAttachment();
+    log(`Transform target set to ${surfaceTransformTarget === "selection" ? "Selected Area" : "Full Model"}.`);
+  }
   function surfaceGizmoShouldShow() {
-    return dragPushMode && surfaceInteractionMode() === "mouse" && surfaceComponentSelectionCount() > 0 && !els.surfaceEditorWindow?.classList.contains("collapsed");
+    return surfaceTransformTarget === "selection" && dragPushMode && surfaceComponentSelectionCount() > 0 && !els.surfaceEditorWindow?.classList.contains("collapsed");
   }
   function hideSurfacePlaneHandles(control = surfaceTransform) {
     const planeNames = /* @__PURE__ */ new Set(["XY", "XZ", "YZ"]);
@@ -37151,6 +37348,7 @@ void main() {
         control.visible = false;
       }
       surfaceGizmoPivot.visible = false;
+      surfaceTransformGuideGroup.visible = false;
       surfaceGizmoDragging = false;
       activeSurfaceTransform = surfaceTransform;
       return;
@@ -37163,16 +37361,22 @@ void main() {
     surfaceGizmoPivot.scale.set(1, 1, 1);
     surfaceGizmoPivot.updateMatrixWorld(true);
     surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
+    surfaceGizmoLastScale.set(1, 1, 1);
+    surfaceGizmoScaleCenter.copy(center);
+    surfaceGizmoLastQuaternion.identity();
     surfaceGizmoSyncing = false;
     configureSurfaceTransformAxis();
     for (const control of surfaceTransforms) {
-      control.setMode("translate");
+      control.setMode(surfaceGizmoMode);
       control.setTranslationSnap(transformSnapSettings().translation ?? dragPushStepSize());
+      control.setScaleSnap(transformSnapSettings().scale);
       control.enabled = true;
       control.attach(surfaceGizmoPivot);
       control.visible = true;
       hideSurfacePlaneHandles(control);
     }
+    syncSurfaceGizmoModeUi();
+    updateSurfaceTransformGuides();
   }
   function beginSurfaceGizmoDrag(event) {
     if (!surfaceGizmoShouldShow()) return;
@@ -37180,12 +37384,53 @@ void main() {
     surfaceGizmoDragging = true;
     surfaceGizmoMovedDistance = 0;
     surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
-    recordHistory("move selected surface with gizmo");
-    els.hudText.textContent = "Surface arrows active: drag X, Y, or Z to move the selected surface";
+    surfaceGizmoLastScale.copy(surfaceGizmoPivot.scale);
+    surfaceGizmoScaleCenter.copy(surfaceGizmoPivot.position);
+    surfaceGizmoLastQuaternion.copy(surfaceGizmoPivot.quaternion);
+    if (surfaceGizmoMode === "scale") {
+      surfaceGizmoOneSidedScale = isShiftHeld && !isCtrlHeld;
+      surfaceGizmoScaleHandleSigns = surfaceScaleHandleSigns(activeSurfaceTransform);
+      updateSurfaceTransformGuides();
+    }
+    recordHistory(`${surfaceGizmoMode} selected surface with gizmo`);
+    els.hudText.textContent = surfaceGizmoMode === "scale" ? "Surface scale active: drag the center cube or an X/Y/Z scale handle" : surfaceGizmoMode === "rotate" ? "Surface rotate active: drag an X, Y, or Z ring around the selected center" : "Surface arrows active: drag X, Y, or Z to move the selected surface";
   }
   function applySurfaceGizmoDelta(event) {
     if (!surfaceGizmoDragging || surfaceGizmoSyncing || !surfaceComponentSelectionCount()) return;
     const control = event?.target || activeSurfaceTransform || surfaceTransform;
+    if (surfaceGizmoMode === "rotate") {
+      const nextQuaternion = surfaceGizmoPivot.quaternion.clone().normalize();
+      const deltaQuaternion = nextQuaternion.clone().multiply(surfaceGizmoLastQuaternion.clone().invert()).normalize();
+      const angle = 2 * Math.acos(MathUtils.clamp(Math.abs(deltaQuaternion.w), -1, 1));
+      if (!Number.isFinite(angle) || angle < 1e-7) return;
+      const movedOccurrences = rotateSelectedSurfaceByWorldQuaternion(deltaQuaternion, surfaceGizmoScaleCenter);
+      surfaceGizmoMovedDistance += angle;
+      surfaceGizmoLastQuaternion.copy(nextQuaternion);
+      els.hudText.textContent = `Surface rotate: ${round2(MathUtils.radToDeg(surfaceGizmoMovedDistance))}\xB0 | ${movedOccurrences} points`;
+      return;
+    }
+    if (surfaceGizmoMode === "scale") {
+      const nextScale = surfaceGizmoPivot.scale.clone();
+      const factors = new Vector3(
+        Math.abs(surfaceGizmoLastScale.x) > 1e-6 ? nextScale.x / surfaceGizmoLastScale.x : 1,
+        Math.abs(surfaceGizmoLastScale.y) > 1e-6 ? nextScale.y / surfaceGizmoLastScale.y : 1,
+        Math.abs(surfaceGizmoLastScale.z) > 1e-6 ? nextScale.z / surfaceGizmoLastScale.z : 1
+      );
+      if ([factors.x, factors.y, factors.z].some((value) => !Number.isFinite(value) || value <= 1e-4)) return;
+      if (surfaceScaleAllAxes) {
+        const uniformFactor = [factors.x, factors.y, factors.z].reduce((best, value) => Math.abs(value - 1) > Math.abs(best - 1) ? value : best, 1);
+        factors.setScalar(uniformFactor);
+      }
+      const movedOccurrences = scaleSelectedSurfaceByWorldFactors(factors, surfaceGizmoScaleCenter, {
+        oneSided: surfaceGizmoOneSidedScale,
+        signMap: surfaceGizmoScaleHandleSigns
+      });
+      surfaceGizmoMovedDistance += Math.abs(factors.x - 1) + Math.abs(factors.y - 1) + Math.abs(factors.z - 1);
+      surfaceGizmoLastScale.copy(nextScale);
+      updateSurfaceTransformGuides();
+      els.hudText.textContent = `Surface scale: ${surfaceScaleAllAxes ? "ALL" : `X ${round2(nextScale.x * 100)}% | Y ${round2(nextScale.y * 100)}% | Z ${round2(nextScale.z * 100)}%`} | ${surfaceGizmoOneSidedScale ? "held side only from center" : "centered on both sides"} | ${movedOccurrences} points`;
+      return;
+    }
     const delta = surfaceGizmoPivot.position.clone().sub(surfaceGizmoLastPosition);
     let axisMode = surfaceAxisMode();
     if (axisMode === "free") {
@@ -37202,6 +37447,7 @@ void main() {
     const softFalloff = els.surfaceMouseFalloffSelect?.value === "soft";
     const radius = Math.max(0.01, Number(els.softRadiusInput?.value) || 0.25);
     const movement = axisDirection.clone().multiplyScalar(distance);
+    const mirroredMoveMaps = mirroredSurfacePointMaps(selectedSurfacePointMaps());
     if (surfaceComponentMode === "vertex" || surfaceComponentMode === "edge") {
       moveSelectedSurfaceComponentsByWorldDelta(movement);
     } else {
@@ -37215,6 +37461,11 @@ void main() {
         else moveSelectedVerticesAlongAxis(mesh, faces, distance, axisMode);
       }
     }
+    if (mirroredMoveMaps.size) {
+      const mirroredMovement = movement.clone();
+      mirroredMovement.x *= -1;
+      transformSurfacePointMaps(mirroredMoveMaps, (worldPoint) => worldPoint.add(mirroredMovement));
+    }
     surfaceGizmoMovedDistance += Math.abs(distance);
     surfaceGizmoLastPosition.copy(surfaceGizmoPivot.position);
     updateFaceMarker();
@@ -37222,16 +37473,18 @@ void main() {
     updateTriangleHelpers();
     syncSelectionOutlineTransforms();
     updateState();
+    updateSurfaceTransformGuides();
     const shapeLabel = surfaceComponentMode === "vertex" || surfaceComponentMode === "edge" ? `${surfaceComponentMode} component` : softFalloff ? `Soft radius ${round2(radius)}` : "Hard face";
     els.hudText.textContent = `Surface arrow: moved ${axisMode.toUpperCase()} ${round2(distance)} | ${shapeLabel}`;
   }
   function finishSurfaceGizmoDrag() {
     if (!surfaceGizmoDragging) return;
     surfaceGizmoDragging = false;
+    surfaceGizmoOneSidedScale = false;
     updateAll();
     updateSurfaceGizmoAttachment();
-    els.hudText.textContent = `Surface ready: ${surfaceAxisMode() === "free" ? "drag an X/Y/Z arrow" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow`} | ${els.surfaceMouseFalloffSelect?.value === "hard" ? "Hard face" : `Soft radius ${Number(els.softRadiusInput?.value || 0.25)}`}`;
-    log(`Moved selected surface with viewport arrows.`, { distance: round2(surfaceGizmoMovedDistance) });
+    els.hudText.textContent = surfaceGizmoMode === "scale" ? "Surface scale ready: drag the center cube or an X/Y/Z handle" : surfaceGizmoMode === "rotate" ? "Surface rotate ready: drag an X, Y, or Z ring" : `Surface ready: ${surfaceAxisMode() === "free" ? "drag an X/Y/Z arrow" : `drag the locked ${surfaceAxisMode().toUpperCase()} arrow`} | ${els.surfaceMouseFalloffSelect?.value === "hard" ? "Hard face" : `Soft radius ${Number(els.softRadiusInput?.value || 0.25)}`}`;
+    log(`${surfaceGizmoMode[0].toUpperCase()}${surfaceGizmoMode.slice(1)} selected surface with the viewport gizmo.`, { amount: round2(surfaceGizmoMovedDistance) });
     activeSurfaceTransform = surfaceTransform;
   }
   function armContextualSurfaceDrag() {
@@ -45732,11 +45985,138 @@ void main() {
     }
     return byMesh;
   }
+  function mirroredSurfacePointMaps(sourceMaps) {
+    const mirrored = /* @__PURE__ */ new Map();
+    if (!mirrorBoneEdits || typeof mirroredArmorForObject !== "function") return mirrored;
+    for (const [source, sourcePoints] of sourceMaps) {
+      if (source?.userData?.rigRole !== "armor") continue;
+      const target = mirroredArmorForObject(source);
+      if (!target?.geometry || target === source) continue;
+      const sourceGeometry = source.geometry.index ? source.geometry.toNonIndexed() : source.geometry;
+      const targetGeometry = target.geometry.index ? target.geometry.toNonIndexed() : target.geometry;
+      const sourcePosition = sourceGeometry.getAttribute("position");
+      const targetPosition = targetGeometry.getAttribute("position");
+      if (!sourcePosition || !targetPosition || sourcePosition.count !== targetPosition.count) {
+        if (sourceGeometry !== source.geometry) sourceGeometry.dispose();
+        if (targetGeometry !== target.geometry) targetGeometry.dispose();
+        continue;
+      }
+      const sourceKeys = new Set(sourcePoints.keys());
+      const sourcePoint = new Vector3();
+      const targetPoint = new Vector3();
+      const targetPoints = /* @__PURE__ */ new Map();
+      for (let index = 0; index < sourcePosition.count; index++) {
+        sourcePoint.fromBufferAttribute(sourcePosition, index);
+        if (!sourceKeys.has(vertexKey(sourcePoint))) continue;
+        targetPoint.fromBufferAttribute(targetPosition, index);
+        targetPoints.set(vertexKey(targetPoint), targetPoint.clone());
+      }
+      if (sourceGeometry !== source.geometry) sourceGeometry.dispose();
+      if (targetGeometry !== target.geometry) targetGeometry.dispose();
+      if (targetPoints.size) mirrored.set(target, targetPoints);
+    }
+    return mirrored;
+  }
+  function surfacePointMapWorldCenter(mesh, points) {
+    mesh.updateWorldMatrix(true, false);
+    const worldPoints = [...points.values()].map((point) => point.clone().applyMatrix4(mesh.matrixWorld));
+    return worldPoints.length ? worldPoints.reduce((sum, point) => sum.add(point), new Vector3()).multiplyScalar(1 / worldPoints.length) : null;
+  }
+  function transformSurfacePointMaps(byMesh, transformWorldPoint, { refreshSelection = false } = {}) {
+    let movedOccurrences = 0;
+    for (const [mesh, points] of byMesh) {
+      mesh.updateWorldMatrix(true, false);
+      const inverseWorld = mesh.matrixWorld.clone().invert();
+      const targets = /* @__PURE__ */ new Map();
+      for (const [key2, localPoint2] of points) {
+        const transformedWorld = transformWorldPoint(localPoint2.clone().applyMatrix4(mesh.matrixWorld), mesh, points);
+        targets.set(key2, transformedWorld.applyMatrix4(inverseWorld));
+      }
+      const geometry = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+      const position = geometry.getAttribute("position");
+      const localPoint = new Vector3();
+      for (let index = 0; index < position.count; index++) {
+        localPoint.fromBufferAttribute(position, index);
+        const target = targets.get(vertexKey(localPoint));
+        if (!target) continue;
+        position.setXYZ(index, target.x, target.y, target.z);
+        movedOccurrences++;
+      }
+      position.needsUpdate = true;
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+      geometry.computeBoundingSphere();
+      replaceEditableMeshGeometry(mesh, geometry);
+      remapProtectedEdgesForTargets(mesh, targets);
+      if (refreshSelection) refreshScaledSurfaceSelection(mesh, targets);
+    }
+    return movedOccurrences;
+  }
   function scaleSurfacePoint(worldPoint, worldCenter, factor, requestedAxis) {
     const scaled = worldPoint.clone();
     if (requestedAxis === "uniform") return scaled.sub(worldCenter).multiplyScalar(factor).add(worldCenter);
     scaled[requestedAxis] = worldCenter[requestedAxis] + (scaled[requestedAxis] - worldCenter[requestedAxis]) * factor;
     return scaled;
+  }
+  function scaleSelectedSurfaceByWorldFactors(factors, worldCenter, { oneSided = false, signMap = { x: 1, y: 1, z: 1 } } = {}) {
+    const byMesh = selectedSurfacePointMaps();
+    if (!byMesh.size || !worldCenter) return 0;
+    const mirroredByMesh = mirroredSurfacePointMaps(byMesh);
+    const scaleAroundCenter = (center) => (worldPoint) => worldPoint.sub(center).set(
+      worldPoint.x * factors.x,
+      worldPoint.y * factors.y,
+      worldPoint.z * factors.z
+    ).add(center);
+    const scaleHeldSideFromCenter = (center, signs) => (worldPoint) => {
+      const scaled = worldPoint.clone();
+      for (const axis of ["x", "y", "z"]) {
+        if (Math.abs(factors[axis] - 1) <= 1e-6) continue;
+        const distance = worldPoint[axis] - center[axis];
+        if (distance * signs[axis] < -1e-6) continue;
+        scaled[axis] = center[axis] + distance * factors[axis];
+      }
+      return scaled;
+    };
+    let movedOccurrences = transformSurfacePointMaps(
+      byMesh,
+      oneSided ? scaleHeldSideFromCenter(worldCenter, signMap) : scaleAroundCenter(worldCenter),
+      { refreshSelection: true }
+    );
+    const mirroredSigns = { x: -signMap.x, y: signMap.y, z: signMap.z };
+    for (const [mesh, points] of mirroredByMesh) {
+      const mirroredCenter = surfacePointMapWorldCenter(mesh, points);
+      if (!mirroredCenter) continue;
+      const meshPoints = /* @__PURE__ */ new Map([[mesh, points]]);
+      movedOccurrences += transformSurfacePointMaps(
+        meshPoints,
+        oneSided ? scaleHeldSideFromCenter(mirroredCenter, mirroredSigns) : scaleAroundCenter(mirroredCenter)
+      );
+    }
+    updateFaceMarker();
+    updateSurfaceComponentMarker();
+    updateTriangleHelpers();
+    syncSelectionOutlineTransforms();
+    updateState();
+    return movedOccurrences;
+  }
+  function rotateSelectedSurfaceByWorldQuaternion(quaternion, worldCenter) {
+    const byMesh = selectedSurfacePointMaps();
+    if (!byMesh.size || !worldCenter) return 0;
+    const mirroredByMesh = mirroredSurfacePointMaps(byMesh);
+    const rotateAroundCenter = (center, rotation) => (worldPoint) => worldPoint.sub(center).applyQuaternion(rotation).add(center);
+    let movedOccurrences = transformSurfacePointMaps(byMesh, rotateAroundCenter(worldCenter, quaternion), { refreshSelection: true });
+    const mirroredQuaternion = new Quaternion(quaternion.x, -quaternion.y, -quaternion.z, quaternion.w).normalize();
+    for (const [mesh, points] of mirroredByMesh) {
+      const mirroredCenter = surfacePointMapWorldCenter(mesh, points);
+      if (!mirroredCenter) continue;
+      movedOccurrences += transformSurfacePointMaps(/* @__PURE__ */ new Map([[mesh, points]]), rotateAroundCenter(mirroredCenter, mirroredQuaternion));
+    }
+    updateFaceMarker();
+    updateSurfaceComponentMarker();
+    updateTriangleHelpers();
+    syncSelectionOutlineTransforms();
+    updateState();
+    return movedOccurrences;
   }
   function pointFromVertexKey(key2) {
     const values = String(key2).split(",").map(Number);
@@ -55388,6 +55768,8 @@ ${new OBJExporter().parse(group)}`;
   var tPoseFittingMode = false;
   var skeletonDisplayMode = false;
   var skeletonPreviousOpacity = null;
+  var rigSelectionTarget = "bone";
+  var modelingSelectionTarget = ["all", "skin", "armor", "bone"].includes(localStorage.getItem("boltworks.modelingSelectionTarget")) ? localStorage.getItem("boltworks.modelingSelectionTarget") : "all";
   var boneTransformLooseStart = null;
   var rigModelOpacity = 1;
   var rigModelMaterialState = /* @__PURE__ */ new Map();
@@ -55513,6 +55895,7 @@ ${new OBJExporter().parse(group)}`;
     boneToolMode = boneGizmoEnabled && boneGizmoToolMode === "translate" && boneMoveAxis ? "move" : null;
     els.boneModeMoveBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "translate");
     els.boneModeRotateBtn?.classList.toggle("active", boneGizmoEnabled && boneGizmoToolMode === "rotate");
+    els.boneModeScaleBtn?.classList.remove("active");
   }
   function setBoneGizmoToolMode(mode) {
     const next = mode === "translate" ? "translate" : "rotate";
@@ -55571,6 +55954,7 @@ ${new OBJExporter().parse(group)}`;
     syncBoneJoystick();
   }
   function pickBoneFromMainPointer(event) {
+    if (!activeViewportSelectionTargetsBones()) return null;
     if (!boneRigGroup.visible || !rigBones.length) return null;
     const rect = renderer.domElement.getBoundingClientRect();
     bonePointer.x = (event.clientX - rect.left) / Math.max(1, rect.width) * 2 - 1;
@@ -55587,6 +55971,110 @@ ${new OBJExporter().parse(group)}`;
     rebuildBoneVisuals();
     syncBonePanel();
     log(`Selected bone: ${bone.name}. Drag the gizmo to ${boneGizmoMode() === "translate" ? "move" : "rotate"} it (Move/Rotate toolbar buttons switch mode).`);
+  }
+  function syncRigSelectionTargetUi() {
+    const labels = {
+      bone: "Viewport picks bones only",
+      skin: "Viewport picks skin only",
+      armor: "Viewport picks armor only"
+    };
+    els.selectTargetBoneBtn?.classList.toggle("active", rigSelectionTarget === "bone");
+    els.selectTargetSkinBtn?.classList.toggle("active", rigSelectionTarget === "skin");
+    els.selectTargetArmorBtn?.classList.toggle("active", rigSelectionTarget === "armor");
+    if (els.selectTargetStatus) els.selectTargetStatus.textContent = labels[rigSelectionTarget];
+    if (els.rigTransformToolLabel) els.rigTransformToolLabel.textContent = rigSelectionTarget === "bone" ? "Bone tool:" : `${rigSelectionTarget === "armor" ? "Armor" : "Skin"} tool:`;
+    if (rigSelectionTarget !== "bone" && typeof activeTransformMode !== "undefined") {
+      els.boneModeMoveBtn?.classList.toggle("active", activeTransformMode === "translate");
+      els.boneModeRotateBtn?.classList.toggle("active", activeTransformMode === "rotate");
+      els.boneModeScaleBtn?.classList.toggle("active", activeTransformMode === "scale");
+    }
+    if (els.boneModeScaleBtn) els.boneModeScaleBtn.disabled = rigSelectionTarget === "bone";
+  }
+  function syncModelSelectionTargetUi() {
+    els.modelSelectTargetAllBtn?.classList.toggle("active", modelingSelectionTarget === "all");
+    els.modelSelectTargetSkinBtn?.classList.toggle("active", modelingSelectionTarget === "skin");
+    els.modelSelectTargetArmorBtn?.classList.toggle("active", modelingSelectionTarget === "armor");
+    els.modelSelectTargetBoneBtn?.classList.toggle("active", modelingSelectionTarget === "bone");
+  }
+  function selectedObjectRigRole(object) {
+    return object?.userData?.rigRole || "skin";
+  }
+  function setModelingSelectionTarget(target) {
+    const next = ["all", "skin", "armor", "bone"].includes(target) ? target : "all";
+    modelingSelectionTarget = next;
+    localStorage.setItem("boltworks.modelingSelectionTarget", next);
+    if (next === "bone") {
+      if (typeof selectObject === "function") selectObject(null);
+    } else {
+      if (selectedBoneId) {
+        selectedBoneId = null;
+        rebuildBoneVisuals();
+        syncBonePanel();
+      }
+      if (next !== "all" && typeof selected !== "undefined" && selected && selectedObjectRigRole(selected) !== next) {
+        selectObject(null);
+      }
+    }
+    syncModelSelectionTargetUi();
+    log(`Modeling viewport selection now targets ${next}.`);
+  }
+  function setRigTargetTransformMode(mode) {
+    const next = ["translate", "rotate", "scale"].includes(mode) ? mode : "translate";
+    if (rigSelectionTarget === "bone") {
+      if (next === "scale") {
+        log("Select Skin or Armor to use the Scale tool. Bone anatomy size uses the Width, Height, and Depth controls.");
+        return;
+      }
+      setBoneGizmoToolMode(next);
+      return;
+    }
+    if (typeof setTransformMode !== "function") return;
+    if (activeTransformMode !== next) setTransformMode(next);
+    else if (typeof updateTransformAttachment === "function") updateTransformAttachment();
+    syncRigSelectionTargetUi();
+  }
+  function ensureRigObjectMoveTool() {
+    if (rigSelectionTarget === "bone" || typeof setTransformMode !== "function") return;
+    if (activeTransformMode !== "translate") setTransformMode("translate");
+    else if (typeof updateTransformAttachment === "function") updateTransformAttachment();
+    syncRigSelectionTargetUi();
+  }
+  function setRigSelectionTarget(target) {
+    const next = ["bone", "skin", "armor"].includes(target) ? target : "bone";
+    rigSelectionTarget = next;
+    if (next === "bone") {
+      if (typeof selectObject === "function") selectObject(null);
+    } else {
+      selectedBoneId = null;
+      rebuildBoneVisuals();
+      syncBonePanel();
+      if (typeof selected !== "undefined" && selected && selectedObjectRigRole(selected) !== next) {
+        selectObject(null);
+      }
+      ensureRigObjectMoveTool();
+    }
+    syncRigSelectionTargetUi();
+    log(`Viewport selection now targets ${next}.`);
+  }
+  function activeViewportSelectionTarget() {
+    return document.body.classList.contains("animator-workspace-active") ? rigSelectionTarget : modelingSelectionTarget;
+  }
+  function activeViewportSelectionTargetsBones() {
+    return activeViewportSelectionTarget() === "bone";
+  }
+  function rigTargetedObjectHit(event, target = rigSelectionTarget) {
+    if (!["skin", "armor"].includes(target) || typeof hitsFromPointerEvent !== "function") return null;
+    const hit = hitsFromPointerEvent(event).find((candidate) => {
+      const role = candidate.object?.userData?.rigRole || "skin";
+      return role === target;
+    });
+    return hit || null;
+  }
+  function viewportTargetedObjectHit(event) {
+    const target = activeViewportSelectionTarget();
+    if (target === "all") return hitFromPointerEvent(event);
+    if (target === "bone") return null;
+    return rigTargetedObjectHit(event, target);
   }
   function boneById(id) {
     return rigBones.find((bone) => bone.id === id) || null;
@@ -55626,10 +56114,7 @@ ${new OBJExporter().parse(group)}`;
     animationState.playing = false;
     tPoseFittingMode = next;
     if (tPoseFittingMode) {
-      animationState.frame = 0;
-      restoreAnimationBindPose({ render: false });
-      applyCurrentRigPose();
-      log("T-Pose Fitting enabled. Bone and attached armor edits now redefine their fitted rest offsets.");
+      log("T-Pose Fitting enabled without changing the current head, hand, foot, skin, or armor transforms. Edits now redefine their fitted rest offsets.");
     } else {
       captureAnimationBindingRest();
       log("T-Pose Fitting finished. Saved the fitted bone, armor, hand, and item-socket offsets.");
@@ -55638,6 +56123,9 @@ ${new OBJExporter().parse(group)}`;
     syncBonePanel();
     updateAnimationPanel();
     syncTPoseFittingUi();
+    if (rigSelectionTarget !== "bone" && typeof updateTransformAttachment === "function") {
+      requestAnimationFrame(updateTransformAttachment);
+    }
   }
   function commitTPoseBoneFitting() {
     if (!tPoseFittingMode) return;
@@ -55994,6 +56482,7 @@ ${new OBJExporter().parse(group)}`;
       guideScale: round2(boneGuideScale),
       mirrorBoneEdits,
       skeletonDisplayMode,
+      selectionTarget: rigSelectionTarget,
       modelOpacity: round2(rigModelOpacity),
       bones: rigBones.map((bone) => ({
         id: bone.id,
@@ -56013,6 +56502,7 @@ ${new OBJExporter().parse(group)}`;
         blockbenchLocalRotation: bone.blockbenchLocalRotation?.toArray().map(round2) || null,
         armorMount: !!bone.armorMount,
         armorMountId: bone.armorMountId || null,
+        anatomyScale: (bone.anatomyScale || new Vector3(1, 1, 1)).toArray().map(round2),
         hidden: !!bone.hidden
       })),
       animation: {
@@ -56042,6 +56532,7 @@ ${new OBJExporter().parse(group)}`;
       blockbenchLocalRotation: Array.isArray(bone.blockbenchLocalRotation) ? new Vector3().fromArray(bone.blockbenchLocalRotation) : null,
       armorMount: !!bone.armorMount,
       armorMountId: typeof bone.armorMountId === "string" ? bone.armorMountId : null,
+      anatomyScale: new Vector3().fromArray(Array.isArray(bone.anatomyScale) ? bone.anatomyScale : [1, 1, 1]),
       hidden: !!bone.hidden
     }));
     for (const bone of rigBones) {
@@ -56076,10 +56567,13 @@ ${new OBJExporter().parse(group)}`;
     boneGuideScale = MathUtils.clamp(Number(data.guideScale) || 0.4, 0.2, 1);
     mirrorBoneEdits = !!data.mirrorBoneEdits;
     skeletonDisplayMode = !!data.skeletonDisplayMode;
+    rigSelectionTarget = ["bone", "skin", "armor"].includes(data.selectionTarget) ? data.selectionTarget : "bone";
     rigModelOpacity = MathUtils.clamp(Number(data.modelOpacity) || 1, 0.1, 1);
     syncBoneGuideScaleUi();
     if (els.mirrorBoneEditsInput) els.mirrorBoneEditsInput.checked = mirrorBoneEdits;
     if (els.skeletonModeInput) els.skeletonModeInput.checked = skeletonDisplayMode;
+    syncRigSelectionTargetUi();
+    requestAnimationFrame(ensureRigObjectMoveTool);
     syncRigModelOpacityUi();
     const savedClips = data.animation?.clips && typeof data.animation.clips === "object" ? data.animation.clips : null;
     animationState.clips = savedClips && Object.keys(savedClips).length ? savedClips : { idle: { name: "Idle", fps: data.animation?.fps, end: data.animation?.end, keys: data.animation?.keys || {} } };
@@ -56959,7 +57453,29 @@ ${new OBJExporter().parse(group)}`;
     if (label.includes("right_") || /(?:^|\s)r(?:\s|$)/.test(label)) return 15188149;
     return 14208938;
   }
+  function normalizedBoneAnatomyScale(bone) {
+    const source = bone?.anatomyScale;
+    return new Vector3(
+      MathUtils.clamp(Number(source?.x) || 1, 0.25, 3),
+      MathUtils.clamp(Number(source?.y) || 1, 0.25, 3),
+      MathUtils.clamp(Number(source?.z) || 1, 0.25, 3)
+    );
+  }
+  function bakeSkeletonAnatomyScale(mesh, bone) {
+    const scale = normalizedBoneAnatomyScale(bone);
+    if (scale.distanceToSquared(new Vector3(1, 1, 1)) < 1e-8) return;
+    const pivot = (bone?.displayPosition || bone?.position || new Vector3()).clone();
+    mesh.updateMatrix();
+    const aroundPivot = new Matrix4().makeTranslation(pivot.x, pivot.y, pivot.z).multiply(new Matrix4().makeScale(scale.x, scale.y, scale.z)).multiply(new Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+    mesh.geometry.applyMatrix4(aroundPivot.multiply(mesh.matrix));
+    mesh.position.set(0, 0, 0);
+    mesh.rotation.set(0, 0, 0);
+    mesh.quaternion.identity();
+    mesh.scale.set(1, 1, 1);
+    mesh.updateMatrix();
+  }
   function addSkeletonDisplayMesh(mesh, bone, { joint = false } = {}) {
+    bakeSkeletonAnatomyScale(mesh, bone);
     mesh.material = new MeshStandardMaterial({
       color: skeletonBoneColor(bone, bone?.id === selectedBoneId),
       roughness: 0.78,
@@ -56977,6 +57493,7 @@ ${new OBJExporter().parse(group)}`;
     return mesh;
   }
   function addSkeletonCavityMesh(mesh, bone) {
+    bakeSkeletonAnatomyScale(mesh, bone);
     mesh.material = new MeshBasicMaterial({
       color: 2169619,
       depthTest: true,
@@ -57279,6 +57796,7 @@ ${new OBJExporter().parse(group)}`;
       log("Skeleton Mode disabled. Restored the standard rig guides.");
     }
     rebuildBoneVisuals();
+    syncBonePanel();
   }
   function restoreRigModelMaterials() {
     const restored = rigModelMaterialState.size > 0;
@@ -57411,6 +57929,10 @@ ${new OBJExporter().parse(group)}`;
     }
     const disabled = !bone;
     [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ, els.deleteBoneBtn].forEach((control) => control.disabled = disabled);
+    const anatomyDisabled = disabled || !skeletonDisplayMode;
+    [els.boneAnatomyScaleX, els.boneAnatomyScaleY, els.boneAnatomyScaleZ, els.resetBoneAnatomyScaleBtn].forEach((control) => {
+      if (control) control.disabled = anatomyDisabled;
+    });
     if (els.armorMountBtn) {
       els.armorMountBtn.disabled = disabled;
       els.armorMountBtn.textContent = bone?.armorMount ? "Remove Armor Bone" : "Use Bone for Armor";
@@ -57426,6 +57948,27 @@ ${new OBJExporter().parse(group)}`;
     els.boneRotX.value = bone ? String(round2(MathUtils.radToDeg(bone.rotation.x))) : "";
     els.boneRotY.value = bone ? String(round2(MathUtils.radToDeg(bone.rotation.y))) : "";
     els.boneRotZ.value = bone ? String(round2(MathUtils.radToDeg(bone.rotation.z))) : "";
+    const anatomyScale = normalizedBoneAnatomyScale(bone);
+    if (els.boneAnatomyScaleX) els.boneAnatomyScaleX.value = bone ? String(round2(anatomyScale.x)) : "1";
+    if (els.boneAnatomyScaleY) els.boneAnatomyScaleY.value = bone ? String(round2(anatomyScale.y)) : "1";
+    if (els.boneAnatomyScaleZ) els.boneAnatomyScaleZ.value = bone ? String(round2(anatomyScale.z)) : "1";
+  }
+  function applySelectedBoneAnatomyScale(reset = false) {
+    const bone = selectedBone();
+    if (!bone || !skeletonDisplayMode) return;
+    recordBoneHistory(reset ? "reset skeleton part size" : "resize skeleton part");
+    const next = reset ? new Vector3(1, 1, 1) : new Vector3(
+      MathUtils.clamp(Number(els.boneAnatomyScaleX?.value) || 1, 0.25, 3),
+      MathUtils.clamp(Number(els.boneAnatomyScaleY?.value) || 1, 0.25, 3),
+      MathUtils.clamp(Number(els.boneAnatomyScaleZ?.value) || 1, 0.25, 3)
+    );
+    bone.anatomyScale = next;
+    if (mirrorBoneEdits) {
+      const mirror = boneById(mirroredBoneId(bone.id));
+      if (mirror) mirror.anatomyScale = next.clone();
+    }
+    rebuildBoneVisuals();
+    syncBonePanel();
   }
   function applyBonePanelValues() {
     const bone = selectedBone();
@@ -57555,24 +58098,60 @@ ${new OBJExporter().parse(group)}`;
     return mountBone || boneById(object.userData.rigBoneId);
   }
   function armorPairKey(object) {
-    return String(object?.name || object?.userData?.id || "").toLowerCase().replace(/\bleft\b|\bright\b/g, "").replace(/(?:^|[\s_.-])[lr](?=$|[\s_.-])/g, " ").replace(/[\s_.-]+/g, " ").trim();
+    return `${object?.userData?.groupName || ""} ${object?.name || object?.userData?.id || ""}`.toLowerCase().replace(/\bleft\b|\bright\b/g, "").replace(/(?:^|[\s_.-])[lr](?=$|[\s_.-])/g, " ").replace(/[\s_.-]+/g, " ").trim();
+  }
+  var armorMirrorPairs = /* @__PURE__ */ new Map();
+  function armorObjectId(object) {
+    return object?.userData?.id || object?.uuid || null;
+  }
+  function rememberArmorMirrorPair(left, right) {
+    const leftId = armorObjectId(left);
+    const rightId = armorObjectId(right);
+    if (!leftId || !rightId) return;
+    armorMirrorPairs.set(leftId, rightId);
+    armorMirrorPairs.set(rightId, leftId);
+  }
+  function armorSide(object) {
+    const label = `${object?.userData?.groupName || ""} ${object?.name || ""}`.toLowerCase();
+    if (/\bleft\b|(?:^|[\s_.-])l(?=$|[\s_.-])/.test(label)) return "left";
+    if (/\bright\b|(?:^|[\s_.-])r(?=$|[\s_.-])/.test(label)) return "right";
+    return null;
   }
   function mirroredArmorForObject(source) {
+    const rememberedId = armorMirrorPairs.get(armorObjectId(source));
+    const remembered = rememberedId ? objects.find((object) => armorObjectId(object) === rememberedId && object.userData?.rigRole === "armor") : null;
+    if (remembered) return remembered;
     const sourceBone = armorBoneForObject(source);
     const targetBone = sourceBone ? boneById(mirroredBoneId(sourceBone.id)) : null;
-    if (!targetBone) return null;
-    const candidates = objects.filter((object) => object !== source && object.userData?.rigRole === "armor" && armorBoneForObject(object)?.id === targetBone.id);
+    const sourceSide = armorSide(source);
+    if (!targetBone && !sourceSide) return null;
+    const candidates = objects.filter((object) => object !== source && object.userData?.rigRole === "armor");
     if (!candidates.length) return null;
     const sourceKey = armorPairKey(source);
-    return candidates.find((candidate) => armorPairKey(candidate) === sourceKey) || (candidates.length === 1 ? candidates[0] : null);
+    const oppositeSide = sourceSide === "left" ? "right" : sourceSide === "right" ? "left" : null;
+    const expectedPosition = new Vector3(-source.position.x, source.position.y, source.position.z);
+    const exactNameMatches = sourceKey ? candidates.filter((candidate) => armorPairKey(candidate) === sourceKey && (!oppositeSide || armorSide(candidate) === oppositeSide)) : [];
+    const oppositeBoneMatches = targetBone ? candidates.filter((candidate) => armorBoneForObject(candidate)?.id === targetBone.id) : [];
+    const eligible = exactNameMatches.length ? exactNameMatches : oppositeBoneMatches.length ? oppositeBoneMatches : candidates.filter((candidate) => !oppositeSide || armorSide(candidate) === oppositeSide);
+    const target = eligible.map((candidate) => {
+      const candidateBone = armorBoneForObject(candidate);
+      let score = candidate.position.distanceTo(expectedPosition) * 10;
+      if (sourceKey && armorPairKey(candidate) === sourceKey) score -= 1e3;
+      if (targetBone && candidateBone?.id === targetBone.id) score -= 120;
+      if (oppositeSide && armorSide(candidate) === oppositeSide) score -= 80;
+      if (source.geometry?.type && candidate.geometry?.type === source.geometry.type) score -= 15;
+      return { candidate, score };
+    }).sort((left, right) => left.score - right.score)[0]?.candidate || null;
+    if (target) rememberArmorMirrorPair(source, target);
+    return target;
   }
   function armorFittingTargets(controlObject) {
     if (!controlObject) return [];
     const candidates = controlObject === groupPivot && typeof activeGroupObjects === "function" ? activeGroupObjects() : [controlObject];
-    return candidates.filter((object) => object?.userData?.rigRole === "armor" && armorBoneForObject(object));
+    return candidates.filter((object) => object?.userData?.rigRole === "armor");
   }
   function mirrorArmorFittingObject(source) {
-    if (!tPoseFittingMode || !mirrorBoneEdits) return null;
+    if (!mirrorBoneEdits) return null;
     const target = mirroredArmorForObject(source);
     if (!target) return null;
     target.position.set(-source.position.x, source.position.y, source.position.z);
@@ -57582,18 +58161,49 @@ ${new OBJExporter().parse(group)}`;
     return target;
   }
   function updateArmorFittingMirror(controlObject) {
-    if (!tPoseFittingMode || !mirrorBoneEdits) return;
-    armorFittingTargets(controlObject).forEach(mirrorArmorFittingObject);
+    if (!mirrorBoneEdits) return 0;
+    return armorFittingTargets(controlObject).map(mirrorArmorFittingObject).filter(Boolean).length;
+  }
+  function updateArmorBindingRest(targets) {
+    if (!Array.isArray(targets) || !targets.length) return;
+    if (!(animationState.bindingRest instanceof Map)) animationState.bindingRest = /* @__PURE__ */ new Map();
+    poseRigHierarchy();
+    for (const object of targets) {
+      const bone = armorBoneForObject(object);
+      if (!bone) continue;
+      const key2 = `rigid:${bone.id}:${object.userData?.id || object.uuid}`;
+      const previous = animationState.bindingRest.get(key2);
+      const restBonePosition = previous?.bonePosition?.clone() || bone.bindPosition?.clone() || bone.position.clone();
+      const restBoneRotation = previous?.boneRotation?.clone() || bone.bindRotation?.clone() || bone.rotation.clone();
+      const restBoneQuaternion = previous?.boneQuaternion?.clone() || new Quaternion().setFromEuler(new Euler(restBoneRotation.x, restBoneRotation.y, restBoneRotation.z, "XYZ"));
+      const skinnedBone = activeSkinRuntime?.threeBones?.get(bone.id) || null;
+      const currentBonePosition = skinnedBone ? skinnedBone.getWorldPosition(new Vector3()) : bone.position.clone();
+      const currentBoneQuaternion = skinnedBone ? skinnedBone.getWorldQuaternion(new Quaternion()) : bone.poseWorldQuaternion?.clone() || new Quaternion().setFromEuler(new Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
+      const inverseDelta = currentBoneQuaternion.clone().multiply(restBoneQuaternion.clone().invert()).invert();
+      const objectPosition = object.position.clone().sub(currentBonePosition).applyQuaternion(inverseDelta).add(restBonePosition);
+      const objectQuaternion = inverseDelta.clone().multiply(object.quaternion).normalize();
+      const objectRotation = new Euler().setFromQuaternion(objectQuaternion, object.rotation.order || "XYZ");
+      animationState.bindingRest.set(key2, {
+        object,
+        bonePosition: restBonePosition,
+        boneRotation: restBoneRotation,
+        boneQuaternion: restBoneQuaternion,
+        objectPosition,
+        objectRotation,
+        objectQuaternion
+      });
+    }
   }
   function finishArmorFittingTransform(controlObject) {
-    if (!tPoseFittingMode) return;
     const targets = armorFittingTargets(controlObject);
     if (!targets.length) return;
-    targets.forEach(mirrorArmorFittingObject);
-    captureAnimationBindingRest();
+    const mirroredTargets = targets.map(mirrorArmorFittingObject).filter(Boolean);
+    const mirroredCount = mirroredTargets.length;
+    updateArmorBindingRest([.../* @__PURE__ */ new Set([...targets, ...mirroredTargets])]);
     applyCurrentRigPose();
     updateAll();
-    log(`Saved fitted armor offset${targets.length === 1 ? "" : "s"} relative to the assigned bone${mirrorBoneEdits ? " and mirrored the matching opposite-side armor" : ""}.`);
+    const mirrorResult = !mirrorBoneEdits ? "" : mirroredCount ? ` and mirrored ${mirroredCount} matching opposite-side armor part${mirroredCount === 1 ? "" : "s"}` : "; no opposite armor counterpart was found";
+    log(`Saved fitted armor offset${targets.length === 1 ? "" : "s"} relative to the assigned bone${mirrorResult}.`);
   }
   function glueBonesToSelected() {
     if (!rigBones.length) {
@@ -57786,6 +58396,8 @@ ${new OBJExporter().parse(group)}`;
     boneRaycaster.setFromCamera(bonePointer, referenceCamera);
   }
   function beginBoneDrag(event, view, referenceCanvas, referenceCamera) {
+    const target = activeViewportSelectionTarget();
+    if (target !== "bone" && target !== "all") return;
     bonePointerRay(event, referenceCanvas, referenceCamera);
     const hit = boneRaycaster.intersectObjects(boneRigGroup.children.filter((child) => child.userData.boneJoint), false)[0];
     if (!hit) return;
@@ -57855,6 +58467,8 @@ ${new OBJExporter().parse(group)}`;
     boneDrag = null;
   }
   syncTPoseFittingUi();
+  syncRigSelectionTargetUi();
+  syncModelSelectionTargetUi();
   var MINECRAFT_UNIT = 1 / 16;
   var minecraftProject = { sourceName: "", format: "", textureWidth: 64, textureHeight: 64, textureName: "", textureDataUrl: null };
   var minecraftAnimationClips = [];
@@ -58847,8 +59461,25 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     });
   }
   var animatorWorkspaceActive = false;
+  var animatorTimelineCollapsed = localStorage.getItem("boltworks.animatorTimelineCollapsed") === "true";
   var animatorBoneHome = null;
   var animatorTimelineHome = null;
+  function syncAnimatorTimelineCollapseUi() {
+    document.querySelector(".app")?.classList.toggle("timeline-collapsed", animatorTimelineCollapsed);
+    if (!els.animatorTimelineCollapseBtn) return;
+    els.animatorTimelineCollapseBtn.textContent = animatorTimelineCollapsed ? "Expand Timeline" : "Minimize Timeline";
+    els.animatorTimelineCollapseBtn.setAttribute("aria-expanded", String(!animatorTimelineCollapsed));
+    els.animatorTimelineCollapseBtn.classList.toggle("active", animatorTimelineCollapsed);
+  }
+  function setAnimatorTimelineCollapsed(collapsed) {
+    animatorTimelineCollapsed = !!collapsed;
+    localStorage.setItem("boltworks.animatorTimelineCollapsed", String(animatorTimelineCollapsed));
+    syncAnimatorTimelineCollapseUi();
+    requestAnimationFrame(() => {
+      window.dispatchEvent(new Event("resize"));
+      if (typeof resize === "function") resize();
+    });
+  }
   function moveAnimatorPanels(active) {
     const app = document.querySelector(".app");
     if (!app || !els.bonePlacementSection || !els.animationSection) return;
@@ -58892,7 +59523,9 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
       syncAnimatorClipSelect();
       rebuildBoneVisuals();
       updateAnimationPanel();
+      if (typeof syncRigSelectionTargetUi === "function") syncRigSelectionTargetUi();
     }
+    syncAnimatorTimelineCollapseUi();
     if (selected && typeof syncInspector === "function") syncInspector();
     requestAnimationFrame(() => {
       window.dispatchEvent(new Event("resize"));
@@ -58901,6 +59534,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   }
   function initializeAnimatorWorkspace() {
     els.animatorWorkspaceOpenBtn?.addEventListener("click", () => setAnimatorWorkspace(!animatorWorkspaceActive));
+    els.animatorTimelineCollapseBtn?.addEventListener("click", () => setAnimatorTimelineCollapsed(!animatorTimelineCollapsed));
     els.animatorClipSelect?.addEventListener("change", (event) => {
       if (event.target.dataset.source === "bws") setActiveAnimationClip(event.target.value);
       else activateMinecraftAnimation(event.target.value);
@@ -58910,6 +59544,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
       if (event.key === "Escape" && animatorWorkspaceActive && !event.target.closest("input, select, textarea")) setAnimatorWorkspace(false);
     });
     syncAnimatorClipSelect();
+    syncAnimatorTimelineCollapseUi();
   }
   initializeAnimatorWorkspace();
   function sortSurfaceEditorToolsAlphabetically() {
@@ -59303,8 +59938,9 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.boneAxisXBtn?.addEventListener("click", () => setBoneMoveAxis("x"));
   els.boneAxisYBtn?.addEventListener("click", () => setBoneMoveAxis("y"));
   els.boneAxisZBtn?.addEventListener("click", () => setBoneMoveAxis("z"));
-  els.boneModeMoveBtn?.addEventListener("click", () => setBoneGizmoToolMode("translate"));
-  els.boneModeRotateBtn?.addEventListener("click", () => setBoneGizmoToolMode("rotate"));
+  els.boneModeMoveBtn?.addEventListener("click", () => setRigTargetTransformMode("translate"));
+  els.boneModeRotateBtn?.addEventListener("click", () => setRigTargetTransformMode("rotate"));
+  els.boneModeScaleBtn?.addEventListener("click", () => setRigTargetTransformMode("scale"));
   els.boneRotationStepInput?.addEventListener("input", syncBoneRotationSnap);
   els.boneRotationStepInput?.addEventListener("change", (event) => {
     event.target.value = String(normalizedBoneRotationStep(event.target.value));
@@ -59317,14 +59953,26 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.markSkinBtn?.addEventListener("click", () => markCheckedRigRole("skin"));
   els.markArmorBtn?.addEventListener("click", () => markCheckedRigRole("armor"));
   els.attachArmorBtn?.addEventListener("click", attachCheckedArmorToSelectedBone);
+  els.selectTargetBoneBtn?.addEventListener("click", () => setRigSelectionTarget("bone"));
+  els.selectTargetSkinBtn?.addEventListener("click", () => setRigSelectionTarget("skin"));
+  els.selectTargetArmorBtn?.addEventListener("click", () => setRigSelectionTarget("armor"));
+  els.modelSelectTargetAllBtn?.addEventListener("click", () => setModelingSelectionTarget("all"));
+  els.modelSelectTargetSkinBtn?.addEventListener("click", () => setModelingSelectionTarget("skin"));
+  els.modelSelectTargetArmorBtn?.addEventListener("click", () => setModelingSelectionTarget("armor"));
+  els.modelSelectTargetBoneBtn?.addEventListener("click", () => setModelingSelectionTarget("bone"));
   [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ].forEach((control) => {
     control?.addEventListener("change", applyBonePanelValues);
   });
+  [els.boneAnatomyScaleX, els.boneAnatomyScaleY, els.boneAnatomyScaleZ].forEach((control) => {
+    control?.addEventListener("change", () => applySelectedBoneAnatomyScale(false));
+  });
+  els.resetBoneAnatomyScaleBtn?.addEventListener("click", () => applySelectedBoneAnatomyScale(true));
   els.showBonesInput?.addEventListener("change", rebuildBoneVisuals);
   els.skeletonModeInput?.addEventListener("change", (event) => setSkeletonMode(event.target.checked));
   els.boneGuideScaleInput?.addEventListener("input", (event) => setBoneGuideScale(event.target.value));
   els.mirrorBoneEditsInput?.addEventListener("change", (event) => {
     mirrorBoneEdits = event.target.checked;
+    if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
   });
   els.rigModelOpacityInput?.addEventListener("input", (event) => setRigModelOpacity(event.target.value));
   frontBoneCanvas.addEventListener("pointerdown", (event) => beginBoneDrag(event, "front", frontBoneCanvas, frontBoneCamera));
@@ -59528,7 +60176,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   document.querySelector("#pushFaceBtn").addEventListener("click", pushSelectedFaces);
   els.softPullBtn?.addEventListener("click", () => softMoveSelectedFaces(1));
   els.softPushBtn?.addEventListener("click", () => softMoveSelectedFaces(-1));
-  els.dragPushBtn.addEventListener("click", () => setDragPushMode(!dragPushMode));
+  els.dragPushBtn.addEventListener("click", () => setSurfaceGizmoMode("translate", { toggle: true }));
   els.surfaceEditorOpenBtn?.addEventListener("click", () => setSurfaceEditorOpen(true));
   els.surfaceEditorCloseBtn?.addEventListener("click", () => requestAnimationFrame(() => {
     syncSurfaceEditorUi();
@@ -59541,6 +60189,8 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   els.surfaceSelectEdgeBtn?.addEventListener("click", () => setSurfaceSelectionMode("edge"));
   els.surfaceMouseModeBtn?.addEventListener("click", toggleSurfaceMouseMode);
   els.surfaceValueModeBtn?.addEventListener("click", toggleSurfaceValueMode);
+  els.surfaceTransformModelBtn?.addEventListener("click", () => setSurfaceTransformTarget("model"));
+  els.surfaceTransformSelectionBtn?.addEventListener("click", () => setSurfaceTransformTarget("selection"));
   els.autoSurfaceDragInput?.addEventListener("change", () => {
     if (els.autoSurfaceDragInput.checked) armContextualSurfaceDrag();
     else if (dragPushMode) setDragPushMode(false, { silent: true });
@@ -59658,6 +60308,9 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
   });
   els.edgeSlideBtn?.addEventListener("click", slideSelectedEdges);
   els.surfaceScaleBtn?.addEventListener("click", scaleSelectedSurface);
+  els.surfaceScaleGizmoBtn?.addEventListener("click", () => setSurfaceGizmoMode("scale", { toggle: true }));
+  els.surfaceRotateGizmoBtn?.addEventListener("click", () => setSurfaceGizmoMode("rotate", { toggle: true }));
+  els.surfaceScaleAllAxesBtn?.addEventListener("click", () => setSurfaceScaleAllAxes(!surfaceScaleAllAxes));
   els.relaxVerticesBtn?.addEventListener("click", relaxSelectedVertices);
   els.weldVerticesBtn?.addEventListener("click", weldSelectedVertices);
   els.dissolveSelectedBtn?.addEventListener("click", dissolveSelectedSurfaceComponent);
@@ -60373,7 +61026,8 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
       addLineSketchPointFromEvent(event);
       return;
     }
-    const hit = hitFromPointerEvent(event);
+    const viewportSelectionTarget = activeViewportSelectionTarget();
+    const hit = viewportTargetedObjectHit(event);
     if (pullToTargetSession && hit?.face && pullSelectedRegionToHit(hit)) return;
     if (dragPushMode && canStartDragPushFromHit(hit)) {
       beginDragPushSession(event);
@@ -60417,7 +61071,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
       pickSurfaceComponentFromHit(hit, { append: additiveSelectionRequested(event) });
       return;
     }
-    if (!facePickMode) {
+    if (!facePickMode && viewportSelectionTarget === "bone") {
       const pickedBoneId = pickBoneFromMainPointer(event);
       if (pickedBoneId) {
         selectBoneFromViewport(pickedBoneId);
@@ -60528,6 +61182,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     if (event.key === "Control" || event.key === "Meta") isCtrlHeld = true;
     syncBoneRotationSnap();
     updateScaleModifierMarkers();
+    if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
     if (pullToTargetSession && event.key === "Escape") {
       event.preventDefault();
       setPullToTargetSession(false);
@@ -60599,6 +61254,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
     syncBoneRotationSnap();
     updateScaleModifierMarkers();
+    if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
     if (event.code !== "Space") return;
     spaceCameraMode = false;
     if (facePickMode) {
@@ -60611,6 +61267,7 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     isCtrlHeld = false;
     syncBoneRotationSnap();
     updateScaleModifierMarkers();
+    if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
     finishDragPushSession();
     finishScaleDragSession();
   });

@@ -2555,6 +2555,10 @@ label {
     "timeline timeline timeline";
 }
 
+.app.animator-mode.timeline-collapsed {
+  grid-template-rows: 58px minmax(0, 1fr) 54px;
+}
+
 .app.animator-mode .top {
   flex-wrap: nowrap;
   min-height: 58px;
@@ -2677,6 +2681,46 @@ label {
   padding: 8px 12px;
   border-bottom: 1px solid #39454b;
   background: #171d20;
+}
+
+.app.animator-mode.timeline-collapsed #animationBody {
+  display: none !important;
+}
+
+.app.animator-mode.timeline-collapsed .animator-workspace-bar {
+  min-height: 52px;
+  border-bottom: 0;
+}
+
+#animatorTimelineCollapseBtn {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.rig-selection-target button.active,
+.model-selection-target button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: #173029;
+}
+
+.model-selection-target > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.anatomy-size-controls {
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid #344047;
+  border-radius: 5px;
+}
+
+.anatomy-size-controls legend {
+  padding: 0 5px;
+  color: #c9d4d7;
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .animator-workspace-bar > div {

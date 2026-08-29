@@ -1,6 +1,25 @@
 let animatorWorkspaceActive = false;
+let animatorTimelineCollapsed = localStorage.getItem("boltworks.animatorTimelineCollapsed") === "true";
 let animatorBoneHome = null;
 let animatorTimelineHome = null;
+
+function syncAnimatorTimelineCollapseUi() {
+  document.querySelector(".app")?.classList.toggle("timeline-collapsed", animatorTimelineCollapsed);
+  if (!els.animatorTimelineCollapseBtn) return;
+  els.animatorTimelineCollapseBtn.textContent = animatorTimelineCollapsed ? "Expand Timeline" : "Minimize Timeline";
+  els.animatorTimelineCollapseBtn.setAttribute("aria-expanded", String(!animatorTimelineCollapsed));
+  els.animatorTimelineCollapseBtn.classList.toggle("active", animatorTimelineCollapsed);
+}
+
+function setAnimatorTimelineCollapsed(collapsed) {
+  animatorTimelineCollapsed = !!collapsed;
+  localStorage.setItem("boltworks.animatorTimelineCollapsed", String(animatorTimelineCollapsed));
+  syncAnimatorTimelineCollapseUi();
+  requestAnimationFrame(() => {
+    window.dispatchEvent(new Event("resize"));
+    if (typeof resize === "function") resize();
+  });
+}
 
 function moveAnimatorPanels(active) {
   const app = document.querySelector(".app");
@@ -47,7 +66,9 @@ function setAnimatorWorkspace(active) {
     syncAnimatorClipSelect();
     rebuildBoneVisuals();
     updateAnimationPanel();
+    if (typeof syncRigSelectionTargetUi === "function") syncRigSelectionTargetUi();
   }
+  syncAnimatorTimelineCollapseUi();
   if (selected && typeof syncInspector === "function") syncInspector();
   requestAnimationFrame(() => {
     window.dispatchEvent(new Event("resize"));
@@ -57,6 +78,7 @@ function setAnimatorWorkspace(active) {
 
 function initializeAnimatorWorkspace() {
   els.animatorWorkspaceOpenBtn?.addEventListener("click", () => setAnimatorWorkspace(!animatorWorkspaceActive));
+  els.animatorTimelineCollapseBtn?.addEventListener("click", () => setAnimatorTimelineCollapsed(!animatorTimelineCollapsed));
   els.animatorClipSelect?.addEventListener("change", event => {
     if (event.target.dataset.source === "bws") setActiveAnimationClip(event.target.value);
     else activateMinecraftAnimation(event.target.value);
@@ -66,6 +88,7 @@ function initializeAnimatorWorkspace() {
     if (event.key === "Escape" && animatorWorkspaceActive && !event.target.closest("input, select, textarea")) setAnimatorWorkspace(false);
   });
   syncAnimatorClipSelect();
+  syncAnimatorTimelineCollapseUi();
 }
 
 initializeAnimatorWorkspace();
