@@ -51,19 +51,19 @@ els.projectNameInput?.addEventListener("dblclick", event => {
 });
 
 const noticeRailCollapseBtn = document.querySelector("#noticeRailCollapseBtn");
-let footerNoticesCollapsed = localStorage.getItem("boltworks.footerNoticesCollapsed") === "true";
+let lowerInfoCollapsed = localStorage.getItem("boltworks.bottomInfoCollapsed") === "true";
 
 function syncFooterNoticeRail() {
-  document.body.classList.toggle("footer-notices-collapsed", footerNoticesCollapsed);
+  document.body.classList.toggle("footer-info-collapsed", lowerInfoCollapsed);
   if (!noticeRailCollapseBtn) return;
-  noticeRailCollapseBtn.textContent = footerNoticesCollapsed ? "Expand Footer" : "Minimize Footer";
-  noticeRailCollapseBtn.setAttribute("aria-expanded", String(!footerNoticesCollapsed));
-  noticeRailCollapseBtn.classList.toggle("active", footerNoticesCollapsed);
+  noticeRailCollapseBtn.textContent = lowerInfoCollapsed ? "Expand Lower Panel" : "Minimize Lower Panel";
+  noticeRailCollapseBtn.setAttribute("aria-expanded", String(!lowerInfoCollapsed));
+  noticeRailCollapseBtn.classList.toggle("active", lowerInfoCollapsed);
 }
 
 noticeRailCollapseBtn?.addEventListener("click", () => {
-  footerNoticesCollapsed = !footerNoticesCollapsed;
-  localStorage.setItem("boltworks.footerNoticesCollapsed", String(footerNoticesCollapsed));
+  lowerInfoCollapsed = !lowerInfoCollapsed;
+  localStorage.setItem("boltworks.bottomInfoCollapsed", String(lowerInfoCollapsed));
   syncFooterNoticeRail();
   requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
 });

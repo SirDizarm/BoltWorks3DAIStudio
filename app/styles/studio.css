@@ -11,6 +11,7 @@
   --danger: #ef6f6c;
   --focus: #8bd3ff;
   --notice-rail-height: 72px;
+  --bottom-info-height: 132px;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
@@ -76,7 +77,7 @@ textarea {
   height: 100%;
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr) 390px;
-  grid-template-rows: minmax(88px, auto) minmax(0, 1fr) calc(132px + var(--notice-rail-height));
+  grid-template-rows: minmax(88px, auto) minmax(0, 1fr) calc(var(--bottom-info-height) + var(--notice-rail-height));
   grid-template-areas:
     "top top top"
     "left view right"
@@ -2329,12 +2330,18 @@ label {
   font-size: 11px;
 }
 
-body.footer-notices-collapsed {
-  --notice-rail-height: 30px;
+body.footer-info-collapsed {
+  --bottom-info-height: 0px;
 }
 
-body.footer-notices-collapsed .persistent-notice {
+body.footer-info-collapsed .bottom > * {
   display: none;
+}
+
+body.footer-info-collapsed .bottom {
+  grid-template-columns: 1fr;
+  gap: 0;
+  padding: 0 10px var(--notice-rail-height);
 }
 
 .persistent-notice {
@@ -2853,8 +2860,7 @@ body.footer-notices-collapsed .persistent-notice {
 .animation-sequence-arrow { color: #71e2c5; }
 .app.animator-mode .animation-help { display: none; grid-area: help; max-width: 420px; margin: 0; align-self: center; }
 
-.app.animator-mode .bottom,
-.animator-workspace-active .persistent-notices {
+.app.animator-mode .bottom {
   display: none !important;
 }
 
@@ -2969,8 +2975,7 @@ html.mobile-layout .viewport {
 }
 
 html.mobile-layout #referenceViewportsToggleBtn,
-html.mobile-layout .bottom,
-html.mobile-layout .persistent-notices { display: none !important; }
+html.mobile-layout .bottom { display: none !important; }
 
 html.mobile-layout .reference-viewports { display: none !important; }
 html.mobile-layout .app.mobile-reference-views-open .viewport {
