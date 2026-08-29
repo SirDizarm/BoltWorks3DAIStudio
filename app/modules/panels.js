@@ -488,7 +488,6 @@ els.boneRotationStepInput?.addEventListener("change", event => {
   syncBoneRotationSnap();
 });
 els.glueBoneBtn?.addEventListener("click", () => toggleGlueBones());
-els.tPoseFittingBtn?.addEventListener("click", () => setTPoseFittingMode(!tPoseFittingMode));
 els.addGripHandsBtn?.addEventListener("click", addGripHandRig);
 els.armorMountBtn?.addEventListener("click", toggleSelectedArmorMount);
 els.markSkinBtn?.addEventListener("click", () => markCheckedRigRole("skin"));

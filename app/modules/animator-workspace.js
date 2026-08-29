@@ -37,9 +37,10 @@ function moveAnimatorPanels(active) {
 function syncAnimatorClipSelect() {
   if (!els.animatorClipSelect || !els.minecraftAnimationSelect) return;
   if (typeof hasBwsAnimationClips === "function" && hasBwsAnimationClips()) {
-    els.animatorClipSelect.innerHTML = Object.entries(animationState.clips).map(([id, clip]) => `<option value="${id}">${clip.name || id}</option>`).join("");
+    els.animatorClipSelect.innerHTML = `<option value="${T_POSE_CLIP_ID}">T-Pose / Rig Fitting</option>`
+      + Object.entries(animationState.clips).map(([id, clip]) => `<option value="${id}">${clip.name || id}</option>`).join("");
     els.animatorClipSelect.disabled = false;
-    els.animatorClipSelect.value = animationState.activeClipId;
+    els.animatorClipSelect.value = tPoseFittingMode ? T_POSE_CLIP_ID : animationState.activeClipId;
     els.animatorClipSelect.dataset.source = "bws";
     return;
   }

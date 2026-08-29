@@ -53,6 +53,7 @@ let boneGizmoEnabled = false;
 // centres can be judged against the model rather than hiding it.
 let boneGuideScale = .4;
 let mirrorBoneEdits = false;
+const T_POSE_CLIP_ID = "__t_pose_fitting__";
 let tPoseFittingMode = false;
 let skeletonDisplayMode = false;
 let skeletonPreviousOpacity = null;
@@ -440,12 +441,12 @@ function mirrorBoneEdit(source, { position = true, rotation = true, tail = true 
 }
 
 function syncTPoseFittingUi() {
-  els.tPoseFittingBtn?.classList.toggle("active", tPoseFittingMode);
-  if (els.tPoseFittingBtn) els.tPoseFittingBtn.textContent = tPoseFittingMode ? "Exit T-Pose Fitting" : "Enter T-Pose Fitting";
-  if (els.tPoseFittingStatus) els.tPoseFittingStatus.textContent = tPoseFittingMode ? "Fitting bones, armor, hands, and sockets" : "Animation mode";
+  if (els.tPoseFittingStatus) els.tPoseFittingStatus.textContent = tPoseFittingMode
+    ? "T-Pose / Rig Fitting selected"
+    : "Select T-Pose from the Animation Clip menu to fit the rig";
   if (els.addGripHandsBtn) els.addGripHandsBtn.disabled = !tPoseFittingMode;
   document.body.classList.toggle("t-pose-fitting-active", tPoseFittingMode);
-  for (const control of [els.animationPlayBtn, els.animationPrevBtn, els.animationNextBtn, els.animationScrubber, els.animationKeyBtn]) {
+  for (const control of [els.animationPlayBtn, els.animationStopBtn, els.animationPrevBtn, els.animationNextBtn, els.animationResetBtn, els.animationScrubber, els.animationKeyBtn, els.animationDeleteFrameBtn, els.animationClearBtn, els.animationClipDeleteBtn, els.animationFpsInput, els.animationEndInput]) {
     if (control) control.disabled = tPoseFittingMode;
   }
 }
@@ -456,15 +457,20 @@ function setTPoseFittingMode(enabled) {
   animationState.playing = false;
   tPoseFittingMode = next;
   if (tPoseFittingMode) {
-    log("T-Pose Fitting enabled without changing the current head, hand, foot, skin, or armor transforms. Edits now redefine their fitted rest offsets.");
+    syncActiveAnimationClip();
+    restoreAnimationBindPose({ render: false });
+    applyCurrentRigPose();
+    log("T-Pose / Rig Fitting selected. Animation playback is suspended and the fitted bind pose is now authoritative.");
   } else {
     captureAnimationBindingRest();
-    log("T-Pose Fitting finished. Saved the fitted bone, armor, hand, and item-socket offsets.");
+    log("T-Pose / Rig Fitting finished. Saved the fitted bone, armor, hand, and item-socket offsets.");
   }
   rebuildBoneVisuals();
   syncBonePanel();
   updateAnimationPanel();
   syncTPoseFittingUi();
+  syncAnimationClipUi();
+  if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();
   if (rigSelectionTarget !== "bone" && typeof updateTransformAttachment === "function") {
     requestAnimationFrame(updateTransformAttachment);
   }
@@ -744,7 +750,20 @@ function syncActiveAnimationClip() {
 }
 
 function setActiveAnimationClip(id) {
-  if (!id || !animationState.clips?.[id] || id === animationState.activeClipId) return;
+  if (id === T_POSE_CLIP_ID) {
+    if (!tPoseFittingMode) setTPoseFittingMode(true);
+    else {
+      animationState.playing = false;
+      restoreAnimationBindPose();
+      syncAnimationClipUi();
+      if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();
+    }
+    return;
+  }
+  if (!id || !animationState.clips?.[id]) return;
+  const leavingTPose = tPoseFittingMode;
+  if (leavingTPose) setTPoseFittingMode(false);
+  if (id === animationState.activeClipId && !leavingTPose) return;
   syncActiveAnimationClip();
   const clip = animationState.clips[id];
   animationState.activeClipId = id;
@@ -783,10 +802,10 @@ function deleteActiveAnimationClip() {
 function syncAnimationClipUi() {
   if (!els.animationClipSelect) return;
   syncActiveAnimationClip();
-  els.animationClipSelect.innerHTML = Object.entries(animationState.clips)
+  els.animationClipSelect.innerHTML = `<option value="${T_POSE_CLIP_ID}">T-Pose / Rig Fitting</option>` + Object.entries(animationState.clips)
     .map(([id, clip]) => `<option value="${animationTimelineEscape(id)}">${animationTimelineEscape(clip.name || id)}</option>`)
     .join("");
-  els.animationClipSelect.value = animationState.activeClipId;
+  els.animationClipSelect.value = tPoseFittingMode ? T_POSE_CLIP_ID : animationState.activeClipId;
   renderBwsAnimationSequence();
 }
 
@@ -1104,6 +1123,13 @@ function animationJumpLift(frame = animationState.frame) {
   return Math.sin(Math.PI * phase) * Math.max(.35, modelHeight * .35);
 }
 function animationSetFrame(frame, { render = true, lightweightPanel = false } = {}) {
+  // T-Pose is a dedicated rig state, not an animation frame. Ignore timeline,
+  // preview, and external scrub requests until a real clip is selected again.
+  if (tPoseFittingMode) {
+    animationState.playing = false;
+    updateAnimationPanel();
+    return;
+  }
   animationState.frame = Math.max(0, Math.min(animationState.end, Math.round(Number(frame) || 0)));
   if (!animationHasKeys()) {
     animationState.playing = false;

@@ -768,7 +768,6 @@ const els = {
   imageReliefMeshPlugin: document.querySelector("#imageReliefMeshPlugin"),
   sceneRenderingTools: document.querySelector("#sceneRenderingTools"),
   bonePlacementSection: document.querySelector("#bonePlacementSection"),
-  tPoseFittingBtn: document.querySelector("#tPoseFittingBtn"),
   tPoseFittingStatus: document.querySelector("#tPoseFittingStatus"),
   addGripHandsBtn: document.querySelector("#addGripHandsBtn"),
   boneAxisFreeBtn: document.querySelector("#boneAxisFreeBtn"),

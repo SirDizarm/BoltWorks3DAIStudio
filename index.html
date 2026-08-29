@@ -563,11 +563,10 @@
           <div class="section-body" id="bonePlacementBody">
           <p class="api-note">Place joints in world space. Front dragging changes X/Y while Side dragging changes Z/Y, keeping the hidden axis fixed.</p>
           <div class="compact-row">
-            <button id="tPoseFittingBtn" type="button" title="Stop animation and fit bones plus attached armor against the model's T-pose">Enter T-Pose Fitting</button>
             <button id="addGripHandsBtn" type="button" title="Add or realign mirrored thumb, finger, and held-item socket bones to both hands">Fit / Repair Grip Hands</button>
-            <span id="tPoseFittingStatus" class="api-note">Animation mode</span>
+            <span id="tPoseFittingStatus" class="api-note">Select T-Pose from the Animation Clip menu to fit the rig</span>
           </div>
-          <p class="api-note">Use T-Pose Fitting to place the skeleton and move or rotate attached armor. Armor keeps its edited offset from the assigned bone; Mirror also fits the matching armor on the opposite side.</p>
+          <p class="api-note">Choose T-Pose / Rig Fitting in the Animation Clip menu to place the skeleton and move or rotate attached armor. Selecting a real clip exits fitting and applies that animation from the fitted pose. Armor keeps its edited offset from the assigned bone; Mirror also fits the matching armor on the opposite side.</p>
           <div class="compact-row rig-selection-target" role="group" aria-label="Viewport selection target">
             <span class="api-note">Select:</span>
             <button id="selectTargetBoneBtn" type="button">Bone</button>
