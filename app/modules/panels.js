@@ -224,6 +224,7 @@ function animate() {
   orbit.update();
   syncCameraDirectorVisibility();
   syncSelectionOutlineTransforms();
+  updateReferenceViewFollowing();
   if (lineSketchMode && lineSketchPoints.length) updateLineSketchGuide();
   if (lineSketchMode && lineSketchHover?.point) {
     const radius = Math.max(.025, Math.min(.12, camera.position.distanceTo(lineSketchHover.point) * .012));
@@ -458,14 +459,24 @@ els.mirrorBoneEditsInput?.addEventListener("change", event => {
   if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
 });
 els.rigModelOpacityInput?.addEventListener("input", event => setRigModelOpacity(event.target.value));
-frontBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "front", frontBoneCanvas, frontBoneCamera));
-sideBoneCanvas.addEventListener("pointerdown", event => beginBoneDrag(event, "side", sideBoneCanvas, sideBoneCamera));
-frontBoneCanvas.addEventListener("pointermove", moveBoneDrag);
-sideBoneCanvas.addEventListener("pointermove", moveBoneDrag);
-frontBoneCanvas.addEventListener("pointerup", endBoneDrag);
-sideBoneCanvas.addEventListener("pointerup", endBoneDrag);
-frontBoneCanvas.addEventListener("pointercancel", endBoneDrag);
-sideBoneCanvas.addEventListener("pointercancel", endBoneDrag);
+frontBoneCanvas.addEventListener("pointerdown", event => {
+  if (!beginReferenceViewPan(event, "front", frontBoneCanvas, frontBoneCamera)) beginBoneDrag(event, "front", frontBoneCanvas, frontBoneCamera);
+});
+sideBoneCanvas.addEventListener("pointerdown", event => {
+  if (!beginReferenceViewPan(event, "side", sideBoneCanvas, sideBoneCamera)) beginBoneDrag(event, "side", sideBoneCanvas, sideBoneCamera);
+});
+frontBoneCanvas.addEventListener("pointermove", event => { if (!moveReferenceViewPan(event)) moveBoneDrag(event); });
+sideBoneCanvas.addEventListener("pointermove", event => { if (!moveReferenceViewPan(event)) moveBoneDrag(event); });
+frontBoneCanvas.addEventListener("pointerup", event => { if (!endReferenceViewPan(event)) endBoneDrag(event); });
+sideBoneCanvas.addEventListener("pointerup", event => { if (!endReferenceViewPan(event)) endBoneDrag(event); });
+frontBoneCanvas.addEventListener("pointercancel", event => { if (!endReferenceViewPan(event)) endBoneDrag(event); });
+sideBoneCanvas.addEventListener("pointercancel", event => { if (!endReferenceViewPan(event)) endBoneDrag(event); });
+els.frontReferencePanBtn?.addEventListener("click", () => toggleReferenceViewPan("front"));
+els.sideReferencePanBtn?.addEventListener("click", () => toggleReferenceViewPan("side"));
+els.frontReferenceFollowBtn?.addEventListener("click", () => toggleReferenceViewFollow("front"));
+els.sideReferenceFollowBtn?.addEventListener("click", () => toggleReferenceViewFollow("side"));
+els.frontReferenceFitBtn?.addEventListener("click", () => fitBoneCamera(frontBoneCamera, frontBoneCanvas, "front"));
+els.sideReferenceFitBtn?.addEventListener("click", () => fitBoneCamera(sideBoneCamera, sideBoneCanvas, "side"));
 function finishReferenceSurfaceDrag(event) {
   if (!surfaceGizmoDragging) return;
   const draggingControl = [surfaceFrontTransform, surfaceSideTransform].find(control => control.dragging);

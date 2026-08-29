@@ -1074,6 +1074,37 @@ label {
   pointer-events: auto;
 }
 
+.reference-view-controls {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 10001;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px;
+  max-width: calc(100% - 92px);
+}
+
+.reference-view-controls button {
+  padding: 3px 5px;
+  border: 1px solid #3b494f;
+  border-radius: 4px;
+  color: #b9c6ca;
+  background: rgba(9, 13, 15, .82);
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.reference-view-controls button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(16, 48, 45, .9);
+}
+
+.reference-viewport.reference-pan-active canvas { cursor: grab; }
+.reference-viewport.reference-pan-dragging canvas { cursor: grabbing; }
+
 .reference-view-hint {
   position: absolute;
   right: 8px;

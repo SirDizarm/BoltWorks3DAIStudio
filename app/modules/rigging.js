@@ -2912,47 +2912,145 @@ function boneRigBounds() {
   return box;
 }
 
-function fitBoneCamera(referenceCamera, canvasElement, view) {
+function applyReferenceCameraFrame(referenceCamera, canvasElement, view) {
+  const state = referenceViewState[view];
   const rect = canvasElement.parentElement.getBoundingClientRect();
-  // Center on the root (first) bone — the model's center. Freeze the frame size
-  // to the model's RESTING bounds so animation (tail/limb movement) does not
-  // make the Front/Side view pan and zoom all over the place.
-  const root = rigBones.find(bone => !boneById(bone.parentId)) || rigBones[0] || null;
-  // Center horizontally on the root bone (so the body stays centered as it
-  // moves), but vertically on the resting bounds so the whole model — head to
-  // feet — stays fully visible in the frame.
-  const rootPos = root ? (root.displayPosition || root.position) : new THREE.Vector3(0, 1, 0);
-  if (!fitBoneCamera.restExtent) {
-    const restBox = boneRigBounds();
-    const size = restBox.getSize(new THREE.Vector3());
-    fitBoneCamera.restExtent = Math.max(4, size.y * 1.4, size.x * 1.4, size.z * 1.4, size.length() * .55);
-    fitBoneCamera.restCenterY = restBox.getCenter(new THREE.Vector3()).y;
-  }
-  const center = new THREE.Vector3(rootPos.x, fitBoneCamera.restCenterY ?? rootPos.y, rootPos.z);
-  const extent = fitBoneCamera.restExtent;
   const aspect = rect.width / Math.max(1, rect.height);
-  const halfHeight = Math.max(extent * .5, extent / Math.max(.1, aspect) * .5);
+  const halfHeight = Math.max(.01, state.halfHeight);
   const halfWidth = halfHeight * aspect;
   referenceCamera.left = -halfWidth;
   referenceCamera.right = halfWidth;
   referenceCamera.top = halfHeight;
   referenceCamera.bottom = -halfHeight;
   if (view === "front") {
-    // Match Blockbench's canonical Front view: look from +Z toward the origin.
-    referenceCamera.position.set(center.x, center.y, center.z + 100);
+    referenceCamera.position.set(state.center.x, state.center.y, state.center.z + 100);
     referenceCamera.up.set(0, 1, 0);
   } else {
-    referenceCamera.position.set(center.x + 100, center.y, center.z);
+    referenceCamera.position.set(state.center.x + 100, state.center.y, state.center.z);
     referenceCamera.up.set(0, 1, 0);
   }
-  referenceCamera.lookAt(center);
+  referenceCamera.lookAt(state.center);
   referenceCamera.updateProjectionMatrix();
+}
+
+function fitBoneCamera(referenceCamera, canvasElement, view) {
+  const state = referenceViewState[view];
+  const rect = canvasElement.parentElement.getBoundingClientRect();
+  const bounds = boneRigBounds();
+  const size = bounds.getSize(new THREE.Vector3());
+  state.center.copy(bounds.getCenter(new THREE.Vector3()));
+  const aspect = rect.width / Math.max(1, rect.height);
+  const verticalSize = Math.max(.25, size.y);
+  const horizontalSize = Math.max(.25, view === "front" ? size.x : size.z);
+  state.halfHeight = Math.max(verticalSize * .58, horizontalSize / Math.max(.1, aspect) * .58, 2);
+  state.initialized = true;
+  state.followTool = false;
+  applyReferenceCameraFrame(referenceCamera, canvasElement, view);
+  syncReferenceViewControls(view);
 }
 
 function resizeReferenceRenderer(referenceRenderer, referenceCamera, referenceCanvas, view) {
   const rect = referenceCanvas.parentElement.getBoundingClientRect();
   referenceRenderer.setSize(rect.width, rect.height, false);
-  fitBoneCamera(referenceCamera, referenceCanvas, view);
+  const state = referenceViewState[view];
+  if (!state.initialized) fitBoneCamera(referenceCamera, referenceCanvas, view);
+  else applyReferenceCameraFrame(referenceCamera, referenceCanvas, view);
+}
+
+function referenceViewElements(view) {
+  return view === "front"
+    ? { canvas: frontBoneCanvas, camera: frontBoneCamera, pan: els.frontReferencePanBtn, follow: els.frontReferenceFollowBtn }
+    : { canvas: sideBoneCanvas, camera: sideBoneCamera, pan: els.sideReferencePanBtn, follow: els.sideReferenceFollowBtn };
+}
+
+function syncReferenceViewControls(view) {
+  const state = referenceViewState[view];
+  const controls = referenceViewElements(view);
+  controls.pan?.classList.toggle("active", state.panEnabled);
+  controls.follow?.classList.toggle("active", state.followTool);
+  controls.canvas?.parentElement?.classList.toggle("reference-pan-active", state.panEnabled);
+}
+
+function referenceToolFocusPoint() {
+  if (surfaceTransform.visible && surfaceTransform.object) return surfaceGizmoPivot.getWorldPosition(new THREE.Vector3());
+  if (transform.visible && transform.object) return transform.object.getWorldPosition(new THREE.Vector3());
+  if (boneTransform.visible && boneTransform.object) return boneTransform.object.getWorldPosition(new THREE.Vector3());
+  const bone = selectedBone();
+  if (bone) return (bone.displayPosition || bone.position).clone();
+  if (selected?.isObject3D) return selected.getWorldPosition(new THREE.Vector3());
+  return null;
+}
+
+function updateReferenceViewFollowing() {
+  const target = referenceToolFocusPoint();
+  if (!target) return;
+  for (const view of ["front", "side"]) {
+    const state = referenceViewState[view];
+    if (!state.followTool) continue;
+    state.center.copy(target);
+    const controls = referenceViewElements(view);
+    applyReferenceCameraFrame(controls.camera, controls.canvas, view);
+  }
+}
+
+function toggleReferenceViewPan(view) {
+  const state = referenceViewState[view];
+  state.panEnabled = !state.panEnabled;
+  if (state.panEnabled) state.followTool = false;
+  syncReferenceViewControls(view);
+}
+
+function toggleReferenceViewFollow(view) {
+  const state = referenceViewState[view];
+  state.followTool = !state.followTool;
+  if (state.followTool) state.panEnabled = false;
+  syncReferenceViewControls(view);
+  updateReferenceViewFollowing();
+}
+
+function beginReferenceViewPan(event, view, canvasElement, referenceCamera) {
+  const state = referenceViewState[view];
+  if (!state.panEnabled || event.button !== 0) return false;
+  referenceViewPanDrag = {
+    pointerId: event.pointerId,
+    view,
+    canvas: canvasElement,
+    camera: referenceCamera,
+    startX: event.clientX,
+    startY: event.clientY,
+    startCenter: state.center.clone()
+  };
+  canvasElement.setPointerCapture?.(event.pointerId);
+  canvasElement.parentElement?.classList.add("reference-pan-dragging");
+  event.preventDefault();
+  return true;
+}
+
+function moveReferenceViewPan(event) {
+  const drag = referenceViewPanDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return false;
+  const state = referenceViewState[drag.view];
+  const rect = drag.canvas.getBoundingClientRect();
+  const unitsX = (drag.camera.right - drag.camera.left) / Math.max(1, rect.width);
+  const unitsY = (drag.camera.top - drag.camera.bottom) / Math.max(1, rect.height);
+  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(drag.camera.quaternion);
+  const up = new THREE.Vector3(0, 1, 0).applyQuaternion(drag.camera.quaternion);
+  state.center.copy(drag.startCenter)
+    .addScaledVector(right, -(event.clientX - drag.startX) * unitsX)
+    .addScaledVector(up, (event.clientY - drag.startY) * unitsY);
+  applyReferenceCameraFrame(drag.camera, drag.canvas, drag.view);
+  event.preventDefault();
+  return true;
+}
+
+function endReferenceViewPan(event) {
+  const drag = referenceViewPanDrag;
+  if (!drag || event.pointerId !== drag.pointerId) return false;
+  drag.canvas.releasePointerCapture?.(event.pointerId);
+  drag.canvas.parentElement?.classList.remove("reference-pan-dragging");
+  referenceViewPanDrag = null;
+  event.preventDefault();
+  return true;
 }
 
 function bonePointerRay(event, referenceCanvas, referenceCamera) {

@@ -48,6 +48,11 @@ const sideBoneCamera = new THREE.OrthographicCamera(-5, 5, 5, -5, 0.01, 10000);
 sideBoneCamera.position.set(100, 0, 0);
 sideBoneCamera.lookAt(0, 0, 0);
 sideBoneCamera.layers.enable(2);
+const referenceViewState = {
+  front: { initialized: false, panEnabled: false, followTool: false, center: new THREE.Vector3(0, 1, 0), halfHeight: 5 },
+  side: { initialized: false, panEnabled: false, followTool: false, center: new THREE.Vector3(0, 1, 0), halfHeight: 5 }
+};
+let referenceViewPanDrag = null;
 
 const orbit = new OrbitControls(camera, renderer.domElement);
 orbit.enableDamping = true;
@@ -585,6 +590,12 @@ const els = {
   workViewAxisLabel: document.querySelector("#workViewAxisLabel"),
   frontReferenceWorkBtn: document.querySelector("#frontReferenceWorkBtn"),
   sideReferenceWorkBtn: document.querySelector("#sideReferenceWorkBtn"),
+  frontReferencePanBtn: document.querySelector("#frontReferencePanBtn"),
+  frontReferenceFollowBtn: document.querySelector("#frontReferenceFollowBtn"),
+  frontReferenceFitBtn: document.querySelector("#frontReferenceFitBtn"),
+  sideReferencePanBtn: document.querySelector("#sideReferencePanBtn"),
+  sideReferenceFollowBtn: document.querySelector("#sideReferenceFollowBtn"),
+  sideReferenceFitBtn: document.querySelector("#sideReferenceFitBtn"),
   referenceViewportsToggleBtn: document.querySelector("#referenceViewportsToggleBtn"),
   gameplayPreview: document.querySelector("#gameplayPreview"),
   gameplayPreviewOpenBtn: document.querySelector("#gameplayPreviewOpenBtn"),
