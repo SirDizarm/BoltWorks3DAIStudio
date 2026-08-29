@@ -21,6 +21,13 @@ body {
   color: var(--text);
   background: var(--bg);
   overflow: hidden;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+input, textarea, [contenteditable="true"], .mesh-statistics-report {
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 button, input, select, textarea {

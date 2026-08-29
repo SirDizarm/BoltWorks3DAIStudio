@@ -858,6 +858,7 @@ const els = {
   fillLineBtn: document.querySelector("#fillLineBtn"),
   cutHoleSketchBtn: document.querySelector("#cutHoleSketchBtn"),
   clearLineBtn: document.querySelector("#clearLineBtn"),
+  paintTriBtn: document.querySelector("#paintTriBtn"),
   paintTriInput: document.querySelector("#paintTriInput"),
   areaTriBtn: document.querySelector("#areaTriBtn"),
   areaTriInput: document.querySelector("#areaTriInput"),

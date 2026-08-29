@@ -6492,6 +6492,8 @@ function updateFacePickHud() {
   els.faceRegionBtn.classList.toggle("active", coplanarFacePickMode);
   els.openingPickBtn?.classList.toggle("active", openingPickMode);
   els.areaTriBtn.classList.toggle("active", facePickMode && els.areaTriInput.checked);
+  els.paintTriBtn?.classList.toggle("active", facePickMode && els.paintTriInput.checked);
+  els.paintTriBtn?.setAttribute("aria-pressed", String(facePickMode && els.paintTriInput.checked));
   els.lineToolBtn?.classList.toggle("active", lineSketchMode);
   if (lineSketchMode) {
     els.hudText.textContent = lineSketchClosed
@@ -6514,7 +6516,7 @@ function updateFacePickHud() {
       : els.areaTriInput.checked
         ? "Area mode: drag a rectangle to select triangles | Double-click selects connected"
         : els.paintTriInput.checked
-          ? "Paint mode: drag to select triangles | Hold Space to orbit camera"
+          ? "Paint mode: click or drag to select triangles | Hold Space to orbit camera"
           : "Triangle cursor: click a mesh triangle, double-click connected, then use Marker, Extend, Pull, or Bevel Face")
     : "Orbit: drag | Select: click | Multi-select: Shift/Ctrl+click | Transform: gizmo";
   if (!facePickMode && !selectedFace) faceMarker.visible = false;
@@ -10335,9 +10337,10 @@ function safeHoleCapPlan(source, loop, uvOptions = null) {
   const maxPlaneDistance = loop.points.reduce((max, point) =>
     Math.max(max, Math.abs(point.clone().sub(center).dot(zAxis))), 0);
   // Imported organic meshes often leave a gently curved opening rather than a
-  // perfectly planar CAD-style loop. A five-percent best-fit-plane tolerance
-  // accepts those real holes while still refusing strongly folded boundaries.
-  if (maxPlaneDistance > Math.max(1e-4, diagonal * .05)) {
+  // perfectly planar CAD-style loop. An eight-percent best-fit-plane tolerance
+  // accepts finger and joint openings while still refusing strongly folded
+  // boundaries before triangulation.
+  if (maxPlaneDistance > Math.max(1e-4, diagonal * .08)) {
     return { safe: false, reason: "boundary is too twisted to cap safely" };
   }
   for (let a = 0; a < contour.length; a++) {

@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.26.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.27.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -28,6 +28,16 @@ const minecraftSource = moduleSources.get("minecraft") || "";
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolDockingSource}\n${applicationSource}`;
+
+if (
+  !panelsSource.includes('document.addEventListener("contextmenu", event => event.preventDefault())')
+  || !panelsSource.includes('projectNameInput?.addEventListener("dblclick"')
+  || !panelsSource.includes("navigator.clipboard.writeText(value)")
+  || !/body\s*\{[^}]*user-select:\s*none/s.test(styleSource)
+  || !/input, textarea[^}]*user-select:\s*text/s.test(styleSource)
+) {
+  throw new Error("Editor mouse interactions must suppress browser menus and accidental text selection while preserving text inputs and name copying.");
+}
 
 if (
   minecraftRigSmoke.meta?.model_format !== "modded_entity"
@@ -580,9 +590,9 @@ function createSingleTriangleUvHoleFixture() {
   source.dispose();
   repaired.dispose();
 
-  const curvedPoints = Array.from({ length: 13 }, (_, index) => {
-    const angle = index / 13 * Math.PI * 2;
-    return new THREE.Vector3(Math.cos(angle), Math.sin(angle), Math.sin(angle * 3) * .085);
+  const curvedPoints = Array.from({ length: 15 }, (_, index) => {
+    const angle = index / 15 * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(angle), Math.sin(angle), Math.sin(angle * 3) * .16);
   });
   const curvedLoop = {
     points: curvedPoints,
@@ -602,7 +612,7 @@ function createSingleTriangleUvHoleFixture() {
     Math.abs(point.clone().sub(curvedBasis.center).dot(curvedBasis.zAxis))
   ), 0) / curvedDiagonal;
   const curvedPlan = context.safeHoleCapPlan(curvedSource, curvedLoop, { projection: "auto" });
-  if (curvedDeviation <= .02 || curvedDeviation >= .05 || !curvedPlan.safe || curvedPlan.triangles.length !== 11) {
+  if (curvedDeviation <= .05 || curvedDeviation >= .08 || !curvedPlan.safe || curvedPlan.triangles.length !== 13) {
     throw new Error(`Find and Repair Holes must accept gently curved imported openings without accepting strongly folded loops. ${JSON.stringify({
       curvedDeviation,
       safe: curvedPlan.safe,
@@ -611,6 +621,26 @@ function createSingleTriangleUvHoleFixture() {
     })}`);
   }
   curvedSource.dispose();
+
+  const foldedPoints = Array.from({ length: 15 }, (_, index) => {
+    const angle = index / 15 * Math.PI * 2;
+    return new THREE.Vector3(Math.cos(angle), Math.sin(angle), Math.sin(angle * 3) * .4);
+  });
+  const foldedLoop = {
+    points: foldedPoints,
+    keys: foldedPoints.map(point => context.vertexKey(point)),
+    edgeSignatures: new Set(foldedPoints.map((point, index) => [
+      context.vertexKey(point),
+      context.vertexKey(foldedPoints[(index + 1) % foldedPoints.length])
+    ].sort().join("|")))
+  };
+  const foldedPlan = context.safeHoleCapPlan(new THREE.BufferGeometry().setAttribute(
+    "position",
+    new THREE.Float32BufferAttribute([], 3)
+  ), foldedLoop, { projection: "auto" });
+  if (foldedPlan.safe || foldedPlan.reason !== "boundary is too twisted to cap safely") {
+    throw new Error("Find and Repair Holes must continue refusing strongly folded boundaries.");
+  }
 
   const singleTriangleFixture = createSingleTriangleUvHoleFixture();
   const triangleSource = singleTriangleFixture.geometry;
@@ -1161,7 +1191,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.26.js?v=49.60.26"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.27.js?v=49.60.27"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1202,7 +1232,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.26",
+  "tool-docking.js?v=49.60.27",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1477,6 +1507,8 @@ for (const required of [
   "Face edit tools",
   "Select Tri",
   "Paint",
+  "Paint Triangles",
+  "paintTriBtn",
   "paintTriInput",
   "Area Select",
   "areaTriBtn",
@@ -1979,8 +2011,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.26 Experimental") || !documentSource.includes("v49.60.26 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.26 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.27 Experimental") || !documentSource.includes("v49.60.27 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.27 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

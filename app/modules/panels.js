@@ -15,6 +15,41 @@ function sortSurfaceEditorToolsAlphabetically() {
 
 sortSurfaceEditorToolsAlphabetically();
 
+// Keep modeling drags inside the editor instead of opening the browser menu or
+// sweeping accidental text highlights across controls and labels.
+document.addEventListener("contextmenu", event => event.preventDefault());
+
+async function copyProjectNameFromField() {
+  const field = els.projectNameInput;
+  if (!field) return false;
+  const value = field.value;
+  field.focus();
+  field.select();
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(value);
+    copied = true;
+  } catch {
+    try { copied = !!document.execCommand?.("copy"); } catch {}
+  }
+  if (copied) {
+    const originalTitle = field.title;
+    field.title = "Project name copied";
+    field.classList.add("copy-confirmed");
+    setTimeout(() => {
+      field.title = originalTitle;
+      field.classList.remove("copy-confirmed");
+    }, 900);
+    log(`Copied project name: ${value}`);
+  }
+  return copied;
+}
+
+els.projectNameInput?.addEventListener("dblclick", event => {
+  event.preventDefault();
+  copyProjectNameFromField();
+});
+
 function gameplayPreviewVisible() {
   return !!(els.gameplayPreview && !els.gameplayPreview.hidden && gameplayRenderer);
 }
@@ -615,11 +650,23 @@ document.querySelector("#copyTriBtn").addEventListener("click", copySelectedTria
 document.querySelector("#pasteTriBtn").addEventListener("click", pasteCopiedTriangles);
 els.paintTriInput.addEventListener("change", () => {
   if (els.paintTriInput.checked) {
+    releaseSurfaceInteractionForClassicSelection();
+    if (surfaceComponentMode !== "triangle" || !facePickMode || coplanarFacePickMode) {
+      clearSelectedSurfaceComponents();
+      surfaceComponentMode = "triangle";
+      surfaceSelectionSource = "classic";
+      coplanarFacePickMode = false;
+      setFacePickMode(true);
+    }
     els.areaTriInput.checked = false;
     coplanarFacePickMode = false;
   }
   if (facePickMode) setFacePickMode(true);
   else updateFacePickHud();
+});
+els.paintTriBtn?.addEventListener("click", () => {
+  els.paintTriInput.checked = !els.paintTriInput.checked;
+  els.paintTriInput.dispatchEvent(new Event("change", { bubbles: true }));
 });
 els.areaTriBtn.addEventListener("click", () => {
   els.areaTriInput.checked = !els.areaTriInput.checked;
