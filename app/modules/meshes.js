@@ -11782,9 +11782,13 @@ function loftCheckedProfiles() {
 }
 
 function mirrorCopySelection() {
-  const targets = checkedObjects().length ? checkedObjects() : (selected ? [selected] : []);
+  const sourceGroup = selectedGroupRecordId ? groupRecord(selectedGroupRecordId) : null;
+  const checked = checkedObjects();
+  const targets = sourceGroup
+    ? descendantMeshesForGroup(sourceGroup.id)
+    : (checked.length ? checked : (selected ? [selected] : []));
   if (!targets.length) {
-    log("Select or check one or more parts before Mirror Copy.");
+    log("Select a group, or select/check one or more parts, before Mirror Copy.");
     return [];
   }
   const axis = ["x", "y", "z"].includes(els.symmetryAxisSelect?.value) ? els.symmetryAxisSelect.value : "x";
@@ -11792,22 +11796,63 @@ function mirrorCopySelection() {
   const center = new THREE.Vector3();
   center[axis] = plane;
   recordHistory(`mirror copy ${axis}`);
+  let mirroredGroup = null;
+  const mirroredGroupIds = new Map();
+  if (sourceGroup) {
+    const cloneBranch = (record, parentId, root = false) => {
+      const clone = createSceneGroupRecord({
+        name: uniqueSceneGroupName(root ? `${sourceGroup.name} ${axis.toUpperCase()} Mirror` : record.name),
+        parentId
+      });
+      mirroredGroupIds.set(record.id, clone.id);
+      for (const child of childGroupRecords(record.id)) cloneBranch(child, clone.id);
+      return clone;
+    };
+    mirroredGroup = cloneBranch(sourceGroup, sourceGroup.parentId || null, true);
+  } else if (targets.length > 1) {
+    const parentIds = targets.map(mesh => groupRecord(mesh.userData.groupId)?.parentId || null);
+    mirroredGroup = createSceneGroupRecord({
+      name: uniqueSceneGroupName(`Mirror Copy ${axis.toUpperCase()}`),
+      parentId: commonGroupParentId(parentIds)
+    });
+  }
   const copies = targets.map(source => {
     const data = serializeObject(source);
     delete data.id;
     data.name = `${source.name} ${axis.toUpperCase()} mirror`;
     data.linkId = null;
     data.linkColor = null;
+    if (sourceGroup) {
+      data.groupId = mirroredGroupIds.get(source.userData.groupId) || mirroredGroup.id;
+      data.groupName = groupRecord(data.groupId)?.name || mirroredGroup.name;
+    } else if (mirroredGroup) {
+      data.groupId = mirroredGroup.id;
+      data.groupName = mirroredGroup.name;
+    }
     const copy = addObject(data, { record: false, select: false, update: false });
     mirrorMeshAcrossWorldPlane(copy, axis, center);
     return copy;
   });
-  checkedIds.clear();
-  copies.forEach(copy => checkedIds.add(copy.userData.id));
-  selected = copies.at(-1) || null;
-  currentTransformTargetKey = "";
-  updateAll();
-  log(`Created ${copies.length} mirrored editable cop${copies.length === 1 ? "y" : "ies"} across ${axis.toUpperCase()}=${round(plane)}.`);
+  ensureSceneGroups();
+  ensureModelGroups();
+  if (mirroredGroup) selectGroupRecord(mirroredGroup.id);
+  else {
+    checkedIds.clear();
+    copies.forEach(copy => checkedIds.add(copy.userData.id));
+    selected = copies.at(-1) || null;
+    selectedGroupRecordId = null;
+    activeGroupIds = [];
+    currentTransformTargetKey = "";
+    updateAll();
+  }
+  log(`Created ${copies.length} mirrored editable cop${copies.length === 1 ? "y" : "ies"}${mirroredGroup ? ` in group ${mirroredGroup.name}` : ""} across ${axis.toUpperCase()}=${round(plane)}.`, {
+    sourceGroup: sourceGroup?.name || null,
+    mirroredGroup: mirroredGroup?.name || null,
+    parts: copies.length,
+    hierarchyPreserved: !!sourceGroup,
+    copyOrPasteStepRequired: false,
+    undoReady: true
+  });
   return copies;
 }
 
