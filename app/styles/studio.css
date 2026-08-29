@@ -2827,6 +2827,22 @@ body.footer-info-collapsed .bottom {
   white-space: nowrap;
 }
 
+.animator-mini-transport {
+  display: none !important;
+  min-width: 0 !important;
+  grid-auto-flow: column !important;
+  gap: 5px;
+}
+
+.app.animator-mode.timeline-collapsed .animator-mini-transport {
+  display: grid !important;
+}
+
+.animator-mini-transport button {
+  min-width: 38px;
+  white-space: nowrap;
+}
+
 .rig-selection-target button.active,
 .model-selection-target button.active {
   border-color: var(--accent);

@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.41.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.42.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -404,7 +404,7 @@ function functionSource(source, name) {
   }
 }
 {
-  const context = { THREE, rigBones: [] };
+  const context = { THREE, rigBones: [], rigPoseChannels: new Map() };
   context.boneById = id => context.rigBones.find(bone => bone.id === id) || null;
   vm.createContext(context);
   vm.runInContext(functionSource(minecraftSource, "resolveBlockbenchBoneRestTransforms"), context);
@@ -426,10 +426,13 @@ function functionSource(source, name) {
 }
 
 {
-  const context = { THREE, rigBones: [] };
+  const context = { THREE, rigBones: [], rigPoseChannels: new Map() };
   context.boneById = id => context.rigBones.find(bone => bone.id === id) || null;
   vm.createContext(context);
   vm.runInContext([
+    "boneQuaternionFromRotation",
+    "resolveBoneRestFrame",
+    "refreshRigRestFrames",
     "poseBoneWithChildren",
     "poseRigHierarchy"
   ].map(name => functionSource(riggingSource, name)).join("\n"), context);
@@ -449,6 +452,40 @@ function functionSource(source, name) {
   context.poseRigHierarchy();
   if (Math.abs(root.position.y - 2) > 1e-6 || Math.abs(child.position.y - 3) > 1e-6) {
     throw new Error("Animated root translation must move the complete child hierarchy without separating model parts.");
+  }
+
+  context.rigPoseChannels.clear();
+  const torso = {
+    id: "torso", parentId: null,
+    position: new THREE.Vector3(), bindPosition: new THREE.Vector3(),
+    rotation: new THREE.Vector3(), bindRotation: new THREE.Vector3(),
+    tail: new THREE.Vector3(0, .25, 0), bindTail: new THREE.Vector3(0, .25, 0)
+  };
+  const arm = {
+    id: "arm", parentId: "torso",
+    position: new THREE.Vector3(1, 0, 0), bindPosition: new THREE.Vector3(1, 0, 0),
+    rotation: new THREE.Vector3(0, 0, Math.PI / 2), bindRotation: new THREE.Vector3(),
+    tail: new THREE.Vector3(2, 0, 0), bindTail: new THREE.Vector3(2, 0, 0)
+  };
+  const hand = {
+    id: "hand", parentId: "arm",
+    position: new THREE.Vector3(2, 0, 0), bindPosition: new THREE.Vector3(2, 0, 0),
+    rotation: new THREE.Vector3(), bindRotation: new THREE.Vector3(),
+    tail: new THREE.Vector3(2.2, 0, 0), bindTail: new THREE.Vector3(2.2, 0, 0)
+  };
+  const otherArm = {
+    id: "other-arm", parentId: "torso",
+    position: new THREE.Vector3(-1, 0, 0), bindPosition: new THREE.Vector3(-1, 0, 0),
+    rotation: new THREE.Vector3(), bindRotation: new THREE.Vector3(),
+    tail: new THREE.Vector3(-2, 0, 0), bindTail: new THREE.Vector3(-2, 0, 0)
+  };
+  context.rigBones.splice(0, context.rigBones.length, torso, arm, hand, otherArm);
+  context.poseRigHierarchy();
+  if (Math.abs(hand.position.x - 1) > 1e-6 || Math.abs(hand.position.y - 1) > 1e-6) {
+    throw new Error("Rotating a parent joint must carry its hand/item descendants around that joint.");
+  }
+  if (Math.abs(otherArm.position.x + 1) > 1e-6 || Math.abs(otherArm.position.y) > 1e-6) {
+    throw new Error("Rotating one arm must not move an unrelated sibling branch.");
   }
 }
 
@@ -1445,7 +1482,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.41.js?v=49.60.41"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.42.js?v=49.60.42"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1491,7 +1528,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.41",
+  "tool-docking.js?v=49.60.42",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2298,8 +2335,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.41 Experimental") || !documentSource.includes("v49.60.41 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.41 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.42 Experimental") || !documentSource.includes("v49.60.42 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.42 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2405,7 +2442,7 @@ for (const minecraftSourceRequirement of [
   "collectBlockbenchHierarchy",
   "importBlockbenchAnimation",
   "activateMinecraftAnimation",
-  "blockbenchWorldRotations",
+  "resolveBoneRestFrame",
   "serializeMinecraftWorkspace",
   "restoreMinecraftWorkspace",
   "minecraftPlayerRigBoneMap",

@@ -65,6 +65,9 @@ let boneTransformLooseStart = null;
 let rigModelOpacity = 1;
 const rigModelMaterialState = new Map();
 let boneRotationStepDegrees = 15;
+// Authoring channels are separate from resolved world transforms. FK writes
+// bone.position for display, but that result must not become a new child key.
+const rigPoseChannels = new Map();
 // Whether the rig is glued to the model (bound parts follow the bones live).
 let bonesGlued = false;
 const animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {}, clips: { idle: { name: "Idle", fps: 24, end: 48, keys: {} } }, activeClipId: "idle", bindingRest: null };
@@ -179,12 +182,12 @@ boneTransform.addEventListener("objectChange", () => {
   if (!bone || !boneTransform.dragging) return;
   if (boneTransform.mode === "translate") {
     bone.position.copy(boneTransformProxy.position);
+    const channel = rigPoseChannels.get(bone.id) || {};
+    rigPoseChannels.set(bone.id, { position: bone.position.clone(), rotation: (channel.rotation || bone.rotation).clone() });
     applyCurrentRigPose();
     mirrorBoneEdit(bone, { position: true, rotation: false, tail: true });
   } else {
-    bone.rotation.x = boneTransformProxy.rotation.x;
-    bone.rotation.y = boneTransformProxy.rotation.y;
-    bone.rotation.z = boneTransformProxy.rotation.z;
+    setBoneRotationFromWorldQuaternion(bone, boneTransformProxy.quaternion);
     applyCurrentRigPose({ resolveLooseHierarchy: true });
     mirrorBoneEdit(bone, { position: false, rotation: true, tail: false });
   }
@@ -263,7 +266,11 @@ function syncBoneTransformGizmo() {
   syncBoneRotationSnap();
   if (!boneTransform.dragging) {
     boneTransformProxy.position.copy(bone.displayPosition || bone.position);
-    boneTransformProxy.rotation.set(bone.rotation.x, bone.rotation.y, bone.rotation.z);
+    const order = bone.blockbenchLocalRotation ? "ZYX" : "XYZ";
+    boneTransformProxy.quaternion.copy(
+      bone.poseWorldQuaternion
+      || new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, order))
+    );
     boneTransform.attach(boneTransformProxy);
     boneTransform.visible = true;
   }
@@ -657,11 +664,80 @@ function initializeBoneRestState(bone, { capture = false } = {}) {
     bone.bindTail.copy(bone.bindPosition).add(bone.tailOffset);
     bone.tail.copy(bone.bindTail);
   }
-  const parent = boneById(bone.parentId);
-  bone.restLocalPosition = parent
-    ? bone.bindPosition.clone().sub(parent.bindPosition || parent.position)
-    : bone.bindPosition.clone();
+  resolveBoneRestFrame(bone, new Map(), new Set(), true);
   return bone;
+}
+
+function boneQuaternionFromRotation(rotation, order = "XYZ") {
+  return new THREE.Quaternion().setFromEuler(new THREE.Euler(
+    rotation?.x || 0, rotation?.y || 0, rotation?.z || 0, order
+  ));
+}
+
+// Normalize both legacy world-space BWS binds and Blockbench local binds into
+// one true parent-relative rest frame. All posing can then use branch-local FK.
+function resolveBoneRestFrame(bone, cache = new Map(), visiting = new Set(), persist = false) {
+  if (!bone) return null;
+  if (cache.has(bone.id)) return cache.get(bone.id);
+  if (visiting.has(bone.id)) return null;
+  visiting.add(bone.id);
+  const parent = boneById(bone.parentId);
+  const parentFrame = parent ? resolveBoneRestFrame(parent, cache, visiting, persist) : null;
+  const bindPosition = (bone.bindPosition || bone.position).clone();
+  const bindRotation = bone.bindRotation || bone.rotation;
+  const order = bone.blockbenchLocalRotation ? "ZYX" : "XYZ";
+  const savedQuaternion = boneQuaternionFromRotation(bindRotation, order);
+  const worldQuaternion = bone.blockbenchLocalRotation && parentFrame
+    ? parentFrame.worldQuaternion.clone().multiply(savedQuaternion)
+    : savedQuaternion.clone();
+  const localPosition = parentFrame
+    ? bindPosition.clone().sub(parentFrame.worldPosition).applyQuaternion(parentFrame.worldQuaternion.clone().invert())
+    : bindPosition.clone();
+  const localQuaternion = parentFrame
+    ? parentFrame.worldQuaternion.clone().invert().multiply(worldQuaternion)
+    : worldQuaternion.clone();
+  const bindTail = (bone.bindTail || bone.tail || bindPosition.clone().add(new THREE.Vector3(0, .12, 0))).clone();
+  const localTailOffset = bindTail.sub(bindPosition).applyQuaternion(worldQuaternion.clone().invert());
+  const frame = { worldPosition: bindPosition, worldQuaternion, localPosition, localQuaternion, localTailOffset };
+  cache.set(bone.id, frame);
+  visiting.delete(bone.id);
+  if (persist) {
+    bone.restLocalPosition = localPosition.clone();
+    bone.restLocalQuaternion = localQuaternion.clone();
+    bone.restWorldQuaternion = worldQuaternion.clone();
+    bone.restLocalTailOffset = localTailOffset.clone();
+  }
+  return frame;
+}
+
+function refreshRigRestFrames() {
+  const cache = new Map();
+  rigBones.forEach(bone => resolveBoneRestFrame(bone, cache, new Set(), true));
+  return cache;
+}
+
+// TransformControls edits a world-space quaternion. Convert it back into the
+// selected joint's local channel so only that joint's descendant branch moves.
+function setBoneRotationFromWorldQuaternion(bone, desiredWorldQuaternion) {
+  if (!bone || !desiredWorldQuaternion) return;
+  const parent = boneById(bone.parentId);
+  const parentWorldQuaternion = parent?.poseWorldQuaternion?.clone() || new THREE.Quaternion();
+  const desiredLocalQuaternion = parentWorldQuaternion.invert().multiply(desiredWorldQuaternion.clone());
+  const restFrame = resolveBoneRestFrame(bone, new Map(), new Set(), false);
+  if (!restFrame) return;
+  let storedQuaternion;
+  let order;
+  if (bone.blockbenchLocalRotation) {
+    storedQuaternion = desiredLocalQuaternion;
+    order = "ZYX";
+  } else {
+    const localDelta = desiredLocalQuaternion.multiply(restFrame.localQuaternion.clone().invert());
+    storedQuaternion = localDelta.multiply(restFrame.worldQuaternion);
+    order = "XYZ";
+  }
+  bone.rotation.copy(new THREE.Euler().setFromQuaternion(storedQuaternion, order));
+  const channel = rigPoseChannels.get(bone.id) || {};
+  rigPoseChannels.set(bone.id, { position: (channel.position || bone.position).clone(), rotation: bone.rotation.clone() });
 }
 
 function snapshotRigBindPose() {
@@ -728,7 +804,8 @@ function captureRigBindPose() {
     bone.bindRotation = bone.rotation.clone();
     bone.bindTail = bone.tail.clone();
   });
-  rigBones.forEach(bone => initializeBoneRestState(bone));
+  refreshRigRestFrames();
+  rigPoseChannels.clear();
   rebaseAnimationKeysToBindPose(previousBindPose);
   animationState.bindingRest = null;
 }
@@ -941,8 +1018,8 @@ function serializeBoneRig() {
       parentId: bone.parentId || null,
       role: bone.role || null,
       avatarObjectId: bone.avatarObjectId || null,
-      position: bone.position.toArray().map(round),
-      rotation: bone.rotation.toArray().map(round),
+      position: (rigPoseChannels.get(bone.id)?.position || bone.position).toArray().map(round),
+      rotation: (rigPoseChannels.get(bone.id)?.rotation || bone.rotation).toArray().map(round),
       tail: bone.tail?.toArray().map(round) || bone.position.clone().add(new THREE.Vector3(0, .12, 0)).toArray().map(round),
       bindPosition: bone.bindPosition?.toArray().map(round) || null,
       bindRotation: bone.bindRotation?.toArray().map(round) || null,
@@ -970,6 +1047,7 @@ function serializeBoneRig() {
 
 function restoreBoneRig(data = {}) {
   fitBoneCamera.restExtent = null;  // reframe Front/Side views for the new rig
+  rigPoseChannels.clear();
   rigBones = (data.bones || []).map((bone, index) => ({
     id: bone.id || freshBoneId(),
     name: bone.name || `Bone ${index + 1}`,
@@ -1005,24 +1083,7 @@ function restoreBoneRig(data = {}) {
       ? new THREE.Vector3().fromArray(sourceBone.tailOffset)
       : bone.bindTail.clone().sub(bone.bindPosition);
   }
-  const blockbenchWorldRotations = new Map();
-  const resolveBlockbenchRest = bone => {
-    if (!bone?.blockbenchLocalRotation || blockbenchWorldRotations.has(bone.id)) return;
-    const parent = boneById(bone.parentId);
-    if (parent?.blockbenchLocalRotation) resolveBlockbenchRest(parent);
-    const local = new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.bindRotation.x, bone.bindRotation.y, bone.bindRotation.z, "ZYX"));
-    const parentWorld = parent?.blockbenchLocalRotation ? blockbenchWorldRotations.get(parent.id) : null;
-    blockbenchWorldRotations.set(bone.id, parentWorld ? parentWorld.clone().multiply(local) : local);
-  };
-  rigBones.forEach(resolveBlockbenchRest);
-  rigBones.forEach(bone => {
-    const parent = boneById(bone.parentId);
-    if (bone.blockbenchLocalRotation && parent?.blockbenchLocalRotation) {
-      bone.restLocalPosition = bone.position.clone().sub(parent.position).applyQuaternion(blockbenchWorldRotations.get(parent.id).clone().invert());
-    } else {
-      bone.restLocalPosition = parent ? bone.position.clone().sub(parent.position) : bone.position.clone();
-    }
-  });
+  refreshRigRestFrames();
   selectedBoneId = boneById(data.selectedBoneId)?.id || rigBones[0]?.id || null;
   boneGuideScale = THREE.MathUtils.clamp(Number(data.guideScale) || .4, .2, 1);
   mirrorBoneEdits = !!data.mirrorBoneEdits;
@@ -1080,7 +1141,11 @@ function restoreBoneRig(data = {}) {
 }
 
 function animationPoseForBone(bone) {
-  return { position: bone.position.toArray(), rotation: bone.rotation.toArray() };
+  const channel = rigPoseChannels.get(bone.id);
+  return {
+    position: (channel?.position || bone.position).toArray(),
+    rotation: (channel?.rotation || bone.rotation).toArray()
+  };
 }
 function animationHasKeys() {
   return Object.values(animationState.keys || {}).some(keys => Array.isArray(keys) && keys.length > 0);
@@ -1173,6 +1238,11 @@ function animationSetFrame(frame, { render = true, lightweightPanel = false } = 
       if (pose) pose.position.y += jumpLift;
     }
   }
+  rigPoseChannels.clear();
+  poses.forEach((pose, boneId) => rigPoseChannels.set(boneId, {
+    position: pose.position.clone(),
+    rotation: pose.rotation.clone()
+  }));
   if (activeSkinRuntime) {
     applySkinnedPose(poses);
     // The body and rigid equipment share one pose. Skinning updates the live
@@ -1386,105 +1456,76 @@ function applySkinnedPose(poses) {
   }
 }
 
-// Resolve the hierarchy so a bone's world transform = its own (user-edited)
-// rotation applied about its position, with children keeping their imported
-// world rotation and only swinging with the parent's CHANGE. This preserves the
-// model's imported pose exactly until the user drags a specific bone.
-function poseBoneWithChildren(bone, visited = new Set(), resolved = new Map()) {
+// Resolve standard forward kinematics: every joint keeps a parent-relative
+// rest offset and local rotation channel. A parent carries only its descendant
+// branch, while siblings and every unrelated body branch remain unchanged.
+function poseBoneWithChildren(bone, visited = new Set(), resolved = new Map(), inputPose = new Map(), restFrames = new Map()) {
   if (resolved.has(`${bone.id}:pos`)) return resolved.get(bone.id);
   if (visited.has(bone.id)) return new THREE.Quaternion();
   visited.add(bone.id);
-
-  const bindPos = bone.bindPosition || bone.position.clone();
-  const keyedPositionOffset = bone.position.clone().sub(bindPos);
-  const bindRotE = bone.bindRotation || bone.rotation;
   const parent = boneById(bone.parentId);
+  if (parent) poseBoneWithChildren(parent, visited, resolved, inputPose, restFrames);
+  const rest = restFrames.get(bone.id) || resolveBoneRestFrame(bone, restFrames, new Set(), false);
+  if (!rest) return new THREE.Quaternion();
+  const input = inputPose.get(bone.id) || { position: bone.position.clone(), rotation: bone.rotation.clone() };
+  const parentWorldQuaternion = parent
+    ? (resolved.get(`${parent.id}:worldQuat`) || new THREE.Quaternion()).clone()
+    : new THREE.Quaternion();
+  const parentWorldPosition = parent
+    ? (resolved.get(`${parent.id}:pos`) || parent.position).clone()
+    : new THREE.Vector3();
+  const parentRestWorldQuaternion = parent
+    ? (restFrames.get(parent.id)?.worldQuaternion || new THREE.Quaternion()).clone()
+    : new THREE.Quaternion();
 
-  // Blockbench stores every group's rotation and animation channel in the
-  // group's LOCAL coordinate system. Resolve those bones with ordinary FK.
-  // Treating the local value as a world rotation makes children orbit their
-  // parent and was the cause of the raptor's broken legs and tail.
-  if (bone.blockbenchLocalRotation) {
-    if (parent) poseBoneWithChildren(parent, visited, resolved);
-    const parentWorldQuat = parent
-      ? (resolved.get(`${parent.id}:worldQuat`) || new THREE.Quaternion()).clone()
-      : new THREE.Quaternion();
-    const parentRestWorldQuat = parent
-      ? (resolved.get(`${parent.id}:restWorldQuat`) || new THREE.Quaternion()).clone()
-      : new THREE.Quaternion();
-    const localRestQuat = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(bindRotE.x, bindRotE.y, bindRotE.z, "ZYX")
-    );
-    const localPoseQuat = new THREE.Quaternion().setFromEuler(
-      new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "ZYX")
-    );
-    const restWorldQuat = parentRestWorldQuat.multiply(localRestQuat);
-    const worldQuat = parentWorldQuat.multiply(localPoseQuat);
-    const localPosition = (bone.restLocalPosition || bindPos.clone()).clone().add(keyedPositionOffset);
-    const worldPos = parent
-      ? (resolved.get(`${parent.id}:pos`) || parent.position).clone().add(localPosition.applyQuaternion(resolved.get(`${parent.id}:worldQuat`) || new THREE.Quaternion()))
-      : localPosition;
-    const worldDelta = worldQuat.clone().multiply(restWorldQuat.clone().invert());
+  // Position keys remain world-space for file compatibility, but are converted
+  // to the parent's rest space before FK so an ancestor carries this joint once.
+  const keyedWorldOffset = input.position.clone().sub(rest.worldPosition);
+  const keyedLocalOffset = parent
+    ? keyedWorldOffset.applyQuaternion(parentRestWorldQuaternion.invert())
+    : keyedWorldOffset;
+  const localPosition = rest.localPosition.clone().add(keyedLocalOffset);
+  const worldPosition = parent
+    ? parentWorldPosition.add(localPosition.applyQuaternion(parentWorldQuaternion))
+    : localPosition;
 
-    bone.position.copy(worldPos);
-    bone.poseWorldQuaternion = worldQuat.clone();
-    resolved.set(bone.id, worldDelta);
-    resolved.set(`${bone.id}:pos`, worldPos.clone());
-    resolved.set(`${bone.id}:bindPos`, bindPos.clone());
-    resolved.set(`${bone.id}:worldQuat`, worldQuat.clone());
-    resolved.set(`${bone.id}:restWorldQuat`, restWorldQuat.clone());
-    return worldDelta;
-  }
+  const order = bone.blockbenchLocalRotation ? "ZYX" : "XYZ";
+  const keyedQuaternion = boneQuaternionFromRotation(input.rotation, order);
+  const localPoseQuaternion = bone.blockbenchLocalRotation
+    ? keyedQuaternion
+    : keyedQuaternion.multiply(rest.worldQuaternion.clone().invert()).multiply(rest.localQuaternion);
+  const worldQuaternion = parentWorldQuaternion.multiply(localPoseQuaternion);
+  const worldDelta = worldQuaternion.clone().multiply(rest.worldQuaternion.clone().invert());
 
-  // Parent's ACCUMULATED change (own delta premultiplied by all ancestors').
-  const parentDelta = parent ? poseBoneWithChildren(parent, visited, resolved).clone() : new THREE.Quaternion();
-  // Rest-pose WORLD rotation. Blockbench bones store LOCAL rest rotations (ZYX
-  // order), so compose them onto the parent's rest world rotation; other bones
-  // already keep world-space bind rotations. Live bone.rotation is world-space
-  // (the hierarchy resolve and the gizmos both write world values), so the delta
-  // must be measured against the world rest rotation — comparing against the
-  // local bind rotation invents a phantom delta for every bone under a rotated
-  // ancestor and swings unrelated parts (e.g. right leg/jaw when posing left hip).
-  const bindLocalQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(bindRotE.x, bindRotE.y, bindRotE.z, bone.blockbenchLocalRotation ? "ZYX" : "XYZ"));
-  const parentRestWorldQuat = (parent && resolved.get(`${parent.id}:restWorldQuat`)) || new THREE.Quaternion();
-  const restWorldQuat = bone.blockbenchLocalRotation
-    ? parentRestWorldQuat.clone().multiply(bindLocalQuat)
-    : bindLocalQuat;
-  // How much the user has rotated this bone away from its imported pose.
-  const curQuat = new THREE.Quaternion().setFromEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ"));
-  const deltaQuat = curQuat.clone().multiply(restWorldQuat.clone().invert());
-  // Preserve root and child position channels. Starting every bone at bindPos
-  // discarded animated translation before descendants were resolved.
-  let worldPos = bindPos.clone().add(keyedPositionOffset);
-  let worldQuat = curQuat.clone();
-  if (parent) {
-    const parentBindPos = resolved.get(`${parent.id}:bindPos`)?.clone() || parent.bindPosition?.clone() || parent.position.clone();
-    const parentPos = resolved.get(`${parent.id}:pos`)?.clone() || parentBindPos.clone();
-    const restOffset = bindPos.clone().sub(parentBindPos);                        // imported offset
-    worldPos = parentPos.clone()
-      .add(restOffset.applyQuaternion(parentDelta))
-      .add(keyedPositionOffset.applyQuaternion(parentDelta));                    // swing and translate with ancestors
-    bone.position.copy(worldPos);
-    worldQuat = parentDelta.clone().multiply(curQuat);                            // keep own rotation, add ancestors' swing
-  }
-  if (!bone.tail) bone.tail = bone.position.clone().add(new THREE.Vector3(0, .12, 0));
-  bone.tailOffset = bone.tailOffset || (bone.bindTail ? bone.bindTail.clone().sub(bindPos) : bone.tail.clone().sub(bindPos));
-  bone.tail.copy(worldPos).add(bone.tailOffset.clone().applyQuaternion(worldQuat));
-  // Accumulated delta = parentDelta * deltaQuat (order matters).
-  const accumulatedDelta = parentDelta.clone().multiply(deltaQuat);
-  bone.poseWorldQuaternion = worldQuat.clone();   // consumed by applyAnimationBindings
-  resolved.set(bone.id, accumulatedDelta);
-  resolved.set(`${bone.id}:pos`, worldPos);
-  resolved.set(`${bone.id}:bindPos`, bindPos);
-  resolved.set(`${bone.id}:worldQuat`, worldQuat);
-  resolved.set(`${bone.id}:restWorldQuat`, restWorldQuat);
-  return accumulatedDelta;
+  bone.position.copy(worldPosition);
+  bone.poseWorldQuaternion = worldQuaternion.clone();
+  if (!bone.tail) bone.tail = worldPosition.clone();
+  bone.tail.copy(worldPosition).add(rest.localTailOffset.clone().applyQuaternion(worldQuaternion));
+  resolved.set(bone.id, worldDelta);
+  resolved.set(`${bone.id}:pos`, worldPosition);
+  resolved.set(`${bone.id}:bindPos`, rest.worldPosition.clone());
+  resolved.set(`${bone.id}:worldQuat`, worldQuaternion);
+  resolved.set(`${bone.id}:restWorldQuat`, rest.worldQuaternion.clone());
+  visited.delete(bone.id);
+  return worldDelta;
 }
 
 function poseRigHierarchy() {
   const visited = new Set();
   const resolved = new Map();
-  rigBones.forEach(bone => poseBoneWithChildren(bone, visited, resolved));
+  // Snapshot channels before resolving. Mutating a parent must never make a
+  // later child read an already-resolved world position as a fresh key offset.
+  const inputPose = new Map(rigBones.map(bone => {
+    const channel = rigPoseChannels.get(bone.id);
+    const pose = {
+      position: (channel?.position || bone.position).clone(),
+      rotation: (channel?.rotation || bone.rotation).clone()
+    };
+    rigPoseChannels.set(bone.id, { position: pose.position.clone(), rotation: pose.rotation.clone() });
+    return [bone.id, pose];
+  }));
+  const restFrames = refreshRigRestFrames();
+  rigBones.forEach(bone => poseBoneWithChildren(bone, visited, resolved, inputPose, restFrames));
   // Resolve tails after every joint has its final world position. A parent tail
   // lands on its first child; leaf tails follow the bone's world-space delta.
   rigBones.forEach(bone => {
@@ -1493,11 +1534,9 @@ function poseRigHierarchy() {
       bone.tail.copy(child.position);
       return;
     }
-    const bindPosition = bone.bindPosition || bone.position;
-    const bindTail = bone.bindTail || bone.tail;
-    const restOffset = bindTail.clone().sub(bindPosition);
-    const worldDelta = resolved.get(bone.id) || new THREE.Quaternion();
-    bone.tail.copy(bone.position).add(restOffset.applyQuaternion(worldDelta));
+    const rest = restFrames.get(bone.id);
+    const worldQuaternion = resolved.get(`${bone.id}:worldQuat`) || new THREE.Quaternion();
+    bone.tail.copy(bone.position).add((rest?.localTailOffset || new THREE.Vector3(0, .12, 0)).clone().applyQuaternion(worldQuaternion));
   });
 }
 
@@ -1711,6 +1750,7 @@ function rebuildMinecraftAnimationBindingRest() {
 }
 
 function prepareAnimationBindingRest() {
+  rigPoseChannels.clear();
   for (const bone of rigBones) {
     bone.position.copy(bone.bindPosition);
     bone.rotation.copy(bone.bindRotation);
@@ -1910,6 +1950,7 @@ function updateAnimationPlaybackPanel() {
   els.animationFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
   els.animationTimeLabel.textContent = `${(animationState.frame / animationState.fps).toFixed(2)}s`;
   els.animationPlayBtn.textContent = animationState.playing ? "Pause" : "Play";
+  if (typeof syncAnimatorMiniTransportUi === "function") syncAnimatorMiniTransportUi();
   const end = Math.max(1, animationState.end);
   const playhead = `${Math.max(0, Math.min(100, animationState.frame / end * 100))}%`;
   els.animationTrackList?.querySelectorAll(".animation-timeline-lane").forEach(lane => lane.style.setProperty("--playhead", playhead));
@@ -1927,6 +1968,7 @@ function updateAnimationPanel() {
   els.animationFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
   els.animationTimeLabel.textContent = `${(animationState.frame / animationState.fps).toFixed(2)}s`;
   els.animationPlayBtn.textContent = animationState.playing ? "Pause" : "Play";
+  if (typeof syncAnimatorMiniTransportUi === "function") syncAnimatorMiniTransportUi();
   if (!rigBones.length) {
     els.animationTrackList.innerHTML = '<span class="api-note">Add bones, then use Key Pose to create animation keys.</span>';
     return;

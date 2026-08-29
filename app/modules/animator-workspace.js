@@ -9,6 +9,12 @@ function syncAnimatorTimelineCollapseUi() {
   els.animatorTimelineCollapseBtn.textContent = animatorTimelineCollapsed ? "Expand Timeline" : "Minimize Timeline";
   els.animatorTimelineCollapseBtn.setAttribute("aria-expanded", String(!animatorTimelineCollapsed));
   els.animatorTimelineCollapseBtn.classList.toggle("active", animatorTimelineCollapsed);
+  syncAnimatorMiniTransportUi();
+}
+
+function syncAnimatorMiniTransportUi() {
+  const play = document.querySelector("#animatorMiniPlayBtn");
+  if (play) play.textContent = animationState?.playing ? "❚❚ Pause" : "▶ Play";
 }
 
 function setAnimatorTimelineCollapsed(collapsed) {
@@ -80,6 +86,19 @@ function setAnimatorWorkspace(active) {
 function initializeAnimatorWorkspace() {
   els.animatorWorkspaceOpenBtn?.addEventListener("click", () => setAnimatorWorkspace(!animatorWorkspaceActive));
   els.animatorTimelineCollapseBtn?.addEventListener("click", () => setAnimatorTimelineCollapsed(!animatorTimelineCollapsed));
+  const miniTransport = {
+    animatorMiniPrevBtn: "animationPrevBtn",
+    animatorMiniPlayBtn: "animationPlayBtn",
+    animatorMiniStopBtn: "animationStopBtn",
+    animatorMiniNextBtn: "animationNextBtn",
+    animatorMiniResetBtn: "animationResetBtn"
+  };
+  Object.entries(miniTransport).forEach(([miniId, fullId]) => {
+    document.querySelector(`#${miniId}`)?.addEventListener("click", () => {
+      document.querySelector(`#${fullId}`)?.click();
+      requestAnimationFrame(syncAnimatorMiniTransportUi);
+    });
+  });
   els.animatorClipSelect?.addEventListener("change", event => {
     if (event.target.dataset.source === "bws") setActiveAnimationClip(event.target.value);
     else activateMinecraftAnimation(event.target.value);
