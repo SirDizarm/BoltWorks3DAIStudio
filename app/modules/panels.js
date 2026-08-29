@@ -50,6 +50,26 @@ els.projectNameInput?.addEventListener("dblclick", event => {
   copyProjectNameFromField();
 });
 
+const noticeRailCollapseBtn = document.querySelector("#noticeRailCollapseBtn");
+let footerNoticesCollapsed = localStorage.getItem("boltworks.footerNoticesCollapsed") === "true";
+
+function syncFooterNoticeRail() {
+  document.body.classList.toggle("footer-notices-collapsed", footerNoticesCollapsed);
+  if (!noticeRailCollapseBtn) return;
+  noticeRailCollapseBtn.textContent = footerNoticesCollapsed ? "Expand Footer" : "Minimize Footer";
+  noticeRailCollapseBtn.setAttribute("aria-expanded", String(!footerNoticesCollapsed));
+  noticeRailCollapseBtn.classList.toggle("active", footerNoticesCollapsed);
+}
+
+noticeRailCollapseBtn?.addEventListener("click", () => {
+  footerNoticesCollapsed = !footerNoticesCollapsed;
+  localStorage.setItem("boltworks.footerNoticesCollapsed", String(footerNoticesCollapsed));
+  syncFooterNoticeRail();
+  requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+});
+
+syncFooterNoticeRail();
+
 function gameplayPreviewVisible() {
   return !!(els.gameplayPreview && !els.gameplayPreview.hidden && gameplayRenderer);
 }
@@ -139,7 +159,9 @@ function renderGameplayPreview() {
     openingPickGuideGroup,
     markerGroup,
     cameraDirectorGroup,
-    lineSketchCursor
+    lineSketchCursor,
+    triangleBuildGroup,
+    triangleBuildCursor
   ].filter(Boolean);
   const visibility = helpers.map(helper => helper.visible);
   helpers.forEach(helper => { helper.visible = false; });
@@ -564,6 +586,8 @@ document.querySelector("#facePickBtn").addEventListener("click", toggleClassicTr
 els.faceRegionBtn.addEventListener("click", toggleClassicFaceSelection);
 els.openingPickBtn?.addEventListener("click", () => setOpeningPickMode(!openingPickMode));
 els.lineToolBtn.addEventListener("click", () => setLineSketchMode(!lineSketchMode));
+els.triangleBuildBtn?.addEventListener("click", () => setTriangleBuildMode(!triangleBuildMode));
+els.clearTriangleBuildBtn?.addEventListener("click", () => clearTriangleBuild({ keepMode: triangleBuildMode }));
 els.closeLineBtn.addEventListener("click", closeLineSketch);
 els.makeFaceBtn.addEventListener("click", createFaceFromLineSketch);
 els.fillLineBtn.addEventListener("click", fillLineSketch);
@@ -926,6 +950,10 @@ els.environmentSelect?.addEventListener("change", () => {
   syncGridVisibility();
   const label = els.environmentSelect.selectedOptions?.[0]?.textContent || els.environmentSelect.value;
   log(`Viewport ground set to ${label}. Saved PNG views use the same ground.`);
+});
+
+canvas.addEventListener("pointerleave", () => {
+  if (triangleBuildMode) setTriangleBuildHover(null);
 });
 els.backgroundSelect?.addEventListener("change", () => {
   syncGridVisibility();
@@ -1544,6 +1572,10 @@ canvas.addEventListener("pointerdown", event => {
     addKnifeCutPointFromHit(hitFromPointerEvent(event));
     return;
   }
+  if (triangleBuildMode) {
+    addTriangleBuildPointFromEvent(event);
+    return;
+  }
   if (lineSketchMode) {
     addLineSketchPointFromEvent(event);
     return;
@@ -1624,6 +1656,10 @@ canvas.addEventListener("pointermove", event => {
     const hit = lineSketchPickFromEvent(event);
     setLineSketchCursor(hit?.point || null, hit?.normal || null);
   }
+  if (triangleBuildMode && !spaceCameraMode) {
+    const pick = triangleBuildPickFromEvent(event);
+    setTriangleBuildHover(pick?.wrongMesh ? null : pick);
+  }
   if (openingPickMode && !spaceCameraMode && !transform.dragging && !surfaceTransform.dragging) {
     updateHoveredHoleLoopFromHit(openingPickCandidateFromEvent(event));
   }
@@ -1666,6 +1702,11 @@ canvas.addEventListener("dblclick", event => {
   if (lineSketchMode) {
     event.preventDefault();
     closeLineSketch();
+    return;
+  }
+  if (triangleBuildMode) {
+    event.preventDefault();
+    pendingScenePick = null;
     return;
   }
   if (transform.dragging || surfaceTransform.dragging || spaceCameraMode) return;
@@ -1720,6 +1761,12 @@ window.addEventListener("keydown", event => {
     event.preventDefault();
     if (knifeCutPoints.length) cancelKnifeCutStroke();
     else setKnifeCutMode(false);
+    return;
+  }
+  if (triangleBuildMode && event.key === "Escape") {
+    event.preventDefault();
+    if (triangleBuildPoints.length) clearTriangleBuild({ keepMode: true });
+    else setTriangleBuildMode(false);
     return;
   }
   if (textureEditorState.open && event.key === "Escape") {

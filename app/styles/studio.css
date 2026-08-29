@@ -2322,6 +2322,21 @@ label {
   pointer-events: none;
 }
 
+.notice-rail-collapse {
+  min-height: 24px;
+  padding: 3px 10px;
+  pointer-events: auto;
+  font-size: 11px;
+}
+
+body.footer-notices-collapsed {
+  --notice-rail-height: 30px;
+}
+
+body.footer-notices-collapsed .persistent-notice {
+  display: none;
+}
+
 .persistent-notice {
   display: flex;
   align-items: center;

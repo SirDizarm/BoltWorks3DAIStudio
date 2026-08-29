@@ -4262,6 +4262,7 @@ function setTransformMode(mode) {
   if (pivotEditMode) setPivotEditMode(false, { silent: true });
   if (nextMode && dragPushMode) setDragPushMode(false, { silent: true });
   if (nextMode) {
+    clearTriangleBuild({ silent: true, keepMode: false });
     setFacePickMode(false);
     setCoplanarFacePickMode(false, { activatePicker: false });
     setOpeningPickMode(false);
@@ -6061,6 +6062,227 @@ function clearLineSketchGuide() {
   }
 }
 
+function clearTriangleBuildGuide() {
+  while (triangleBuildGroup.children.length) disposeObject3D(triangleBuildGroup.children.pop());
+  triangleBuildGroup.visible = false;
+}
+
+function resolvedTriangleBuildPoints() {
+  const mesh = findObject(triangleBuildMeshId);
+  if (!mesh) return [];
+  mesh.updateMatrixWorld(true);
+  return triangleBuildPoints.map(point => point.localPoint.clone().applyMatrix4(mesh.matrixWorld));
+}
+
+function updateTriangleBuildGuide() {
+  clearTriangleBuildGuide();
+  const points = resolvedTriangleBuildPoints();
+  if (!points.length && !triangleBuildHover?.point) return;
+  triangleBuildGroup.visible = true;
+  const radius = Math.max(.015, Math.min(.08, camera.position.distanceTo(orbit.target) * .005));
+  for (const [index, point] of points.entries()) {
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 10, 8),
+      new THREE.MeshBasicMaterial({ color: index === 0 ? "#40c7a5" : "#ffb347", depthWrite: false })
+    );
+    marker.position.copy(point);
+    triangleBuildGroup.add(marker);
+  }
+  const linePoints = [...points];
+  if (triangleBuildHover?.point && points.length) linePoints.push(triangleBuildHover.point);
+  if (linePoints.length >= 2) {
+    triangleBuildGroup.add(new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(linePoints),
+      new THREE.LineBasicMaterial({ color: "#ffb347", transparent: true, opacity: .98, depthWrite: false })
+    ));
+  }
+}
+
+function triangleBuildPickFromEvent(event) {
+  const hit = hitFromPointerEvent(event);
+  if (!hit?.face || !hit.object?.geometry || !objects.includes(hit.object)) return null;
+  if (triangleBuildMeshId && hit.object.userData?.id !== triangleBuildMeshId) return { wrongMesh: true, mesh: hit.object };
+  const position = hit.object.geometry.getAttribute("position");
+  const candidates = [hit.face.a, hit.face.b, hit.face.c].map(index => {
+    const localPoint = new THREE.Vector3(position.getX(index), position.getY(index), position.getZ(index));
+    const point = localPoint.clone().applyMatrix4(hit.object.matrixWorld);
+    return { mesh: hit.object, localPoint, point, key: vertexKey(localPoint) };
+  });
+  return candidates.sort((left, right) => left.point.distanceToSquared(hit.point) - right.point.distanceToSquared(hit.point))[0];
+}
+
+function setTriangleBuildHover(pick = null) {
+  triangleBuildHover = pick?.point ? pick : null;
+  triangleBuildCursor.visible = !!(triangleBuildMode && triangleBuildHover?.point);
+  if (triangleBuildCursor.visible) {
+    triangleBuildCursor.position.copy(triangleBuildHover.point);
+    triangleBuildCursor.scale.setScalar(Math.max(.02, Math.min(.1, camera.position.distanceTo(triangleBuildHover.point) * .008)));
+  }
+  updateTriangleBuildGuide();
+}
+
+function clearTriangleBuild({ silent = false, keepMode = false } = {}) {
+  triangleBuildPoints.length = 0;
+  triangleBuildMeshId = null;
+  triangleBuildHover = null;
+  triangleBuildCursor.visible = false;
+  clearTriangleBuildGuide();
+  if (!keepMode) triangleBuildMode = false;
+  updateFacePickHud();
+  if (!silent) log("Cleared the manual triangle points.");
+}
+
+function setTriangleBuildMode(enabled) {
+  triangleBuildMode = !!enabled;
+  if (triangleBuildMode) {
+    clearLineSketch({ silent: true, keepMode: false });
+    facePickMode = false;
+    coplanarFacePickMode = false;
+    openingPickMode = false;
+    els.paintTriInput.checked = false;
+    els.areaTriInput.checked = false;
+    activeTransformMode = null;
+    updateTransformAttachment();
+  } else {
+    clearTriangleBuild({ silent: true, keepMode: false });
+  }
+  updateFacePickHud();
+}
+
+function geometryWithManualTriangle(mesh, picks) {
+  const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry.clone();
+  const position = source.getAttribute("position");
+  const sourceTriangles = [];
+  const sourceIndicesByKey = new Map();
+  for (let index = 0; index < position.count; index++) {
+    const key = vertexKey(new THREE.Vector3(position.getX(index), position.getY(index), position.getZ(index)));
+    if (!sourceIndicesByKey.has(key)) sourceIndicesByKey.set(key, index);
+  }
+  for (let index = 0; index + 2 < position.count; index += 3) {
+    sourceTriangles.push([0, 1, 2].map(offset => vertexKey(new THREE.Vector3(
+      position.getX(index + offset), position.getY(index + offset), position.getZ(index + offset)
+    ))));
+  }
+  let orderedPicks = [...picks];
+  const keys = orderedPicks.map(pick => pick.key);
+  const duplicateKey = [...keys].sort().join("|");
+  if (sourceTriangles.some(triangle => [...triangle].sort().join("|") === duplicateKey)) {
+    source.dispose();
+    return { geometry: null, reason: "that triangle face already exists" };
+  }
+  const edgeDirections = new Set();
+  for (const triangle of sourceTriangles) for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) edgeDirections.add(`${triangle[a]}>${triangle[b]}`);
+  const windingScore = candidateKeys => {
+    let same = 0;
+    let opposite = 0;
+    for (const [a, b] of [[0, 1], [1, 2], [2, 0]]) {
+      if (edgeDirections.has(`${candidateKeys[a]}>${candidateKeys[b]}`)) same++;
+      if (edgeDirections.has(`${candidateKeys[b]}>${candidateKeys[a]}`)) opposite++;
+    }
+    return { same, opposite };
+  };
+  const initialWinding = windingScore(keys);
+  if (initialWinding.same > initialWinding.opposite) orderedPicks = [orderedPicks[0], orderedPicks[2], orderedPicks[1]];
+  const orderedKeys = orderedPicks.map(pick => pick.key);
+  const area = new THREE.Vector3().crossVectors(
+    orderedPicks[1].localPoint.clone().sub(orderedPicks[0].localPoint),
+    orderedPicks[2].localPoint.clone().sub(orderedPicks[0].localPoint)
+  ).length();
+  if (area <= 1e-9) {
+    source.dispose();
+    return { geometry: null, reason: "the three selected points are in a straight line" };
+  }
+  const edgeCounts = topologyEdgeCounts([...sourceTriangles, orderedKeys]);
+  if ([...edgeCounts.values()].some(count => count > 2)) {
+    source.dispose();
+    return { geometry: null, reason: "that face would create a non-manifold edge" };
+  }
+  const next = new THREE.BufferGeometry();
+  for (const [name, attribute] of Object.entries(source.attributes)) {
+    if (name === "normal" || name === "tangent") continue;
+    const values = Array.from(attribute.array);
+    for (const pick of orderedPicks) {
+      const sourceIndex = sourceIndicesByKey.get(pick.key);
+      if (!Number.isInteger(sourceIndex)) {
+        source.dispose();
+        next.dispose();
+        return { geometry: null, reason: "one selected point is no longer part of the mesh" };
+      }
+      const offset = sourceIndex * attribute.itemSize;
+      for (let component = 0; component < attribute.itemSize; component++) values.push(attribute.array[offset + component]);
+    }
+    const TypedArray = attribute.array.constructor;
+    next.setAttribute(name, new THREE.BufferAttribute(new TypedArray(values), attribute.itemSize, attribute.normalized));
+  }
+  if (source.groups.length) source.groups.forEach(group => next.addGroup(group.start, group.count, group.materialIndex));
+  else next.addGroup(0, position.count, 0);
+  let materialIndex = 0;
+  let bestShared = -1;
+  sourceTriangles.forEach((triangle, triangleIndex) => {
+    const shared = triangle.filter(key => orderedKeys.includes(key)).length;
+    if (shared > bestShared) {
+      bestShared = shared;
+      materialIndex = materialIndexForTriangle(source, triangleIndex);
+    }
+  });
+  next.addGroup(position.count, 3, materialIndex);
+  next.name = source.name;
+  next.userData = { ...(source.userData || {}) };
+  next.computeVertexNormals();
+  next.computeBoundingBox();
+  next.computeBoundingSphere();
+  source.dispose();
+  return { geometry: next, orderedPicks };
+}
+
+function addTriangleBuildPointFromEvent(event) {
+  const pick = triangleBuildPickFromEvent(event);
+  if (pick?.wrongMesh) {
+    log(`Continue on ${findObject(triangleBuildMeshId)?.name || "the first mesh"}, or clear the current triangle points.`);
+    return null;
+  }
+  if (!pick?.mesh) {
+    log("Build Triangle needs an existing mesh corner point.");
+    return null;
+  }
+  if (!triangleBuildMeshId) {
+    triangleBuildMeshId = pick.mesh.userData.id;
+    selectObject(pick.mesh);
+  }
+  if (triangleBuildPoints.some(point => point.key === pick.key)) {
+    log("Choose a different corner point for this triangle.");
+    return null;
+  }
+  triangleBuildPoints.push({ localPoint: pick.localPoint.clone(), key: pick.key });
+  updateTriangleBuildGuide();
+  if (triangleBuildPoints.length < 3) {
+    log(`Triangle point ${triangleBuildPoints.length} placed. Choose point ${triangleBuildPoints.length + 1}.`);
+    return pick;
+  }
+  const mesh = findObject(triangleBuildMeshId);
+  const result = geometryWithManualTriangle(mesh, triangleBuildPoints);
+  if (!result.geometry) {
+    triangleBuildPoints.pop();
+    updateTriangleBuildGuide();
+    log(`Could not create that triangle: ${result.reason}. Choose another third point.`);
+    return null;
+  }
+  recordHistory("build triangle face");
+  replaceEditableMeshGeometry(mesh, result.geometry);
+  const continuation = triangleBuildPoints.slice(-2).map(point => ({ localPoint: point.localPoint.clone(), key: point.key }));
+  triangleBuildPoints.splice(0, triangleBuildPoints.length, ...continuation);
+  selectedFaces.length = 0;
+  selectedFace = null;
+  clearSelectedSurfaceComponents();
+  updateAll();
+  updateTriangleBuildGuide();
+  log(`Created one real triangle face on ${mesh.name}. The last edge remains ready for the next triangle.`, {
+    triangles: mesh.geometry.getAttribute("position").count / 3,
+    undoReady: true
+  });
+  return pick;
+}
+
 function resolveLineSketchPoint(entry) {
   if (!entry) return null;
   if (entry.meshId && entry.localPoint) {
@@ -6171,6 +6393,7 @@ function clearLineSketch({ silent = false, keepMode = false } = {}) {
 function setLineSketchMode(enabled) {
   lineSketchMode = !!enabled;
   if (lineSketchMode) {
+    clearTriangleBuild({ silent: true, keepMode: false });
     facePickMode = false;
     coplanarFacePickMode = false;
     openingPickMode = false;
@@ -6495,6 +6718,15 @@ function updateFacePickHud() {
   els.paintTriBtn?.classList.toggle("active", facePickMode && els.paintTriInput.checked);
   els.paintTriBtn?.setAttribute("aria-pressed", String(facePickMode && els.paintTriInput.checked));
   els.lineToolBtn?.classList.toggle("active", lineSketchMode);
+  els.triangleBuildBtn?.classList.toggle("active", triangleBuildMode);
+  els.triangleBuildBtn?.setAttribute("aria-pressed", String(triangleBuildMode));
+  if (triangleBuildMode) {
+    const placed = triangleBuildPoints.length;
+    els.hudText.textContent = placed
+      ? `Build Triangle: ${placed} point${placed === 1 ? "" : "s"} ready | snap to corner point ${placed + 1} | Esc clears`
+      : "Build Triangle: click an existing mesh corner point, then two more points to create a real face";
+    return;
+  }
   if (lineSketchMode) {
     els.hudText.textContent = lineSketchClosed
       ? "Line tool: closed loop ready | Make Face creates a patch | Fill Line creates a tube border | Cut Hole removes covered triangles from the selected mesh"
@@ -6526,6 +6758,7 @@ function updateFacePickHud() {
 function setFacePickMode(enabled) {
   facePickMode = enabled;
   if (facePickMode) {
+    clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
     openingPickMode = false;
   }
@@ -6535,6 +6768,7 @@ function setFacePickMode(enabled) {
 function setCoplanarFacePickMode(enabled, { activatePicker = true } = {}) {
   coplanarFacePickMode = !!enabled;
   if (coplanarFacePickMode) {
+    clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
     openingPickMode = false;
     els.paintTriInput.checked = false;
@@ -6547,6 +6781,7 @@ function setCoplanarFacePickMode(enabled, { activatePicker = true } = {}) {
 function setOpeningPickMode(enabled) {
   openingPickMode = !!enabled;
   if (openingPickMode) {
+    clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
     coplanarFacePickMode = false;
     facePickMode = false;
@@ -13851,6 +14086,7 @@ function setKnifeCutMode(enabled) {
   clearKnifeCutGuide({ keepMode: false });
   knifeCutMode = !!enabled;
   if (knifeCutMode) {
+    clearTriangleBuild({ silent: true, keepMode: false });
     if (lineSketchMode) clearLineSketch({ silent: true, keepMode: false });
     if (dragPushMode) setDragPushMode(false, { silent: true });
     if (activeTransformMode) setTransformMode(activeTransformMode);

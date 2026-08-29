@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.27.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.28.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -140,6 +140,53 @@ function functionSource(source, name) {
     if (depth === 0) return source.slice(start, index + 1);
   }
   throw new Error(`Could not isolate ${name} from the mesh module.`);
+}
+
+{
+  const context = { THREE, round: (value, digits = 4) => Number(Number(value).toFixed(digits)) };
+  vm.createContext(context);
+  vm.runInContext([
+    "vertexKey",
+    "topologyEdgeCounts",
+    "materialIndexForTriangle",
+    "geometryWithManualTriangle"
+  ].map(name => functionSource(meshesSource, name)).join("\n"), context);
+  const point = (x, y, z = 0) => new THREE.Vector3(x, y, z);
+  const sourceGeometry = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute([
+    0, 0, 0, 1, 0, 0, 0, 1, 0,
+    2, 0, 0, 3, 0, 0, 2, 1, 0
+  ], 3));
+  sourceGeometry.setAttribute("uv", new THREE.Float32BufferAttribute([
+    0, 0, 1, 0, 0, 1,
+    0, 0, 1, 0, 0, 1
+  ], 2));
+  const picks = [point(0, 0), point(0, 1), point(2, 0)].map(localPoint => ({
+    localPoint,
+    key: context.vertexKey(localPoint)
+  }));
+  const built = context.geometryWithManualTriangle({ geometry: sourceGeometry }, picks);
+  if (!built.geometry || built.geometry.getAttribute("position").count !== 9) {
+    throw new Error("Build Triangle must append one real face from three existing mesh corner points.");
+  }
+  const duplicate = context.geometryWithManualTriangle({ geometry: sourceGeometry }, [point(0, 0), point(1, 0), point(0, 1)].map(localPoint => ({
+    localPoint,
+    key: context.vertexKey(localPoint)
+  })));
+  if (duplicate.geometry || !duplicate.reason.includes("already exists")) {
+    throw new Error("Build Triangle must reject a face that already exists.");
+  }
+  const nonManifoldGeometry = new THREE.BufferGeometry().setAttribute("position", new THREE.Float32BufferAttribute([
+    0, 0, 0, 1, 0, 0, 0, 1, 0,
+    0, 0, 0, 0, 1, 0, -1, 0, 0,
+    2, 0, 0, 3, 0, 0, 2, 1, 0
+  ], 3));
+  const unsafe = context.geometryWithManualTriangle({ geometry: nonManifoldGeometry }, picks);
+  if (unsafe.geometry || !unsafe.reason.includes("non-manifold")) {
+    throw new Error("Build Triangle must reject a third face on an edge that already has two faces.");
+  }
+  built.geometry.dispose();
+  sourceGeometry.dispose();
+  nonManifoldGeometry.dispose();
 }
 
 {
@@ -1191,7 +1238,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.27.js?v=49.60.27"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.28.js?v=49.60.28"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1232,7 +1279,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.27",
+  "tool-docking.js?v=49.60.28",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1498,6 +1545,14 @@ for (const required of [
   "reference screenshots for AI review",
   "Selection tools",
   "Line Tool",
+  "Build Triangle",
+  "Clear Triangle Points",
+  "geometryWithManualTriangle",
+  "Created one real triangle face",
+  "noticeRailCollapseBtn",
+  "Minimize Footer",
+  "Expand Footer",
+  "boltworks.footerNoticesCollapsed",
   "Marker tools",
   "Triangle editor tools",
   "toolbarSelectionToolsGroup",
@@ -2011,8 +2066,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.27 Experimental") || !documentSource.includes("v49.60.27 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.27 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.28 Experimental") || !documentSource.includes("v49.60.28 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.28 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

@@ -407,6 +407,10 @@ let facePickMode = false;
 let coplanarFacePickMode = false;
 let openingPickMode = false;
 let lineSketchMode = false;
+let triangleBuildMode = false;
+let triangleBuildMeshId = null;
+let triangleBuildHover = null;
+const triangleBuildPoints = [];
 let dragPushMode = false;
 let pullToTargetSession = null;
 let lineSketchClosed = false;
@@ -553,6 +557,17 @@ const lineSketchCursor = new THREE.Mesh(
 lineSketchCursor.name = "line sketch cursor";
 lineSketchCursor.visible = false;
 scene.add(lineSketchCursor);
+const triangleBuildGroup = new THREE.Group();
+triangleBuildGroup.name = "manual triangle build guides";
+triangleBuildGroup.visible = false;
+scene.add(triangleBuildGroup);
+const triangleBuildCursor = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 12, 10),
+  new THREE.MeshBasicMaterial({ color: "#ff7a59", transparent: true, opacity: .95, depthWrite: false })
+);
+triangleBuildCursor.name = "manual triangle build cursor";
+triangleBuildCursor.visible = false;
+scene.add(triangleBuildCursor);
 const markerGroup = new THREE.Group();
 markerGroup.name = "marker helpers";
 scene.add(markerGroup);
@@ -853,6 +868,8 @@ const els = {
   faceRegionBtn: document.querySelector("#faceRegionBtn"),
   openingPickBtn: document.querySelector("#openingPickBtn"),
   lineToolBtn: document.querySelector("#lineToolBtn"),
+  triangleBuildBtn: document.querySelector("#triangleBuildBtn"),
+  clearTriangleBuildBtn: document.querySelector("#clearTriangleBuildBtn"),
   closeLineBtn: document.querySelector("#closeLineBtn"),
   makeFaceBtn: document.querySelector("#makeFaceBtn"),
   fillLineBtn: document.querySelector("#fillLineBtn"),
