@@ -690,6 +690,8 @@ const els = {
   gameplayPreviewResetBtn: document.querySelector("#gameplayPreviewResetBtn"),
   gameplayPreviewCloseBtn: document.querySelector("#gameplayPreviewCloseBtn"),
   gameplayProjectilesInput: document.querySelector("#gameplayProjectilesInput"),
+  gameplayInvertMouseXInput: document.querySelector("#gameplayInvertMouseXInput"),
+  gameplayInvertMouseYInput: document.querySelector("#gameplayInvertMouseYInput"),
   gameplayHintText: document.querySelector("#gameplayHintText"),
   gameplayStatusText: document.querySelector("#gameplayStatusText"),
   tree: document.querySelector("#sceneTree"),

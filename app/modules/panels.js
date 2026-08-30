@@ -109,7 +109,7 @@ function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Click to control · Mouse steer · Middle mouse orbit · WASD move · Shift run · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Crawl disabled · Preview Tools: optional systems · Scroll: speed ${speedLabel} · Esc releases control`;
+    `Click to control · Mouse steer · Middle mouse orbit · WASD move · Shift run · Space jump · Left click slash · Right click shield block · B/F reserved for spells · Crawl disabled · Preview Tools: optional systems/look direction · Scroll: speed ${speedLabel} · Esc releases control`;
 }
 
 function updateGameplayArenaStatus(message = "") {
@@ -2274,8 +2274,7 @@ window.addEventListener("keydown", event => {
       event.preventDefault();
       if (!gameplayCameraLocked) return;
       if (event.code === "Space" && !event.repeat) startGameplayJump();
-      else if (event.code === "KeyF" && !event.repeat) startGameplayUpperBodyAction("thrust", { held: true });
-      else if (event.code === "KeyB" && !event.repeat) startGameplayUpperBodyAction("swordBlock", { held: true });
+      else if (["KeyF", "KeyB"].includes(event.code) && !event.repeat) updateGameplayArenaStatus(`${event.code === "KeyF" ? "F" : "B"} is reserved for a future spell animation`);
       gameplayKeys.add(event.code);
       return;
     }
@@ -2364,8 +2363,6 @@ window.addEventListener("keydown", event => {
 
 window.addEventListener("keyup", event => {
   gameplayKeys.delete(event.code);
-  if (event.code === "KeyF") releaseGameplayUpperBodyAction("thrust");
-  if (event.code === "KeyB") releaseGameplayUpperBodyAction("swordBlock");
   if (event.key === "Shift") isShiftHeld = false;
   if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
   syncBoneRotationSnap();
@@ -2447,10 +2444,12 @@ document.addEventListener("mousemove", event => {
   // Normal mouse movement steers in the same direction as the pointer. Holding
   // middle mouse instead orbits the camera independently around the centered
   // character, allowing front/side inspection without changing its facing.
-  if (gameplayMouseButtons.has(1)) gameplayCameraOrbitOffset += event.movementX * .0025;
-  else gameplayCharacterYaw += event.movementX * .0025;
+  const horizontalDirection = els.gameplayInvertMouseXInput?.checked ? 1 : -1;
+  const verticalDirection = els.gameplayInvertMouseYInput?.checked ? -1 : 1;
+  if (gameplayMouseButtons.has(1)) gameplayCameraOrbitOffset += event.movementX * .0025 * horizontalDirection;
+  else gameplayCharacterYaw += event.movementX * .0025 * horizontalDirection;
   gameplayPitch = THREE.MathUtils.clamp(
-    gameplayPitch - event.movementY * .0018,
+    gameplayPitch + event.movementY * .0018 * verticalDirection,
     THREE.MathUtils.degToRad(10),
     THREE.MathUtils.degToRad(62)
   );
