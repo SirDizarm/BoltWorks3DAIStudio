@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.52.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.53.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -37,6 +37,8 @@ for (const gameplayPreviewBehavior of [
   "function buildGameplayArena()",
   "function gameplayMovementBlocked(nextOffset)",
   "function updateGameplayArena(deltaSeconds)",
+  "const projectileLaneTarget = character.clone()",
+  'updateGameplayArenaStatus("Projectile dodged!")',
   "function startGameplayJump()",
   "function startGameplayUpperBodyAction(kind",
   "function releaseGameplayUpperBodyAction(kind",
@@ -52,6 +54,7 @@ for (const gameplayPreviewBehavior of [
   'startGameplayUpperBodyAction("swordBlock", { held: true })',
   "gameplayCameraTargetBase.clone().add(gameplayCharacterOffset)",
   "gameplayYaw = gameplayCharacterYaw + Math.PI",
+  "const forward = new THREE.Vector3(Math.sin(gameplayCharacterYaw), 0, Math.cos(gameplayCharacterYaw))",
   'setGameplayCharacterAnimation(crawling ? "crawl" : "idle")',
   "if (!gameplayCameraLocked) return;",
   "applyGameplayUpperBodyAction(poses)"
@@ -59,6 +62,9 @@ for (const gameplayPreviewBehavior of [
   if (!panelsSource.includes(gameplayPreviewBehavior)) {
     throw new Error(`Gameplay Preview must keep a centered follow camera and layer combat above independent locomotion: ${gameplayPreviewBehavior}`);
   }
+}
+if (panelsSource.includes("gameplayCharacterYaw = Math.atan2(direction.x, direction.z)")) {
+  throw new Error("Gameplay strafing must not rewrite character yaw and spin the rear follow camera.");
 }
 if (!viewportSource.includes("const gameplayMouseButtons = new Set()")
     || !viewportSource.includes("const gameplayCameraTargetBase = new THREE.Vector3()")
@@ -1552,7 +1558,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.52.js?v=49.60.52"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.53.js?v=49.60.53"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1604,7 +1610,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.52",
+  "tool-docking.js?v=49.60.53",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2405,8 +2411,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.52 Experimental") || !documentSource.includes("v49.60.52 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.52 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.53 Experimental") || !documentSource.includes("v49.60.53 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.53 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

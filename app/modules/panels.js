@@ -236,18 +236,23 @@ function hitGameplayTargets() {
 
 function spawnGameplayProjectile() {
   const character = gameplayCharacterWorldPosition();
-  const angle = Math.random() * Math.PI * 2;
   const distance = gameplayArenaScale * 10;
+  // Fire every projectile from the arena's front edge into the lane occupied
+  // when it spawned. The lane does not home after launch, so strafing sideways
+  // is a reliable dodge instead of attacks arriving from random directions.
+  const projectileLaneTarget = character.clone();
   const projectile = new THREE.Mesh(
     new THREE.SphereGeometry(gameplayArenaScale * .13, 10, 8),
     new THREE.MeshStandardMaterial({ color: 0xffbe45, emissive: 0x8a3600, emissiveIntensity: .8 })
   );
   projectile.position.set(
-    character.x + Math.sin(angle) * distance,
+    projectileLaneTarget.x,
     gameplayArenaGroundY + gameplayArenaScale * 1.35,
-    character.z + Math.cos(angle) * distance
+    projectileLaneTarget.z + distance
   );
-  projectile.userData.velocity = character.clone().sub(projectile.position).normalize().multiplyScalar(gameplayArenaScale * 4.2);
+  projectile.userData.velocity = projectileLaneTarget.clone().sub(projectile.position).normalize().multiplyScalar(gameplayArenaScale * 4.2);
+  projectile.userData.travelled = 0;
+  projectile.userData.maxTravel = distance * 1.35;
   gameplayArenaGroup.add(projectile);
   gameplayArenaProjectiles.push(projectile);
 }
@@ -263,7 +268,15 @@ function updateGameplayArena(deltaSeconds) {
   const shieldHeld = gameplayUpperBodyAction?.kind === "shieldBlock";
   for (let index = gameplayArenaProjectiles.length - 1; index >= 0; index--) {
     const projectile = gameplayArenaProjectiles[index];
+    const travel = projectile.userData.velocity.length() * deltaSeconds;
     projectile.position.addScaledVector(projectile.userData.velocity, deltaSeconds);
+    projectile.userData.travelled += travel;
+    if (projectile.userData.travelled > projectile.userData.maxTravel) {
+      gameplayArenaGroup.remove(projectile);
+      gameplayArenaProjectiles.splice(index, 1);
+      updateGameplayArenaStatus("Projectile dodged!");
+      continue;
+    }
     if (projectile.position.distanceTo(character) > gameplayArenaScale * .9) continue;
     gameplayArenaGroup.remove(projectile);
     gameplayArenaProjectiles.splice(index, 1);
@@ -476,12 +489,11 @@ function updateGameplayPreview(deltaSeconds) {
   const jumping = updateGameplayJump();
   if (!gameplayCameraLocked) return;
   syncGameplayFollowCamera();
-  const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(gameplayCamera.quaternion);
-  const right = new THREE.Vector3(1, 0, 0).applyQuaternion(gameplayCamera.quaternion);
-  forward.y = 0;
-  right.y = 0;
-  if (forward.lengthSq()) forward.normalize();
-  if (right.lengthSq()) right.normalize();
+  // Movement uses the character's stable forward axis. A/D are strafes and do
+  // not rotate the rig; this also prevents the rear follow camera and character
+  // yaw from feeding back into each other and spinning the model.
+  const forward = new THREE.Vector3(Math.sin(gameplayCharacterYaw), 0, Math.cos(gameplayCharacterYaw));
+  const right = new THREE.Vector3(Math.cos(gameplayCharacterYaw), 0, -Math.sin(gameplayCharacterYaw));
   const movement = new THREE.Vector3();
   if (gameplayKeys.has("KeyW")) movement.add(forward);
   if (gameplayKeys.has("KeyS")) movement.sub(forward);
@@ -503,7 +515,6 @@ function updateGameplayPreview(deltaSeconds) {
     const step = direction.multiplyScalar(speed * deltaSeconds);
     const nextOffset = gameplayCharacterOffset.clone().add(step);
     if (!gameplayMovementBlocked(nextOffset)) gameplayCharacterOffset.copy(nextOffset);
-    gameplayCharacterYaw = Math.atan2(direction.x, direction.z);
     syncGameplayFollowCamera();
     animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   }
