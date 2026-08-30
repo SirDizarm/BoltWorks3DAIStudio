@@ -1137,7 +1137,9 @@ function syncInspector() {
     els.scaleZ.value = round(groupPivot.scale.z);
     els.colorInput.value = "#ffffff";
     els.colorHexInput.value = "#FFFFFF";
-    if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = true; els.addColorToSceneBtn.textContent = "Add Color to Scene"; }
+    if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = true; els.addColorToSceneBtn.textContent = "Apply Mesh Color"; }
+    if (els.modelToolsApplyMeshColorBtn) els.modelToolsApplyMeshColorBtn.disabled = transformTargetObjects().length < 1;
+    if (els.modelToolsPaintFacesBtn) els.modelToolsPaintFacesBtn.disabled = selectedFaces.length < 1;
     els.roughInput.value = .6;
     els.roughValue.value = "0.60";
     els.opacityInput.value = 1;
@@ -1155,7 +1157,9 @@ function syncInspector() {
     els.nameInput.value = "";
     els.colorInput.value = "#ffffff";
     els.colorHexInput.value = "#FFFFFF";
-    if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = true; els.addColorToSceneBtn.textContent = "Add Color to Scene"; }
+    if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = true; els.addColorToSceneBtn.textContent = "Apply Mesh Color"; }
+    if (els.modelToolsApplyMeshColorBtn) els.modelToolsApplyMeshColorBtn.disabled = checkedObjects().length < 1;
+    if (els.modelToolsPaintFacesBtn) els.modelToolsPaintFacesBtn.disabled = selectedFaces.length < 1;
     els.opacityInput.value = 1;
     els.opacityValue.value = "1.00";
     els.textureName.textContent = "No texture";
@@ -1180,7 +1184,11 @@ function syncInspector() {
   els.scaleZ.value = round(selected.scale.z);
   els.colorInput.value = `#${selected.material.color.getHexString()}`;
   els.colorHexInput.value = `#${selected.material.color.getHexString()}`.toUpperCase();
-  if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = false; els.addColorToSceneBtn.textContent = selected.userData.colorApplied ? "Color Added to Scene" : "Add Color to Scene"; }
+  if (els.modelToolsMeshColorInput) els.modelToolsMeshColorInput.value = els.colorInput.value;
+  if (els.modelToolsMeshColorHexInput) els.modelToolsMeshColorHexInput.value = els.colorHexInput.value;
+  if (els.modelToolsApplyMeshColorBtn) els.modelToolsApplyMeshColorBtn.disabled = false;
+  if (els.modelToolsPaintFacesBtn) els.modelToolsPaintFacesBtn.disabled = selectedFaces.length < 1;
+  if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = false; els.addColorToSceneBtn.textContent = selected.userData.colorApplied ? "Mesh Color Applied" : "Apply Mesh Color"; }
   els.roughInput.value = selected.material.roughness;
   els.roughValue.value = Number(selected.material.roughness).toFixed(2);
   const baseMaterialState = typeof rigModelBaseMaterialState === "function" ? rigModelBaseMaterialState(selected.material) : null;

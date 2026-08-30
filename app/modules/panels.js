@@ -814,7 +814,105 @@ els.addColorToSceneBtn?.addEventListener("click", () => {
   if (!selected) return;
   selected.userData.colorApplied = true;
   applyInspector({ record: true });
-  els.addColorToSceneBtn.textContent = "Color Added to Scene";
+  els.addColorToSceneBtn.textContent = "Mesh Color Applied";
+});
+function applySolidColorToMeshes(meshes, color) {
+  const targets = uniqueMeshList(meshes);
+  if (!targets.length) return 0;
+  recordHistory(targets.length > 1 ? "color meshes" : "color mesh");
+  for (const mesh of targets) {
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      material?.color?.set(color);
+      if (material) material.needsUpdate = true;
+    }
+    mesh.userData.color = color;
+    mesh.userData.colorApplied = true;
+  }
+  updateAll();
+  return targets.length;
+}
+els.modelToolsMeshColorInput?.addEventListener("input", () => {
+  if (els.modelToolsMeshColorHexInput) els.modelToolsMeshColorHexInput.value = els.modelToolsMeshColorInput.value.toUpperCase();
+});
+els.modelToolsMeshColorHexInput?.addEventListener("input", () => {
+  const normalized = normalizeHexColor(els.modelToolsMeshColorHexInput.value, null);
+  if (normalized && els.modelToolsMeshColorInput) els.modelToolsMeshColorInput.value = normalized;
+});
+els.modelToolsApplyMeshColorBtn?.addEventListener("click", () => {
+  const color = normalizeHexColor(els.modelToolsMeshColorHexInput?.value || els.modelToolsMeshColorInput?.value, null);
+  const targets = resolveSelectionTargets("meshes");
+  if (!color || !targets.length) {
+    if (els.modelToolsMeshColorStatus) els.modelToolsMeshColorStatus.textContent = "Select a mesh, or check several parts in the model list.";
+    return;
+  }
+  const count = applySolidColorToMeshes(targets, color);
+  if (els.colorInput) els.colorInput.value = color;
+  if (els.colorHexInput) els.colorHexInput.value = color.toUpperCase();
+  if (els.modelToolsMeshColorStatus) els.modelToolsMeshColorStatus.textContent = `Applied ${color.toUpperCase()} to ${count} mesh${count === 1 ? "" : "es"}.`;
+});
+function paintSelectedFacesSolidColor(color) {
+  if (!selectedFaces.length) return 0;
+  const facesByMesh = new Map();
+  for (const face of selectedFaces) {
+    if (!facesByMesh.has(face.mesh)) facesByMesh.set(face.mesh, []);
+    facesByMesh.get(face.mesh).push(face);
+  }
+  recordHistory("paint selected faces");
+  const paintColor = new THREE.Color(color);
+  let painted = 0;
+  for (const [mesh, faces] of facesByMesh) {
+    const original = mesh.geometry;
+    const geometry = original.index ? original.toNonIndexed() : original.clone();
+    const position = geometry.getAttribute("position");
+    if (!position) continue;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    const previousColors = geometry.getAttribute("color");
+    const values = new Float32Array(position.count * 3);
+    for (let vertex = 0; vertex < position.count; vertex++) {
+      const triangleIndex = Math.floor(vertex / 3);
+      const material = materials[materialIndexForTriangle(geometry, triangleIndex)] || materials[0];
+      const base = material?.color || new THREE.Color("#ffffff");
+      values[vertex * 3] = (previousColors?.getX(vertex) ?? 1) * base.r;
+      values[vertex * 3 + 1] = (previousColors?.getY(vertex) ?? 1) * base.g;
+      values[vertex * 3 + 2] = (previousColors?.getZ(vertex) ?? 1) * base.b;
+    }
+    const signatures = new Set(faces.map(face => triangleSignature(face.localTrianglePoints)));
+    for (let offset = 0; offset < position.count; offset += 3) {
+      const points = [0, 1, 2].map(index => new THREE.Vector3(
+        position.getX(offset + index),
+        position.getY(offset + index),
+        position.getZ(offset + index)
+      ));
+      if (!signatures.has(triangleSignature(points))) continue;
+      for (let vertex = offset; vertex < offset + 3; vertex++) {
+        values[vertex * 3] = paintColor.r;
+        values[vertex * 3 + 1] = paintColor.g;
+        values[vertex * 3 + 2] = paintColor.b;
+      }
+      painted++;
+    }
+    geometry.setAttribute("color", new THREE.BufferAttribute(values, 3));
+    for (const material of materials) {
+      if (!material) continue;
+      material.color?.set("#ffffff");
+      material.vertexColors = true;
+      material.needsUpdate = true;
+    }
+    replaceEditableMeshGeometry(mesh, geometry);
+    mesh.userData.color = "#ffffff";
+    mesh.userData.colorApplied = true;
+  }
+  updateFaceMarker();
+  updateAll();
+  return painted;
+}
+els.modelToolsPaintFacesBtn?.addEventListener("click", () => {
+  const color = normalizeHexColor(els.modelToolsMeshColorHexInput?.value || els.modelToolsMeshColorInput?.value, null);
+  const count = color ? paintSelectedFacesSolidColor(color) : 0;
+  if (els.modelToolsMeshColorStatus) els.modelToolsMeshColorStatus.textContent = count
+    ? `Painted ${count} selected triangle${count === 1 ? "" : "s"} ${color.toUpperCase()}.`
+    : "Choose Triangle or Whole Face in Surface Edit, select the area, then paint it here.";
 });
 els.modelTileCenterBtn?.addEventListener("click", centerModelTileToEditor);
 els.modelTileCameraLockBtn?.addEventListener("click", toggleModelTileCameraLock);
