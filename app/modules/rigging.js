@@ -1253,6 +1253,9 @@ function animationSetFrame(frame, { render = true, lightweightPanel = false } = 
       if (pose) pose.position.y += jumpLift;
     }
   }
+  if (typeof applyGameplayCharacterPreviewPose === "function") {
+    applyGameplayCharacterPreviewPose(poses);
+  }
   rigPoseChannels.clear();
   poses.forEach((pose, boneId) => rigPoseChannels.set(boneId, {
     position: pose.position.clone(),

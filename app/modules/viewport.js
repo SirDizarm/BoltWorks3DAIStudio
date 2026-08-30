@@ -30,6 +30,8 @@ const gameplayCamera = new THREE.PerspectiveCamera(70, 1, 0.05, 1000000);
 gameplayCamera.layers.enable(3);
 gameplayCamera.rotation.order = "YXZ";
 const gameplayKeys = new Set();
+const gameplayCharacterOffset = new THREE.Vector3();
+let gameplayCharacterYaw = 0;
 let gameplayYaw = 0;
 let gameplayPitch = 0;
 let gameplayLastFrame = performance.now();

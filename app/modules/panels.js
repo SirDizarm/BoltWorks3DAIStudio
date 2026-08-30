@@ -90,19 +90,54 @@ function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Click view · WASD move · E/Q or Space/Shift up-down · Scroll: speed ${speedLabel} · mouse look · Esc releases mouse`;
+    `Click view · WASD character · Shift run · Ctrl sneak · Space jump · Scroll: speed ${speedLabel} · mouse look · Esc closes`;
+}
+
+function gameplayAnimationClipId(kind) {
+  const patterns = {
+    idle: [/^idle\b/i],
+    walk: [/^walk\b/i],
+    run: [/^run\b/i],
+    sneak: [/^sneak\b/i, /crouch/i],
+    jump: [/^jump\b/i]
+  };
+  return Object.entries(animationState.clips || {}).find(([, clip]) =>
+    (patterns[kind] || []).some(pattern => pattern.test(clip?.name || "")))?.[0] || null;
+}
+
+function setGameplayCharacterAnimation(kind) {
+  const clipId = gameplayAnimationClipId(kind);
+  if (!clipId) return false;
+  if (tPoseFittingMode || animationState.activeClipId !== clipId) setActiveAnimationClip(clipId);
+  animationState.playing = true;
+  return true;
+}
+
+function applyGameplayCharacterPreviewPose(poses) {
+  if (!gameplayPreviewVisible() || !(poses instanceof Map)) return;
+  for (const bone of rigBones.filter(candidate => !candidate.parentId)) {
+    const pose = poses.get(bone.id);
+    if (!pose) continue;
+    pose.position.add(gameplayCharacterOffset);
+    pose.rotation.y += gameplayCharacterYaw;
+    bone.position.copy(pose.position);
+    bone.rotation.copy(pose.rotation);
+  }
 }
 
 function openGameplayPreview() {
   if (!els.gameplayPreview || !gameplayRenderer) return false;
   els.gameplayPreview.hidden = false;
   gameplayKeys.clear();
+  gameplayCharacterOffset.set(0, 0, 0);
+  gameplayCharacterYaw = 0;
   gameplaySpeedMultiplier = 1;
   resetGameplayPreviewCamera();
   gameplayLastFrame = performance.now();
   resizeGameplayPreview();
   updateGameplayHint();
-  log("Opened Gameplay Preview. Click the player screen for mouse look; use WASD to move, E/Q or Space/Shift for up/down, and scroll to adjust speed.");
+  setGameplayCharacterAnimation("idle");
+  log("Opened Gameplay Preview. WASD controls the character, Shift runs, Ctrl sneaks, Space jumps, and mouse look inspects the animation from any view.");
   return true;
 }
 
@@ -111,6 +146,9 @@ function closeGameplayPreview() {
   if (document.pointerLockElement === gameplayCanvas) document.exitPointerLock?.();
   els.gameplayPreview.hidden = true;
   gameplayKeys.clear();
+  gameplayCharacterOffset.set(0, 0, 0);
+  gameplayCharacterYaw = 0;
+  animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   log("Closed Gameplay Preview and returned to the editor camera.");
   return true;
 }
@@ -138,12 +176,22 @@ function updateGameplayPreview(deltaSeconds) {
   if (gameplayKeys.has("KeyS")) movement.sub(forward);
   if (gameplayKeys.has("KeyD")) movement.add(right);
   if (gameplayKeys.has("KeyA")) movement.sub(right);
-  if (gameplayKeys.has("Space") || gameplayKeys.has("KeyE")) movement.y += 1;
-  if (gameplayKeys.has("ShiftLeft") || gameplayKeys.has("ShiftRight") || gameplayKeys.has("KeyQ")) movement.y -= 1;
+  const jumping = gameplayKeys.has("Space");
+  const running = gameplayKeys.has("ShiftLeft") || gameplayKeys.has("ShiftRight");
+  const sneaking = gameplayKeys.has("ControlLeft") || gameplayKeys.has("ControlRight");
+  if (jumping) setGameplayCharacterAnimation("jump");
+  else if (movement.lengthSq()) setGameplayCharacterAnimation(running ? "run" : sneaking ? "sneak" : "walk");
+  else setGameplayCharacterAnimation(sneaking ? "sneak" : "idle");
   if (movement.lengthSq()) {
     const worldSize = sceneBounds().getSize(new THREE.Vector3()).length();
-    const speed = Math.max(.75, worldSize * .22) * gameplaySpeedMultiplier;
-    gameplayCamera.position.addScaledVector(movement.normalize(), speed * deltaSeconds);
+    const direction = movement.normalize();
+    const gaitSpeed = sneaking ? .35 : running ? 1.35 : .72;
+    const speed = Math.max(.35, worldSize * .055) * gameplaySpeedMultiplier * gaitSpeed;
+    const step = direction.multiplyScalar(speed * deltaSeconds);
+    gameplayCharacterOffset.add(step);
+    gameplayCamera.position.add(step);
+    gameplayCharacterYaw = Math.atan2(direction.x, direction.z);
+    animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   }
 }
 
@@ -1879,7 +1927,7 @@ window.addEventListener("keydown", event => {
       closeGameplayPreview();
       return;
     }
-    if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyQ", "KeyE", "Space", "ShiftLeft", "ShiftRight"].includes(event.code)) {
+    if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight"].includes(event.code)) {
       event.preventDefault();
       gameplayKeys.add(event.code);
       return;
