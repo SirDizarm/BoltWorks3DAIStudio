@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.78.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.79.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -65,6 +65,9 @@ for (const gameplayPreviewBehavior of [
   "gameplayCameraTargetBase.clone().add(gameplayCharacterOffset)",
   "gameplayYaw = gameplayCharacterYaw + Math.PI",
   "const forward = new THREE.Vector3(Math.sin(gameplayCharacterYaw), 0, Math.cos(gameplayCharacterYaw))",
+  "const right = new THREE.Vector3(-Math.cos(gameplayCharacterYaw), 0, Math.sin(gameplayCharacterYaw))",
+  "pose.position.x = rootAnchor.x + gameplayCharacterOffset.x",
+  "pose.position.z = rootAnchor.z + gameplayCharacterOffset.z",
   'setGameplayCharacterAnimation(running ? "run" : "walk")',
   "const horizontalDirection = els.gameplayInvertMouseXInput?.checked ? 1 : -1",
   "const verticalDirection = els.gameplayInvertMouseYInput?.checked ? -1 : 1",
@@ -118,6 +121,13 @@ if (!documentSource.includes('id="gameplayPreviewPlayBtn"')
 if (!panelsSource.includes("characterYaw.clone().multiply(authoredRotation)") || panelsSource.includes("pose.rotation.y += gameplayCharacterYaw")) {
   throw new Error("Gameplay steering must compose world yaw with authored forward lean without introducing sideways sprint roll.");
 }
+if (!panelsSource.includes("gameplayCameraTargetBase.set(rootAnchor.x, headAnchor.y, rootAnchor.z)")
+    || !panelsSource.includes("gameplayPitch = 0")
+    || !panelsSource.includes('event.code === "KeyC"')
+    || !panelsSource.includes("Camera centered on the fitted head line")
+    || !riggingSource.includes("gameplayReferenceTargetBase.clone().add(gameplayCharacterOffset)")) {
+  throw new Error("Gameplay camera must stay level on the fitted head line, offer instant recentering, and keep reference views on the whole body.");
+}
 if (!panelsSource.includes("pose.rotation?.isEuler")
     || !panelsSource.includes("pose.rotation = new THREE.Euler().setFromQuaternion")) {
   throw new Error("Gameplay playback must normalize imported Vector3 root rotations before composing character yaw.");
@@ -154,6 +164,7 @@ if (!panelsSource.includes('["KeyF", "KeyB"].includes(event.code)')
 }
 if (!viewportSource.includes("const gameplayMouseButtons = new Set()")
     || !viewportSource.includes("const gameplayCameraTargetBase = new THREE.Vector3()")
+    || !viewportSource.includes("const gameplayReferenceTargetBase = new THREE.Vector3()")
     || !viewportSource.includes("let gameplayUpperBodyAction = null")
     || !viewportSource.includes("const gameplayArenaGroup = new THREE.Group()")
     || !viewportSource.includes('let gameplayLocomotionKind = "idle"')) {
@@ -1658,7 +1669,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.78.js?v=49.60.78"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.79.js?v=49.60.79"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1710,7 +1721,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.78",
+  "tool-docking.js?v=49.60.79",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2511,8 +2522,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.78 Experimental") || !documentSource.includes("v49.60.78 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.78 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.79 Experimental") || !documentSource.includes("v49.60.79 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.79 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

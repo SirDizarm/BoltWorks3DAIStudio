@@ -3579,7 +3579,7 @@ function referenceToolFocusPoint() {
 
 function updateReferenceViewFollowing() {
   if (typeof gameplayPreviewVisible === "function" && gameplayPreviewVisible()) {
-    const target = gameplayCameraTargetBase.clone().add(gameplayCharacterOffset);
+    const target = gameplayReferenceTargetBase.clone().add(gameplayCharacterOffset);
     target.y += gameplayJumpHeight;
     for (const view of ["front", "side"]) {
       const state = referenceViewState[view];

@@ -47,6 +47,7 @@ const gameplayKeys = new Set();
 const gameplayMouseButtons = new Set();
 const gameplayCharacterOffset = new THREE.Vector3();
 const gameplayCameraTargetBase = new THREE.Vector3();
+const gameplayReferenceTargetBase = new THREE.Vector3();
 let gameplayCharacterYaw = 0;
 let gameplayUpperBodyAction = null;
 let gameplayLocomotionKind = "idle";

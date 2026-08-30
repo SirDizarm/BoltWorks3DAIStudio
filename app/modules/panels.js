@@ -112,13 +112,22 @@ function resetGameplayPreviewCamera() {
   if (!gameplayRenderer) return;
   const bounds = sceneBounds();
   const size = bounds.getSize(new THREE.Vector3());
-  bounds.getCenter(gameplayCameraTargetBase);
-  gameplayCameraTargetBase.y += size.y * .08;
+  bounds.getCenter(gameplayReferenceTargetBase);
+  const rootBone = rigBones.find(bone => !bone.parentId);
+  const headBone = rigBones.find(bone => /(^|\s)(head|skull)($|\s)/i.test(`${bone.id || ""} ${bone.name || ""}`));
+  const rootAnchor = rootBone?.bindPosition || rootBone?.position;
+  const headAnchor = headBone?.bindPosition || headBone?.position;
+  if (rootAnchor && headAnchor) {
+    gameplayCameraTargetBase.set(rootAnchor.x, headAnchor.y, rootAnchor.z);
+  } else {
+    gameplayCameraTargetBase.copy(gameplayReferenceTargetBase);
+    gameplayCameraTargetBase.y += size.y * .08;
+  }
   gameplayFollowDistance = Math.max(2, size.length() * 1.15);
   gameplayCameraLocked = true;
   gameplayCameraOrbitOffset = 0;
   gameplayYaw = gameplayCharacterYaw + Math.PI;
-  gameplayPitch = THREE.MathUtils.degToRad(28);
+  gameplayPitch = 0;
   gameplayCamera.near = camera.near;
   gameplayCamera.far = camera.far;
   gameplayCamera.updateProjectionMatrix();
@@ -143,7 +152,7 @@ function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Press Play, then click to control · Mouse steer · Middle mouse orbit · WASD move · Shift run · Space jump · Left click slash · Right click shield block · B/F reserved for spells · Crawl disabled · Preview Tools: optional systems/look direction · Scroll: speed ${speedLabel} · Esc releases control`;
+    `Press Play, then click to control · Mouse steer · Middle mouse orbit · C centers camera · WASD move · Shift run · Space jump · Left click slash · Right click shield block · B/F reserved for spells · Crawl disabled · Preview Tools: optional systems/look direction · Scroll: speed ${speedLabel} · Esc releases control`;
 }
 
 function updateGameplayArenaStatus(message = "") {
@@ -514,8 +523,15 @@ function applyGameplayCharacterPreviewPose(poses) {
   for (const bone of rigBones.filter(candidate => !candidate.parentId)) {
     const pose = poses.get(bone.id);
     if (!pose) continue;
-    pose.position.add(gameplayCharacterOffset);
-    pose.position.y += gameplayJumpHeight;
+    const locomotionClipId = gameplayAnimationClipId(gameplayLocomotionKind);
+    const locomotionClip = locomotionClipId ? animationState.clips?.[locomotionClipId] : null;
+    const rootAnchor = sampleGameplayClipPose(locomotionClip, bone, 0)?.position || bone.bindPosition;
+    // Gameplay movement owns the horizontal path. Imported walk/run clips can
+    // contain small X/Z root offsets that otherwise make W visibly wander or
+    // zig-zag even though the gameplay direction itself is perfectly straight.
+    pose.position.x = rootAnchor.x + gameplayCharacterOffset.x;
+    pose.position.z = rootAnchor.z + gameplayCharacterOffset.z;
+    pose.position.y += gameplayCharacterOffset.y + gameplayJumpHeight;
     // Steering is a world-space heading, while the clip's forward sprint lean
     // is local to the character. Adding Euler Y directly after an X pitch can
     // turn part of that pitch into a visible left/right roll. Compose the two
@@ -630,7 +646,9 @@ function updateGameplayPreview(deltaSeconds) {
   // not rotate the rig; this also prevents the rear follow camera and character
   // yaw from feeding back into each other and spinning the model.
   const forward = new THREE.Vector3(Math.sin(gameplayCharacterYaw), 0, Math.cos(gameplayCharacterYaw));
-  const right = new THREE.Vector3(Math.cos(gameplayCharacterYaw), 0, -Math.sin(gameplayCharacterYaw));
+  // The follow camera looks toward the character from behind, so its visible
+  // right side is the negative of the model-space X vector at zero yaw.
+  const right = new THREE.Vector3(-Math.cos(gameplayCharacterYaw), 0, Math.sin(gameplayCharacterYaw));
   const movement = new THREE.Vector3();
   if (gameplayKeys.has("KeyW")) movement.add(forward);
   if (gameplayKeys.has("KeyS")) movement.sub(forward);
@@ -2493,6 +2511,12 @@ window.addEventListener("keydown", event => {
       if (!event.repeat) updateGameplayArenaStatus("Crawl is disabled until its replacement animation is ready");
       return;
     }
+    if (!editingText && event.code === "KeyC") {
+      event.preventDefault();
+      resetGameplayPreviewCamera();
+      updateGameplayArenaStatus("Camera centered on the fitted head line");
+      return;
+    }
     if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyF", "KeyB", "Space", "ShiftLeft", "ShiftRight"].includes(event.code)) {
       event.preventDefault();
       if (!gameplayCameraLocked) return;
@@ -2692,7 +2716,7 @@ document.addEventListener("mousemove", event => {
   else gameplayCharacterYaw += event.movementX * .0025 * horizontalDirection;
   gameplayPitch = THREE.MathUtils.clamp(
     gameplayPitch + event.movementY * .0018 * verticalDirection,
-    THREE.MathUtils.degToRad(10),
+    THREE.MathUtils.degToRad(-45),
     THREE.MathUtils.degToRad(62)
   );
   syncGameplayFollowCamera();
