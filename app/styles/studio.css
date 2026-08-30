@@ -1047,7 +1047,8 @@ label {
   left: 10px;
   right: 10px;
   top: 10px;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
   padding: 7px 9px;
@@ -1055,7 +1056,21 @@ label {
   border-radius: 5px;
   background: rgba(5, 9, 12, .88);
 }
-.gameplay-preview-bar span { flex: 1; color: #aab6bd; font-size: 12px; }
+.gameplay-preview-bar > strong:first-child { grid-column: 1; }
+.gameplay-preview-bar span {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  color: #aab6bd;
+  font-size: 11px;
+  line-height: 1.35;
+}
+.gameplay-status {
+  grid-column: 2;
+  justify-self: end;
+  color: #65f5d4;
+  font-size: 11px;
+  white-space: nowrap;
+}
 .viewport.work-view-active .reference-viewports { display: none; }
 .viewport.work-view-active { grid-template-columns: minmax(0, 1fr); }
 .viewport.work-view-active .reference-viewports-toggle { display: none; }

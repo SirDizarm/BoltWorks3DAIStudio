@@ -81,10 +81,9 @@ function resetGameplayPreviewCamera() {
   bounds.getCenter(gameplayCameraTargetBase);
   gameplayCameraTargetBase.y += size.y * .08;
   gameplayFollowDistance = Math.max(2, size.length() * 1.15);
-  // Begin in a high three-quarter game camera. Looking around changes this
-  // orbit, but its target remains the character rather than drifting away.
-  gameplayYaw = 0;
-  gameplayPitch = THREE.MathUtils.degToRad(32);
+  gameplayCameraLocked = true;
+  gameplayYaw = gameplayCharacterYaw + Math.PI;
+  gameplayPitch = THREE.MathUtils.degToRad(28);
   gameplayCamera.near = camera.near;
   gameplayCamera.far = camera.far;
   gameplayCamera.updateProjectionMatrix();
@@ -93,7 +92,9 @@ function resetGameplayPreviewCamera() {
 
 function syncGameplayFollowCamera() {
   if (!gameplayRenderer) return;
+  if (gameplayCameraLocked) gameplayYaw = gameplayCharacterYaw + Math.PI;
   const target = gameplayCameraTargetBase.clone().add(gameplayCharacterOffset);
+  target.y += gameplayJumpHeight;
   const horizontal = Math.cos(gameplayPitch) * gameplayFollowDistance;
   gameplayCamera.position.set(
     target.x + Math.sin(gameplayYaw) * horizontal,
@@ -107,7 +108,174 @@ function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Click view · WASD move · Shift run · Ctrl sneak · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Scroll: speed ${speedLabel} · mouse look · Esc closes`;
+    `Click to control · WASD move · Shift run · Ctrl crawl · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Scroll: speed ${speedLabel} · Esc releases control`;
+}
+
+function updateGameplayArenaStatus(message = "") {
+  if (!els.gameplayStatusText) return;
+  els.gameplayStatusText.textContent = message || `Targets ${gameplayArenaScore.targets} · Blocks ${gameplayArenaScore.blocked} · Hits ${gameplayArenaScore.hits}`;
+}
+
+function gameplayArenaMaterial(color, roughness = .8, metalness = .05) {
+  return new THREE.MeshStandardMaterial({ color, roughness, metalness });
+}
+
+function buildGameplayArena() {
+  gameplayArenaGroup.clear();
+  gameplayArenaColliders.length = 0;
+  gameplayArenaTargets.length = 0;
+  gameplayArenaProjectiles.length = 0;
+  gameplayArenaScore = { targets: 0, blocked: 0, hits: 0 };
+  gameplayArenaProjectileClock = 0;
+  const bounds = sceneBounds();
+  const size = bounds.getSize(new THREE.Vector3());
+  const center = bounds.getCenter(new THREE.Vector3());
+  gameplayArenaScale = Math.max(.5, size.y / 6 || 1);
+  gameplayArenaGroundY = bounds.min.y;
+
+  const ground = new THREE.Mesh(
+    new THREE.PlaneGeometry(gameplayArenaScale * 44, gameplayArenaScale * 44),
+    gameplayArenaMaterial(0x26372f, .96, 0)
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(center.x, gameplayArenaGroundY - .025, center.z);
+  ground.receiveShadow = true;
+  gameplayArenaGroup.add(ground);
+  const arenaGrid = new THREE.GridHelper(gameplayArenaScale * 44, 44, 0x54b7a2, 0x344d45);
+  arenaGrid.position.copy(ground.position).add(new THREE.Vector3(0, .035, 0));
+  gameplayArenaGroup.add(arenaGrid);
+
+  const crateOffsets = [[0, 5], [2.6, 9], [-2.5, 12.5], [1.2, 16]];
+  for (const [x, z] of crateOffsets) {
+    const height = gameplayArenaScale * (z > 11 ? 1.05 : .72);
+    const crate = new THREE.Mesh(
+      new THREE.BoxGeometry(gameplayArenaScale * 1.35, height, gameplayArenaScale * 1.35),
+      gameplayArenaMaterial(0x8b5a2b, .88, 0)
+    );
+    crate.position.set(center.x + x * gameplayArenaScale, gameplayArenaGroundY + height / 2, center.z + z * gameplayArenaScale);
+    crate.castShadow = true;
+    crate.receiveShadow = true;
+    gameplayArenaGroup.add(crate);
+    crate.updateMatrixWorld(true);
+    gameplayArenaColliders.push({ mesh: crate, box: new THREE.Box3().setFromObject(crate), height });
+  }
+
+  for (const [x, z] of [[-3.2, 6.5], [3.3, 12], [-1.2, 18]]) {
+    const target = new THREE.Group();
+    const post = new THREE.Mesh(
+      new THREE.CylinderGeometry(gameplayArenaScale * .12, gameplayArenaScale * .16, gameplayArenaScale * 1.45, 10),
+      gameplayArenaMaterial(0x747f85, .72, .18)
+    );
+    const head = new THREE.Mesh(
+      new THREE.SphereGeometry(gameplayArenaScale * .35, 14, 10),
+      gameplayArenaMaterial(0xc75b46, .7, .05)
+    );
+    post.position.y = gameplayArenaScale * .72;
+    head.position.y = gameplayArenaScale * 1.55;
+    target.add(post, head);
+    target.position.set(center.x + x * gameplayArenaScale, gameplayArenaGroundY, center.z + z * gameplayArenaScale);
+    target.userData.hitUntil = 0;
+    gameplayArenaGroup.add(target);
+    gameplayArenaTargets.push(target);
+  }
+  gameplayArenaGroup.visible = true;
+  updateGameplayArenaStatus("Arena ready");
+}
+
+function gameplayCharacterWorldPosition() {
+  return gameplayCameraTargetBase.clone().add(gameplayCharacterOffset).add(new THREE.Vector3(0, gameplayJumpHeight, 0));
+}
+
+function startGameplayJump() {
+  if (gameplayJumpStartedAt) return false;
+  gameplayJumpStartedAt = performance.now();
+  return true;
+}
+
+function updateGameplayJump(now = performance.now()) {
+  if (!gameplayJumpStartedAt) { gameplayJumpHeight = 0; return false; }
+  const phase = (now - gameplayJumpStartedAt) / 900;
+  if (phase >= 1) {
+    gameplayJumpStartedAt = 0;
+    gameplayJumpHeight = 0;
+    return false;
+  }
+  gameplayJumpHeight = Math.sin(Math.PI * Math.max(0, phase)) * gameplayArenaScale * 1.6;
+  return true;
+}
+
+function gameplayMovementBlocked(nextOffset) {
+  const point = gameplayCameraTargetBase.clone().add(nextOffset);
+  const radius = gameplayArenaScale * .32;
+  return gameplayArenaColliders.some(({ box, height }) => {
+    if (gameplayJumpHeight > height * .8) return false;
+    return point.x > box.min.x - radius && point.x < box.max.x + radius
+      && point.z > box.min.z - radius && point.z < box.max.z + radius;
+  });
+}
+
+function hitGameplayTargets() {
+  if (!gameplayPreviewVisible()) return 0;
+  const character = gameplayCharacterWorldPosition();
+  const forward = new THREE.Vector3(Math.sin(gameplayCharacterYaw), 0, Math.cos(gameplayCharacterYaw));
+  let hits = 0;
+  for (const target of gameplayArenaTargets) {
+    const direction = target.position.clone().sub(character);
+    direction.y = 0;
+    if (direction.length() > gameplayArenaScale * 2.7 || direction.normalize().dot(forward) < .15) continue;
+    target.userData.hitUntil = performance.now() + 700;
+    target.rotation.z = -.45;
+    hits++;
+  }
+  if (hits) {
+    gameplayArenaScore.targets += hits;
+    updateGameplayArenaStatus();
+  }
+  return hits;
+}
+
+function spawnGameplayProjectile() {
+  const character = gameplayCharacterWorldPosition();
+  const angle = Math.random() * Math.PI * 2;
+  const distance = gameplayArenaScale * 10;
+  const projectile = new THREE.Mesh(
+    new THREE.SphereGeometry(gameplayArenaScale * .13, 10, 8),
+    new THREE.MeshStandardMaterial({ color: 0xffbe45, emissive: 0x8a3600, emissiveIntensity: .8 })
+  );
+  projectile.position.set(
+    character.x + Math.sin(angle) * distance,
+    gameplayArenaGroundY + gameplayArenaScale * 1.35,
+    character.z + Math.cos(angle) * distance
+  );
+  projectile.userData.velocity = character.clone().sub(projectile.position).normalize().multiplyScalar(gameplayArenaScale * 4.2);
+  gameplayArenaGroup.add(projectile);
+  gameplayArenaProjectiles.push(projectile);
+}
+
+function updateGameplayArena(deltaSeconds) {
+  if (!gameplayArenaGroup.visible) return;
+  gameplayArenaProjectileClock += deltaSeconds;
+  if (gameplayArenaProjectileClock > 2.4) {
+    gameplayArenaProjectileClock = 0;
+    spawnGameplayProjectile();
+  }
+  const character = gameplayCharacterWorldPosition();
+  const shieldHeld = gameplayUpperBodyAction?.kind === "shieldBlock";
+  for (let index = gameplayArenaProjectiles.length - 1; index >= 0; index--) {
+    const projectile = gameplayArenaProjectiles[index];
+    projectile.position.addScaledVector(projectile.userData.velocity, deltaSeconds);
+    if (projectile.position.distanceTo(character) > gameplayArenaScale * .9) continue;
+    gameplayArenaGroup.remove(projectile);
+    gameplayArenaProjectiles.splice(index, 1);
+    if (shieldHeld) gameplayArenaScore.blocked++;
+    else gameplayArenaScore.hits++;
+    updateGameplayArenaStatus(shieldHeld ? "Projectile blocked!" : "Projectile hit");
+  }
+  const now = performance.now();
+  for (const target of gameplayArenaTargets) {
+    if (target.userData.hitUntil > now) continue;
+    target.rotation.z *= .82;
+  }
 }
 
 function gameplayAnimationClipId(kind) {
@@ -115,7 +283,7 @@ function gameplayAnimationClipId(kind) {
     idle: [/^idle\b/i],
     walk: [/^walk\b/i],
     run: [/^run\b/i],
-    sneak: [/^sneak\b/i, /crouch/i],
+    crawl: [/^crawl\b/i, /^sneak\b/i, /crouch/i],
     jump: [/^jump\b/i]
   };
   return Object.entries(animationState.clips || {}).find(([, clip]) =>
@@ -125,6 +293,7 @@ function gameplayAnimationClipId(kind) {
 function setGameplayCharacterAnimation(kind) {
   const clipId = gameplayAnimationClipId(kind);
   if (!clipId) return false;
+  gameplayLocomotionKind = kind;
   if (tPoseFittingMode || animationState.activeClipId !== clipId) setActiveAnimationClip(clipId);
   animationState.playing = true;
   return true;
@@ -144,7 +313,9 @@ function gameplayCombatClipId(kind) {
 function startGameplayUpperBodyAction(kind, { held = false } = {}) {
   const clipId = gameplayCombatClipId(kind);
   if (!clipId) return false;
+  if (gameplayUpperBodyAction?.kind === kind) return false;
   gameplayUpperBodyAction = { kind, clipId, startedAt: performance.now(), held };
+  if (kind === "slash" || kind === "thrust") hitGameplayTargets();
   animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   return true;
 }
@@ -153,6 +324,12 @@ function stopGameplayUpperBodyAction(kind = null) {
   if (!gameplayUpperBodyAction || (kind && gameplayUpperBodyAction.kind !== kind)) return false;
   gameplayUpperBodyAction = null;
   animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
+  return true;
+}
+
+function releaseGameplayUpperBodyAction(kind = null) {
+  if (!gameplayUpperBodyAction || (kind && gameplayUpperBodyAction.kind !== kind)) return false;
+  gameplayUpperBodyAction.held = false;
   return true;
 }
 
@@ -220,6 +397,7 @@ function applyGameplayCharacterPreviewPose(poses) {
     const pose = poses.get(bone.id);
     if (!pose) continue;
     pose.position.add(gameplayCharacterOffset);
+    pose.position.y += gameplayJumpHeight;
     pose.rotation.y += gameplayCharacterYaw;
     bone.position.copy(pose.position);
     bone.rotation.copy(pose.rotation);
@@ -234,11 +412,16 @@ function openGameplayPreview() {
   gameplayCharacterOffset.set(0, 0, 0);
   gameplayCharacterYaw = 0;
   gameplayUpperBodyAction = null;
+  gameplayLocomotionKind = "idle";
+  gameplayJumpStartedAt = 0;
+  gameplayJumpHeight = 0;
   gameplaySpeedMultiplier = 1;
+  buildGameplayArena();
   resetGameplayPreviewCamera();
   gameplayLastFrame = performance.now();
   resizeGameplayPreview();
   updateGameplayHint();
+  updateGameplayArenaStatus("Click the player screen to take control");
   setGameplayCharacterAnimation("idle");
   log("Opened Gameplay Preview. Locomotion controls the legs independently while mouse/F/B combat actions layer over the upper body.");
   return true;
@@ -253,9 +436,28 @@ function closeGameplayPreview() {
   gameplayCharacterOffset.set(0, 0, 0);
   gameplayCharacterYaw = 0;
   gameplayUpperBodyAction = null;
+  gameplayLocomotionKind = "idle";
+  gameplayCameraLocked = false;
+  gameplayJumpStartedAt = 0;
+  gameplayJumpHeight = 0;
+  gameplayArenaGroup.visible = false;
+  for (const projectile of gameplayArenaProjectiles) gameplayArenaGroup.remove(projectile);
+  gameplayArenaProjectiles.length = 0;
   animationState.playing = false;
   animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   log("Closed Gameplay Preview, stopped its animation, and returned to the editor camera.");
+  return true;
+}
+
+function releaseGameplayControl() {
+  if (!gameplayPreviewVisible()) return false;
+  if (document.pointerLockElement === gameplayCanvas) document.exitPointerLock?.();
+  gameplayCameraLocked = false;
+  gameplayKeys.clear();
+  gameplayMouseButtons.clear();
+  stopGameplayUpperBodyAction();
+  setGameplayCharacterAnimation("idle");
+  updateGameplayArenaStatus("Control released — click the player screen to reconnect");
   return true;
 }
 
@@ -270,6 +472,9 @@ function resizeGameplayPreview() {
 
 function updateGameplayPreview(deltaSeconds) {
   if (!gameplayPreviewVisible()) return;
+  updateGameplayArena(deltaSeconds);
+  const jumping = updateGameplayJump();
+  if (!gameplayCameraLocked) return;
   syncGameplayFollowCamera();
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(gameplayCamera.quaternion);
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(gameplayCamera.quaternion);
@@ -282,33 +487,60 @@ function updateGameplayPreview(deltaSeconds) {
   if (gameplayKeys.has("KeyS")) movement.sub(forward);
   if (gameplayKeys.has("KeyD")) movement.add(right);
   if (gameplayKeys.has("KeyA")) movement.sub(right);
-  const jumping = gameplayKeys.has("Space");
   const running = gameplayKeys.has("ShiftLeft") || gameplayKeys.has("ShiftRight");
-  const sneaking = gameplayKeys.has("ControlLeft") || gameplayKeys.has("ControlRight");
+  const crawling = gameplayKeys.has("ControlLeft") || gameplayKeys.has("ControlRight");
   if (gameplayMouseButtons.has(2)) {
     if (gameplayUpperBodyAction?.kind !== "shieldBlock") startGameplayUpperBodyAction("shieldBlock", { held: true });
-  } else if (gameplayUpperBodyAction?.held && gameplayUpperBodyAction.kind === "shieldBlock") {
-    stopGameplayUpperBodyAction("shieldBlock");
   }
   if (jumping) setGameplayCharacterAnimation("jump");
-  else if (movement.lengthSq()) setGameplayCharacterAnimation(running ? "run" : sneaking ? "sneak" : "walk");
-  else setGameplayCharacterAnimation(sneaking ? "sneak" : "idle");
+  else if (movement.lengthSq()) setGameplayCharacterAnimation(running ? "run" : crawling ? "crawl" : "walk");
+  else setGameplayCharacterAnimation(crawling ? "crawl" : "idle");
   if (movement.lengthSq()) {
     const worldSize = sceneBounds().getSize(new THREE.Vector3()).length();
     const direction = movement.normalize();
-    const gaitSpeed = sneaking ? .35 : running ? 1.35 : .72;
+    const gaitSpeed = crawling ? .25 : running ? 1.35 : .72;
     const speed = Math.max(.35, worldSize * .055) * gameplaySpeedMultiplier * gaitSpeed;
     const step = direction.multiplyScalar(speed * deltaSeconds);
-    gameplayCharacterOffset.add(step);
+    const nextOffset = gameplayCharacterOffset.clone().add(step);
+    if (!gameplayMovementBlocked(nextOffset)) gameplayCharacterOffset.copy(nextOffset);
     gameplayCharacterYaw = Math.atan2(direction.x, direction.z);
     syncGameplayFollowCamera();
     animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   }
 }
 
+function applyGameplayCrawlEquipmentStow() {
+  if (gameplayLocomotionKind !== "crawl") return [];
+  const chest = rigBones.find(bone => /chest|ribcage|spine upper/i.test(`${bone.name || ""} ${bone.id || ""}`));
+  if (!chest) return [];
+  boneRigGroup.updateMatrixWorld(true);
+  const chestPosition = chest.position.clone();
+  const rootRotation = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, gameplayCharacterYaw, 0));
+  const stowed = [];
+  for (const object of objects) {
+    const label = object.name || "";
+    if (!/shield|sword/i.test(label)) continue;
+    stowed.push({ object, position: object.position.clone(), quaternion: object.quaternion.clone() });
+    const isShield = /shield/i.test(label);
+    const offset = new THREE.Vector3(isShield ? -.24 : .26, isShield ? .03 : -.1, isShield ? -.46 : -.52)
+      .multiplyScalar(gameplayArenaScale).applyQuaternion(rootRotation);
+    const worldPosition = chestPosition.clone().add(gameplayCharacterOffset).add(offset);
+    const worldQuaternion = rootRotation.clone().multiply(
+      new THREE.Quaternion().setFromEuler(new THREE.Euler(isShield ? Math.PI / 2 : 0, 0, isShield ? 0 : -.65))
+    );
+    object.position.copy(object.parent?.worldToLocal(worldPosition.clone()) || worldPosition);
+    const parentQuaternion = object.parent?.getWorldQuaternion(new THREE.Quaternion()) || new THREE.Quaternion();
+    object.quaternion.copy(parentQuaternion.invert().multiply(worldQuaternion));
+    object.updateMatrixWorld(true);
+  }
+  return stowed;
+}
+
 function renderGameplayPreview() {
   if (!gameplayPreviewVisible()) return;
   const helpers = [
+    grid,
+    gridLabelGroup,
     transform,
     surfaceTransform,
     surfaceFrontTransform,
@@ -325,7 +557,13 @@ function renderGameplayPreview() {
   ].filter(Boolean);
   const visibility = helpers.map(helper => helper.visible);
   helpers.forEach(helper => { helper.visible = false; });
+  const stowedEquipment = applyGameplayCrawlEquipmentStow();
   gameplayRenderer.render(scene, gameplayCamera);
+  for (const { object, position, quaternion } of stowedEquipment) {
+    object.position.copy(position);
+    object.quaternion.copy(quaternion);
+    object.updateMatrixWorld(true);
+  }
   helpers.forEach((helper, index) => { helper.visible = visibility[index]; });
 }
 
@@ -2035,12 +2273,14 @@ window.addEventListener("keydown", event => {
   if (gameplayPreviewVisible()) {
     if (event.key === "Escape") {
       event.preventDefault();
-      closeGameplayPreview();
+      releaseGameplayControl();
       return;
     }
     if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyF", "KeyB", "Space", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight"].includes(event.code)) {
       event.preventDefault();
-      if (event.code === "KeyF" && !event.repeat) startGameplayUpperBodyAction("thrust");
+      if (!gameplayCameraLocked) return;
+      if (event.code === "Space" && !event.repeat) startGameplayJump();
+      else if (event.code === "KeyF" && !event.repeat) startGameplayUpperBodyAction("thrust", { held: true });
       else if (event.code === "KeyB" && !event.repeat) startGameplayUpperBodyAction("swordBlock", { held: true });
       gameplayKeys.add(event.code);
       return;
@@ -2130,7 +2370,8 @@ window.addEventListener("keydown", event => {
 
 window.addEventListener("keyup", event => {
   gameplayKeys.delete(event.code);
-  if (event.code === "KeyB") stopGameplayUpperBodyAction("swordBlock");
+  if (event.code === "KeyF") releaseGameplayUpperBodyAction("thrust");
+  if (event.code === "KeyB") releaseGameplayUpperBodyAction("swordBlock");
   if (event.key === "Shift") isShiftHeld = false;
   if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
   syncBoneRotationSnap();
@@ -2167,17 +2408,26 @@ els.workViewRestoreBtn?.addEventListener("click", restoreOrthographicWorkView);
 els.gameplayPreviewOpenBtn?.addEventListener("click", openGameplayPreview);
 els.gameplayPreviewResetBtn?.addEventListener("click", resetGameplayPreviewCamera);
 els.gameplayPreviewCloseBtn?.addEventListener("click", closeGameplayPreview);
-gameplayCanvas?.addEventListener("click", () => gameplayCanvas.requestPointerLock?.());
+gameplayCanvas?.addEventListener("click", () => {
+  if (!gameplayPreviewVisible()) return;
+  gameplayKeys.clear();
+  gameplayMouseButtons.clear();
+  gameplayCameraLocked = true;
+  syncGameplayFollowCamera();
+  updateGameplayArenaStatus();
+  gameplayCanvas.requestPointerLock?.();
+});
 gameplayCanvas?.addEventListener("mousedown", event => {
   if (!gameplayPreviewVisible() || document.pointerLockElement !== gameplayCanvas) return;
   event.preventDefault();
   gameplayMouseButtons.add(event.button);
-  if (event.button === 0) startGameplayUpperBodyAction("slash");
+  if (event.button === 0) startGameplayUpperBodyAction("slash", { held: true });
   if (event.button === 2) startGameplayUpperBodyAction("shieldBlock", { held: true });
 });
 window.addEventListener("mouseup", event => {
   gameplayMouseButtons.delete(event.button);
-  if (event.button === 2) stopGameplayUpperBodyAction("shieldBlock");
+  if (event.button === 0) releaseGameplayUpperBodyAction("slash");
+  if (event.button === 2) releaseGameplayUpperBodyAction("shieldBlock");
 });
 gameplayCanvas?.addEventListener("wheel", event => {
   if (!gameplayPreviewVisible()) return;
@@ -2190,17 +2440,13 @@ gameplayCanvas?.addEventListener("wheel", event => {
   );
   updateGameplayHint();
 }, { passive: false });
-document.addEventListener("mousemove", event => {
-  if (document.pointerLockElement !== gameplayCanvas || !gameplayPreviewVisible()) return;
-  gameplayYaw -= event.movementX * .0022;
-  gameplayPitch = THREE.MathUtils.clamp(gameplayPitch + event.movementY * .0022, THREE.MathUtils.degToRad(8), THREE.MathUtils.degToRad(82));
-  syncGameplayFollowCamera();
-});
 document.addEventListener("pointerlockchange", () => {
-  if (document.pointerLockElement !== gameplayCanvas) {
+  if (gameplayPreviewVisible() && document.pointerLockElement !== gameplayCanvas) {
+    gameplayCameraLocked = false;
     gameplayKeys.clear();
     gameplayMouseButtons.clear();
-    stopGameplayUpperBodyAction();
+    releaseGameplayUpperBodyAction();
+    updateGameplayArenaStatus("Control released — click the player screen to reconnect");
   }
 });
 

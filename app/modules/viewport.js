@@ -19,6 +19,20 @@ if (gameplayRenderer) {
 }
 
 const scene = new THREE.Scene();
+const gameplayArenaGroup = new THREE.Group();
+gameplayArenaGroup.name = "Gameplay Test Arena";
+gameplayArenaGroup.visible = false;
+scene.add(gameplayArenaGroup);
+const gameplayArenaColliders = [];
+const gameplayArenaTargets = [];
+const gameplayArenaProjectiles = [];
+let gameplayArenaScale = 1;
+let gameplayArenaGroundY = 0;
+let gameplayArenaProjectileClock = 0;
+let gameplayArenaScore = { targets: 0, blocked: 0, hits: 0 };
+let gameplayJumpStartedAt = 0;
+let gameplayJumpHeight = 0;
+let gameplayCameraLocked = true;
 const studioBackground = new THREE.Color(0x0b0e10);
 const plainBackground = new THREE.Color(0x17232b);
 scene.background = studioBackground;
@@ -35,6 +49,7 @@ const gameplayCharacterOffset = new THREE.Vector3();
 const gameplayCameraTargetBase = new THREE.Vector3();
 let gameplayCharacterYaw = 0;
 let gameplayUpperBodyAction = null;
+let gameplayLocomotionKind = "idle";
 let gameplayYaw = 0;
 let gameplayPitch = 0;
 let gameplayFollowDistance = 5;
@@ -674,6 +689,7 @@ const els = {
   gameplayPreviewResetBtn: document.querySelector("#gameplayPreviewResetBtn"),
   gameplayPreviewCloseBtn: document.querySelector("#gameplayPreviewCloseBtn"),
   gameplayHintText: document.querySelector("#gameplayHintText"),
+  gameplayStatusText: document.querySelector("#gameplayStatusText"),
   tree: document.querySelector("#sceneTree"),
   goToSelectedMeshBtn: document.querySelector("#goToSelectedMeshBtn"),
   log: document.querySelector("#log"),
