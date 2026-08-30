@@ -10,7 +10,7 @@ for (const required of ["BoltWorks Mobile Studio", "index.html?mobile=1", "viewp
 }
 
 for (const required of [
-  "mobile-workspace.js?v=49.60.58",
+  "mobile-workspace.js?v=49.60.77",
   'id="canvas"',
   'id="sceneTree"',
   'id="inspectorSection"',

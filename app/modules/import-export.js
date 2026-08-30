@@ -173,6 +173,8 @@ function projectState() {
           target: view.target.map(round),
           up: view.up.map(round),
           fov: round(view.fov),
+          exportWidth: Math.max(64, Math.min(2048, Math.round(Number(view.exportWidth) || 512))),
+          exportHeight: Math.max(64, Math.min(2048, Math.round(Number(view.exportHeight) || 512))),
           positionOffset: validCameraVector(view.positionOffset, [0, 0, 0]).map(round),
           localDirection: validCameraVector(view.localDirection, [0, 0, -1]).map(round),
           localUp: validCameraVector(view.localUp, [0, 1, 0]).map(round)
@@ -4801,7 +4803,35 @@ function renderCustomCameraViews() {
     els.customCameraList.append(option);
   }
   syncCustomCameraInputs();
+  syncAnimationDetailCameraOptions();
   renderCustomCameraMarkers();
+}
+
+function syncAnimationDetailCameraOptions() {
+  if (!els.animationDetailCameraSelect) return;
+  const selected = customCameraViewById(els.animationDetailCameraSelect.value) || customCameraViewById();
+  els.animationDetailCameraSelect.innerHTML = "";
+  if (!customCameraViews.length) {
+    const option = document.createElement("option");
+    option.value = "";
+    option.textContent = "No detail cameras";
+    els.animationDetailCameraSelect.append(option);
+  } else {
+    customCameraViews.forEach(view => {
+      const option = document.createElement("option");
+      option.value = view.id;
+      option.textContent = view.name;
+      option.selected = view.id === (selected?.id || selectedCustomCameraId);
+      els.animationDetailCameraSelect.append(option);
+    });
+  }
+  const view = customCameraViewById(els.animationDetailCameraSelect.value) || customCameraViewById();
+  if (els.animationDetailWidthInput) els.animationDetailWidthInput.value = view?.exportWidth || 512;
+  if (els.animationDetailHeightInput) els.animationDetailHeightInput.value = view?.exportHeight || 512;
+  [els.animationDetailCameraViewBtn, els.animationDetailCameraUpdateBtn, els.animationDetailSheetExportBtn].forEach(button => { if (button) button.disabled = !view; });
+  if (els.animationDetailCameraStatus) els.animationDetailCameraStatus.textContent = view
+    ? `${view.name} · ${view.exportWidth || 512} × ${view.exportHeight || 512}`
+    : "Place the viewport over a detail, then add a camera.";
 }
 
 function selectCustomCameraView(id) {
@@ -4818,7 +4848,9 @@ function addCustomCameraView() {
     position: camera.position.toArray(),
     target: orbit.target.toArray(),
     up: camera.up.toArray(),
-    fov: camera.fov
+    fov: camera.fov,
+    exportWidth: 512,
+    exportHeight: 512
   };
   customCameraViews.push(view);
   selectedCustomCameraId = view.id;
@@ -4826,6 +4858,28 @@ function addCustomCameraView() {
   renderCustomCameraViews();
   log(`Added ${view.name} at the current viewport.`);
   return view;
+}
+
+function addAnimationDetailCameraView() {
+  const view = addCustomCameraView();
+  view.name = `AI Detail ${customCameraViews.filter(candidate => candidate.name.startsWith("AI Detail")).length + 1}`;
+  view.exportWidth = Math.max(64, Math.min(2048, Math.round(Number(els.animationDetailWidthInput?.value) || 512)));
+  view.exportHeight = Math.max(64, Math.min(2048, Math.round(Number(els.animationDetailHeightInput?.value) || 512)));
+  renderCustomCameraViews();
+  log(`Saved ${view.name} for focused animation checks.`);
+  return view;
+}
+
+function selectAnimationDetailCamera(id) {
+  selectCustomCameraView(id);
+}
+
+function updateAnimationDetailCameraSize() {
+  const view = customCameraViewById(els.animationDetailCameraSelect?.value) || customCameraViewById();
+  if (!view) return;
+  view.exportWidth = Math.max(64, Math.min(2048, Math.round(Number(els.animationDetailWidthInput?.value) || 512)));
+  view.exportHeight = Math.max(64, Math.min(2048, Math.round(Number(els.animationDetailHeightInput?.value) || 512)));
+  syncAnimationDetailCameraOptions();
 }
 
 function lowPolyPlayerAvatarGeometryData() {
@@ -5317,6 +5371,8 @@ function restoreCustomCameraViews(cameraState = {}) {
       target: validCameraVector(view?.target, [0, 1, 0]),
       up: validCameraVector(view?.up, [0, 1, 0]),
       fov: Math.max(10, Math.min(120, Number(view?.fov) || 55)),
+      exportWidth: Math.max(64, Math.min(2048, Math.round(Number(view?.exportWidth) || 512))),
+      exportHeight: Math.max(64, Math.min(2048, Math.round(Number(view?.exportHeight) || 512))),
       positionOffset: validCameraVector(view?.positionOffset, [0, 0, 0]),
       localDirection: validCameraVector(view?.localDirection, [0, 0, -1]),
       localUp: validCameraVector(view?.localUp, [0, 1, 0])
@@ -5460,13 +5516,15 @@ function restoreOrthographicWorkView() {
   return true;
 }
 
-function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false, includeBones = false, restoreRigOpacity = false } = {}) {
+function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false, includeBones = false, restoreRigOpacity = false, cameraPoseOverride = null, outputWidth = null, outputHeight = null } = {}) {
   const oldPosition = camera.position.clone();
   const oldUp = camera.up.clone();
   const oldTarget = orbit.target.clone();
   const oldDistance = oldPosition.distanceTo(oldTarget);
   const oldNear = camera.near;
   const oldFar = camera.far;
+  const oldFov = camera.fov;
+  const oldAspect = camera.aspect;
   const oldTransformVisible = transform.visible;
   const oldFaceMarkerVisible = faceMarker.visible;
   const oldSurfaceComponentMarkerVisible = surfaceComponentMarker.visible;
@@ -5553,13 +5611,30 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   }
   renderer.setPixelRatio(Math.min(4, oldPixelRatio * Math.max(1, Number(qualityScale) || 1)));
   resize();
-  setCameraToView(viewName, {
-    useCurrentZoom: useCurrentZoom ?? (els.useCurrentZoomInShotsInput?.checked ?? true),
-    currentDistance: oldDistance,
-    bounds,
-    directionOverride,
-    centerOverride
-  });
+  const fixedWidth = Number(outputWidth) > 0 ? Math.max(64, Math.min(2048, Math.round(Number(outputWidth)))) : null;
+  const fixedHeight = Number(outputHeight) > 0 ? Math.max(64, Math.min(2048, Math.round(Number(outputHeight)))) : null;
+  if (fixedWidth && fixedHeight) {
+    renderer.setPixelRatio(1);
+    renderer.setSize(fixedWidth, fixedHeight, false);
+    camera.aspect = fixedWidth / fixedHeight;
+    camera.updateProjectionMatrix();
+  }
+  if (cameraPoseOverride) {
+    camera.position.copy(cameraPoseOverride.position);
+    camera.up.copy(cameraPoseOverride.up);
+    orbit.target.copy(cameraPoseOverride.target);
+    camera.fov = Math.max(10, Math.min(120, Number(cameraPoseOverride.fov) || oldFov));
+    camera.lookAt(orbit.target);
+    camera.updateProjectionMatrix();
+  } else {
+    setCameraToView(viewName, {
+      useCurrentZoom: useCurrentZoom ?? (els.useCurrentZoomInShotsInput?.checked ?? true),
+      currentDistance: oldDistance,
+      bounds,
+      directionOverride,
+      centerOverride
+    });
+  }
   if (orthographic) {
     const fitBox = bounds?.isBox3 ? bounds : sceneBounds();
     const fitSize = fitBox.getSize(new THREE.Vector3());
@@ -5638,6 +5713,8 @@ function captureView(viewName = "iso", { download = false, prefix = currentProje
   camera.up.copy(oldUp);
   camera.near = oldNear;
   camera.far = oldFar;
+  camera.fov = oldFov;
+  camera.aspect = oldAspect;
   camera.projectionMatrix.copy(oldProjectionMatrix);
   orbit.target.copy(oldTarget);
   camera.lookAt(oldTarget);
@@ -6008,6 +6085,63 @@ async function composeAnimationMotionSheet(viewName, shots, clipLabel, prefix) {
   const clipSlug = clipLabel.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "animation";
   const fileName = `${prefix}-${clipSlug}-${viewName}-sprite-sheet.png`;
   return { fileName, width: sheet.width, height: sheet.height, frameWidth: cellWidth, frameHeight: cellHeight, columns, rows, dataUrl: sheet.toDataURL("image/png"), view: viewName, shots };
+}
+
+async function composeAnimationDetailSheet(view, shots, clipLabel, prefix) {
+  const images = await Promise.all(shots.map(shot => loadShotImage(shot.dataUrl)));
+  const cellWidth = Math.max(64, Math.min(2048, Math.round(Number(view.exportWidth) || images[0]?.width || 512)));
+  const cellHeight = Math.max(64, Math.min(2048, Math.round(Number(view.exportHeight) || images[0]?.height || 512)));
+  const columns = Math.min(images.length, Math.max(1, Math.floor(30000 / cellWidth)));
+  const rows = Math.ceil(images.length / columns);
+  const sheet = document.createElement("canvas");
+  sheet.width = cellWidth * columns;
+  sheet.height = cellHeight * rows;
+  const context = sheet.getContext("2d");
+  context.clearRect(0, 0, sheet.width, sheet.height);
+  images.forEach((image, index) => context.drawImage(image, 0, 0, image.width, image.height, (index % columns) * cellWidth, Math.floor(index / columns) * cellHeight, cellWidth, cellHeight));
+  const slug = value => String(value || "detail").toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "detail";
+  const fileName = `${prefix}-${slug(clipLabel)}-${slug(view.name)}-detail-sheet.png`;
+  return { fileName, width: sheet.width, height: sheet.height, frameWidth: cellWidth, frameHeight: cellHeight, columns, rows, dataUrl: sheet.toDataURL("image/png"), view: view.id, shots };
+}
+
+async function saveAnimationDetailMotionSheet({ cameraId = null, frameCount = 8, range = "end", includeBones = false, download = true } = {}) {
+  if (!animationHasKeys()) { log("Add at least one keyed pose before exporting a detail sheet."); return null; }
+  const view = customCameraViewById(cameraId || els.animationDetailCameraSelect?.value) || customCameraViewById();
+  if (!view) { log("Add an AI detail camera first."); return null; }
+  const originalFrame = animationState.frame;
+  const originalPlaying = animationState.playing;
+  const frames = animationMotionSheetFrames(frameCount, animationExportEndFrame(range));
+  const prefix = currentProjectBaseName();
+  const clip = animationState.clips?.[animationState.activeClipId];
+  const clipLabel = String(clip?.name || animationState.activeClipId || "animation").trim();
+  animationState.playing = false;
+  try {
+    await waitForSceneTextures();
+    const shots = [];
+    for (const frame of frames) {
+      animationSetFrame(frame, { render: false });
+      if (includeBones) { rebuildBoneVisuals(); boneRigGroup.visible = true; }
+      const pose = resolvedCustomCameraPose(view);
+      shots.push({ ...captureView("detail", {
+        download: false,
+        prefix,
+        transparent: true,
+        includeBones,
+        restoreRigOpacity: true,
+        cameraPoseOverride: { ...pose, fov: view.fov },
+        outputWidth: view.exportWidth || 512,
+        outputHeight: view.exportHeight || 512
+      }), frame });
+    }
+    const sheet = await composeAnimationDetailSheet(view, shots, clipLabel, prefix);
+    if (download) downloadDataUrl(sheet.fileName, sheet.dataUrl);
+    if (els.animationDetailCameraStatus) els.animationDetailCameraStatus.textContent = `Saved ${view.name} · ${sheet.frameWidth} × ${sheet.frameHeight} · ${frames.length} frames`;
+    log(`Saved focused animation sheet from ${view.name}.`, { clip: clipLabel, frames, frameSize: `${sheet.frameWidth}x${sheet.frameHeight}`, fileName: sheet.fileName });
+    return sheet;
+  } finally {
+    animationState.playing = originalPlaying;
+    animationSetFrame(originalFrame);
+  }
 }
 
 async function saveAnimationMotionSheets({ view = "left", frameCount = 8, range = "end", download = true, qualityScale = 1, includeBones = false } = {}) {

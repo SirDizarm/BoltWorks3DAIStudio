@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.58.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.77.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -34,6 +34,9 @@ const autoSaveUpdateSource = moduleSources.get("autosave-update") || "";
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolDockingSource}\n${applicationSource}`;
 
 for (const gameplayPreviewBehavior of [
+  "function playGameplayPreview()",
+  "function pauseGameplayPreview()",
+  "if (gameplayPlaybackPaused) return;",
   "function syncGameplayFollowCamera()",
   "function buildGameplayArena()",
   "function gameplayMovementBlocked(nextOffset)",
@@ -43,11 +46,15 @@ for (const gameplayPreviewBehavior of [
   'updateGameplayArenaStatus("Projectile dodged!")',
   "function startGameplayJump()",
   "function startGameplayUpperBodyAction(kind",
+  "gameplayUpperBodyAction.startedAt = performance.now()",
+  'const offensiveActionActive = ["slash", "thrust"].includes(gameplayUpperBodyAction?.kind)',
+  "gameplayMouseButtons.has(2) && !offensiveActionActive",
   "function releaseGameplayUpperBodyAction(kind",
   "function applyGameplayUpperBodyAction(poses)",
-  "const phase = Math.min(1, elapsedMs / durationMs)",
   "const reachedLastFrame = elapsedMs >= durationMs",
-  "reachedLastFrame && action.holdLastFrame ? finalFrame",
+  'const loopWhileHeld = action.held && ["slash", "thrust"].includes(action.kind)',
+  "(elapsedMs % durationMs) / durationMs",
+  "reachedLastFrame && action.holdLastFrame && !loopWhileHeld ? finalFrame",
   "holdLastFrame: true",
   "gameplayUpperBodyAction.held = false",
   "function applyGameplayCrawlEquipmentStow()",
@@ -70,6 +77,40 @@ for (const gameplayPreviewBehavior of [
   if (!panelsSource.includes(gameplayPreviewBehavior)) {
     throw new Error(`Gameplay Preview must keep a centered follow camera and layer combat above independent locomotion: ${gameplayPreviewBehavior}`);
   }
+}
+if (!panelsSource.includes("if (document.pointerLockElement === gameplayCanvas) return;")
+    || !panelsSource.includes("shoulder|clavicle|arm|forearm|elbow|hand|wrist|finger|thumb|neck|head|skull|sword|shield")
+    || panelsSource.includes("root|pelvis|hips?|thigh|upper leg|shin|calf|lower leg|ankle|foot|feet|toe")) {
+  throw new Error("Gameplay combat must preserve held movement input and stay isolated from torso and leg locomotion.");
+}
+if (!documentSource.includes('id="gameplayPreviewPlayBtn"')
+    || !documentSource.includes('id="gameplayPreviewPauseBtn"')
+    || !viewportSource.includes('gameplayPreviewPlayBtn: document.querySelector("#gameplayPreviewPlayBtn")')) {
+  throw new Error("Gameplay Preview must expose its own permanent Play and Pause controls.");
+}
+if (!panelsSource.includes("characterYaw.clone().multiply(authoredRotation)") || panelsSource.includes("pose.rotation.y += gameplayCharacterYaw")) {
+  throw new Error("Gameplay steering must compose world yaw with authored forward lean without introducing sideways sprint roll.");
+}
+if (!panelsSource.includes("pose.rotation?.isEuler")
+    || !panelsSource.includes("pose.rotation = new THREE.Euler().setFromQuaternion")) {
+  throw new Error("Gameplay playback must normalize imported Vector3 root rotations before composing character yaw.");
+}
+if (!documentSource.includes('id="gameplayStrideSyncInput" type="checkbox" checked')
+    || !documentSource.includes('id="gameplayStrideScaleInput" type="range"')
+    || !panelsSource.includes("function gameplayClipStrideSpeed(kind)")
+    || !panelsSource.includes("strideDistance / cycleSeconds * gameplayStrideScale()")
+    || !panelsSource.includes("function advanceGameplayCharacterAnimation(deltaSeconds")
+    || !panelsSource.includes("gameplayLocomotionClock * fps")
+    || !panelsSource.includes("if (gameplayPreviewVisible()) updateGameplayPreview(gameplayDelta);\n  else updateAnimation(gameplayDelta);")) {
+  throw new Error("Gameplay Preview must synchronize ground travel and animation playback to the authored foot cycle, with an adjustable stride length.");
+}
+if (riggingSource.includes("gameplayAnimationPlaybackRate") || panelsSource.includes("function gameplayAnimationPlaybackRate")) {
+  throw new Error("Gameplay locomotion must own its continuous preview clock instead of depending on the editor timeline playback flag.");
+}
+if (!panelsSource.includes("animationState.keys === clip?.keys")
+    || !riggingSource.includes("const requestedClipLoaded = id === animationState.activeClipId")
+    || !riggingSource.includes("if (id !== animationState.activeClipId) syncActiveAnimationClip();")) {
+  throw new Error("Gameplay clip loading must recover stale active-clip IDs without overwriting the clip's real keyed animation.");
 }
 if (panelsSource.includes("gameplayCharacterYaw = Math.atan2(direction.x, direction.z)")) {
   throw new Error("Gameplay strafing must not rewrite character yaw and spin the rear follow camera.");
@@ -1589,7 +1630,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.58.js?v=49.60.58"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.77.js?v=49.60.77"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1641,7 +1682,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.58",
+  "tool-docking.js?v=49.60.77",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2442,8 +2483,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.58 Experimental") || !documentSource.includes("v49.60.58 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.58 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.77 Experimental") || !documentSource.includes("v49.60.77 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.77 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2898,8 +2939,49 @@ if (!moduleSources.get("meshes")?.includes('[["FRONT", "front"], ["BACK", "back"
   || !moduleSources.get("meshes")?.includes("mesh.renderOrder = -900")) {
   throw new Error("World directions must use readable depth-tested markings on the grid.");
 }
-if (moduleSources.get("rigging")?.includes('setBoneGizmoEnabled(true, "rotate")')) {
-  throw new Error("Selecting a bone must not reactivate Rotate or its joystick.");
+const rotationButtonRiggingSource = moduleSources.get("rigging") || "";
+const nodePickerSource = rotationButtonRiggingSource.slice(rotationButtonRiggingSource.indexOf("function selectAnimationNodeBone"), rotationButtonRiggingSource.indexOf("function showAnimationNodeRotationTool"));
+if (nodePickerSource.includes('setBoneGizmoEnabled(true, "rotate")')) {
+  throw new Error("Selecting a bone from the timeline picker must not reactivate Rotate or its joystick.");
+}
+if (!rotationButtonRiggingSource.includes("function showAnimationNodeRotationTool") || !rotationButtonRiggingSource.includes('setBoneGizmoEnabled(true, "rotate")')) {
+  throw new Error("Selected Node must provide an explicit button for showing the rotation tool.");
+}
+if (!documentSource.includes('id="animationNodeSaveFrameBtn"')
+  || !rotationButtonRiggingSource.includes("function keySelectedBonePoseAtCurrentFrame")
+  || !rotationButtonRiggingSource.includes("list.findIndex(item => item.frame === animationState.frame)")) {
+  throw new Error("Selected Node must save or replace only the selected bone pose at the current frame.");
+}
+if (!documentSource.includes('id="animationKeyCopyBtn"')
+  || !documentSource.includes('id="animationKeyPasteMirroredBtn"')
+  || !rotationButtonRiggingSource.includes("function copySelectedAnimationKeys")
+  || !rotationButtonRiggingSource.includes("function pasteCopiedAnimationKeys")
+  || !rotationButtonRiggingSource.includes("animationState.frame + entry.frame - animationKeyClipboard.originFrame")
+  || !rotationButtonRiggingSource.includes("targetRestPosition.x - positionDelta[0]")) {
+  throw new Error("The timeline must copy selected keys and paste them at the playhead on the same or mirrored bones.");
+}
+if (!documentSource.includes('aria-label="Animation timeline playhead"')
+  || !rotationButtonRiggingSource.includes("function selectAllAnimationKeysAtCurrentFrame")
+  || !moduleSources.get("panels")?.includes('animationScrubber?.addEventListener("pointerup"')) {
+  throw new Error("Clicking the animation playhead must select every keyed bone at its current frame.");
+}
+if (!documentSource.includes('id="animationDetailFrameLabel"')
+  || !rotationButtonRiggingSource.includes('els.animationDetailFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`')) {
+  throw new Error("AI Detail Cameras must display the same live frame readout as the animation timeline.");
+}
+if (!documentSource.includes('id="animationNodeRotX" type="number" step="0.1"')
+  || !documentSource.includes('id="animationNodePosX" type="number" step="0.001"')
+  || !rotationButtonRiggingSource.includes("function applyAnimationNodeExactValues")) {
+  throw new Error("Selected Node must support editable exact position and one-decimal rotation values.");
+}
+const exactPoseSource = rotationButtonRiggingSource.slice(rotationButtonRiggingSource.indexOf("function applyAnimationNodeExactValues"), rotationButtonRiggingSource.indexOf("function keySelectedBonePoseAtCurrentFrame"));
+if (!exactPoseSource.includes("channel.position.clone()")
+  || exactPoseSource.includes("prepareLooseBoneHierarchy()")
+  || exactPoseSource.includes("commitLooseBoneRotation")) {
+  throw new Error("Exact animation rotation must preserve the selected bone position and must not rebase the fitted rig.");
+}
+if (documentSource.includes('id="animationNodePosOffsetX"') || documentSource.includes('id="animationNodeRotOffsetX"')) {
+  throw new Error("Selected Node should use direct visual pose saving instead of manual offset fields.");
 }
 if (!moduleSources.get("rigging")?.includes('`Hand ${side}`, `Forearm ${side}`')
   || !moduleSources.get("rigging")?.includes('`Thumb ${side}`, `Index ${side}`, `Middle ${side}`, `Ring ${side}`, `Pinky ${side}`')) {

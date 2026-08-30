@@ -74,6 +74,40 @@ function gameplayPreviewVisible() {
   return !!(els.gameplayPreview && !els.gameplayPreview.hidden && gameplayRenderer);
 }
 
+function syncGameplayPlaybackUi() {
+  if (els.gameplayPreviewPlayBtn) {
+    els.gameplayPreviewPlayBtn.disabled = !gameplayPlaybackPaused;
+    els.gameplayPreviewPlayBtn.classList.toggle("active", !gameplayPlaybackPaused);
+  }
+  if (els.gameplayPreviewPauseBtn) {
+    els.gameplayPreviewPauseBtn.disabled = gameplayPlaybackPaused;
+    els.gameplayPreviewPauseBtn.classList.toggle("active", gameplayPlaybackPaused);
+  }
+}
+
+function playGameplayPreview() {
+  if (!gameplayPreviewVisible()) return false;
+  gameplayPlaybackPaused = false;
+  gameplayLastFrame = performance.now();
+  setGameplayCharacterAnimation(gameplayLocomotionKind || "idle");
+  advanceGameplayCharacterAnimation(0, { forcePose: true });
+  syncGameplayPlaybackUi();
+  updateGameplayArenaStatus("Playing — click the player screen to take control");
+  return true;
+}
+
+function pauseGameplayPreview() {
+  if (!gameplayPreviewVisible()) return false;
+  gameplayPlaybackPaused = true;
+  gameplayKeys.clear();
+  gameplayMouseButtons.clear();
+  stopGameplayUpperBodyAction();
+  animationState.playing = false;
+  syncGameplayPlaybackUi();
+  updateGameplayArenaStatus("Paused — press Play to continue");
+  return true;
+}
+
 function resetGameplayPreviewCamera() {
   if (!gameplayRenderer) return;
   const bounds = sceneBounds();
@@ -109,7 +143,7 @@ function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Click to control · Mouse steer · Middle mouse orbit · WASD move · Shift run · Space jump · Left click slash · Right click shield block · B/F reserved for spells · Crawl disabled · Preview Tools: optional systems/look direction · Scroll: speed ${speedLabel} · Esc releases control`;
+    `Press Play, then click to control · Mouse steer · Middle mouse orbit · WASD move · Shift run · Space jump · Left click slash · Right click shield block · B/F reserved for spells · Crawl disabled · Preview Tools: optional systems/look direction · Scroll: speed ${speedLabel} · Esc releases control`;
 }
 
 function updateGameplayArenaStatus(message = "") {
@@ -278,12 +312,90 @@ function gameplayAnimationClipId(kind) {
     (patterns[kind] || []).some(pattern => pattern.test(clip?.name || "")))?.[0] || null;
 }
 
+function gameplayStrideSyncEnabled() {
+  return els.gameplayStrideSyncInput?.checked !== false;
+}
+
+function gameplayStrideScale() {
+  return THREE.MathUtils.clamp(Number(els.gameplayStrideScaleInput?.value) || 1, .5, 1.5);
+}
+
+function gameplayLegBone(side, part) {
+  const sidePattern = side === "left" ? /(^|\s)(left|l)(\s|$)/ : /(^|\s)(right|r)(\s|$)/;
+  const partPattern = part === "thigh" ? /thigh|upper leg/ : part === "shin" ? /shin|calf|lower leg/ : /foot|ankle/;
+  return rigBones.find(bone => {
+    const label = `${bone.name || ""} ${bone.id || ""}`.toLowerCase().replace(/[_-]+/g, " ");
+    return sidePattern.test(label) && partPattern.test(label);
+  }) || null;
+}
+
+function gameplayLegLength(side) {
+  const thigh = gameplayLegBone(side, "thigh");
+  const shin = gameplayLegBone(side, "shin");
+  const foot = gameplayLegBone(side, "foot");
+  if (!thigh || !shin || !foot) return 0;
+  const point = bone => bone.bindPosition || bone.position;
+  return point(thigh).distanceTo(point(shin)) + point(shin).distanceTo(point(foot));
+}
+
+function gameplayClipStrideSpeed(kind) {
+  const clipId = gameplayAnimationClipId(kind);
+  const clip = clipId ? animationState.clips?.[clipId] : null;
+  if (!clip) return 0;
+  const fps = Math.max(1, Number(clip.fps) || animationState.fps || 24);
+  const cycleSeconds = Math.max(1, Number(clip.end) || animationState.end || 1) / fps;
+  const samples = ["left", "right"].map(side => {
+    const thigh = gameplayLegBone(side, "thigh");
+    const keys = thigh ? clip.keys?.[thigh.id] || [] : [];
+    const values = keys.map(key => Number(key.rotation?.[0])).filter(Number.isFinite);
+    const swing = values.length > 1 ? Math.max(...values) - Math.min(...values) : 0;
+    return { length: gameplayLegLength(side), swing };
+  }).filter(sample => sample.length > 0);
+  if (!samples.length) return 0;
+  const legLength = samples.reduce((sum, sample) => sum + sample.length, 0) / samples.length;
+  const authoredSwing = samples.reduce((largest, sample) => Math.max(largest, sample.swing), 0);
+  // One complete gait cycle contains two steps. The thigh's authored forward/back
+  // arc and the actual rig leg length provide a stable model-scale stride estimate.
+  const strideDistance = 2 * legLength * Math.sin(THREE.MathUtils.clamp(authoredSwing || .65, .2, 2.2) / 2);
+  return strideDistance / cycleSeconds * gameplayStrideScale();
+}
+
 function setGameplayCharacterAnimation(kind) {
   const clipId = gameplayAnimationClipId(kind);
   if (!clipId) return false;
+  const clip = animationState.clips?.[clipId];
+  const clipLoaded = animationState.activeClipId === clipId
+    && animationState.keys === clip?.keys
+    && animationHasKeys();
+  const changed = gameplayLocomotionKind !== kind || !clipLoaded;
   gameplayLocomotionKind = kind;
-  if (tPoseFittingMode || animationState.activeClipId !== clipId) setActiveAnimationClip(clipId);
+  if (tPoseFittingMode || !clipLoaded) setActiveAnimationClip(clipId);
+  if (changed) {
+    gameplayLocomotionClock = 0;
+    syncAnimationClipUi();
+    if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();
+  }
   animationState.playing = true;
+  return true;
+}
+
+function advanceGameplayCharacterAnimation(deltaSeconds, { forcePose = false } = {}) {
+  if (gameplayPlaybackPaused) return false;
+  const clipId = gameplayAnimationClipId(gameplayLocomotionKind);
+  const clip = clipId ? animationState.clips?.[clipId] : null;
+  if (!clip || animationState.activeClipId !== clipId || !animationHasKeys()) return false;
+  const rate = gameplayStrideSyncEnabled() && ["walk", "run"].includes(gameplayLocomotionKind)
+    ? gameplaySpeedMultiplier
+    : 1;
+  gameplayLocomotionClock += Math.max(0, Number(deltaSeconds) || 0) * rate;
+  const fps = Math.max(1, Number(clip.fps) || animationState.fps || 24);
+  const frameCount = Math.max(1, (Number(clip.end) || animationState.end || 1) + 1);
+  const frame = Math.floor(gameplayLocomotionClock * fps) % frameCount;
+  animationState.playing = true;
+  animationState.lastTime = 0;
+  if (forcePose || frame !== animationState.frame) {
+    animationSetFrame(frame, { render: false, lightweightPanel: true });
+  }
   return true;
 }
 
@@ -301,7 +413,16 @@ function gameplayCombatClipId(kind) {
 function startGameplayUpperBodyAction(kind, { held = false } = {}) {
   const clipId = gameplayCombatClipId(kind);
   if (!clipId) return false;
-  if (gameplayUpperBodyAction?.kind === kind) return false;
+  // A fresh combat click restarts the strike even if the previous swing has
+  // not quite finished. This keeps repeated attacks responsive while the
+  // locomotion clock continues independently underneath them.
+  if (gameplayUpperBodyAction?.kind === kind) {
+    gameplayUpperBodyAction.startedAt = performance.now();
+    gameplayUpperBodyAction.held = held;
+    gameplayUpperBodyAction.holdLastFrame = true;
+    if (kind === "slash" || kind === "thrust") hitGameplayTargets();
+    return true;
+  }
   gameplayUpperBodyAction = { kind, clipId, startedAt: performance.now(), held, holdLastFrame: true };
   if (kind === "slash" || kind === "thrust") hitGameplayTargets();
   animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
@@ -323,7 +444,10 @@ function releaseGameplayUpperBodyAction(kind = null) {
 
 function gameplayUpperBodyBone(bone) {
   const label = `${bone?.id || ""} ${bone?.name || ""}`.toLowerCase().replace(/[_-]+/g, " ");
-  return !/(^|\s)(root|pelvis|hips?|thigh|upper leg|shin|calf|lower leg|ankle|foot|feet|toe)(\s|$)/.test(label);
+  // Combat is an additive arm/weapon layer. Do not animate Root, pelvis,
+  // spine, chest, or any leg bone: imported rigs sometimes parent a pelvis
+  // below the torso, so changing the torso could otherwise disturb the feet.
+  return /(shoulder|clavicle|arm|forearm|elbow|hand|wrist|finger|thumb|neck|head|skull|sword|shield)/.test(label);
 }
 
 function sampleGameplayClipPose(clip, bone, frame) {
@@ -365,11 +489,14 @@ function applyGameplayUpperBodyAction(poses) {
     gameplayUpperBodyAction = null;
     return;
   }
-  // Every combat action plays once. If its input remains held, sample the exact
-  // authored final frame until release instead of wrapping back to frame zero.
+  // Offensive actions repeat for as long as their button stays down. Defensive
+  // blocks still play once and hold their authored impact pose until release.
   const finalFrame = Math.max(1, Number(clip.end) || 1);
-  const phase = Math.min(1, elapsedMs / durationMs);
-  const frame = reachedLastFrame && action.holdLastFrame ? finalFrame : phase * finalFrame;
+  const loopWhileHeld = action.held && ["slash", "thrust"].includes(action.kind);
+  const phase = loopWhileHeld
+    ? (elapsedMs % durationMs) / durationMs
+    : Math.min(1, elapsedMs / durationMs);
+  const frame = reachedLastFrame && action.holdLastFrame && !loopWhileHeld ? finalFrame : phase * finalFrame;
   for (const bone of rigBones) {
     if (!gameplayUpperBodyBone(bone)) continue;
     const actionPose = sampleGameplayClipPose(clip, bone, frame);
@@ -383,12 +510,32 @@ function applyGameplayUpperBodyAction(poses) {
 function applyGameplayCharacterPreviewPose(poses) {
   if (!gameplayPreviewVisible() || !(poses instanceof Map)) return;
   applyGameplayUpperBodyAction(poses);
+  const characterYaw = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), gameplayCharacterYaw);
   for (const bone of rigBones.filter(candidate => !candidate.parentId)) {
     const pose = poses.get(bone.id);
     if (!pose) continue;
     pose.position.add(gameplayCharacterOffset);
     pose.position.y += gameplayJumpHeight;
-    pose.rotation.y += gameplayCharacterYaw;
+    // Steering is a world-space heading, while the clip's forward sprint lean
+    // is local to the character. Adding Euler Y directly after an X pitch can
+    // turn part of that pitch into a visible left/right roll. Compose the two
+    // rotations so forward lean follows the heading without banking.
+    // Older/imported projects can carry a root rotation as a Vector3. Convert
+    // it to an Euler before composing preview yaw; Vector3 has no
+    // setFromQuaternion method and previously stopped the entire play loop.
+    const rotationOrder = ["XYZ", "YXZ", "ZXY", "ZYX", "YZX", "XZY"].includes(pose.rotation?.order)
+      ? pose.rotation.order
+      : (bone.blockbenchLocalRotation ? "ZYX" : "XYZ");
+    const authoredEuler = pose.rotation?.isEuler
+      ? pose.rotation
+      : new THREE.Euler(
+        Number(pose.rotation?.x) || 0,
+        Number(pose.rotation?.y) || 0,
+        Number(pose.rotation?.z) || 0,
+        rotationOrder
+      );
+    const authoredRotation = new THREE.Quaternion().setFromEuler(authoredEuler);
+    pose.rotation = new THREE.Euler().setFromQuaternion(characterYaw.clone().multiply(authoredRotation), rotationOrder);
     bone.position.copy(pose.position);
     bone.rotation.copy(pose.rotation);
   }
@@ -404,6 +551,8 @@ function openGameplayPreview() {
   gameplayCameraOrbitOffset = 0;
   gameplayUpperBodyAction = null;
   gameplayLocomotionKind = "idle";
+  gameplayLocomotionClock = 0;
+  gameplayPlaybackPaused = true;
   gameplayJumpStartedAt = 0;
   gameplayJumpHeight = 0;
   gameplaySpeedMultiplier = 1;
@@ -414,6 +563,9 @@ function openGameplayPreview() {
   updateGameplayHint();
   updateGameplayArenaStatus("Click the player screen to take control");
   setGameplayCharacterAnimation("idle");
+  animationState.playing = false;
+  syncGameplayPlaybackUi();
+  updateGameplayArenaStatus("Paused — press Play to start");
   log("Opened Gameplay Preview. Locomotion controls the legs independently while mouse/F/B combat actions layer over the upper body.");
   return true;
 }
@@ -429,6 +581,7 @@ function closeGameplayPreview() {
   gameplayCameraOrbitOffset = 0;
   gameplayUpperBodyAction = null;
   gameplayLocomotionKind = "idle";
+  gameplayPlaybackPaused = true;
   gameplayCameraLocked = false;
   gameplayJumpStartedAt = 0;
   gameplayJumpHeight = 0;
@@ -464,9 +617,14 @@ function resizeGameplayPreview() {
 
 function updateGameplayPreview(deltaSeconds) {
   if (!gameplayPreviewVisible()) return;
+  if (gameplayPlaybackPaused) return;
   updateGameplayArena(deltaSeconds);
   const jumping = updateGameplayJump();
-  if (!gameplayCameraLocked) return;
+  if (!gameplayCameraLocked) {
+    setGameplayCharacterAnimation("idle");
+    advanceGameplayCharacterAnimation(deltaSeconds);
+    return;
+  }
   syncGameplayFollowCamera();
   // Movement uses the character's stable forward axis. A/D are strafes and do
   // not rotate the rig; this also prevents the rear follow camera and character
@@ -479,23 +637,27 @@ function updateGameplayPreview(deltaSeconds) {
   if (gameplayKeys.has("KeyD")) movement.add(right);
   if (gameplayKeys.has("KeyA")) movement.sub(right);
   const running = gameplayKeys.has("ShiftLeft") || gameplayKeys.has("ShiftRight");
-  if (gameplayMouseButtons.has(2)) {
+  const offensiveActionActive = ["slash", "thrust"].includes(gameplayUpperBodyAction?.kind);
+  if (gameplayMouseButtons.has(2) && !offensiveActionActive) {
     if (gameplayUpperBodyAction?.kind !== "shieldBlock") startGameplayUpperBodyAction("shieldBlock", { held: true });
   }
   if (jumping) setGameplayCharacterAnimation("jump");
   else if (movement.lengthSq()) setGameplayCharacterAnimation(running ? "run" : "walk");
   else setGameplayCharacterAnimation("idle");
-  if (movement.lengthSq()) {
+  const moving = movement.lengthSq() > 0;
+  if (moving) {
     const worldSize = sceneBounds().getSize(new THREE.Vector3()).length();
     const direction = movement.normalize();
     const gaitSpeed = running ? 1.35 : .72;
-    const speed = Math.max(.35, worldSize * .055) * gameplaySpeedMultiplier * gaitSpeed;
+    const matchedSpeed = gameplayStrideSyncEnabled() ? gameplayClipStrideSpeed(running ? "run" : "walk") : 0;
+    const legacySpeed = Math.max(.35, worldSize * .055) * gaitSpeed;
+    const speed = Math.max(.01, matchedSpeed || legacySpeed) * gameplaySpeedMultiplier;
     const step = direction.multiplyScalar(speed * deltaSeconds);
     const nextOffset = gameplayCharacterOffset.clone().add(step);
     if (!gameplayMovementBlocked(nextOffset)) gameplayCharacterOffset.copy(nextOffset);
     syncGameplayFollowCamera();
-    animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   }
+  advanceGameplayCharacterAnimation(deltaSeconds, { forcePose: moving || jumping });
 }
 
 function applyGameplayCrawlEquipmentStow() {
@@ -659,13 +821,18 @@ function animate() {
   const frameTime = performance.now();
   const gameplayDelta = Math.min(.05, Math.max(0, (frameTime - gameplayLastFrame) / 1000));
   gameplayLastFrame = frameTime;
-  updateAnimation(gameplayDelta);
+  // Gameplay owns its animation clock and must advance before any editor-only
+  // rendering or panel work. A slow or interrupted editor pass must never turn
+  // a held movement key into a one-frame step.
+  if (gameplayPreviewVisible()) updateGameplayPreview(gameplayDelta);
+  else updateAnimation(gameplayDelta);
   resize();
   syncFlat2dLook();
   syncLiveMirrorPreview();
   boneGridAxisGroup.visible = !!els.showGridInput?.checked;
   syncActiveJointCamera();
   orbit.update();
+  syncBoneDegreeHud();
   syncCameraDirectorVisibility();
   syncSelectionOutlineTransforms();
   updateReferenceViewFollowing();
@@ -693,7 +860,6 @@ function animate() {
   surfaceTransform.visible = surfaceTransformWasVisible;
   scene.background = mainBackground;
   scene.fog = mainFog;
-  updateGameplayPreview(gameplayDelta);
   renderGameplayPreview();
 }
 
@@ -937,16 +1103,52 @@ els.animationClipSelect?.addEventListener("change", event => setActiveAnimationC
 els.animationClipAddBtn?.addEventListener("click", addAnimationClip);
 els.animationClipDeleteBtn?.addEventListener("click", deleteActiveAnimationClip);
 els.animationScrubber?.addEventListener("input", event => animationSetFrame(event.target.value));
+els.animationScrubber?.addEventListener("pointerup", event => selectAllAnimationKeysAtCurrentFrame({ add: event.ctrlKey || event.metaKey }));
 els.animationKeyBtn?.addEventListener("click", keyAnimationPose);
 els.animationDeleteFrameBtn?.addEventListener("click", deleteAnimationFrameKeys);
 els.animationClearBtn?.addEventListener("click", () => { restoreAnimationBindPose(); animationState.keys = {}; syncActiveAnimationClip(); animationState.frame = 0; animationState.playing = false; updateAnimationPanel(); });
 els.animationExportBtn?.addEventListener("click", exportAnimationJson);
+els.animationNodeSaveFrameBtn?.addEventListener("click", keySelectedBonePoseAtCurrentFrame);
+els.animationKeyCopyBtn?.addEventListener("click", copySelectedAnimationKeys);
+els.animationKeyPasteBtn?.addEventListener("click", () => pasteCopiedAnimationKeys({ mirrored: false }));
+els.animationKeyPasteMirroredBtn?.addEventListener("click", () => pasteCopiedAnimationKeys({ mirrored: true }));
+function bindAnimationNodeExactInput(input, kind) {
+  input?.addEventListener("change", () => applyAnimationNodeExactValues(kind));
+  input?.addEventListener("keydown", event => {
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    applyAnimationNodeExactValues(kind);
+  });
+}
+for (const input of [els.animationNodePosX, els.animationNodePosY, els.animationNodePosZ]) bindAnimationNodeExactInput(input, "position");
+for (const input of [els.animationNodeRotX, els.animationNodeRotY, els.animationNodeRotZ]) bindAnimationNodeExactInput(input, "rotation");
+els.animationNodeBoneSelect?.addEventListener("change", event => selectAnimationNodeBone(event.target.value));
+els.animationNodeShowMovementBtn?.addEventListener("click", showAnimationNodeMovementTool);
+els.animationNodeShowRotationBtn?.addEventListener("click", showAnimationNodeRotationTool);
 els.animationSheetExportBtn?.addEventListener("click", async () => saveAnimationMotionSheets({
   view: els.animationSheetViewSelect?.value || "left",
   frameCount: Number(els.animationSheetFramesInput?.value) || 8,
   range: els.animationExportRangeSelect?.value || "end",
   includeBones: !!els.animationExportBonesInput?.checked
 }));
+els.animationDetailCameraSelect?.addEventListener("change", event => selectAnimationDetailCamera(event.target.value));
+els.animationDetailCameraAddBtn?.addEventListener("click", addAnimationDetailCameraView);
+els.animationDetailCameraViewBtn?.addEventListener("click", () => activateCustomCameraView(els.animationDetailCameraSelect?.value));
+els.animationDetailCameraUpdateBtn?.addEventListener("click", () => {
+  selectAnimationDetailCamera(els.animationDetailCameraSelect?.value);
+  updateCustomCameraFromCurrentView();
+});
+els.animationDetailWidthInput?.addEventListener("change", updateAnimationDetailCameraSize);
+els.animationDetailHeightInput?.addEventListener("change", updateAnimationDetailCameraSize);
+els.animationDetailSheetExportBtn?.addEventListener("click", async () => {
+  updateAnimationDetailCameraSize();
+  await saveAnimationDetailMotionSheet({
+    cameraId: els.animationDetailCameraSelect?.value,
+    frameCount: Number(els.animationSheetFramesInput?.value) || 8,
+    range: els.animationExportRangeSelect?.value || "end",
+    includeBones: !!els.animationExportBonesInput?.checked
+  });
+});
 els.animationWebmExportBtn?.addEventListener("click", async () => {
   try { await exportAnimationWebm({ view: els.animationSheetViewSelect?.value || "left", range: els.animationExportRangeSelect?.value || "end", durationSeconds: Number(els.animationVideoDurationInput?.value) || 6, qualityScale: Number(els.animationVideoQualitySelect?.value) || 1.5, useSequence: !!els.animationUseSequenceInput?.checked, endOnLastClip: els.animationVideoLengthModeSelect?.value === "clips" }); }
   catch (error) { log(error?.message || "WebM export failed."); }
@@ -2397,6 +2599,8 @@ els.frontReferenceWorkBtn?.addEventListener("click", () => setOrthographicWorkVi
 els.sideReferenceWorkBtn?.addEventListener("click", () => setOrthographicWorkView("side"));
 els.workViewRestoreBtn?.addEventListener("click", restoreOrthographicWorkView);
 els.gameplayPreviewOpenBtn?.addEventListener("click", openGameplayPreview);
+els.gameplayPreviewPlayBtn?.addEventListener("click", playGameplayPreview);
+els.gameplayPreviewPauseBtn?.addEventListener("click", pauseGameplayPreview);
 els.gameplayPreviewResetBtn?.addEventListener("click", resetGameplayPreviewCamera);
 els.gameplayPreviewCloseBtn?.addEventListener("click", closeGameplayPreview);
 els.gameplayProjectilesInput?.addEventListener("change", () => {
@@ -2407,8 +2611,25 @@ els.gameplayProjectilesInput?.addEventListener("change", () => {
   }
   updateGameplayArenaStatus(els.gameplayProjectilesInput.checked ? "Projectiles enabled" : "Projectiles disabled");
 });
+function syncGameplayStrideControls() {
+  if (els.gameplayStrideScaleOutput) els.gameplayStrideScaleOutput.value = `${gameplayStrideScale().toFixed(2)}x`;
+  if (els.gameplayStrideScaleInput) els.gameplayStrideScaleInput.disabled = !gameplayStrideSyncEnabled();
+  updateGameplayArenaStatus(gameplayStrideSyncEnabled()
+    ? `Ground speed matched to feet · Stride ${gameplayStrideScale().toFixed(2)}x`
+    : "Manual preview movement speed");
+}
+els.gameplayStrideSyncInput?.addEventListener("change", syncGameplayStrideControls);
+els.gameplayStrideScaleInput?.addEventListener("input", syncGameplayStrideControls);
+syncGameplayStrideControls();
 gameplayCanvas?.addEventListener("click", () => {
   if (!gameplayPreviewVisible()) return;
+  if (gameplayPlaybackPaused) {
+    updateGameplayArenaStatus("Paused — press Play before taking control");
+    return;
+  }
+  // Once control is active this click belongs to combat. Clearing the key set
+  // here used to release a held W whenever the player attacked.
+  if (document.pointerLockElement === gameplayCanvas) return;
   gameplayKeys.clear();
   gameplayMouseButtons.clear();
   gameplayCameraLocked = true;
@@ -2484,6 +2705,7 @@ window.ModelerStudio = {
   activateCustomCameraView,
   saveQaSheet,
   saveAnimationMotionSheets,
+  saveAnimationDetailMotionSheet,
   exportAnimationWebm,
   exportAnimationMp4,
   exportObjParts,

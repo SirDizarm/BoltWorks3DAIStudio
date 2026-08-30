@@ -69,6 +69,9 @@ const rigPoseChannels = new Map();
 // Whether the rig is glued to the model (bound parts follow the bones live).
 let bonesGlued = false;
 const animationState = { fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {}, clips: { idle: { name: "Idle", fps: 24, end: 48, keys: {} } }, activeClipId: "idle", bindingRest: null };
+const animationKeySelection = new Set();
+let animationKeySelectionAnchor = null;
+let animationKeyClipboard = null;
 let bwsAnimationSequence = [];
 let activeSkinRuntime = null;
 const boneRaycaster = new THREE.Raycaster();
@@ -884,10 +887,20 @@ function setActiveAnimationClip(id) {
   if (!id || !animationState.clips?.[id]) return;
   const leavingTPose = tPoseFittingMode;
   if (leavingTPose) setTPoseFittingMode(false);
-  if (id === animationState.activeClipId && !leavingTPose) return;
-  syncActiveAnimationClip();
+  const requestedClip = animationState.clips[id];
+  const requestedClipLoaded = id === animationState.activeClipId
+    && animationState.keys === requestedClip.keys
+    && animationState.fps === Math.max(1, Math.min(120, Number(requestedClip.fps) || 24))
+    && animationState.end === Math.max(1, Math.min(9999, Number(requestedClip.end) || 48));
+  if (requestedClipLoaded && !leavingTPose) return;
+  // If the ID already matches but its live keys do not, recovery/import left a
+  // stale active-clip marker. Do not save that stale state over the real clip;
+  // reload the requested clip directly instead.
+  if (id !== animationState.activeClipId) syncActiveAnimationClip();
   const clip = animationState.clips[id];
   animationState.activeClipId = id;
+  animationKeySelection.clear();
+  animationKeySelectionAnchor = null;
   animationState.fps = Math.max(1, Math.min(120, Number(clip.fps) || 24));
   animationState.end = Math.max(1, Math.min(9999, Number(clip.end) || 48));
   animationState.keys = clip.keys && typeof clip.keys === "object" ? clip.keys : {};
@@ -1955,10 +1968,51 @@ function animationTimelineFrameFromPoint(clientX, rect) {
   const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
   return Math.round(ratio * animationState.end);
 }
+function selectAnimationKeyFromPointer(boneId, frame, event) {
+  const numericFrame = Number(frame) || 0;
+  const toggle = event.ctrlKey || event.metaKey;
+  if (event.shiftKey && animationKeySelectionAnchor) {
+    if (!toggle) animationKeySelection.clear();
+    const anchorBoneIndex = rigBones.findIndex(bone => bone.id === animationKeySelectionAnchor.boneId);
+    const targetBoneIndex = rigBones.findIndex(bone => bone.id === boneId);
+    const firstBoneIndex = Math.max(0, Math.min(anchorBoneIndex, targetBoneIndex));
+    const lastBoneIndex = Math.max(anchorBoneIndex, targetBoneIndex);
+    const firstFrame = Math.min(animationKeySelectionAnchor.frame, numericFrame);
+    const lastFrame = Math.max(animationKeySelectionAnchor.frame, numericFrame);
+    for (const bone of rigBones.slice(firstBoneIndex, lastBoneIndex + 1)) {
+      for (const key of animationState.keys[bone.id] || []) {
+        if (key.frame >= firstFrame && key.frame <= lastFrame) animationKeySelection.add(animationKeySelectionId(bone.id, key.frame));
+      }
+    }
+  } else {
+    const id = animationKeySelectionId(boneId, numericFrame);
+    if (!toggle) animationKeySelection.clear();
+    if (toggle && animationKeySelection.has(id)) animationKeySelection.delete(id);
+    else animationKeySelection.add(id);
+    animationKeySelectionAnchor = { boneId, frame: numericFrame };
+  }
+  selectedBoneId = boneId;
+  animationSetFrame(numericFrame);
+}
+function selectAllAnimationKeysAtCurrentFrame({ add = false } = {}) {
+  if (!add) animationKeySelection.clear();
+  let selected = 0;
+  for (const bone of rigBones) {
+    for (const key of animationState.keys[bone.id] || []) {
+      if (Number(key.frame) !== animationState.frame) continue;
+      animationKeySelection.add(animationKeySelectionId(bone.id, key.frame));
+      selected += 1;
+    }
+  }
+  animationKeySelectionAnchor = null;
+  updateAnimationPanel();
+  if (selected) log(`Selected all ${selected} keyed bones at frame ${animationState.frame}.`);
+  else log(`Frame ${animationState.frame} has no animation keys to select.`);
+}
 function bindAnimationTimelineEvents() {
   els.animationTrackList.querySelectorAll("[data-animation-frame]").forEach(button => button.addEventListener("click", event => {
     event.stopPropagation();
-    animationSetFrame(button.dataset.animationFrame);
+    selectAnimationKeyFromPointer(button.getAttribute("data-animation-key-bone"), button.dataset.animationFrame, event);
   }));
   els.animationTrackList.querySelectorAll("[data-animation-bone]").forEach(button => button.addEventListener("click", () => {
     selectedBoneId = button.dataset.animationBone || null;
@@ -1969,6 +2023,10 @@ function bindAnimationTimelineEvents() {
   els.animationTrackList.querySelectorAll("[data-animation-lane]").forEach(lane => lane.addEventListener("pointerdown", event => {
     if (event.button !== 0 || event.target.closest("[data-animation-frame]")) return;
     event.preventDefault();
+    if (!event.ctrlKey && !event.metaKey && !event.shiftKey) {
+      animationKeySelection.clear();
+      animationKeySelectionAnchor = null;
+    }
     const rect = lane.getBoundingClientRect();
     const seek = pointerEvent => animationSetFrame(animationTimelineFrameFromPoint(pointerEvent.clientX, rect));
     const finish = () => {
@@ -1988,8 +2046,11 @@ function updateAnimationPanelLegacy() {
   els.animationEndInput.value = animationState.end;
   els.animationScrubber.max = animationState.end; els.animationScrubber.value = animationState.frame;
   els.animationFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
+  if (els.animationDetailFrameLabel) els.animationDetailFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
   els.animationTimeLabel.textContent = `${(animationState.frame / animationState.fps).toFixed(2)}s`;
-  els.animationPlayBtn.textContent = animationState.playing ? "❚❚ Pause" : "▶ Play";
+  els.animationPlayBtn.textContent = animationState.playing ? "⏸" : "▶";
+  els.animationPlayBtn.title = animationState.playing ? "Pause animation" : "Play animation";
+  els.animationPlayBtn.setAttribute("aria-label", els.animationPlayBtn.title);
   els.animationTrackList.innerHTML = rigBones.length ? rigBones.map(bone => `<div class="animation-track"><span>${bone.name}</span><span>${(animationState.keys[bone.id] || []).map(key => `<button type="button" data-animation-frame="${key.frame}" title="Go to frame ${key.frame}">${key.frame}</button>`).join("") || "—"}</span></div>`).join("") : '<span class="api-note">Add bones, then use “Key Pose” to create animation keys.</span>';
   els.animationTrackList.querySelectorAll("[data-animation-frame]").forEach(button => button.addEventListener("click", () => animationSetFrame(button.dataset.animationFrame)));
 }
@@ -2005,8 +2066,11 @@ function updateAnimationPlaybackPanel() {
   els.animationScrubber.max = animationState.end;
   els.animationScrubber.value = animationState.frame;
   els.animationFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
+  if (els.animationDetailFrameLabel) els.animationDetailFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
   els.animationTimeLabel.textContent = `${(animationState.frame / animationState.fps).toFixed(2)}s`;
-  els.animationPlayBtn.textContent = animationState.playing ? "Pause" : "Play";
+  els.animationPlayBtn.textContent = animationState.playing ? "⏸" : "▶";
+  els.animationPlayBtn.title = animationState.playing ? "Pause animation" : "Play animation";
+  els.animationPlayBtn.setAttribute("aria-label", els.animationPlayBtn.title);
   if (typeof syncAnimatorMiniTransportUi === "function") syncAnimatorMiniTransportUi();
   const end = Math.max(1, animationState.end);
   const playhead = `${Math.max(0, Math.min(100, animationState.frame / end * 100))}%`;
@@ -2014,7 +2078,297 @@ function updateAnimationPlaybackPanel() {
   els.animationTrackList?.querySelectorAll("[data-animation-frame]").forEach(marker => {
     marker.classList.toggle("current", Number(marker.dataset.animationFrame) === animationState.frame);
   });
+  syncAnimationNodeInspector();
 }
+
+function syncAnimationNodeInspector() {
+  if (!els.animationNodeInspectorStatus) return;
+  const bone = selectedBone();
+  // Match the Bone Placement panel exactly. The pose channel is parent-local,
+  // while the live bone has already been resolved through its hierarchy.
+  const position = bone?.position;
+  const rotation = bone?.rotation;
+  const valueInputs = [els.animationNodePosX, els.animationNodePosY, els.animationNodePosZ, els.animationNodeRotX, els.animationNodeRotY, els.animationNodeRotZ];
+  const enabled = !!bone;
+  if (els.animationNodeBoneSelect) {
+    const signature = rigBones.map(candidate => `${candidate.id}:${candidate.name}`).join("|");
+    if (els.animationNodeBoneSelect.dataset.boneSignature !== signature) {
+      els.animationNodeBoneSelect.innerHTML = '<option value="">Select a bone</option>';
+      for (const candidate of rigBones) {
+        const option = document.createElement("option");
+        option.value = candidate.id;
+        option.textContent = candidate.name;
+        els.animationNodeBoneSelect.append(option);
+      }
+      els.animationNodeBoneSelect.dataset.boneSignature = signature;
+    }
+    els.animationNodeBoneSelect.value = bone?.id || "";
+  }
+  valueInputs.forEach(input => { if (input) input.disabled = !enabled; });
+  if (els.animationNodeSaveFrameBtn) els.animationNodeSaveFrameBtn.disabled = !enabled;
+  if (els.animationNodeShowMovementBtn) {
+    els.animationNodeShowMovementBtn.disabled = !enabled;
+    const shown = enabled && boneGizmoEnabled && boneGizmoToolMode === "translate" && boneTransform.visible;
+    els.animationNodeShowMovementBtn.classList.toggle("active", shown);
+    els.animationNodeShowMovementBtn.textContent = shown ? "Movement Tool Shown" : "Show Movement Tool";
+  }
+  if (els.animationNodeShowRotationBtn) {
+    els.animationNodeShowRotationBtn.disabled = !enabled;
+    const shown = enabled && boneGizmoEnabled && boneGizmoToolMode === "rotate" && boneTransform.visible;
+    els.animationNodeShowRotationBtn.classList.toggle("active", shown);
+    els.animationNodeShowRotationBtn.textContent = shown ? "Rotation Tool Shown" : "Show Rotation Tool";
+  }
+  if (!bone) {
+    els.animationNodeInspectorStatus.textContent = "Select a bone track to inspect and correct it.";
+    if (els.animationNodeSaveStatus) els.animationNodeSaveStatus.textContent = "Move it visually or type an exact value and press Enter, then save its pose at the playhead.";
+    valueInputs.forEach(input => { if (input) input.value = ""; });
+    return;
+  }
+  const keys = animationState.keys[bone.id] || [];
+  els.animationNodeInspectorStatus.textContent = `${bone.name} · ${keys.length} keyed frame${keys.length === 1 ? "" : "s"}`;
+  if (els.animationNodeSaveStatus) els.animationNodeSaveStatus.textContent = `Editing ${bone.name} at frame ${animationState.frame}. Move or rotate it, then save this bone pose.`;
+  [els.animationNodePosX, els.animationNodePosY, els.animationNodePosZ].forEach((input, index) => { if (input) input.value = position.toArray()[index].toFixed(3); });
+  [els.animationNodeRotX, els.animationNodeRotY, els.animationNodeRotZ].forEach((input, index) => { if (input) input.value = THREE.MathUtils.radToDeg(rotation.toArray()[index]).toFixed(1); });
+}
+
+function selectAnimationNodeBone(id) {
+  selectedBoneId = boneById(id)?.id || null;
+  rebuildBoneVisuals();
+  syncBonePanel();
+  updateAnimationPanel();
+}
+
+function applyAnimationNodeExactValues(kind = "rotation") {
+  const bone = selectedBone();
+  if (!bone) return;
+  const inputs = kind === "position"
+    ? [els.animationNodePosX, els.animationNodePosY, els.animationNodePosZ]
+    : [els.animationNodeRotX, els.animationNodeRotY, els.animationNodeRotZ];
+  const values = inputs.map(input => Number(input?.value));
+  if (values.some(value => !Number.isFinite(value))) {
+    syncAnimationNodeInspector();
+    log("Enter a valid number for X, Y, and Z.");
+    return;
+  }
+  recordBoneHistory(`set exact ${bone.name} ${kind}`);
+  const channel = rigPoseChannels.get(bone.id) || { position: bone.position.clone(), rotation: bone.rotation.clone() };
+  const position = kind === "position" ? new THREE.Vector3(values[0], values[1], values[2]) : channel.position.clone();
+  const rotation = kind === "rotation"
+    ? new THREE.Euler(...values.map(THREE.MathUtils.degToRad), bone.rotation.order || "XYZ")
+    : channel.rotation.clone();
+  bone.position.copy(position);
+  bone.rotation.copy(rotation);
+  rigPoseChannels.set(bone.id, { position: position.clone(), rotation: rotation.clone() });
+  mirrorBoneEdit(bone, { position: kind === "position", rotation: kind === "rotation", tail: kind === "position" });
+  // This panel edits one animation pose, not the fitted/rest rig. Rebasing the
+  // loose hierarchy here changes bind positions and makes a typed foot angle
+  // jump away from its ankle. Resolve the same pose channels used by the gizmo
+  // while leaving every bind position and every other clip untouched.
+  applyCurrentRigPose({ resolveLooseHierarchy: kind === "rotation" });
+  rebuildBoneVisuals();
+  syncBonePanel();
+  syncBoneTransformGizmo();
+  if (els.animationNodeSaveStatus) els.animationNodeSaveStatus.textContent = `Unsaved exact ${kind} applied to ${bone.name}. Save it at frame ${animationState.frame} when ready.`;
+}
+
+function keySelectedBonePoseAtCurrentFrame() {
+  const bone = selectedBone();
+  if (!bone) { log("Select a bone before saving its pose."); return; }
+  const list = animationState.keys[bone.id] || (animationState.keys[bone.id] = []);
+  const pose = animationPoseForBone(bone);
+  const key = { frame: animationState.frame, ...pose };
+  const index = list.findIndex(item => item.frame === animationState.frame);
+  const replaced = index >= 0;
+  recordBoneHistory(`${replaced ? "replace" : "create"} ${bone.name} key`);
+  if (replaced) list[index] = key;
+  else list.push(key);
+  list.sort((a, b) => a.frame - b.frame);
+  syncActiveAnimationClip();
+  animationSetFrame(animationState.frame);
+  updateAnimationPanel();
+  if (els.animationNodeSaveStatus) els.animationNodeSaveStatus.textContent = `${replaced ? "Replaced" : "Saved"} ${bone.name} at frame ${animationState.frame}.`;
+  log(`${replaced ? "Replaced" : "Saved"} ${bone.name} pose at frame ${animationState.frame}.`, { bone: bone.name, frame: animationState.frame, replaced });
+}
+
+function mirroredAnimationKey(key, sourceBone, targetBone, frame) {
+  const sourceRestPosition = sourceBone.bindPosition || sourceBone.position;
+  const targetRestPosition = targetBone.bindPosition || targetBone.position;
+  const sourceRestRotation = sourceBone.bindRotation || new THREE.Euler();
+  const targetRestRotation = targetBone.bindRotation || new THREE.Euler();
+  const sourcePosition = Array.isArray(key.position) ? key.position : sourceRestPosition.toArray();
+  const sourceRotation = Array.isArray(key.rotation) ? key.rotation : sourceRestRotation.toArray();
+  const positionDelta = [
+    sourcePosition[0] - sourceRestPosition.x,
+    sourcePosition[1] - sourceRestPosition.y,
+    sourcePosition[2] - sourceRestPosition.z
+  ];
+  const rotationDelta = [
+    sourceRotation[0] - sourceRestRotation.x,
+    sourceRotation[1] - sourceRestRotation.y,
+    sourceRotation[2] - sourceRestRotation.z
+  ];
+  return {
+    frame,
+    position: [
+      targetRestPosition.x - positionDelta[0],
+      targetRestPosition.y + positionDelta[1],
+      targetRestPosition.z + positionDelta[2]
+    ],
+    rotation: [
+      targetRestRotation.x + rotationDelta[0],
+      targetRestRotation.y - rotationDelta[1],
+      targetRestRotation.z - rotationDelta[2]
+    ]
+  };
+}
+
+function animationKeySelectionId(boneId, frame) {
+  return `${boneId}\u0000${Number(frame)}`;
+}
+
+function selectedAnimationKeyEntries() {
+  const entries = [];
+  for (const bone of rigBones) {
+    for (const key of animationState.keys[bone.id] || []) {
+      if (animationKeySelection.has(animationKeySelectionId(bone.id, key.frame))) entries.push({ boneId: bone.id, key });
+    }
+  }
+  return entries;
+}
+
+function pruneAnimationKeySelection() {
+  const valid = new Set();
+  for (const bone of rigBones) {
+    for (const key of animationState.keys[bone.id] || []) valid.add(animationKeySelectionId(bone.id, key.frame));
+  }
+  for (const id of animationKeySelection) if (!valid.has(id)) animationKeySelection.delete(id);
+}
+
+function syncAnimationKeyClipboardUi() {
+  pruneAnimationKeySelection();
+  const selectedCount = animationKeySelection.size;
+  const copiedCount = animationKeyClipboard?.entries?.length || 0;
+  if (els.animationKeyCopyBtn) els.animationKeyCopyBtn.disabled = selectedCount < 1;
+  if (els.animationKeyPasteBtn) els.animationKeyPasteBtn.disabled = copiedCount < 1;
+  if (els.animationKeyPasteMirroredBtn) els.animationKeyPasteMirroredBtn.disabled = copiedCount < 1;
+  if (els.animationKeyClipboardStatus) {
+    els.animationKeyClipboardStatus.textContent = selectedCount
+      ? `${selectedCount} key${selectedCount === 1 ? "" : "s"} selected${copiedCount ? ` · ${copiedCount} copied` : ""}.`
+      : (copiedCount ? `${copiedCount} copied key${copiedCount === 1 ? "" : "s"}. Move the playhead, then paste.` : "Click a key. Ctrl-click adds keys; Shift-click selects a range.");
+  }
+}
+
+function copySelectedAnimationKeys() {
+  const entries = selectedAnimationKeyEntries();
+  if (!entries.length) { log("Select one or more timeline keys first."); return; }
+  const originFrame = Math.min(...entries.map(entry => Number(entry.key.frame) || 0));
+  animationKeyClipboard = {
+    sourceClipId: animationState.activeClipId,
+    originFrame,
+    entries: entries.map(({ boneId, key }) => ({
+      boneId,
+      frame: Number(key.frame) || 0,
+      position: Array.isArray(key.position) ? [...key.position] : null,
+      rotation: Array.isArray(key.rotation) ? [...key.rotation.slice(0, 3)] : null
+    }))
+  };
+  syncAnimationKeyClipboardUi();
+  log(`Copied ${entries.length} selected animation key${entries.length === 1 ? "" : "s"}. Move the playhead and paste.`);
+}
+
+function pasteCopiedAnimationKeys({ mirrored = false } = {}) {
+  const copied = animationKeyClipboard?.entries || [];
+  if (!copied.length) { log("Copy one or more timeline keys first."); return; }
+  const targets = [];
+  for (const entry of copied) {
+    const sourceBone = boneById(entry.boneId);
+    const targetBone = mirrored ? boneById(mirroredBoneId(entry.boneId)) : sourceBone;
+    if (!sourceBone || !targetBone) continue;
+    const frame = animationState.frame + entry.frame - animationKeyClipboard.originFrame;
+    const key = mirrored
+      ? mirroredAnimationKey(entry, sourceBone, targetBone, frame)
+      : { frame, position: entry.position ? [...entry.position] : targetBone.position.toArray(), rotation: entry.rotation ? [...entry.rotation] : targetBone.rotation.toArray().slice(0, 3) };
+    targets.push({ bone: targetBone, key });
+  }
+  if (!targets.length) { log(mirrored ? "The copied keys do not have opposite-side bones in this rig." : "The copied bones are not available in this rig."); return; }
+  recordBoneHistory(`paste ${targets.length} animation keys${mirrored ? " mirrored" : ""}`);
+  const furthestFrame = Math.max(...targets.map(target => target.key.frame));
+  if (furthestFrame > animationState.end) animationState.end = Math.min(9999, furthestFrame);
+  animationKeySelection.clear();
+  for (const { bone, key } of targets) {
+    const list = animationState.keys[bone.id] || (animationState.keys[bone.id] = []);
+    const existingIndex = list.findIndex(candidate => candidate.frame === key.frame);
+    if (existingIndex >= 0) list[existingIndex] = key;
+    else list.push(key);
+    list.sort((a, b) => a.frame - b.frame);
+    animationKeySelection.add(animationKeySelectionId(bone.id, key.frame));
+  }
+  syncActiveAnimationClip();
+  animationSetFrame(animationState.frame);
+  updateAnimationPanel();
+  const action = mirrored ? "Mirrored and pasted" : "Pasted";
+  if (els.animationKeyClipboardStatus) els.animationKeyClipboardStatus.textContent = `${action} ${targets.length} key${targets.length === 1 ? "" : "s"} starting at frame ${animationState.frame}.`;
+  log(`${action} ${targets.length} animation key${targets.length === 1 ? "" : "s"} at the playhead.`);
+}
+
+function showAnimationNodeRotationTool() {
+  const bone = selectedBone();
+  if (!bone) { log("Choose a bone in Selected Node first."); return; }
+  const wasShown = boneGizmoEnabled && boneGizmoToolMode === "rotate" && boneTransform.visible;
+  if (wasShown) setBoneGizmoEnabled(false, "rotate");
+  else setBoneGizmoEnabled(true, "rotate");
+  syncBoneTransformGizmo();
+  syncAnimationNodeInspector();
+  syncBoneDegreeHud();
+  log(wasShown ? `Rotation tool hidden for ${bone.name}.` : `Showing signed rotation degrees for ${bone.name}.`);
+}
+
+function showAnimationNodeMovementTool() {
+  const bone = selectedBone();
+  if (!bone) { log("Choose a bone in Selected Node first."); return; }
+  const wasShown = boneGizmoEnabled && boneGizmoToolMode === "translate" && boneTransform.visible;
+  if (wasShown) setBoneGizmoEnabled(false, "translate");
+  else setBoneGizmoEnabled(true, "translate");
+  syncBoneTransformGizmo();
+  syncAnimationNodeInspector();
+  syncBoneDegreeHud();
+  log(wasShown ? `Movement tool hidden for ${bone.name}.` : `Showing signed movement values for ${bone.name}.`);
+}
+
+function signedBoneDegree(value) {
+  const degrees = Math.abs(value) < .05 ? 0 : value;
+  return `${degrees >= 0 ? "+" : "−"}${Math.abs(degrees).toFixed(1)}°`;
+}
+
+function syncBoneDegreeHud() {
+  const hud = els.boneDegreeHud;
+  const bone = selectedBone();
+  const gameplayActive = typeof gameplayPreviewVisible === "function" && gameplayPreviewVisible();
+  const show = !!(hud && bone && boneGizmoEnabled && boneTransform.visible && !gameplayActive);
+  if (!hud) return;
+  hud.hidden = !show;
+  if (!show) return;
+  const point = (bone.displayPosition || bone.position).clone().project(camera);
+  if (point.z < -1 || point.z > 1) { hud.hidden = true; return; }
+  const canvasRect = canvas.getBoundingClientRect();
+  const paneRect = hud.parentElement.getBoundingClientRect();
+  const x = canvasRect.left - paneRect.left + (point.x * .5 + .5) * canvasRect.width + 52;
+  const y = canvasRect.top - paneRect.top + (-point.y * .5 + .5) * canvasRect.height - 42;
+  hud.style.left = `${Math.max(8, Math.min(paneRect.width - 210, x))}px`;
+  hud.style.top = `${Math.max(46, Math.min(paneRect.height - 82, y))}px`;
+  const rotating = boneGizmoToolMode === "rotate";
+  const rawValues = rotating
+    ? [bone.rotation.x, bone.rotation.y, bone.rotation.z].map(value => THREE.MathUtils.radToDeg(value))
+    : [bone.position.x, bone.position.y, bone.position.z];
+  const values = rotating
+    ? rawValues.map(signedBoneDegree)
+    : rawValues.map(value => `${value >= 0 ? "+" : "−"}${Math.abs(value).toFixed(3)}`);
+  hud.querySelector(".degree-direction").textContent = rotating ? "Rotate + / −" : "Move + / −";
+  hud.querySelector(".axis-x").textContent = `X ${values[0]}`;
+  hud.querySelector(".axis-y").textContent = `Y ${values[1]}`;
+  hud.querySelector(".axis-z").textContent = `Z ${values[2]}`;
+}
+
 function updateAnimationPanel() {
   if (!els.animationScrubber) return;
   syncAnimationClipUi();
@@ -2023,9 +2377,14 @@ function updateAnimationPanel() {
   els.animationScrubber.max = animationState.end;
   els.animationScrubber.value = animationState.frame;
   els.animationFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
+  if (els.animationDetailFrameLabel) els.animationDetailFrameLabel.textContent = `Frame ${animationState.frame} / ${animationState.end}`;
   els.animationTimeLabel.textContent = `${(animationState.frame / animationState.fps).toFixed(2)}s`;
-  els.animationPlayBtn.textContent = animationState.playing ? "Pause" : "Play";
+  els.animationPlayBtn.textContent = animationState.playing ? "⏸" : "▶";
+  els.animationPlayBtn.title = animationState.playing ? "Pause animation" : "Play animation";
+  els.animationPlayBtn.setAttribute("aria-label", els.animationPlayBtn.title);
   if (typeof syncAnimatorMiniTransportUi === "function") syncAnimatorMiniTransportUi();
+  syncAnimationNodeInspector();
+  syncAnimationKeyClipboardUi();
   if (!rigBones.length) {
     els.animationTrackList.innerHTML = '<span class="api-note">Add bones, then use Key Pose to create animation keys.</span>';
     return;
@@ -2041,7 +2400,7 @@ function updateAnimationPanel() {
   const tracks = rigBones.map(bone => {
     const depth = animationBoneDepth(bone);
     const keys = animationState.keys[bone.id] || [];
-    return `<div class="animation-timeline-row${bone.id === selectedBoneId ? " selected" : ""}"><div class="animation-track-name"><button type="button" data-animation-bone="${animationTimelineEscape(bone.id)}" style="--bone-depth:${depth}">${animationTimelineEscape(bone.name)}</button></div><div class="animation-timeline-lane" data-animation-lane="${animationTimelineEscape(bone.id)}" style="--playhead:${playhead}%;--timeline-grid-size:${timelineGridSize}%">${keys.map(key => `<button class="animation-key-marker${key.frame === animationState.frame ? " current" : ""}" type="button" data-animation-frame="${key.frame}" style="left:${Math.max(0, Math.min(100, key.frame / end * 100))}%" title="${animationTimelineEscape(bone.name)} at frame ${key.frame}"><span>${key.frame}</span></button>`).join("")}</div></div>`;
+    return `<div class="animation-timeline-row${bone.id === selectedBoneId ? " selected" : ""}"><div class="animation-track-name"><button type="button" data-animation-bone="${animationTimelineEscape(bone.id)}" style="--bone-depth:${depth}">${animationTimelineEscape(bone.name)}</button></div><div class="animation-timeline-lane" data-animation-lane="${animationTimelineEscape(bone.id)}" style="--playhead:${playhead}%;--timeline-grid-size:${timelineGridSize}%">${keys.map(key => `<button class="animation-key-marker${key.frame === animationState.frame ? " current" : ""}${animationKeySelection.has(animationKeySelectionId(bone.id, key.frame)) ? " selected" : ""}" type="button" data-animation-key-bone="${animationTimelineEscape(bone.id)}" data-animation-frame="${key.frame}" style="left:${Math.max(0, Math.min(100, key.frame / end * 100))}%" title="${animationTimelineEscape(bone.name)} at frame ${key.frame}"><span>${key.frame}</span></button>`).join("")}</div></div>`;
   }).join("");
   els.animationTrackList.innerHTML = `<div class="animation-timeline-grid">${ruler}${tracks}</div>`;
   syncAnimationScrubberToTimeline();
@@ -2712,6 +3071,10 @@ function syncBonePanel() {
   els.boneRotX.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.x))) : "";
   els.boneRotY.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.y))) : "";
   els.boneRotZ.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.z))) : "";
+  // Bone Placement and the timeline inspector share one selection. Any bone
+  // picked in a viewport or in the Bone Placement list must immediately appear
+  // in Selected Node without requiring a second timeline click.
+  syncAnimationNodeInspector();
 }
 
 function applyBonePanelValues() {
