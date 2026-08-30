@@ -51,6 +51,7 @@ let gameplayCharacterYaw = 0;
 let gameplayUpperBodyAction = null;
 let gameplayLocomotionKind = "idle";
 let gameplayYaw = 0;
+let gameplayCameraOrbitOffset = 0;
 let gameplayPitch = 0;
 let gameplayFollowDistance = 5;
 let gameplayLastFrame = performance.now();

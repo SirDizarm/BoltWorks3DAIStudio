@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.56.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.57.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -46,6 +46,9 @@ for (const gameplayPreviewBehavior of [
   "function releaseGameplayUpperBodyAction(kind",
   "function applyGameplayUpperBodyAction(poses)",
   "const phase = Math.min(1, elapsedMs / durationMs)",
+  "const reachedLastFrame = elapsedMs >= durationMs",
+  "reachedLastFrame && action.holdLastFrame ? finalFrame",
+  "holdLastFrame: true",
   "gameplayUpperBodyAction.held = false",
   "function applyGameplayCrawlEquipmentStow()",
   "function releaseGameplayControl()",
@@ -58,7 +61,8 @@ for (const gameplayPreviewBehavior of [
   "gameplayYaw = gameplayCharacterYaw + Math.PI",
   "const forward = new THREE.Vector3(Math.sin(gameplayCharacterYaw), 0, Math.cos(gameplayCharacterYaw))",
   'setGameplayCharacterAnimation(running ? "run" : "walk")',
-  'gameplayCharacterYaw -= event.movementX * .0025',
+  'gameplayCharacterYaw += event.movementX * .0025',
+  'gameplayCameraOrbitOffset += event.movementX * .0025',
   'gameplayPitch - event.movementY * .0018',
   "if (!gameplayCameraLocked) return;",
   "applyGameplayUpperBodyAction(poses)"
@@ -69,6 +73,9 @@ for (const gameplayPreviewBehavior of [
 }
 if (panelsSource.includes("gameplayCharacterYaw = Math.atan2(direction.x, direction.z)")) {
   throw new Error("Gameplay strafing must not rewrite character yaw and spin the rear follow camera.");
+}
+if (panelsSource.includes("const crateOffsets") || panelsSource.includes("gameplayArenaGroup.add(target)")) {
+  throw new Error("Gameplay Preview must keep its arena clear of collision props and target objects.");
 }
 if (panelsSource.includes('gameplayKeys.has("ControlLeft")') || panelsSource.includes('setGameplayCharacterAnimation(crawling ?')) {
   throw new Error("Gameplay crawl must remain disabled until its replacement animation is ready.");
@@ -1577,7 +1584,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.56.js?v=49.60.56"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.57.js?v=49.60.57"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1629,7 +1636,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.56",
+  "tool-docking.js?v=49.60.57",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2430,8 +2437,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.56 Experimental") || !documentSource.includes("v49.60.56 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.56 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.57 Experimental") || !documentSource.includes("v49.60.57 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.57 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

@@ -82,6 +82,7 @@ function resetGameplayPreviewCamera() {
   gameplayCameraTargetBase.y += size.y * .08;
   gameplayFollowDistance = Math.max(2, size.length() * 1.15);
   gameplayCameraLocked = true;
+  gameplayCameraOrbitOffset = 0;
   gameplayYaw = gameplayCharacterYaw + Math.PI;
   gameplayPitch = THREE.MathUtils.degToRad(28);
   gameplayCamera.near = camera.near;
@@ -92,7 +93,7 @@ function resetGameplayPreviewCamera() {
 
 function syncGameplayFollowCamera() {
   if (!gameplayRenderer) return;
-  if (gameplayCameraLocked) gameplayYaw = gameplayCharacterYaw + Math.PI;
+  if (gameplayCameraLocked) gameplayYaw = gameplayCharacterYaw + Math.PI + gameplayCameraOrbitOffset;
   const target = gameplayCameraTargetBase.clone().add(gameplayCharacterOffset);
   target.y += gameplayJumpHeight;
   const horizontal = Math.cos(gameplayPitch) * gameplayFollowDistance;
@@ -108,12 +109,12 @@ function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Click to control · Mouse steer · WASD move · Shift run · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Crawl disabled · Preview Tools: optional systems · Scroll: speed ${speedLabel} · Esc releases control`;
+    `Click to control · Mouse steer · Middle mouse orbit · WASD move · Shift run · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Crawl disabled · Preview Tools: optional systems · Scroll: speed ${speedLabel} · Esc releases control`;
 }
 
 function updateGameplayArenaStatus(message = "") {
   if (!els.gameplayStatusText) return;
-  els.gameplayStatusText.textContent = message || `Targets ${gameplayArenaScore.targets} · Blocks ${gameplayArenaScore.blocked} · Hits ${gameplayArenaScore.hits}`;
+  els.gameplayStatusText.textContent = message || `Open arena · Blocks ${gameplayArenaScore.blocked} · Hits ${gameplayArenaScore.hits}`;
 }
 
 function gameplayArenaMaterial(color, roughness = .8, metalness = .05) {
@@ -145,41 +146,8 @@ function buildGameplayArena() {
   arenaGrid.position.copy(ground.position).add(new THREE.Vector3(0, .035, 0));
   gameplayArenaGroup.add(arenaGrid);
 
-  const crateOffsets = [[0, 5], [2.6, 9], [-2.5, 12.5], [1.2, 16]];
-  for (const [x, z] of crateOffsets) {
-    const height = gameplayArenaScale * (z > 11 ? 1.05 : .72);
-    const crate = new THREE.Mesh(
-      new THREE.BoxGeometry(gameplayArenaScale * 1.35, height, gameplayArenaScale * 1.35),
-      gameplayArenaMaterial(0x8b5a2b, .88, 0)
-    );
-    crate.position.set(center.x + x * gameplayArenaScale, gameplayArenaGroundY + height / 2, center.z + z * gameplayArenaScale);
-    crate.castShadow = true;
-    crate.receiveShadow = true;
-    gameplayArenaGroup.add(crate);
-    crate.updateMatrixWorld(true);
-    gameplayArenaColliders.push({ mesh: crate, box: new THREE.Box3().setFromObject(crate), height });
-  }
-
-  for (const [x, z] of [[-3.2, 6.5], [3.3, 12], [-1.2, 18]]) {
-    const target = new THREE.Group();
-    const post = new THREE.Mesh(
-      new THREE.CylinderGeometry(gameplayArenaScale * .12, gameplayArenaScale * .16, gameplayArenaScale * 1.45, 10),
-      gameplayArenaMaterial(0x747f85, .72, .18)
-    );
-    const head = new THREE.Mesh(
-      new THREE.SphereGeometry(gameplayArenaScale * .35, 14, 10),
-      gameplayArenaMaterial(0xc75b46, .7, .05)
-    );
-    post.position.y = gameplayArenaScale * .72;
-    head.position.y = gameplayArenaScale * 1.55;
-    target.add(post, head);
-    target.position.set(center.x + x * gameplayArenaScale, gameplayArenaGroundY, center.z + z * gameplayArenaScale);
-    target.userData.hitUntil = 0;
-    gameplayArenaGroup.add(target);
-    gameplayArenaTargets.push(target);
-  }
   gameplayArenaGroup.visible = true;
-  updateGameplayArenaStatus("Arena ready");
+  updateGameplayArenaStatus("Open arena ready — no collision props");
 }
 
 function gameplayCharacterWorldPosition() {
@@ -334,7 +302,7 @@ function startGameplayUpperBodyAction(kind, { held = false } = {}) {
   const clipId = gameplayCombatClipId(kind);
   if (!clipId) return false;
   if (gameplayUpperBodyAction?.kind === kind) return false;
-  gameplayUpperBodyAction = { kind, clipId, startedAt: performance.now(), held };
+  gameplayUpperBodyAction = { kind, clipId, startedAt: performance.now(), held, holdLastFrame: true };
   if (kind === "slash" || kind === "thrust") hitGameplayTargets();
   animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   return true;
@@ -392,14 +360,16 @@ function applyGameplayUpperBodyAction(poses) {
   if (!clip) { gameplayUpperBodyAction = null; return; }
   const durationMs = Math.max(1, Number(clip.end) || 1) / Math.max(1, Number(clip.fps) || 24) * 1000;
   const elapsedMs = performance.now() - action.startedAt;
-  if (!action.held && elapsedMs >= durationMs) {
+  const reachedLastFrame = elapsedMs >= durationMs;
+  if (!action.held && reachedLastFrame) {
     gameplayUpperBodyAction = null;
     return;
   }
-  // A held block enters its authored guard and remains there. Looping the clip
-  // would repeatedly drop and raise the shield while the player held Block.
+  // Every combat action plays once. If its input remains held, sample the exact
+  // authored final frame until release instead of wrapping back to frame zero.
+  const finalFrame = Math.max(1, Number(clip.end) || 1);
   const phase = Math.min(1, elapsedMs / durationMs);
-  const frame = phase * Math.max(1, Number(clip.end) || 1);
+  const frame = reachedLastFrame && action.holdLastFrame ? finalFrame : phase * finalFrame;
   for (const bone of rigBones) {
     if (!gameplayUpperBodyBone(bone)) continue;
     const actionPose = sampleGameplayClipPose(clip, bone, frame);
@@ -431,6 +401,7 @@ function openGameplayPreview() {
   gameplayMouseButtons.clear();
   gameplayCharacterOffset.set(0, 0, 0);
   gameplayCharacterYaw = 0;
+  gameplayCameraOrbitOffset = 0;
   gameplayUpperBodyAction = null;
   gameplayLocomotionKind = "idle";
   gameplayJumpStartedAt = 0;
@@ -455,6 +426,7 @@ function closeGameplayPreview() {
   gameplayMouseButtons.clear();
   gameplayCharacterOffset.set(0, 0, 0);
   gameplayCharacterYaw = 0;
+  gameplayCameraOrbitOffset = 0;
   gameplayUpperBodyAction = null;
   gameplayLocomotionKind = "idle";
   gameplayCameraLocked = false;
@@ -2472,10 +2444,11 @@ gameplayCanvas?.addEventListener("wheel", event => {
 }, { passive: false });
 document.addEventListener("mousemove", event => {
   if (!gameplayPreviewVisible() || document.pointerLockElement !== gameplayCanvas || !gameplayCameraLocked) return;
-  // Mouse movement steers the character; WASD only supplies forward/backward
-  // movement and strafing. Keeping the follow yaw derived from character yaw
-  // leaves the camera locked behind the model throughout control.
-  gameplayCharacterYaw -= event.movementX * .0025;
+  // Normal mouse movement steers in the same direction as the pointer. Holding
+  // middle mouse instead orbits the camera independently around the centered
+  // character, allowing front/side inspection without changing its facing.
+  if (gameplayMouseButtons.has(1)) gameplayCameraOrbitOffset += event.movementX * .0025;
+  else gameplayCharacterYaw += event.movementX * .0025;
   gameplayPitch = THREE.MathUtils.clamp(
     gameplayPitch - event.movementY * .0018,
     THREE.MathUtils.degToRad(10),
