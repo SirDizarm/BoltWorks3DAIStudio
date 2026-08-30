@@ -22,7 +22,7 @@ try {
   await waitForPing();
   const [page, bundle, styles, branding, mp4Status] = await Promise.all([
     fetch(`http://127.0.0.1:${port}/`),
-    fetch(`http://127.0.0.1:${port}/app/studio-v49.60.47.js`),
+    fetch(`http://127.0.0.1:${port}/app/studio-v49.60.48.js`),
     fetch(`http://127.0.0.1:${port}/app/styles/studio.css`),
     fetch(`http://127.0.0.1:${port}/app/assets/branding/boltworks-logo.png`),
     fetch(`http://127.0.0.1:${port}/api/video/mp4/status`)

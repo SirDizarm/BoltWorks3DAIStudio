@@ -472,7 +472,6 @@ function setTPoseFittingMode(enabled) {
   if (tPoseFittingMode) {
     syncActiveAnimationClip();
     restoreAnimationBindPose({ render: false });
-    applyCurrentRigPose();
     log("T-Pose / Rig Fitting selected. Animation playback is suspended and the fitted bind pose is now authoritative.");
   } else {
     captureAnimationBindingRest();
@@ -1166,7 +1165,11 @@ function restoreAnimationBindPose({ render = true } = {}) {
       position: bone.position.clone(),
       rotation: bone.rotation.clone()
     });
-    bone.tail.copy(bone.position).add(bone.tailOffset.clone().applyEuler(new THREE.Euler(bone.rotation.x, bone.rotation.y, bone.rotation.z, "XYZ")));
+    // T-pose is the stored rest frame itself. Do not derive its guide tail by
+    // running the animation FK solver: doing that can display an old local arm
+    // bend even though the rigid model has correctly returned to its T-pose.
+    if (bone.bindTail) bone.tail.copy(bone.bindTail);
+    else bone.tail.copy(bone.position).add(bone.tailOffset);
   }
   if (activeSkinRuntime) applySkinnedPose(new Map(rigBones.map(bone => [bone.id, {
     position: bone.position.clone(), rotation: bone.rotation.clone()
