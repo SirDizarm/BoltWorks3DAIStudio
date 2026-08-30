@@ -1931,6 +1931,7 @@ function applyWeightedMeshBinding(objectId, object, group) {
 }
 function keyAnimationPose() {
   for (const bone of rigBones) { const list = animationState.keys[bone.id] || (animationState.keys[bone.id] = []); const pose = animationPoseForBone(bone); const key = { frame: animationState.frame, ...pose }; const index = list.findIndex(item => item.frame === key.frame); if (index >= 0) list[index] = key; else list.push(key); }
+  syncActiveAnimationClip();
   updateAnimationPanel();
 }
 function deleteAnimationFrameKeys() {
@@ -1941,6 +1942,7 @@ function deleteAnimationFrameKeys() {
     removed += keys.length - remaining.length;
     animationState.keys[bone.id] = remaining;
   }
+  syncActiveAnimationClip();
   updateAnimationPanel();
   log(removed ? `Deleted ${removed} key${removed === 1 ? "" : "s"} at frame ${animationState.frame}.` : `Frame ${animationState.frame} has no keys to delete.`);
 }

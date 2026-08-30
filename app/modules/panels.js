@@ -508,8 +508,13 @@ function applyGameplayUpperBodyAction(poses) {
   const frame = reachedLastFrame && action.holdLastFrame ? finalFrame : phase * finalFrame;
   for (const bone of rigBones) {
     if (!gameplayUpperBodyBone(bone)) continue;
-    const actionPose = sampleGameplayClipPose(clip, bone, frame);
-    if (!actionPose) continue;
+    // Combat fully owns the upper body while locomotion continues below the
+    // waist. Falling through to walk/idle for an unkeyed arm or torso joint
+    // makes old and newly edited poses visibly pull against each other.
+    const actionPose = sampleGameplayClipPose(clip, bone, frame) || {
+      position: bone.bindPosition.clone(),
+      rotation: bone.bindRotation.clone()
+    };
     poses.set(bone.id, actionPose);
     bone.position.copy(actionPose.position);
     bone.rotation.copy(actionPose.rotation);
@@ -559,6 +564,12 @@ function applyGameplayCharacterPreviewPose(poses) {
 
 function openGameplayPreview() {
   if (!els.gameplayPreview || !gameplayRenderer) return false;
+  // The animator's live key collection is the newest source of truth. Commit
+  // it before Gameplay Preview changes the active clip, otherwise a recovered
+  // or imported project can reload an older clip object over recent edits.
+  syncActiveAnimationClip();
+  animationState.lastTime = 0;
+  rigPoseChannels.clear();
   els.gameplayPreview.hidden = false;
   gameplayKeys.clear();
   gameplayMouseButtons.clear();
@@ -582,7 +593,7 @@ function openGameplayPreview() {
   animationState.playing = false;
   syncGameplayPlaybackUi();
   updateGameplayArenaStatus("Paused — press Play to start");
-  log("Opened Gameplay Preview. Locomotion controls the legs independently while mouse/F/B combat actions layer over the upper body.");
+  log("Opened Gameplay Preview with the latest editor clips. Locomotion controls the legs while combat fully owns the upper body.");
   return true;
 }
 
@@ -1829,6 +1840,8 @@ els.textureBtn.addEventListener("click", () => {
   els.textureFile.click();
 });
 els.textureEditorBtn.addEventListener("click", openTextureEditor);
+els.textureStencilBtn?.addEventListener("click", openTextureStencilEditor);
+els.modelToolsStencilBtn?.addEventListener("click", openTextureStencilEditor);
 els.applyLibraryTextureBtn.addEventListener("click", applySelectedLibraryTexture);
 els.addLibraryTextureBtn?.addEventListener("click", () => {
   els.textureFile.value = "";

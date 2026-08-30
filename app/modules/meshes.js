@@ -1143,7 +1143,9 @@ function textureEditorMesh() {
 }
 
 function selectedTextureEditorMesh() {
-  return selected && selected.userData.textureUrl && selected.geometry?.getAttribute("uv") ? selected : null;
+  if (selected?.geometry?.getAttribute("position")) return selected;
+  const checkedMeshes = checkedObjects().filter(mesh => mesh?.geometry?.getAttribute("position"));
+  return checkedMeshes.length === 1 ? checkedMeshes[0] : null;
 }
 
 function applyTextureEditorUvScale() {
@@ -1182,7 +1184,7 @@ function transformTextureEditorUvs(dx, dy, scaleMode = false) {
 }
 
 function textureEditorPartMeshes() {
-  return objects.filter(mesh => mesh?.userData?.textureUrl && mesh.geometry?.getAttribute("uv"));
+  return objects.filter(mesh => mesh?.geometry?.getAttribute("position"));
 }
 
 function syncTextureEditorPartSelect() {
@@ -1209,7 +1211,14 @@ function syncTextureEditorButton() {
   els.textureEditorBtn.disabled = !mesh;
   els.textureEditorBtn.title = mesh
     ? "Open the selected mesh texture and UV editor"
-    : "Select one textured mesh with UVs to open the texture editor";
+    : "Select one mesh to open the texture editor";
+  for (const button of [els.textureStencilBtn, els.modelToolsStencilBtn]) {
+    if (!button) continue;
+    button.disabled = !mesh;
+    button.title = mesh
+      ? "Open this mesh directly in the Stencil / Sigil tool"
+      : "Select one mesh to use a Stencil / Sigil";
+  }
 }
 
 function readImageToCanvas(image) {
@@ -2567,7 +2576,9 @@ function defaultMaterialChannelCanvas(mesh, channel, width, height) {
   canvas.width = Math.max(1, width || 1024);
   canvas.height = Math.max(1, height || 1024);
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.fillStyle = channel === "roughness" ? "#ffffff" : "#000000";
+  context.fillStyle = channel === "baseColor"
+    ? `#${mesh?.material?.color?.getHexString?.() || "ffffff"}`
+    : channel === "roughness" ? "#ffffff" : "#000000";
   context.fillRect(0, 0, canvas.width, canvas.height);
   return canvas;
 }
@@ -2746,7 +2757,10 @@ async function loadTextureEditorTextureFile(file) {
 
 async function loadTextureEditorChannel(mesh, channel = "baseColor") {
   const channelData = materialTextureChannelData(mesh, channel);
-  const baseImage = mesh.material.map?.image || await loadImage(mesh.userData.textureUrl);
+  const baseImage = mesh.material.map?.image
+    || (mesh.userData.textureUrl
+      ? await loadImage(mesh.userData.textureUrl)
+      : defaultMaterialChannelCanvas(mesh, "baseColor", 1024, 1024));
   const channelMap = mesh.material[channelData.config.mapKey];
   const channelImage = channelData.url
     ? (channelMap?.image || await loadImage(channelData.url))
@@ -2833,7 +2847,7 @@ async function loadTextureEditorChannel(mesh, channel = "baseColor") {
 async function switchTextureEditorPart(meshId) {
   if (!textureEditorState.open || meshId === textureEditorState.meshId) return;
   const mesh = findObject(meshId);
-  if (!mesh?.userData?.textureUrl || !mesh.geometry?.getAttribute("uv")) return;
+  if (!ensureTextureEditorUv(mesh)) return;
   const activeChannel = textureEditorState.channel;
   const activeTool = textureEditorState.tool || "brush";
   const activeSymmetry = textureEditorState.symmetry || "none";
@@ -2865,9 +2879,10 @@ async function switchTextureEditorChannel(channel) {
 async function openTextureEditor() {
   const mesh = selectedTextureEditorMesh();
   if (!mesh) {
-    log("Select one textured mesh with UVs before opening the texture editor.");
+    log("Select one mesh before opening the texture editor.");
     return;
   }
+  if (!ensureTextureEditorUv(mesh)) return;
   try {
     await loadTextureEditorChannel(mesh, "baseColor");
     els.textureEditorModal.classList.add("open");
@@ -2882,6 +2897,32 @@ async function openTextureEditor() {
   } catch (error) {
     log(`Texture editor failed to open: ${error.message}`);
   }
+}
+
+function ensureTextureEditorUv(mesh) {
+  if (mesh?.geometry?.getAttribute("uv")) return true;
+  if (!mesh?.geometry?.getAttribute("position")) return false;
+  const plan = buildSmartUvLayoutPlan(mesh.geometry, { seamAngle: 45, padding: 2, atlasSize: 1024 });
+  if (!plan.safe) {
+    log(`Could not create a UV layout for ${mesh.name}: ${plan.reason}`);
+    disposeUvUnwrapPlan(plan);
+    return false;
+  }
+  recordHistory("create UVs for texture stencil");
+  const geometry = geometryWithUvPlan(plan);
+  replaceEditableMeshGeometry(mesh, geometry);
+  disposeUvUnwrapPlan(plan);
+  updateAll();
+  log(`Created a UV layout for ${mesh.name} so Stencil / Sigil can paint it. Undo is ready.`);
+  return true;
+}
+
+async function openTextureStencilEditor() {
+  await openTextureEditor();
+  if (!textureEditorState.open) return;
+  setTextureEditorTool("stencil");
+  syncTextureEditorStencilUi();
+  log("Stencil / Sigil tool opened. Choose a transparent PNG, position it on the texture, then stamp it.");
 }
 
 function closeTextureEditor() {
