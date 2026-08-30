@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.49.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.50.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -31,6 +31,27 @@ const autoSaveUpdateSource = moduleSources.get("autosave-update") || "";
 // Preserve the existing checks while testing the new canonical modular source as
 // one logical application, exactly as the Pages builder and local server do.
 const html = `${documentSource}\n${styleSource}\n${panelCollapseSource}\n${toolDockingSource}\n${applicationSource}`;
+
+for (const gameplayPreviewBehavior of [
+  "function syncGameplayFollowCamera()",
+  "function startGameplayUpperBodyAction(kind",
+  "function applyGameplayUpperBodyAction(poses)",
+  'startGameplayUpperBodyAction("slash")',
+  'startGameplayUpperBodyAction("shieldBlock", { held: true })',
+  'startGameplayUpperBodyAction("thrust")',
+  'startGameplayUpperBodyAction("swordBlock", { held: true })',
+  "gameplayCameraTargetBase.clone().add(gameplayCharacterOffset)",
+  "applyGameplayUpperBodyAction(poses)"
+]) {
+  if (!panelsSource.includes(gameplayPreviewBehavior)) {
+    throw new Error(`Gameplay Preview must keep a centered follow camera and layer combat above independent locomotion: ${gameplayPreviewBehavior}`);
+  }
+}
+if (!viewportSource.includes("const gameplayMouseButtons = new Set()")
+    || !viewportSource.includes("const gameplayCameraTargetBase = new THREE.Vector3()")
+    || !viewportSource.includes("let gameplayUpperBodyAction = null")) {
+  throw new Error("Gameplay Preview must retain independent movement, camera-follow, and upper-body action state.");
+}
 
 if (
   !studioModuleOrder.includes("pose-straightener")
@@ -1516,7 +1537,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.49.js?v=49.60.49"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.50.js?v=49.60.50"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1568,7 +1589,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.49",
+  "tool-docking.js?v=49.60.50",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2369,8 +2390,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.49 Experimental") || !documentSource.includes("v49.60.49 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.49 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.50 Experimental") || !documentSource.includes("v49.60.50 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.50 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

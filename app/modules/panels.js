@@ -76,21 +76,38 @@ function gameplayPreviewVisible() {
 
 function resetGameplayPreviewCamera() {
   if (!gameplayRenderer) return;
-  gameplayCamera.position.copy(camera.position);
-  const direction = orbit.target.clone().sub(camera.position).normalize();
-  gameplayYaw = Math.atan2(-direction.x, -direction.z);
-  gameplayPitch = Math.asin(THREE.MathUtils.clamp(direction.y, -1, 1));
-  gameplayCamera.rotation.set(gameplayPitch, gameplayYaw, 0, "YXZ");
+  const bounds = sceneBounds();
+  const size = bounds.getSize(new THREE.Vector3());
+  bounds.getCenter(gameplayCameraTargetBase);
+  gameplayCameraTargetBase.y += size.y * .08;
+  gameplayFollowDistance = Math.max(2, size.length() * 1.15);
+  // Begin in a high three-quarter game camera. Looking around changes this
+  // orbit, but its target remains the character rather than drifting away.
+  gameplayYaw = 0;
+  gameplayPitch = THREE.MathUtils.degToRad(32);
   gameplayCamera.near = camera.near;
   gameplayCamera.far = camera.far;
   gameplayCamera.updateProjectionMatrix();
+  syncGameplayFollowCamera();
+}
+
+function syncGameplayFollowCamera() {
+  if (!gameplayRenderer) return;
+  const target = gameplayCameraTargetBase.clone().add(gameplayCharacterOffset);
+  const horizontal = Math.cos(gameplayPitch) * gameplayFollowDistance;
+  gameplayCamera.position.set(
+    target.x + Math.sin(gameplayYaw) * horizontal,
+    target.y + Math.sin(gameplayPitch) * gameplayFollowDistance,
+    target.z + Math.cos(gameplayYaw) * horizontal
+  );
+  gameplayCamera.lookAt(target);
 }
 
 function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Click view · WASD character · Shift run · Ctrl sneak · Space jump · Scroll: speed ${speedLabel} · mouse look · Esc closes`;
+    `Click view · WASD move · Shift run · Ctrl sneak · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Scroll: speed ${speedLabel} · mouse look · Esc closes`;
 }
 
 function gameplayAnimationClipId(kind) {
@@ -113,8 +130,92 @@ function setGameplayCharacterAnimation(kind) {
   return true;
 }
 
+function gameplayCombatClipId(kind) {
+  const patterns = {
+    slash: [/sword\s+slash/i, /slash/i],
+    thrust: [/sword\s+(thrust|poke)/i, /thrust|poke/i],
+    shieldBlock: [/shield\s+block/i],
+    swordBlock: [/sword\s+block/i]
+  };
+  return Object.entries(animationState.clips || {}).find(([, clip]) =>
+    (patterns[kind] || []).some(pattern => pattern.test(clip?.name || "")))?.[0] || null;
+}
+
+function startGameplayUpperBodyAction(kind, { held = false } = {}) {
+  const clipId = gameplayCombatClipId(kind);
+  if (!clipId) return false;
+  gameplayUpperBodyAction = { kind, clipId, startedAt: performance.now(), held };
+  animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
+  return true;
+}
+
+function stopGameplayUpperBodyAction(kind = null) {
+  if (!gameplayUpperBodyAction || (kind && gameplayUpperBodyAction.kind !== kind)) return false;
+  gameplayUpperBodyAction = null;
+  animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
+  return true;
+}
+
+function gameplayUpperBodyBone(bone) {
+  const label = `${bone?.id || ""} ${bone?.name || ""}`.toLowerCase().replace(/[_-]+/g, " ");
+  return !/(^|\s)(root|pelvis|hips?|thigh|upper leg|shin|calf|lower leg|ankle|foot|feet|toe)(\s|$)/.test(label);
+}
+
+function sampleGameplayClipPose(clip, bone, frame) {
+  const frames = (clip?.keys?.[bone.id] || []).slice().sort((a, b) => a.frame - b.frame);
+  if (!frames.length) return null;
+  let before = frames[0];
+  let after = frames[frames.length - 1];
+  for (const key of frames) {
+    if (key.frame <= frame) before = key;
+    if (key.frame >= frame) { after = key; break; }
+  }
+  const span = Math.max(1, after.frame - before.frame);
+  const alpha = before === after ? 0 : (frame - before.frame) / span;
+  const numberAt = (values, index, fallback) => {
+    const value = Number(values?.[index]);
+    return Number.isFinite(value) ? value : fallback;
+  };
+  const interpolate = (left, right, fallback) => fallback.map((value, index) => {
+    const from = numberAt(left, index, value);
+    return from + (numberAt(right, index, value) - from) * alpha;
+  });
+  const position = interpolate(before.position, after.position, bone.bindPosition.toArray());
+  const rotation = interpolate(before.rotation, after.rotation, bone.bindRotation.toArray());
+  return {
+    position: new THREE.Vector3().fromArray(position),
+    rotation: new THREE.Euler(rotation[0], rotation[1], rotation[2], bone.blockbenchLocalRotation ? "ZYX" : "XYZ")
+  };
+}
+
+function applyGameplayUpperBodyAction(poses) {
+  const action = gameplayUpperBodyAction;
+  if (!action) return;
+  const clip = animationState.clips?.[action.clipId];
+  if (!clip) { gameplayUpperBodyAction = null; return; }
+  const durationMs = Math.max(1, Number(clip.end) || 1) / Math.max(1, Number(clip.fps) || 24) * 1000;
+  const elapsedMs = performance.now() - action.startedAt;
+  if (!action.held && elapsedMs >= durationMs) {
+    gameplayUpperBodyAction = null;
+    return;
+  }
+  // A held block enters its authored guard and remains there. Looping the clip
+  // would repeatedly drop and raise the shield while the player held Block.
+  const phase = Math.min(1, elapsedMs / durationMs);
+  const frame = phase * Math.max(1, Number(clip.end) || 1);
+  for (const bone of rigBones) {
+    if (!gameplayUpperBodyBone(bone)) continue;
+    const actionPose = sampleGameplayClipPose(clip, bone, frame);
+    if (!actionPose) continue;
+    poses.set(bone.id, actionPose);
+    bone.position.copy(actionPose.position);
+    bone.rotation.copy(actionPose.rotation);
+  }
+}
+
 function applyGameplayCharacterPreviewPose(poses) {
   if (!gameplayPreviewVisible() || !(poses instanceof Map)) return;
+  applyGameplayUpperBodyAction(poses);
   for (const bone of rigBones.filter(candidate => !candidate.parentId)) {
     const pose = poses.get(bone.id);
     if (!pose) continue;
@@ -129,15 +230,17 @@ function openGameplayPreview() {
   if (!els.gameplayPreview || !gameplayRenderer) return false;
   els.gameplayPreview.hidden = false;
   gameplayKeys.clear();
+  gameplayMouseButtons.clear();
   gameplayCharacterOffset.set(0, 0, 0);
   gameplayCharacterYaw = 0;
+  gameplayUpperBodyAction = null;
   gameplaySpeedMultiplier = 1;
   resetGameplayPreviewCamera();
   gameplayLastFrame = performance.now();
   resizeGameplayPreview();
   updateGameplayHint();
   setGameplayCharacterAnimation("idle");
-  log("Opened Gameplay Preview. WASD controls the character, Shift runs, Ctrl sneaks, Space jumps, and mouse look inspects the animation from any view.");
+  log("Opened Gameplay Preview. Locomotion controls the legs independently while mouse/F/B combat actions layer over the upper body.");
   return true;
 }
 
@@ -146,8 +249,10 @@ function closeGameplayPreview() {
   if (document.pointerLockElement === gameplayCanvas) document.exitPointerLock?.();
   els.gameplayPreview.hidden = true;
   gameplayKeys.clear();
+  gameplayMouseButtons.clear();
   gameplayCharacterOffset.set(0, 0, 0);
   gameplayCharacterYaw = 0;
+  gameplayUpperBodyAction = null;
   animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   log("Closed Gameplay Preview and returned to the editor camera.");
   return true;
@@ -164,7 +269,7 @@ function resizeGameplayPreview() {
 
 function updateGameplayPreview(deltaSeconds) {
   if (!gameplayPreviewVisible()) return;
-  gameplayCamera.rotation.set(gameplayPitch, gameplayYaw, 0, "YXZ");
+  syncGameplayFollowCamera();
   const forward = new THREE.Vector3(0, 0, -1).applyQuaternion(gameplayCamera.quaternion);
   const right = new THREE.Vector3(1, 0, 0).applyQuaternion(gameplayCamera.quaternion);
   forward.y = 0;
@@ -179,6 +284,11 @@ function updateGameplayPreview(deltaSeconds) {
   const jumping = gameplayKeys.has("Space");
   const running = gameplayKeys.has("ShiftLeft") || gameplayKeys.has("ShiftRight");
   const sneaking = gameplayKeys.has("ControlLeft") || gameplayKeys.has("ControlRight");
+  if (gameplayMouseButtons.has(2)) {
+    if (gameplayUpperBodyAction?.kind !== "shieldBlock") startGameplayUpperBodyAction("shieldBlock", { held: true });
+  } else if (gameplayUpperBodyAction?.held && gameplayUpperBodyAction.kind === "shieldBlock") {
+    stopGameplayUpperBodyAction("shieldBlock");
+  }
   if (jumping) setGameplayCharacterAnimation("jump");
   else if (movement.lengthSq()) setGameplayCharacterAnimation(running ? "run" : sneaking ? "sneak" : "walk");
   else setGameplayCharacterAnimation(sneaking ? "sneak" : "idle");
@@ -189,8 +299,8 @@ function updateGameplayPreview(deltaSeconds) {
     const speed = Math.max(.35, worldSize * .055) * gameplaySpeedMultiplier * gaitSpeed;
     const step = direction.multiplyScalar(speed * deltaSeconds);
     gameplayCharacterOffset.add(step);
-    gameplayCamera.position.add(step);
     gameplayCharacterYaw = Math.atan2(direction.x, direction.z);
+    syncGameplayFollowCamera();
     animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
   }
 }
@@ -1927,8 +2037,10 @@ window.addEventListener("keydown", event => {
       closeGameplayPreview();
       return;
     }
-    if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "Space", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight"].includes(event.code)) {
+    if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyF", "KeyB", "Space", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight"].includes(event.code)) {
       event.preventDefault();
+      if (event.code === "KeyF" && !event.repeat) startGameplayUpperBodyAction("thrust");
+      else if (event.code === "KeyB" && !event.repeat) startGameplayUpperBodyAction("swordBlock", { held: true });
       gameplayKeys.add(event.code);
       return;
     }
@@ -2017,6 +2129,7 @@ window.addEventListener("keydown", event => {
 
 window.addEventListener("keyup", event => {
   gameplayKeys.delete(event.code);
+  if (event.code === "KeyB") stopGameplayUpperBodyAction("swordBlock");
   if (event.key === "Shift") isShiftHeld = false;
   if (event.key === "Control" || event.key === "Meta") isCtrlHeld = false;
   syncBoneRotationSnap();
@@ -2030,6 +2143,8 @@ window.addEventListener("keyup", event => {
 });
 window.addEventListener("blur", () => {
   gameplayKeys.clear();
+  gameplayMouseButtons.clear();
+  stopGameplayUpperBodyAction();
   isShiftHeld = false;
   isCtrlHeld = false;
   syncBoneRotationSnap();
@@ -2052,6 +2167,17 @@ els.gameplayPreviewOpenBtn?.addEventListener("click", openGameplayPreview);
 els.gameplayPreviewResetBtn?.addEventListener("click", resetGameplayPreviewCamera);
 els.gameplayPreviewCloseBtn?.addEventListener("click", closeGameplayPreview);
 gameplayCanvas?.addEventListener("click", () => gameplayCanvas.requestPointerLock?.());
+gameplayCanvas?.addEventListener("mousedown", event => {
+  if (!gameplayPreviewVisible() || document.pointerLockElement !== gameplayCanvas) return;
+  event.preventDefault();
+  gameplayMouseButtons.add(event.button);
+  if (event.button === 0) startGameplayUpperBodyAction("slash");
+  if (event.button === 2) startGameplayUpperBodyAction("shieldBlock", { held: true });
+});
+window.addEventListener("mouseup", event => {
+  gameplayMouseButtons.delete(event.button);
+  if (event.button === 2) stopGameplayUpperBodyAction("shieldBlock");
+});
 gameplayCanvas?.addEventListener("wheel", event => {
   if (!gameplayPreviewVisible()) return;
   event.preventDefault();
@@ -2066,10 +2192,15 @@ gameplayCanvas?.addEventListener("wheel", event => {
 document.addEventListener("mousemove", event => {
   if (document.pointerLockElement !== gameplayCanvas || !gameplayPreviewVisible()) return;
   gameplayYaw -= event.movementX * .0022;
-  gameplayPitch = THREE.MathUtils.clamp(gameplayPitch - event.movementY * .0022, -Math.PI / 2 + .02, Math.PI / 2 - .02);
+  gameplayPitch = THREE.MathUtils.clamp(gameplayPitch + event.movementY * .0022, THREE.MathUtils.degToRad(8), THREE.MathUtils.degToRad(82));
+  syncGameplayFollowCamera();
 });
 document.addEventListener("pointerlockchange", () => {
-  if (document.pointerLockElement !== gameplayCanvas) gameplayKeys.clear();
+  if (document.pointerLockElement !== gameplayCanvas) {
+    gameplayKeys.clear();
+    gameplayMouseButtons.clear();
+    stopGameplayUpperBodyAction();
+  }
 });
 
 window.ModelerStudio = {
