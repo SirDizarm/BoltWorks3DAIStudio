@@ -1048,7 +1048,7 @@ label {
   right: 10px;
   top: 10px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto auto auto;
   align-items: center;
   gap: 10px;
   padding: 7px 9px;
@@ -1071,6 +1071,27 @@ label {
   font-size: 11px;
   white-space: nowrap;
 }
+.gameplay-tools-menu { position: relative; }
+.gameplay-tools-menu > summary {
+  cursor: pointer;
+  padding: 6px 8px;
+  border: 1px solid #3b494f;
+  border-radius: 4px;
+  color: #dce7e9;
+  background: #172027;
+  list-style: none;
+  white-space: nowrap;
+}
+.gameplay-tools-menu[open] {
+  padding: 7px;
+  border: 1px solid #3b494f;
+  border-radius: 5px;
+  background: #11191e;
+}
+.gameplay-tools-menu[open] > summary { margin-bottom: 7px; }
+.gameplay-tools-menu label,
+.gameplay-tools-menu small { display: block; white-space: nowrap; }
+.gameplay-tools-menu small { margin-top: 5px; color: #8fa0aa; font-size: 10px; }
 .viewport.work-view-active .reference-viewports { display: none; }
 .viewport.work-view-active { grid-template-columns: minmax(0, 1fr); }
 .viewport.work-view-active .reference-viewports-toggle { display: none; }

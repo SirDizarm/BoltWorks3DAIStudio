@@ -108,7 +108,7 @@ function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Click to control · WASD move · Shift run · Ctrl crawl · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Scroll: speed ${speedLabel} · Esc releases control`;
+    `Click to control · WASD move · Shift run · Ctrl crawl · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Preview Tools: optional systems · Scroll: speed ${speedLabel} · Esc releases control`;
 }
 
 function updateGameplayArenaStatus(message = "") {
@@ -259,10 +259,17 @@ function spawnGameplayProjectile() {
 
 function updateGameplayArena(deltaSeconds) {
   if (!gameplayArenaGroup.visible) return;
-  gameplayArenaProjectileClock += deltaSeconds;
-  if (gameplayArenaProjectileClock > 2.4) {
+  const projectilesEnabled = !!els.gameplayProjectilesInput?.checked;
+  if (projectilesEnabled) {
+    gameplayArenaProjectileClock += deltaSeconds;
+    if (gameplayArenaProjectileClock > 2.4) {
+      gameplayArenaProjectileClock = 0;
+      spawnGameplayProjectile();
+    }
+  } else {
     gameplayArenaProjectileClock = 0;
-    spawnGameplayProjectile();
+    for (const projectile of gameplayArenaProjectiles) gameplayArenaGroup.remove(projectile);
+    gameplayArenaProjectiles.length = 0;
   }
   const character = gameplayCharacterWorldPosition();
   const shieldHeld = gameplayUpperBodyAction?.kind === "shieldBlock";
@@ -2419,6 +2426,14 @@ els.workViewRestoreBtn?.addEventListener("click", restoreOrthographicWorkView);
 els.gameplayPreviewOpenBtn?.addEventListener("click", openGameplayPreview);
 els.gameplayPreviewResetBtn?.addEventListener("click", resetGameplayPreviewCamera);
 els.gameplayPreviewCloseBtn?.addEventListener("click", closeGameplayPreview);
+els.gameplayProjectilesInput?.addEventListener("change", () => {
+  gameplayArenaProjectileClock = 0;
+  if (!els.gameplayProjectilesInput.checked) {
+    for (const projectile of gameplayArenaProjectiles) gameplayArenaGroup.remove(projectile);
+    gameplayArenaProjectiles.length = 0;
+  }
+  updateGameplayArenaStatus(els.gameplayProjectilesInput.checked ? "Projectiles enabled" : "Projectiles disabled");
+});
 gameplayCanvas?.addEventListener("click", () => {
   if (!gameplayPreviewVisible()) return;
   gameplayKeys.clear();
