@@ -882,6 +882,7 @@ const els = {
   animationKeyCopyBtn: document.querySelector("#animationKeyCopyBtn"),
   animationKeyPasteBtn: document.querySelector("#animationKeyPasteBtn"),
   animationKeyPasteMirroredBtn: document.querySelector("#animationKeyPasteMirroredBtn"),
+  animationDeleteSelectedKeyBtn: document.querySelector("#animationDeleteSelectedKeyBtn"),
   animationKeyClipboardStatus: document.querySelector("#animationKeyClipboardStatus"),
   animationDeleteFrameBtn: document.querySelector("#animationDeleteFrameBtn"),
   animationClearBtn: document.querySelector("#animationClearBtn"),

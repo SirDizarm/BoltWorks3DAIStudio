@@ -1139,8 +1139,20 @@ els.animationClipDeleteBtn?.addEventListener("click", deleteActiveAnimationClip)
 els.animationScrubber?.addEventListener("input", event => animationSetFrame(event.target.value));
 els.animationScrubber?.addEventListener("pointerup", event => selectAllAnimationKeysAtCurrentFrame({ add: event.ctrlKey || event.metaKey }));
 els.animationKeyBtn?.addEventListener("click", keyAnimationPose);
+els.animationDeleteSelectedKeyBtn?.addEventListener("click", deleteSelectedAnimationKeys);
 els.animationDeleteFrameBtn?.addEventListener("click", deleteAnimationFrameKeys);
-els.animationClearBtn?.addEventListener("click", () => { restoreAnimationBindPose(); animationState.keys = {}; syncActiveAnimationClip(); animationState.frame = 0; animationState.playing = false; updateAnimationPanel(); });
+els.animationClearBtn?.addEventListener("click", () => {
+  if (animationHasKeys()) recordBoneHistory("clear entire animation clip");
+  restoreAnimationBindPose();
+  animationState.keys = {};
+  syncActiveAnimationClip();
+  animationState.frame = 0;
+  animationState.playing = false;
+  animationKeySelection.clear();
+  animationKeySelectionAnchor = null;
+  updateAnimationPanel();
+  log("Cleared every key in the current animation clip. Undo is ready.");
+});
 els.animationExportBtn?.addEventListener("click", exportAnimationJson);
 els.animationNodeSaveFrameBtn?.addEventListener("click", keySelectedBonePoseAtCurrentFrame);
 els.animationKeyCopyBtn?.addEventListener("click", copySelectedAnimationKeys);

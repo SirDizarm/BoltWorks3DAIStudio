@@ -457,7 +457,7 @@ function syncTPoseFittingUi() {
     : "Select T-Pose from the Animation Clip menu to fit the rig";
   if (els.addGripHandsBtn) els.addGripHandsBtn.disabled = !tPoseFittingMode;
   document.body.classList.toggle("t-pose-fitting-active", tPoseFittingMode);
-  for (const control of [els.animationPlayBtn, els.animationStopBtn, els.animationPrevBtn, els.animationNextBtn, els.animationResetBtn, els.animationScrubber, els.animationKeyBtn, els.animationDeleteFrameBtn, els.animationClearBtn, els.animationClipDeleteBtn, els.animationFpsInput, els.animationEndInput]) {
+  for (const control of [els.animationPlayBtn, els.animationStopBtn, els.animationPrevBtn, els.animationNextBtn, els.animationResetBtn, els.animationScrubber, els.animationKeyBtn, els.animationDeleteSelectedKeyBtn, els.animationDeleteFrameBtn, els.animationClearBtn, els.animationClipDeleteBtn, els.animationFpsInput, els.animationEndInput]) {
     if (control) control.disabled = tPoseFittingMode;
   }
 }
@@ -1935,6 +1935,8 @@ function keyAnimationPose() {
   updateAnimationPanel();
 }
 function deleteAnimationFrameKeys() {
+  const keysAtFrame = rigBones.reduce((count, bone) => count + (animationState.keys[bone.id] || []).filter(key => key.frame === animationState.frame).length, 0);
+  if (keysAtFrame) recordBoneHistory(`delete all keys at frame ${animationState.frame}`);
   let removed = 0;
   for (const bone of rigBones) {
     const keys = animationState.keys[bone.id] || [];
@@ -2251,6 +2253,10 @@ function syncAnimationKeyClipboardUi() {
   const selectedCount = animationKeySelection.size;
   const copiedCount = animationKeyClipboard?.entries?.length || 0;
   if (els.animationKeyCopyBtn) els.animationKeyCopyBtn.disabled = selectedCount < 1;
+  if (els.animationDeleteSelectedKeyBtn) {
+    els.animationDeleteSelectedKeyBtn.disabled = selectedCount < 1;
+    els.animationDeleteSelectedKeyBtn.textContent = selectedCount > 1 ? "Delete Selected Keys" : "Delete Selected Key";
+  }
   if (els.animationKeyPasteBtn) els.animationKeyPasteBtn.disabled = copiedCount < 1;
   if (els.animationKeyPasteMirroredBtn) els.animationKeyPasteMirroredBtn.disabled = copiedCount < 1;
   if (els.animationKeyClipboardStatus) {
@@ -2258,6 +2264,26 @@ function syncAnimationKeyClipboardUi() {
       ? `${selectedCount} key${selectedCount === 1 ? "" : "s"} selected${copiedCount ? ` · ${copiedCount} copied` : ""}.`
       : (copiedCount ? `${copiedCount} copied key${copiedCount === 1 ? "" : "s"}. Move the playhead, then paste.` : "Click a key. Ctrl-click adds keys; Shift-click selects a range.");
   }
+}
+
+function deleteSelectedAnimationKeys() {
+  const entries = selectedAnimationKeyEntries();
+  if (!entries.length) {
+    log("Select the timeline key you want to delete first.");
+    return false;
+  }
+  recordBoneHistory(`delete ${entries.length} selected animation key${entries.length === 1 ? "" : "s"}`);
+  const selectedIds = new Set(entries.map(({ boneId, key }) => animationKeySelectionId(boneId, key.frame)));
+  for (const bone of rigBones) {
+    animationState.keys[bone.id] = (animationState.keys[bone.id] || []).filter(key => !selectedIds.has(animationKeySelectionId(bone.id, key.frame)));
+  }
+  animationKeySelection.clear();
+  animationKeySelectionAnchor = null;
+  syncActiveAnimationClip();
+  animationSetFrame(animationState.frame);
+  updateAnimationPanel();
+  log(`Deleted only ${entries.length} selected timeline key${entries.length === 1 ? "" : "s"}. Undo is ready.`);
+  return true;
 }
 
 function copySelectedAnimationKeys() {
