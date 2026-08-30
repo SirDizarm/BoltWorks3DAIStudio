@@ -463,6 +463,11 @@ function setTPoseFittingMode(enabled) {
   const next = !!enabled;
   if (next === tPoseFittingMode) return;
   animationState.playing = false;
+  // Leaving fitting is the final commit point. A pointer-up normally commits
+  // each drag, but browser focus changes and touch cancellation can skip it.
+  // Persist the complete visible fitting pose before changing modes so clips
+  // can never restore stale knee, ankle, hand, or socket pivots.
+  if (tPoseFittingMode && !next) commitTPoseBoneFitting();
   tPoseFittingMode = next;
   if (tPoseFittingMode) {
     syncActiveAnimationClip();
@@ -1394,10 +1399,10 @@ function setupSkinnedRig() {
   }
   const bones = rigBones.filter(bone => bone.avatarObjectId === avatarId);
   const boneIds = new Set(bones.map(bone => bone.id));
-  bones.forEach(bone => {
-    bone.bindPosition.copy(bone.position);
-    bone.bindTail = bone.tail.clone();
-  });
+  // A loaded project already owns an authoritative fitted bind pose. Rebuilding
+  // the skin runtime must not replace it with whichever animation frame happens
+  // to be visible at the time.
+  bones.forEach(bone => initializeBoneRestState(bone));
   if (!avatar.isSkinnedMesh) avatar = replaceObjectWithSkinnedMesh(avatar, bones);
   const threeBones = new Map(bones.map(bone => {
     const threeBone = new THREE.Bone();

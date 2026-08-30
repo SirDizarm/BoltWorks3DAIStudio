@@ -1567,6 +1567,40 @@ function gameCharacterArmorBinding(object) {
   return { bone, rest };
 }
 
+function gameCharacterTemporaryRigidRuntime() {
+  const bones = rigBones.filter(bone => bone.role !== "camera");
+  if (!bones.length) return null;
+  const boneIds = new Set(bones.map(bone => bone.id));
+  const threeBones = new Map(bones.map(bone => {
+    const node = new THREE.Bone();
+    node.name = bone.name;
+    node.userData.rigBoneId = bone.id;
+    return [bone.id, node];
+  }));
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute("position", new THREE.Float32BufferAttribute([0, 0, 0, .0001, 0, 0, 0, .0001, 0], 3));
+  geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], 4));
+  geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute([1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0], 4));
+  const avatar = new THREE.SkinnedMesh(geometry, new THREE.MeshBasicMaterial({ visible: false }));
+  avatar.name = "BWS_Rigid_Character_Root";
+  avatar.userData.id = "bws-rigid-character-root";
+  for (const bone of bones) {
+    const node = threeBones.get(bone.id);
+    const parent = boneIds.has(bone.parentId) ? boneById(bone.parentId) : null;
+    if (parent) {
+      node.position.copy(bone.bindPosition || bone.position).sub(parent.bindPosition || parent.position);
+      threeBones.get(parent.id).add(node);
+    } else {
+      node.position.copy(bone.bindPosition || bone.position);
+      avatar.add(node);
+    }
+  }
+  avatar.updateMatrixWorld(true);
+  const skeleton = new THREE.Skeleton(bones.map(bone => threeBones.get(bone.id)));
+  avatar.bind(skeleton);
+  return { avatar, bones, threeBones, skeleton, temporary: true };
+}
+
 function gameCharacterCompactGlbSkins(source) {
   const input = new Uint8Array(source);
   const inputView = new DataView(input.buffer, input.byteOffset, input.byteLength);
@@ -1799,8 +1833,13 @@ async function gameCharacterBuildGlb({ baseName, avatar, boundObjects, clips, ke
 }
 
 async function exportGameCharacterPackage() {
+  const previousSkinRuntime = activeSkinRuntime;
   if (!activeSkinRuntime?.avatar?.isSkinnedMesh || !activeSkinRuntime?.skeleton) {
-    log("Export Game Character needs a glued Skin & Bone model with an active skeleton.");
+    activeSkinRuntime = gameCharacterTemporaryRigidRuntime();
+  }
+  if (!activeSkinRuntime?.avatar?.isSkinnedMesh || !activeSkinRuntime?.skeleton) {
+    log("Export Game Character needs a fitted bone rig with glued model parts.");
+    activeSkinRuntime = previousSkinRuntime;
     return;
   }
   syncActiveAnimationClip();
@@ -1871,6 +1910,11 @@ async function exportGameCharacterPackage() {
     if (animationState.clips?.[originalClipId]) setActiveAnimationClip(originalClipId);
     animationSetFrame(originalFrame, { render: true });
     animationState.playing = originalPlaying;
+    if (activeSkinRuntime?.temporary) {
+      activeSkinRuntime.avatar.geometry?.dispose?.();
+      activeSkinRuntime.avatar.material?.dispose?.();
+    }
+    activeSkinRuntime = previousSkinRuntime;
   }
 }
 
