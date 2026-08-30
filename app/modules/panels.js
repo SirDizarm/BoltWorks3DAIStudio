@@ -506,12 +506,7 @@ setSelectionHighlightVisible(selectionHighlightVisible, { silent: true });
 [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ].forEach(control => {
   control?.addEventListener("change", applyBonePanelValues);
 });
-[els.boneAnatomyScaleX, els.boneAnatomyScaleY, els.boneAnatomyScaleZ].forEach(control => {
-  control?.addEventListener("change", () => applySelectedBoneAnatomyScale(false));
-});
-els.resetBoneAnatomyScaleBtn?.addEventListener("click", () => applySelectedBoneAnatomyScale(true));
 els.showBonesInput?.addEventListener("change", rebuildBoneVisuals);
-els.skeletonModeInput?.addEventListener("change", event => setSkeletonMode(event.target.checked));
 els.boneGuideScaleInput?.addEventListener("input", event => setBoneGuideScale(event.target.value));
 els.mirrorBoneEditsInput?.addEventListener("change", event => {
   mirrorBoneEdits = event.target.checked;
@@ -1040,6 +1035,24 @@ els.saveProjectBtn.addEventListener("click", () => {
     objects: objects.length,
     checked: checkedIds.size
   });
+});
+els.newWorkspaceBtn?.addEventListener("click", async () => {
+  const hasWork = objects.length > 0;
+  if (hasWork && !window.confirm("Start a new empty workspace? Your current model will stay in the recovery save until you confirm this action.")) return;
+  els.newWorkspaceBtn.disabled = true;
+  try {
+    await clearBwsRecoveryRecord();
+    clearObjects({ record: false });
+    if (els.projectNameInput) els.projectNameInput.value = "modeler-project";
+    setBwsAutoSaveStatus("Fresh workspace", "saved");
+    log("New empty workspace started. The previous automatic recovery save was cleared.");
+  } catch (error) {
+    console.warn("Could not start a fresh workspace", error);
+    setBwsAutoSaveStatus("Could not start fresh workspace", "problem");
+    log("Could not start a new workspace because recovery storage could not be cleared.");
+  } finally {
+    els.newWorkspaceBtn.disabled = false;
+  }
 });
 els.loadProjectBtn.addEventListener("click", () => els.importProjectFile.click());
 els.insertObjBtn?.addEventListener("click", () => {

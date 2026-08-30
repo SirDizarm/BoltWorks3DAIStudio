@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.44.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.45.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1516,7 +1516,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.44.js?v=49.60.44"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.45.js?v=49.60.45"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
@@ -1562,7 +1562,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.44",
+  "tool-docking.js?v=49.60.45",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -1952,12 +1952,6 @@ for (const required of [
   "function addGripHandRig()",
   "Grip Socket ${side}",
   "const oldBoneObjects = new Set(activeSkinRuntime.threeBones.values())",
-  "function setSkeletonMode(enabled)",
-  "function addSimplifiedSkeletonVisuals()",
-  "function skeletonModeUsesDetailedModel()",
-  "Using the loaded detailed skeleton meshes as the anatomy display",
-  "new THREE.TubeGeometry(ribCurve, 16, .0075 * thickness, 6, false)",
-  "const spreadVector = new THREE.Vector3(0, spread, 0)",
   "Grip hands fitted: added ${added} and realigned ${realigned}",
   "setScaleSnap",
   "markerBtn",
@@ -2369,8 +2363,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.44 Experimental") || !documentSource.includes("v49.60.44 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.44 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.45 Experimental") || !documentSource.includes("v49.60.45 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.45 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2761,8 +2755,11 @@ if (!documentSource.includes('id="rigTransformToolLabel"') || !moduleSources.get
 if (!documentSource.includes('id="boneModeScaleBtn"') || !moduleSources.get("panels")?.includes('setRigTargetTransformMode("scale")') || !documentSource.includes('id="surfaceTransformModelBtn"') || !documentSource.includes('id="surfaceTransformSelectionBtn"') || !documentSource.includes('id="surfaceScaleGizmoBtn"') || !documentSource.includes('id="surfaceRotateGizmoBtn"') || !documentSource.includes('id="surfaceScaleAllAxesBtn"') || !moduleSources.get("meshes")?.includes("function setSurfaceTransformTarget") || !moduleSources.get("meshes")?.includes("function setSurfaceScaleAllAxes") || !moduleSources.get("meshes")?.includes("function updateSurfaceTransformGuides") || !moduleSources.get("meshes")?.includes("function surfacePointMapsScaleHandlePoint") || !moduleSources.get("meshes")?.includes("function scaleSelectedSurfaceByWorldFactors") || !moduleSources.get("meshes")?.includes("scaleHeldSideFromCenter") || !moduleSources.get("meshes")?.includes("oneSided: surfaceGizmoOneSidedScale") || !moduleSources.get("meshes")?.includes("function rotateSelectedSurfaceByWorldQuaternion") || !moduleSources.get("meshes")?.includes("function mirroredSurfacePointMaps") || !moduleSources.get("meshes")?.includes("mirroredMovement.x *= -1") || !moduleSources.get("viewport")?.includes("surfaceScaleOriginMarker") || !moduleSources.get("viewport")?.includes("surfaceScaleAnchorMarker") || !moduleSources.get("viewport")?.includes("surfaceScaleAnchorLine") || !moduleSources.get("viewport")?.includes("surfaceMirrorDotTexture") || !moduleSources.get("viewport")?.includes("surfaceMirrorGhostMarker")) {
   throw new Error("Animator armor/skin editing and Whole Face surface editing must provide model/selection transform targeting with interactive Move, Rotate, and Scale gizmos.");
 }
-if (!documentSource.includes('id="boneAnatomyScaleX"') || !documentSource.includes('id="boneAnatomyScaleY"') || !documentSource.includes('id="boneAnatomyScaleZ"') || !moduleSources.get("rigging")?.includes("function applySelectedBoneAnatomyScale") || !moduleSources.get("rigging")?.includes("anatomyScale:")) {
-  throw new Error("Selected simplified skeleton parts must expose persistent width, height, and depth controls.");
+if (documentSource.includes('id="skeletonModeInput"') || documentSource.includes("Skeleton Mode") || moduleSources.get("rigging")?.includes("skeletonDisplayMode")) {
+  throw new Error("The unreliable Skeleton Mode must be removed from the editor and saved rig state.");
+}
+if (!documentSource.includes('id="newWorkspaceBtn"') || !moduleSources.get("autosave-update")?.includes("async function clearBwsRecoveryRecord") || !moduleSources.get("panels")?.includes("New empty workspace started")) {
+  throw new Error("Project controls must provide a recovery-safe New Workspace action.");
 }
 if (moduleSources.get("rigging")?.includes("min-width:${timelineWidth}px") || !moduleSources.get("rigging")?.includes("--timeline-grid-size:${timelineGridSize}%") || !styleSource.includes("overflow-x: hidden") || !styleSource.includes("grid-template-columns: var(--animation-track-label-width, clamp(130px, 14vw, 190px)) minmax(0, 1fr)")) {
   throw new Error("Animator bone tracks must scale to the available screen width without a horizontal scrollbar.");

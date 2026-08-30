@@ -58,6 +58,21 @@ async function readBwsRecoveryRecord() {
   });
 }
 
+async function clearBwsRecoveryRecord() {
+  if (bwsAutoSaveTimer) {
+    clearTimeout(bwsAutoSaveTimer);
+    bwsAutoSaveTimer = null;
+  }
+  const database = await openBwsRecoveryDatabase();
+  return new Promise((resolve, reject) => {
+    const transaction = database.transaction(BWS_RECOVERY_STORE, "readwrite");
+    transaction.objectStore(BWS_RECOVERY_STORE).delete(BWS_RECOVERY_KEY);
+    transaction.oncomplete = () => resolve(true);
+    transaction.onerror = () => reject(transaction.error || new Error("Could not clear the recovery save."));
+    transaction.onabort = () => reject(transaction.error || new Error("Clearing the recovery save was interrupted."));
+  });
+}
+
 function saveProjectAutoRecoveryNow() {
   if (bwsAutoSaveTimer) {
     clearTimeout(bwsAutoSaveTimer);

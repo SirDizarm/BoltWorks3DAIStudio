@@ -55,8 +55,6 @@ let boneGuideScale = .4;
 let mirrorBoneEdits = false;
 const T_POSE_CLIP_ID = "__t_pose_fitting__";
 let tPoseFittingMode = false;
-let skeletonDisplayMode = false;
-let skeletonPreviousOpacity = null;
 let rigSelectionTarget = "bone";
 let modelingSelectionTarget = ["all", "skin", "armor", "bone"].includes(localStorage.getItem("boltworks.modelingSelectionTarget"))
   ? localStorage.getItem("boltworks.modelingSelectionTarget")
@@ -1012,7 +1010,6 @@ function serializeBoneRig() {
     showGuides: els.showBonesInput?.checked ?? true,
     guideScale: round(boneGuideScale),
     mirrorBoneEdits,
-    skeletonDisplayMode,
     selectionTarget: rigSelectionTarget,
     modelOpacity: round(rigModelOpacity),
     bones: rigBones.map(bone => ({
@@ -1090,12 +1087,10 @@ function restoreBoneRig(data = {}) {
   selectedBoneId = boneById(data.selectedBoneId)?.id || rigBones[0]?.id || null;
   boneGuideScale = THREE.MathUtils.clamp(Number(data.guideScale) || .4, .2, 1);
   mirrorBoneEdits = !!data.mirrorBoneEdits;
-  skeletonDisplayMode = !!data.skeletonDisplayMode;
   rigSelectionTarget = ["bone", "skin", "armor"].includes(data.selectionTarget) ? data.selectionTarget : "bone";
   rigModelOpacity = THREE.MathUtils.clamp(Number(data.modelOpacity) || 1, .1, 1);
   syncBoneGuideScaleUi();
   if (els.mirrorBoneEditsInput) els.mirrorBoneEditsInput.checked = mirrorBoneEdits;
-  if (els.skeletonModeInput) els.skeletonModeInput.checked = skeletonDisplayMode;
   syncRigSelectionTargetUi();
   requestAnimationFrame(ensureRigObjectMoveTool);
   syncRigModelOpacityUi();
@@ -2429,18 +2424,6 @@ function rebuildBoneVisuals() {
   boneRigGroup.layers.enable(0);
   boneRigGroup.layers.enable(1);
   boneRigGroup.layers.enable(2);
-  if (skeletonDisplayMode) {
-    // A detailed, separately-modelled skeleton is already a much better anatomy
-    // display than the old generated cylinders and spheres. Use those real mesh
-    // parts directly when the loaded project supplies a complete skeleton; keep
-    // the procedural display only as a fallback for ordinary character meshes.
-    if (!skeletonModeUsesDetailedModel()) addSimplifiedSkeletonVisuals();
-    const selectedSkeletonBone = selectedBone();
-    if (selectedSkeletonBone && visible) addSelectedBoneGizmos(selectedSkeletonBone);
-    syncBoneTransformGizmo();
-    syncBoneJoystick();
-    return;
-  }
   for (const bone of rigBones) {
     if (bone.hidden) continue;
     const guidePosition = bone.displayPosition || bone.position;
@@ -2519,30 +2502,6 @@ function setBoneGuideScale(value) {
 function syncBoneGuideScaleUi() {
   if (els.boneGuideScaleInput) els.boneGuideScaleInput.value = String(boneGuideScale);
   if (els.boneGuideScaleValue) els.boneGuideScaleValue.textContent = `${Math.round(boneGuideScale * 100)}%`;
-}
-
-function setSkeletonMode(enabled) {
-  const next = !!enabled;
-  if (next === skeletonDisplayMode) return;
-  skeletonDisplayMode = next;
-  if (els.skeletonModeInput) els.skeletonModeInput.checked = skeletonDisplayMode;
-  if (skeletonDisplayMode) {
-    skeletonPreviousOpacity = rigModelOpacity;
-    const detailedModel = skeletonModeUsesDetailedModel();
-    if (detailedModel) setRigModelOpacity(1);
-    else if (rigModelOpacity > .45) setRigModelOpacity(.35);
-    if (els.showBonesInput) els.showBonesInput.checked = true;
-    if (!tPoseFittingMode) setTPoseFittingMode(true);
-    log(detailedModel
-      ? "Skeleton Mode enabled. Using the loaded detailed skeleton meshes as the anatomy display."
-      : "Skeleton Mode enabled. No complete skeleton mesh was found, so the generated anatomy fallback is shown inside the faded model.");
-  } else {
-    if (Number.isFinite(skeletonPreviousOpacity)) setRigModelOpacity(skeletonPreviousOpacity);
-    skeletonPreviousOpacity = null;
-    log("Skeleton Mode disabled. Restored the standard rig guides.");
-  }
-  rebuildBoneVisuals();
-  syncBonePanel();
 }
 
 function restoreRigModelMaterials() {
@@ -2688,10 +2647,6 @@ function syncBonePanel() {
   }
   const disabled = !bone;
   [els.boneNameInput, els.boneParentSelect, els.bonePosX, els.bonePosY, els.bonePosZ, els.boneRotX, els.boneRotY, els.boneRotZ, els.deleteBoneBtn].forEach(control => control.disabled = disabled);
-  const anatomyDisabled = disabled || !skeletonDisplayMode;
-  [els.boneAnatomyScaleX, els.boneAnatomyScaleY, els.boneAnatomyScaleZ, els.resetBoneAnatomyScaleBtn].forEach(control => {
-    if (control) control.disabled = anatomyDisabled;
-  });
   if (els.armorMountBtn) {
     els.armorMountBtn.disabled = disabled;
     els.armorMountBtn.textContent = bone?.armorMount ? "Remove Armor Bone" : "Use Bone for Armor";
@@ -2707,30 +2662,6 @@ function syncBonePanel() {
   els.boneRotX.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.x))) : "";
   els.boneRotY.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.y))) : "";
   els.boneRotZ.value = bone ? String(round(THREE.MathUtils.radToDeg(bone.rotation.z))) : "";
-  const anatomyScale = normalizedBoneAnatomyScale(bone);
-  if (els.boneAnatomyScaleX) els.boneAnatomyScaleX.value = bone ? String(round(anatomyScale.x)) : "1";
-  if (els.boneAnatomyScaleY) els.boneAnatomyScaleY.value = bone ? String(round(anatomyScale.y)) : "1";
-  if (els.boneAnatomyScaleZ) els.boneAnatomyScaleZ.value = bone ? String(round(anatomyScale.z)) : "1";
-}
-
-function applySelectedBoneAnatomyScale(reset = false) {
-  const bone = selectedBone();
-  if (!bone || !skeletonDisplayMode) return;
-  recordBoneHistory(reset ? "reset skeleton part size" : "resize skeleton part");
-  const next = reset
-    ? new THREE.Vector3(1, 1, 1)
-    : new THREE.Vector3(
-      THREE.MathUtils.clamp(Number(els.boneAnatomyScaleX?.value) || 1, .25, 3),
-      THREE.MathUtils.clamp(Number(els.boneAnatomyScaleY?.value) || 1, .25, 3),
-      THREE.MathUtils.clamp(Number(els.boneAnatomyScaleZ?.value) || 1, .25, 3)
-    );
-  bone.anatomyScale = next;
-  if (mirrorBoneEdits) {
-    const mirror = boneById(mirroredBoneId(bone.id));
-    if (mirror) mirror.anatomyScale = next.clone();
-  }
-  rebuildBoneVisuals();
-  syncBonePanel();
 }
 
 function applyBonePanelValues() {
