@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.53.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.54.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -26,6 +26,7 @@ const meshesSource = moduleSources.get("meshes") || "";
 const viewportSource = moduleSources.get("viewport") || "";
 const aiViewerSource = moduleSources.get("ai-viewer") || "";
 const minecraftSource = moduleSources.get("minecraft") || "";
+const riggingSource = moduleSources.get("rigging") || "";
 const poseStraightenerSource = moduleSources.get("pose-straightener") || "";
 const autoSaveUpdateSource = moduleSources.get("autosave-update") || "";
 // Preserve the existing checks while testing the new canonical modular source as
@@ -72,6 +73,15 @@ if (!viewportSource.includes("const gameplayMouseButtons = new Set()")
     || !viewportSource.includes("const gameplayArenaGroup = new THREE.Group()")
     || !viewportSource.includes('let gameplayLocomotionKind = "idle"')) {
   throw new Error("Gameplay Preview must retain independent movement, camera-follow, and upper-body action state.");
+}
+for (const gripChainBehavior of [
+  'suffix: "middle", label: "Middle"',
+  'suffix: "tip", label: "Tip"',
+  'Pose each knuckle, middle, and tip joint'
+]) {
+  if (!riggingSource.includes(gripChainBehavior)) {
+    throw new Error(`Grip-hand repair must create articulated three-joint finger chains: ${gripChainBehavior}`);
+  }
 }
 
 if (
@@ -191,7 +201,6 @@ if (meshesSource.includes('materialRule === "glass" || opacity < .999 || !!mesh.
   throw new Error("Texture alpha must not force double-sided interior rendering for opaque meshes.");
 }
 
-const riggingSource = moduleSources.get("rigging") || "";
 if (!riggingSource.includes("syncBoneTransformGizmo") || !riggingSource.includes("pickBoneFromMainPointer") || !riggingSource.includes("new TransformControls(camera, renderer.domElement)")) {
   throw new Error("Rigging must keep the main-viewport bone TransformControls gizmo and bone picking helpers.");
 }
@@ -1558,7 +1567,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.53.js?v=49.60.53"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.54.js?v=49.60.54"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1610,7 +1619,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.53",
+  "tool-docking.js?v=49.60.54",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2411,8 +2420,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.53 Experimental") || !documentSource.includes("v49.60.53 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.53 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.54 Experimental") || !documentSource.includes("v49.60.54 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.54 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

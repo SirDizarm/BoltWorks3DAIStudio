@@ -556,6 +556,45 @@ function addGripHandRig() {
         initializeBoneRestState(bone, { capture: true });
         added += 1;
       }
+      // A whole finger rotating from one joint behaves like a rigid stick. Add
+      // two descendants so authored grip poses can curl at the knuckle, middle
+      // phalanx, and fingertip while FK keeps every section attached.
+      const firstJoint = position.clone().lerp(tail, .36);
+      const secondJoint = position.clone().lerp(tail, .7);
+      bone.tail.copy(firstJoint);
+      initializeBoneRestState(bone, { capture: true });
+      const chain = [
+        { suffix: "middle", label: "Middle", position: firstJoint, tail: secondJoint, parentId: bone.id },
+        { suffix: "tip", label: "Tip", position: secondJoint, tail, parentId: `finger_${fingerName.toLowerCase()}_${side.toLowerCase()}_middle` }
+      ];
+      for (const segment of chain) {
+        const id = `finger_${fingerName.toLowerCase()}_${side.toLowerCase()}_${segment.suffix}`;
+        let child = rigBones.find(candidate => candidate.id === id);
+        if (!child) {
+          child = {
+            id,
+            name: `${fingerName} ${side} ${segment.label}`,
+            parentId: segment.parentId,
+            role: "finger",
+            avatarObjectId: hand.avatarObjectId || null,
+            position: segment.position.clone(),
+            rotation: new THREE.Vector3(),
+            tail: segment.tail.clone()
+          };
+          rigBones.push(child);
+          added += 1;
+        } else {
+          child.name = `${fingerName} ${side} ${segment.label}`;
+          child.parentId = segment.parentId;
+          child.role = "finger";
+          child.avatarObjectId = hand.avatarObjectId || null;
+          child.position.copy(segment.position);
+          child.rotation.set(0, 0, 0);
+          child.tail.copy(segment.tail);
+          realigned += 1;
+        }
+        initializeBoneRestState(child, { capture: true });
+      }
     });
     const position = handStart.clone().addScaledVector(outward, .58);
     let socket = rigBones.find(bone => bone.name === `Grip Socket ${side}`);
@@ -592,7 +631,7 @@ function addGripHandRig() {
   rebuildBoneVisuals();
   syncBonePanel();
   updateAnimationPanel();
-  log(`Grip hands fitted: added ${added} and realigned ${realigned} finger/socket bone${added + realigned === 1 ? "" : "s"}. Pose them in T-Pose Fitting; held items can use the Grip Socket bones.`);
+  log(`Grip hands fitted: added ${added} and realigned ${realigned} three-joint finger/socket bone${added + realigned === 1 ? "" : "s"}. Pose each knuckle, middle, and tip joint in T-Pose Fitting; held items can use the Grip Socket bones.`);
 }
 
 function prepareLooseBoneHierarchy() {
