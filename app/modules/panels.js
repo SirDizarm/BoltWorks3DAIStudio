@@ -108,7 +108,7 @@ function updateGameplayHint() {
   if (!els.gameplayHintText) return;
   const speedLabel = `${gameplaySpeedMultiplier.toFixed(2).replace(/\.?0+$/, "") || "1"}x`;
   els.gameplayHintText.textContent =
-    `Click to control · WASD move · Shift run · Ctrl crawl · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Preview Tools: optional systems · Scroll: speed ${speedLabel} · Esc releases control`;
+    `Click to control · Mouse steer · WASD move · Shift run · Space jump · Left click slash · Right click shield block · F thrust · B sword block · Crawl disabled · Preview Tools: optional systems · Scroll: speed ${speedLabel} · Esc releases control`;
 }
 
 function updateGameplayArenaStatus(message = "") {
@@ -507,17 +507,16 @@ function updateGameplayPreview(deltaSeconds) {
   if (gameplayKeys.has("KeyD")) movement.add(right);
   if (gameplayKeys.has("KeyA")) movement.sub(right);
   const running = gameplayKeys.has("ShiftLeft") || gameplayKeys.has("ShiftRight");
-  const crawling = gameplayKeys.has("ControlLeft") || gameplayKeys.has("ControlRight");
   if (gameplayMouseButtons.has(2)) {
     if (gameplayUpperBodyAction?.kind !== "shieldBlock") startGameplayUpperBodyAction("shieldBlock", { held: true });
   }
   if (jumping) setGameplayCharacterAnimation("jump");
-  else if (movement.lengthSq()) setGameplayCharacterAnimation(running ? "run" : crawling ? "crawl" : "walk");
-  else setGameplayCharacterAnimation(crawling ? "crawl" : "idle");
+  else if (movement.lengthSq()) setGameplayCharacterAnimation(running ? "run" : "walk");
+  else setGameplayCharacterAnimation("idle");
   if (movement.lengthSq()) {
     const worldSize = sceneBounds().getSize(new THREE.Vector3()).length();
     const direction = movement.normalize();
-    const gaitSpeed = crawling ? .25 : running ? 1.35 : .72;
+    const gaitSpeed = running ? 1.35 : .72;
     const speed = Math.max(.35, worldSize * .055) * gameplaySpeedMultiplier * gaitSpeed;
     const step = direction.multiplyScalar(speed * deltaSeconds);
     const nextOffset = gameplayCharacterOffset.clone().add(step);
@@ -2294,7 +2293,12 @@ window.addEventListener("keydown", event => {
       releaseGameplayControl();
       return;
     }
-    if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyF", "KeyB", "Space", "ShiftLeft", "ShiftRight", "ControlLeft", "ControlRight"].includes(event.code)) {
+    if (!editingText && ["ControlLeft", "ControlRight"].includes(event.code)) {
+      event.preventDefault();
+      if (!event.repeat) updateGameplayArenaStatus("Crawl is disabled until its replacement animation is ready");
+      return;
+    }
+    if (!editingText && ["KeyW", "KeyA", "KeyS", "KeyD", "KeyF", "KeyB", "Space", "ShiftLeft", "ShiftRight"].includes(event.code)) {
       event.preventDefault();
       if (!gameplayCameraLocked) return;
       if (event.code === "Space" && !event.repeat) startGameplayJump();
@@ -2466,6 +2470,20 @@ gameplayCanvas?.addEventListener("wheel", event => {
   );
   updateGameplayHint();
 }, { passive: false });
+document.addEventListener("mousemove", event => {
+  if (!gameplayPreviewVisible() || document.pointerLockElement !== gameplayCanvas || !gameplayCameraLocked) return;
+  // Mouse movement steers the character; WASD only supplies forward/backward
+  // movement and strafing. Keeping the follow yaw derived from character yaw
+  // leaves the camera locked behind the model throughout control.
+  gameplayCharacterYaw -= event.movementX * .0025;
+  gameplayPitch = THREE.MathUtils.clamp(
+    gameplayPitch - event.movementY * .0018,
+    THREE.MathUtils.degToRad(10),
+    THREE.MathUtils.degToRad(62)
+  );
+  syncGameplayFollowCamera();
+  animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
+});
 document.addEventListener("pointerlockchange", () => {
   if (gameplayPreviewVisible() && document.pointerLockElement !== gameplayCanvas) {
     gameplayCameraLocked = false;
