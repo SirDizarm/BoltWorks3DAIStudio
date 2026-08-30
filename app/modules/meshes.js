@@ -1315,7 +1315,7 @@ function textureEditorMaskTriangles(mesh) {
 function textureEditorCursor(tool = "none") {
   if (!tool || tool === "none") return "default";
   if (tool === "pan") return textureEditorState.isPanning ? "grabbing" : "grab";
-  if (tool === "shape" || tool.startsWith("select")) return "crosshair";
+  if (tool === "shape" || tool === "stencil" || tool.startsWith("select")) return "crosshair";
   const svg = tool === "hammer"
     ? `<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32"><path fill="#f4f7fb" stroke="#11181d" stroke-width="1.8" d="M8 7h9l3 3-3 3H13l6 10-3 2-7-11z"/><rect x="5.5" y="5.5" width="11" height="5" rx="1.5" fill="#ffb84d" stroke="#11181d" stroke-width="1.5"/></svg>`
     : tool === "eyedropper"
@@ -1359,6 +1359,7 @@ function syncTextureEditorToolSettings(tool = "none") {
     eyedropper: [],
     fill: ["color", "channelValue", "opacity"],
     shape: ["color", "channelValue", "size", "opacity", "shape"],
+    stencil: ["color", "channelValue", "stencil"],
     selectRect: [],
     selectEllipse: [],
     selectLasso: [],
@@ -1392,6 +1393,98 @@ function setTextureEditorTool(tool = "none") {
   hideTextureEditorPointerPreview();
   renderTextureEditorBrushPreview();
   renderTextureEditor();
+}
+
+function syncTextureEditorStencilUi() {
+  const loaded = !!textureEditorState.stencilImage;
+  const scale = Math.max(5, Math.min(300, Number(els.textureEditorStencilScale?.value) || 100));
+  const opacity = Math.max(1, Math.min(100, Number(els.textureEditorStencilOpacity?.value) || 100));
+  if (els.textureEditorStencilScaleOutput) els.textureEditorStencilScaleOutput.textContent = `${scale}%`;
+  if (els.textureEditorStencilOpacityOutput) els.textureEditorStencilOpacityOutput.textContent = `${opacity}%`;
+  if (els.textureEditorStampStencilBtn) els.textureEditorStampStencilBtn.disabled = !loaded || !textureEditorState.stencilCenter;
+  if (els.textureEditorStencilStatus) {
+    els.textureEditorStencilStatus.textContent = loaded
+      ? `${textureEditorState.stencilName || "Stencil"} · click the texture to move it, then stamp.`
+      : "Choose a transparent image, then click the texture to position it.";
+  }
+}
+
+function textureEditorStencilSize(source) {
+  const image = textureEditorState.stencilImage;
+  if (!image || !source) return { width: 0, height: 0 };
+  const naturalWidth = Math.max(1, image.naturalWidth || image.width || 1);
+  const naturalHeight = Math.max(1, image.naturalHeight || image.height || 1);
+  const base = Math.min(source.width, source.height) * .42;
+  const scale = Math.max(.05, Math.min(3, (Number(els.textureEditorStencilScale?.value) || 100) / 100));
+  const aspect = naturalWidth / naturalHeight;
+  return aspect >= 1
+    ? { width: base * scale, height: (base / aspect) * scale }
+    : { width: base * aspect * scale, height: base * scale };
+}
+
+function drawTextureEditorStencil(context, source, center, { preview = false } = {}) {
+  const image = textureEditorState.stencilImage;
+  if (!image || !source || !center) return false;
+  const { width, height } = textureEditorStencilSize(source);
+  if (!width || !height) return false;
+  const rotation = THREE.MathUtils.degToRad(Number(els.textureEditorStencilRotation?.value) || 0);
+  const opacity = Math.max(.01, Math.min(1, (Number(els.textureEditorStencilOpacity?.value) || 100) / 100));
+  context.save();
+  context.translate(center.x, center.y);
+  context.rotate(rotation);
+  context.globalAlpha = preview ? Math.min(.72, opacity * .72) : opacity;
+  if (els.textureEditorStencilUseColors?.checked) {
+    context.drawImage(image, -width / 2, -height / 2, width, height);
+  } else {
+    const mask = document.createElement("canvas");
+    mask.width = Math.max(1, Math.round(width));
+    mask.height = Math.max(1, Math.round(height));
+    const maskContext = mask.getContext("2d");
+    maskContext.drawImage(image, 0, 0, mask.width, mask.height);
+    maskContext.globalCompositeOperation = "source-in";
+    maskContext.fillStyle = textureEditorBrushSettings().color;
+    maskContext.fillRect(0, 0, mask.width, mask.height);
+    context.drawImage(mask, -width / 2, -height / 2, width, height);
+  }
+  context.restore();
+  return true;
+}
+
+async function loadTextureEditorStencilFile(file) {
+  if (!file) return false;
+  if (els.textureEditorStencilStatus) els.textureEditorStencilStatus.textContent = "Loading stencil...";
+  try {
+    textureEditorState.stencilImage = await loadImage(await readFileAsDataUrl(file));
+    textureEditorState.stencilName = file.name || "Stencil";
+    const source = currentTextureEditorCanvas();
+    textureEditorState.stencilCenter = source ? { x: source.width / 2, y: source.height / 2 } : null;
+    syncTextureEditorStencilUi();
+    renderTextureEditor();
+    return true;
+  } catch (error) {
+    textureEditorState.stencilImage = null;
+    textureEditorState.stencilCenter = null;
+    if (els.textureEditorStencilStatus) els.textureEditorStencilStatus.textContent = error?.message || "Could not load stencil.";
+    syncTextureEditorStencilUi();
+    return false;
+  }
+}
+
+function stampTextureEditorStencil() {
+  const mesh = textureEditorMesh();
+  const source = currentTextureEditorCanvas();
+  const center = textureEditorState.stencilCenter;
+  if (!mesh || !source || !center || !textureEditorState.stencilImage) return false;
+  snapshotTextureEditor();
+  const context = source.getContext("2d");
+  context.save();
+  textureEditorClipToActiveMask(context, mesh, source);
+  drawTextureEditorStencil(context, source, center);
+  context.restore();
+  updateTextureEditorUndoButton();
+  renderTextureEditor();
+  log(`Stamped ${textureEditorState.stencilName || "stencil"} onto ${mesh.name}.`);
+  return true;
 }
 
 function syncTextureEditorCursor() {
@@ -2159,6 +2252,27 @@ function renderTextureEditor() {
     context.drawImage(source, drawRect.left, drawRect.top, drawRect.width, drawRect.height);
     context.restore();
   }
+  if (textureEditorState.tool === "stencil" && textureEditorState.stencilImage && textureEditorState.stencilCenter) {
+    const previewCanvas = document.createElement("canvas");
+    previewCanvas.width = source.width;
+    previewCanvas.height = source.height;
+    drawTextureEditorStencil(previewCanvas.getContext("2d"), source, textureEditorState.stencilCenter, { preview: true });
+    context.drawImage(previewCanvas, drawRect.left, drawRect.top, drawRect.width, drawRect.height);
+    const stencilSize = textureEditorStencilSize(source);
+    const scaleX = drawRect.width / Math.max(1, source.width);
+    const scaleY = drawRect.height / Math.max(1, source.height);
+    context.save();
+    context.translate(
+      drawRect.left + textureEditorState.stencilCenter.x * scaleX,
+      drawRect.top + textureEditorState.stencilCenter.y * scaleY
+    );
+    context.rotate(THREE.MathUtils.degToRad(Number(els.textureEditorStencilRotation?.value) || 0));
+    context.setLineDash([7, 5]);
+    context.lineWidth = 2;
+    context.strokeStyle = "rgba(255, 191, 71, 1)";
+    context.strokeRect(-stencilSize.width * scaleX / 2, -stencilSize.height * scaleY / 2, stencilSize.width * scaleX, stencilSize.height * scaleY);
+    context.restore();
+  }
   if (els.textureEditorShowUv.checked) {
     if (!onlySelected) {
       for (const triangle of allTriangles) drawUvTriangleOverlay(context, triangle, drawRect, "rgba(93, 223, 255, 0.85)", 1.5);
@@ -2764,6 +2878,7 @@ async function openTextureEditor() {
     // canvas backing size and its CSS size share the same aspect ratio.
     renderTextureEditor();
     requestTextureEditorRender();
+    syncTextureEditorStencilUi();
   } catch (error) {
     log(`Texture editor failed to open: ${error.message}`);
   }
@@ -2798,6 +2913,10 @@ function closeTextureEditor() {
   textureEditorState.shapeEnd = null;
   textureEditorState.isDrawingShape = false;
   textureEditorState.symmetry = "none";
+  textureEditorState.stencilImage = null;
+  textureEditorState.stencilName = "";
+  textureEditorState.stencilCenter = null;
+  syncTextureEditorStencilUi();
   for (const button of els.textureEditorSymmetryButtons || []) {
     const active = button.dataset.textureSymmetry === "none";
     button.classList.toggle("active", active);

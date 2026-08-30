@@ -489,14 +489,14 @@ function applyGameplayUpperBodyAction(poses) {
     gameplayUpperBodyAction = null;
     return;
   }
-  // Offensive actions repeat for as long as their button stays down. Defensive
-  // blocks still play once and hold their authored impact pose until release.
   const finalFrame = Math.max(1, Number(clip.end) || 1);
-  const loopWhileHeld = action.held && ["slash", "thrust"].includes(action.kind);
-  const phase = loopWhileHeld
-    ? (elapsedMs % durationMs) / durationMs
-    : Math.min(1, elapsedMs / durationMs);
-  const frame = reachedLastFrame && action.holdLastFrame && !loopWhileHeld ? finalFrame : phase * finalFrame;
+  // A held attack is a two-part action: play the authored slash once, then
+  // move into the poke and hold its point until the mouse button is released.
+  if (action.kind === "slash" && reachedLastFrame && (action.held || gameplayMouseButtons.has(0))) {
+    if (startGameplayUpperBodyAction("thrust", { held: true })) return;
+  }
+  const phase = Math.min(1, elapsedMs / durationMs);
+  const frame = reachedLastFrame && action.holdLastFrame ? finalFrame : phase * finalFrame;
   for (const bone of rigBones) {
     if (!gameplayUpperBodyBone(bone)) continue;
     const actionPose = sampleGameplayClipPose(clip, bone, frame);
@@ -704,7 +704,12 @@ function renderGameplayPreview() {
     cameraDirectorGroup,
     lineSketchCursor,
     triangleBuildGroup,
-    triangleBuildCursor
+    triangleBuildCursor,
+    boneRigGroup,
+    boneGridAxisGroup,
+    boneRingGuideGroup,
+    boneJoystickGroup,
+    boneTransform
   ].filter(Boolean);
   const visibility = helpers.map(helper => helper.visible);
   helpers.forEach(helper => { helper.visible = false; });
@@ -1953,6 +1958,16 @@ for (const button of els.textureEditorShapeButtons || []) {
   });
 }
 els.textureEditorShapeFilled?.addEventListener("change", renderTextureEditor);
+els.textureEditorChooseStencilBtn?.addEventListener("click", () => els.textureEditorStencilFile?.click());
+els.textureEditorStencilFile?.addEventListener("change", event => {
+  loadTextureEditorStencilFile(event.target.files?.[0]);
+  event.target.value = "";
+});
+[els.textureEditorStencilScale, els.textureEditorStencilRotation, els.textureEditorStencilOpacity, els.textureEditorStencilUseColors].forEach(input => input?.addEventListener("input", () => {
+  syncTextureEditorStencilUi();
+  renderTextureEditor();
+}));
+els.textureEditorStampStencilBtn?.addEventListener("click", stampTextureEditorStencil);
 for (const button of els.textureEditorSymmetryButtons || []) {
   button.addEventListener("click", () => setTextureEditorSymmetry(button.dataset.textureSymmetry || "none"));
 }
@@ -2011,6 +2026,12 @@ els.textureEditorCanvas.addEventListener("pointerdown", event => {
   }
   const point = textureEditorPointFromEvent(event);
   if (!point) return;
+  if (textureEditorState.tool === "stencil") {
+    textureEditorState.stencilCenter = point;
+    syncTextureEditorStencilUi();
+    renderTextureEditor();
+    return;
+  }
   if (textureEditorState.tool === "selectRect" || textureEditorState.tool === "selectEllipse" || textureEditorState.tool === "selectLasso") {
     textureEditorState.selectionDraft = {
       type: textureEditorState.tool === "selectEllipse" ? "ellipse" : textureEditorState.tool === "selectLasso" ? "lasso" : "rectangle",
@@ -2646,7 +2667,7 @@ gameplayCanvas?.addEventListener("mousedown", event => {
 });
 window.addEventListener("mouseup", event => {
   gameplayMouseButtons.delete(event.button);
-  if (event.button === 0) releaseGameplayUpperBodyAction("slash");
+  if (event.button === 0 && ["slash", "thrust"].includes(gameplayUpperBodyAction?.kind)) releaseGameplayUpperBodyAction();
   if (event.button === 2) releaseGameplayUpperBodyAction("shieldBlock");
 });
 gameplayCanvas?.addEventListener("wheel", event => {

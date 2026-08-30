@@ -3578,6 +3578,17 @@ function referenceToolFocusPoint() {
 }
 
 function updateReferenceViewFollowing() {
+  if (typeof gameplayPreviewVisible === "function" && gameplayPreviewVisible()) {
+    const target = gameplayCameraTargetBase.clone().add(gameplayCharacterOffset);
+    target.y += gameplayJumpHeight;
+    for (const view of ["front", "side"]) {
+      const state = referenceViewState[view];
+      state.center.copy(target);
+      const controls = referenceViewElements(view);
+      applyReferenceCameraFrame(controls.camera, controls.canvas, view);
+    }
+    return;
+  }
   const target = referenceToolFocusPoint();
   if (!target) return;
   for (const view of ["front", "side"]) {

@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.77.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.78.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -52,9 +52,9 @@ for (const gameplayPreviewBehavior of [
   "function releaseGameplayUpperBodyAction(kind",
   "function applyGameplayUpperBodyAction(poses)",
   "const reachedLastFrame = elapsedMs >= durationMs",
-  'const loopWhileHeld = action.held && ["slash", "thrust"].includes(action.kind)',
-  "(elapsedMs % durationMs) / durationMs",
-  "reachedLastFrame && action.holdLastFrame && !loopWhileHeld ? finalFrame",
+  'action.kind === "slash" && reachedLastFrame && (action.held || gameplayMouseButtons.has(0))',
+  'startGameplayUpperBodyAction("thrust", { held: true })',
+  "reachedLastFrame && action.holdLastFrame ? finalFrame",
   "holdLastFrame: true",
   "gameplayUpperBodyAction.held = false",
   "function applyGameplayCrawlEquipmentStow()",
@@ -76,6 +76,33 @@ for (const gameplayPreviewBehavior of [
 ]) {
   if (!panelsSource.includes(gameplayPreviewBehavior)) {
     throw new Error(`Gameplay Preview must keep a centered follow camera and layer combat above independent locomotion: ${gameplayPreviewBehavior}`);
+  }
+}
+if (!panelsSource.includes("boneRigGroup,")
+    || !panelsSource.includes("boneRingGuideGroup,")
+    || !riggingSource.includes('typeof gameplayPreviewVisible === "function" && gameplayPreviewVisible()')
+    || !riggingSource.includes("state.center.copy(target)")) {
+  throw new Error("Gameplay Preview must hide editor bone guides and keep both reference cameras centered on the moving character.");
+}
+for (const stencilFeature of [
+  'data-texture-tool="stencil"',
+  'id="textureEditorChooseStencilBtn"',
+  'id="textureEditorStencilScale"',
+  'id="textureEditorStencilRotation"',
+  'id="textureEditorStencilOpacity"',
+  'id="textureEditorStampStencilBtn"'
+]) {
+  if (!documentSource.includes(stencilFeature)) throw new Error(`Texture Editor stencil UI is missing: ${stencilFeature}`);
+}
+for (const stencilBehavior of [
+  "function loadTextureEditorStencilFile(file)",
+  "function drawTextureEditorStencil(context, source, center",
+  "function stampTextureEditorStencil()",
+  'textureEditorState.tool === "stencil"',
+  "textureEditorClipToActiveMask(context, mesh, source)"
+]) {
+  if (!meshesSource.includes(stencilBehavior) && !panelsSource.includes(stencilBehavior)) {
+    throw new Error(`Texture Editor stencil behavior is missing: ${stencilBehavior}`);
   }
 }
 if (!panelsSource.includes("if (document.pointerLockElement === gameplayCanvas) return;")
@@ -121,7 +148,8 @@ if (panelsSource.includes("const crateOffsets") || panelsSource.includes("gamepl
 if (panelsSource.includes('gameplayKeys.has("ControlLeft")') || panelsSource.includes('setGameplayCharacterAnimation(crawling ?')) {
   throw new Error("Gameplay crawl must remain disabled until its replacement animation is ready.");
 }
-if (panelsSource.includes('startGameplayUpperBodyAction("thrust"') || panelsSource.includes('startGameplayUpperBodyAction("swordBlock"')) {
+if (!panelsSource.includes('["KeyF", "KeyB"].includes(event.code)')
+    || !panelsSource.includes("is reserved for a future spell animation")) {
   throw new Error("Gameplay B/F controls must remain reserved for dedicated spell animations.");
 }
 if (!viewportSource.includes("const gameplayMouseButtons = new Set()")
@@ -1630,7 +1658,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.77.js?v=49.60.77"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.78.js?v=49.60.78"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1682,7 +1710,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.77",
+  "tool-docking.js?v=49.60.78",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2483,8 +2511,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.77 Experimental") || !documentSource.includes("v49.60.77 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.77 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.78 Experimental") || !documentSource.includes("v49.60.78 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.78 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

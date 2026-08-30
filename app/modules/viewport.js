@@ -1240,6 +1240,16 @@ const els = {
   textureEditorSelectionStatus: document.querySelector("#textureEditorSelectionStatus"),
   textureEditorShapeButtons: [...document.querySelectorAll("[data-texture-shape]")],
   textureEditorShapeFilled: document.querySelector("#textureEditorShapeFilled"),
+  textureEditorChooseStencilBtn: document.querySelector("#textureEditorChooseStencilBtn"),
+  textureEditorStencilFile: document.querySelector("#textureEditorStencilFile"),
+  textureEditorStencilScale: document.querySelector("#textureEditorStencilScale"),
+  textureEditorStencilScaleOutput: document.querySelector("#textureEditorStencilScaleOutput"),
+  textureEditorStencilRotation: document.querySelector("#textureEditorStencilRotation"),
+  textureEditorStencilOpacity: document.querySelector("#textureEditorStencilOpacity"),
+  textureEditorStencilOpacityOutput: document.querySelector("#textureEditorStencilOpacityOutput"),
+  textureEditorStencilUseColors: document.querySelector("#textureEditorStencilUseColors"),
+  textureEditorStampStencilBtn: document.querySelector("#textureEditorStampStencilBtn"),
+  textureEditorStencilStatus: document.querySelector("#textureEditorStencilStatus"),
   textureEditorSymmetryButtons: [...document.querySelectorAll("[data-texture-symmetry]")],
   textureEditorToolSettings: [...document.querySelectorAll("[data-texture-setting]")],
   textureEditorIdleHint: document.querySelector("#textureEditorIdleHint"),
@@ -1392,7 +1402,10 @@ const textureEditorState = {
   uvLayoutDrag: null,
   layers: [],
   activeLayerId: null,
-  layerCounter: 0
+  layerCounter: 0,
+  stencilImage: null,
+  stencilName: "",
+  stencilCenter: null
 };
 
 const textureLibrary = new Map();

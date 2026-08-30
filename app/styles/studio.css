@@ -2202,6 +2202,41 @@ label {
   width: auto;
 }
 
+.texture-editor-stencil-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  flex: 1 1 100%;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 191, 71, .42);
+  border-radius: 8px;
+  background: rgba(255, 191, 71, .06);
+}
+
+.texture-editor-stencil-controls[hidden] {
+  display: none;
+}
+
+.texture-editor-stencil-controls label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.texture-editor-stencil-controls input[type="range"] {
+  width: 110px;
+}
+
+.texture-editor-stencil-controls output {
+  min-width: 42px;
+  font-variant-numeric: tabular-nums;
+}
+
+#textureEditorStencilStatus {
+  flex: 1 1 220px;
+}
+
 .texture-editor-workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;
