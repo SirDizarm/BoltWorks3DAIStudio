@@ -253,8 +253,9 @@ function closeGameplayPreview() {
   gameplayCharacterOffset.set(0, 0, 0);
   gameplayCharacterYaw = 0;
   gameplayUpperBodyAction = null;
+  animationState.playing = false;
   animationSetFrame(animationState.frame, { render: false, lightweightPanel: true });
-  log("Closed Gameplay Preview and returned to the editor camera.");
+  log("Closed Gameplay Preview, stopped its animation, and returned to the editor camera.");
   return true;
 }
 
