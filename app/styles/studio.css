@@ -1416,6 +1416,20 @@ label {
   font-size: 13px;
 }
 
+.bone-import-export-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  min-width: 0;
+}
+
+.bone-import-export-actions button {
+  width: 100%;
+  min-width: 0;
+  padding-inline: 6px;
+  font-size: 13px;
+}
+
 .hex-input {
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   text-transform: uppercase;
@@ -3057,7 +3071,12 @@ body.animator-workspace-active .app {
   background: #111719;
   box-shadow: 0 5px 8px rgba(0, 0, 0, .28);
 }
-.app.animator-mode .animation-export-actions { grid-area: exports; }
+.app.animator-mode .animation-export-actions {
+  grid-area: exports;
+  flex-wrap: wrap;
+  overflow: visible;
+  align-items: end;
+}
 .app.animator-mode .animation-sequence-builder { grid-area: sequence; }
 .app.animator-mode .animation-node-inspector { grid-area: inspector; }
 .app.animator-mode .animation-detail-camera { grid-area: detail; }
@@ -3162,7 +3181,7 @@ body.animator-workspace-active .app {
   background: #101619;
 }
 .animation-sequence-builder > strong { color: #f1c65b; white-space: nowrap; }
-.animation-sequence-list { display: flex; min-width: 0; align-items: center; gap: 4px; overflow-x: auto; }
+.animation-sequence-list { display: flex; min-width: 0; align-items: center; gap: 4px; flex-wrap: wrap; overflow-x: hidden; }
 .animation-sequence-item { display: inline-flex; align-items: center; gap: 2px; flex: 0 0 auto; padding: 2px 4px 2px 7px; border: 1px solid #415057; border-radius: 999px; background: #192125; color: #dbe5e8; }
 .animation-sequence-item button { min-width: 22px; padding: 2px 4px; border: 0; background: transparent; color: #9fb0b6; }
 .animation-sequence-arrow { color: #71e2c5; }
