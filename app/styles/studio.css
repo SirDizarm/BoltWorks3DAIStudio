@@ -2817,7 +2817,7 @@ body.animator-workspace-active .app {
   overflow: hidden;
 }
 
-.app.animator-mode .top > .toolbar-group:not(.workspace-picker):not(.animator-workspace-launcher):not(#toolbarProjectFilesGroup):not(#toolbarCameraControlsLauncherGroup):not(#toolbarUndoGroup) {
+.app.animator-mode .top > .toolbar-group:not(.workspace-picker):not(.animator-workspace-launcher):not(#toolbarProjectFilesGroup):not(#toolbarUndoGroup) {
   display: none !important;
 }
 

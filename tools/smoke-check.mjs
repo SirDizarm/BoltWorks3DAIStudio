@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.90.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.91.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1669,7 +1669,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.90.js?v=49.60.90"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.91.js?v=49.60.91"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1737,7 +1737,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.90",
+  "tool-docking.js?v=49.60.91",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2550,15 +2550,15 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.90 Experimental") || !documentSource.includes("v49.60.90 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.90 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.91 Experimental") || !documentSource.includes("v49.60.91 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.91 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
-  throw new Error("Minecraft and animator workspaces must expose dedicated Undo and Camera Controls toolbar groups.");
+  throw new Error("Modeling must expose Camera Controls and shared workspaces must expose Undo.");
 }
-if (!styleSource.includes(":not(#toolbarCameraControlsLauncherGroup):not(#toolbarUndoGroup)")) {
-  throw new Error("Animator workspace must keep Undo and Camera Controls visible.");
+if (!styleSource.includes(":not(#toolbarProjectFilesGroup):not(#toolbarUndoGroup)")) {
+  throw new Error("Animator workspace must keep Undo visible.");
 }
 if (!moduleSources.get("meshes").includes('context.imageSmoothingEnabled = false;') || !styleSource.includes("image-rendering: pixelated;")) {
   throw new Error("The texture editor must preserve crisp Minecraft pixels while zooming.");
@@ -3078,6 +3078,12 @@ if (!moduleSources.get("rigging")?.includes('`Hand ${side}`, `Forearm ${side}`')
 if (!moduleSources.get("import-export")?.includes("? rigModelOpacity")
   || !moduleSources.get("import-export")?.includes("editsRigPreviewOpacity")) {
   throw new Error("Animator inspector opacity must mirror and control the visible rig opacity.");
+}
+if (!moduleSources.get("import-export")?.includes("previewBaseMaterial?.opacity ?? mesh.userData.opacity")) {
+  throw new Error("Saving a project must preserve true mesh opacity instead of baking in the faded rig preview.");
+}
+if (styleSource.includes(":not(#toolbarCameraControlsLauncherGroup)")) {
+  throw new Error("Camera Controls must stay in Modeling and remain hidden in the Animator Workspace.");
 }
 if (!moduleSources.get("rigging")?.includes("preserveRangeInput")
   || !moduleSources.get("rigging")?.includes('typeof syncGridVisibility === "function"')

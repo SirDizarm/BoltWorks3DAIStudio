@@ -1,4 +1,7 @@
 function serializeObject(mesh) {
+  const previewBaseMaterial = typeof rigModelBaseMaterialState === "function"
+    ? rigModelBaseMaterialState(mesh.material)
+    : null;
   return {
     id: mesh.userData.id,
     name: mesh.name,
@@ -15,7 +18,9 @@ function serializeObject(mesh) {
     scale: mesh.scale.toArray().map(round),
     color: `#${mesh.material.color.getHexString()}`,
     roughness: round(mesh.material.roughness),
-    opacity: round(mesh.material.opacity ?? 1),
+    // Animator rig opacity is a viewport aid, not an editable material value.
+    // Saving while the rig is faded must preserve the mesh's true opacity.
+    opacity: round(previewBaseMaterial?.opacity ?? mesh.userData.opacity ?? mesh.material.opacity ?? 1),
     hidden: !!mesh.userData.hidden,
     groupId: mesh.userData.groupId || null,
     groupName: mesh.userData.groupName || null,
