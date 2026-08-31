@@ -941,6 +941,7 @@ function syncAnimationClipUi() {
     .join("");
   els.animationClipSelect.value = tPoseFittingMode ? T_POSE_CLIP_ID : animationState.activeClipId;
   renderBwsAnimationSequence();
+  if (typeof syncGameEnginePluginUi === "function") syncGameEnginePluginUi();
 }
 
 function hasBwsAnimationClips() { return Object.keys(animationState.clips || {}).length > 1; }
@@ -2456,6 +2457,50 @@ function updateAnimation(delta) {
 }
 function exportAnimationJson() { const blob = new Blob([JSON.stringify({ kind: "boltworks-animation", version: 1, ...serializeBoneRig().animation }, null, 2)], { type: "application/json" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "boltworks-animation.json"; link.click(); URL.revokeObjectURL(link.href); }
 
+function resetRigForNewWorkspace() {
+  rigBones = [];
+  selectedBoneId = null;
+  rigPoseChannels.clear();
+  activeSkinRuntime = null;
+  bonesGlued = false;
+  tPoseFittingMode = false;
+  animationKeySelection.clear();
+  animationKeySelectionAnchor = null;
+  animationKeyClipboard = null;
+  bwsAnimationSequence = [];
+  Object.assign(animationState, {
+    fps: 24, end: 48, frame: 0, playing: false, lastTime: 0, keys: {},
+    clips: { idle: { name: "Idle", fps: 24, end: 48, keys: {} } },
+    activeClipId: "idle", bindingRest: null
+  });
+  rebuildBoneVisuals();
+  syncBonePanel();
+  updateGlueButton();
+  updateAnimationPanel();
+  syncAnimationClipUi();
+}
+
+function exportReusableBoneRig() {
+  if (!rigBones.length) {
+    log("Add or import a rig before exporting it.");
+    return;
+  }
+  const rigging = serializeBoneRig();
+  rigging.animation.bindingRest = null;
+  rigging.bones = rigging.bones.map(bone => ({ ...bone, avatarObjectId: null }));
+  const payload = {
+    kind: "boltworks-rig",
+    formatVersion: 2,
+    generator: "BoltWorks 3D AI Studio",
+    coordinateSpace: "world",
+    rotationUnit: "radians",
+    rigging
+  };
+  const fileName = `${gameCharacterSafeName(currentProjectBaseName(), "boltworks-rig")}.bwsrig`;
+  download(fileName, JSON.stringify(payload, null, 2), "application/json");
+  log(`Exported ${fileName} with ${rigBones.length} bones and ${Object.keys(animationState.clips || {}).length} animation clips.`);
+}
+
 function importedBoneArray(data) {
   if (Array.isArray(data)) return data;
   if (Array.isArray(data?.bones)) return data.bones;
@@ -2466,6 +2511,18 @@ function importedBoneArray(data) {
 
 function importBoneStructure(data, fileName = "bone structure") {
   fitBoneCamera.restExtent = null;  // reframe Front/Side views for the new rig
+  const reusableRig = data?.kind === "boltworks-rig"
+    ? data.rigging
+    : (data?.editor?.rigging?.bones?.length ? data.editor.rigging : (data?.rigging?.animation ? data.rigging : null));
+  if (reusableRig?.bones?.length) {
+    const portableRig = JSON.parse(JSON.stringify(reusableRig));
+    portableRig.bones = portableRig.bones.map(bone => ({ ...bone, avatarObjectId: null }));
+    if (portableRig.animation) portableRig.animation.bindingRest = null;
+    recordBoneHistory("import reusable rig");
+    restoreBoneRig(portableRig);
+    log(`Imported reusable rig from ${fileName} with ${rigBones.length} bones and ${Object.keys(animationState.clips || {}).length} animation clips.`);
+    return;
+  }
   const sourceBones = importedBoneArray(data);
   if (!sourceBones?.length) throw new Error("Bone structure JSON does not contain a non-empty bones array.");
   recordBoneHistory("import bone structure");

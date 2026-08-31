@@ -2,12 +2,15 @@ const BUILTIN_PLUGINS = Object.freeze([
   Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "image-relief-mesh-lab", name: "Image to Mesh", version: "1.0.0", builtIn: true, enabled: true }),
   Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "minecraft-modeling", name: "Minecraft Modeling", version: "1.0.0", builtIn: true, enabled: true,
     contributes: Object.freeze({ workspaces: ["minecraft"], importers: ["bbmodel"], exporters: ["neoforge-1.21.1"] }) }),
-  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "scene-rendering", name: "Scene Rendering", version: "1.0.0", builtIn: true, enabled: false })
+  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "scene-rendering", name: "Scene Rendering", version: "1.0.0", builtIn: true, enabled: false }),
+  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "boltworks-game-engine", name: "BoltWorks Game Engine", version: "1.0.0", builtIn: true, enabled: true,
+    contributes: Object.freeze({ exporters: ["glb", "bws-character"], runtimes: ["raylib-layered-character"] }) })
 ]);
 const pluginRegistry = {
   imageReliefMeshLab: BUILTIN_PLUGINS[0],
   minecraftModeling: BUILTIN_PLUGINS[1],
-  sceneRenderingTools: BUILTIN_PLUGINS[2]
+  sceneRenderingTools: BUILTIN_PLUGINS[2],
+  boltworksGameEngine: BUILTIN_PLUGINS[3]
 };
 let installedPluginManifests = [];
 
@@ -42,7 +45,8 @@ function pluginTemplate() {
 function applyPluginAvailability(elements) {
   const pluginElements = [
     [elements.imageReliefMeshPlugin, pluginRegistry.imageReliefMeshLab],
-    [elements.sceneRenderingTools, pluginRegistry.sceneRenderingTools]
+    [elements.sceneRenderingTools, pluginRegistry.sceneRenderingTools],
+    [elements.gameEnginePluginSection, pluginRegistry.boltworksGameEngine]
   ];
   for (const [element, plugin] of pluginElements) {
     if (!element) continue;

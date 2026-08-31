@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.84.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.85.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1669,7 +1669,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.84.js?v=49.60.84"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.85.js?v=49.60.85"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1678,19 +1678,25 @@ for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn
 for (const required of ["applySolidColorToMeshes", "paintSelectedFacesSolidColor", 'recordHistory("paint selected faces")']) {
   if (!moduleSources.get("panels")?.includes(required)) throw new Error(`Mesh coloring behavior is missing ${required}.`);
 }
-for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "GLTFExporter"]) {
+for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "exportGlbBtn", "exportFullModelGlb", "GLTFExporter"]) {
   if (!documentSource.includes(required) && !applicationSource.includes(required)) {
     throw new Error(`Realtime game-character export is missing ${required}.`);
   }
 }
-for (const required of ['bone.role === "itemSocket"', '? "equipment" : "rigidPart"', "const boundObjects = objects.filter"]) {
-  if (!moduleSources.get("import-export")?.includes(required)) {
-    throw new Error(`Realtime game-character export is missing detachable-part or hand-slot support: ${required}.`);
+for (const required of ["importGlbBtn", "importGlbFile", "exportBoneRigBtn", "Import Rig / Bone Structure", ".bwsrig"]) {
+  if (!documentSource.includes(required)) throw new Error(`Animator model/rig interchange is missing ${required}.`);
+}
+for (const required of ["GLTFLoader", "importFullModelGlb", "gameCharacterImportedClipKeys"]) {
+  if (!applicationSource.includes(required)) throw new Error(`Animator GLB import is missing ${required}.`);
+}
+for (const required of ["resetRigForNewWorkspace", "exportReusableBoneRig", 'kind: "boltworks-rig"', "portableRig.animation.bindingRest = null"]) {
+  if (!moduleSources.get("rigging")?.includes(required) && !moduleSources.get("panels")?.includes(required)) {
+    throw new Error(`Reusable rig or clean-workspace behavior is missing ${required}.`);
   }
 }
-for (const required of ["gameCharacterCaptureEditorState", "gameCharacterRestoreEditorState", "capture isolated bind pose", "boundRestWorlds"]) {
+for (const required of ["GAME_ENGINE_CLIP_SPECS", '"Lower_Run"', '"Upper_Slash"', '"grip_socket_r"', '"grip_socket_l"', 'rigidPartAttachments: false', "const boundObjects = objects.filter"]) {
   if (!moduleSources.get("import-export")?.includes(required)) {
-    throw new Error(`Realtime game-character export must preserve the live editor rig and build from an isolated bind pose: ${required}.`);
+    throw new Error(`Realtime game-character export is missing detachable-part or hand-slot support: ${required}.`);
   }
 }
 for (const required of ["gameCharacterCaptureEditorState", "gameCharacterRestoreEditorState", "capture isolated bind pose", "boundRestWorlds"]) {
@@ -1731,7 +1737,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.84",
+  "tool-docking.js?v=49.60.85",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2544,8 +2550,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.84 Experimental") || !documentSource.includes("v49.60.84 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.84 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.85 Experimental") || !documentSource.includes("v49.60.85 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.85 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

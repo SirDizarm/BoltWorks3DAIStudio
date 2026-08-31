@@ -1049,6 +1049,7 @@ initializeMinecraftTools();
 els.addRootBoneBtn?.addEventListener("click", () => addRigBone(false));
 els.addChildBoneBtn?.addEventListener("click", () => addRigBone(true));
 els.deleteBoneBtn?.addEventListener("click", deleteSelectedBone);
+els.exportBoneRigBtn?.addEventListener("click", exportReusableBoneRig);
 els.importBoneStructureBtn?.addEventListener("click", () => els.boneStructureFile?.click());
 els.boneStructureFile?.addEventListener("change", async event => {
   const file = event.target.files?.[0];
@@ -1775,6 +1776,7 @@ els.newWorkspaceBtn?.addEventListener("click", async () => {
   try {
     await clearBwsRecoveryRecord();
     clearObjects({ record: false });
+    resetRigForNewWorkspace();
     if (els.projectNameInput) els.projectNameInput.value = "modeler-project";
     setBwsAutoSaveStatus("Fresh workspace", "saved");
     log("New empty workspace started. The previous automatic recovery save was cleared.");
@@ -1829,7 +1831,16 @@ document.querySelector("#exportSelectedObjBtn")?.addEventListener("click", () =>
 });
 document.querySelector("#exportObjPartsBtn").addEventListener("click", exportObjParts);
 els.exportBolt2dBtn?.addEventListener("click", exportBolt2dPackage);
+document.querySelector("#exportGlbBtn")?.addEventListener("click", exportFullModelGlb);
+els.importGlbBtn?.addEventListener("click", () => els.importGlbFile?.click());
+els.importGlbFile?.addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  await importFullModelGlb(file);
+  event.target.value = "";
+});
 document.querySelector("#exportGameCharacterBtn")?.addEventListener("click", exportGameCharacterPackage);
+document.querySelector("#gameEngineAutoMapBtn")?.addEventListener("click", () => syncGameEnginePluginUi({ forceAutoMap: true }));
+document.querySelector("#gameEngineValidateBtn")?.addEventListener("click", () => validateGameEngineCharacter({ announce: true }));
 document.querySelector("#exportDaeBtn").addEventListener("click", () => {
   const pkg = exportColladaPackage();
   for (const [name, dataUrl] of pkg.textureAssets) downloadDataUrl(name, dataUrl);

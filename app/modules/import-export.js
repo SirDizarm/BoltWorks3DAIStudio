@@ -1730,94 +1730,249 @@ function gameCharacterCompactGlbSkins(source) {
   return output.buffer;
 }
 
-function gameCharacterAnimationClips(exportBoneNames) {
-  syncActiveAnimationClip();
-  const clips = [];
-  for (const [clipId, sourceClip] of Object.entries(animationState.clips || {})) {
-    setActiveAnimationClip(clipId);
-    const fps = Math.max(1, Number(animationState.fps) || 24);
-    const end = Math.max(1, Number(animationState.end) || 1);
-    const times = Array.from({ length: end + 1 }, (_, frame) => frame / fps);
-    const samples = new Map([...exportBoneNames.keys()].map(id => [id, { position: [], quaternion: [] }]));
-    for (let frame = 0; frame <= end; frame += 1) {
-      animationSetFrame(frame, { render: false, lightweightPanel: true });
-      for (const [boneId] of exportBoneNames) {
-        const liveBone = activeSkinRuntime?.threeBones?.get(boneId);
-        const sample = samples.get(boneId);
-        if (!liveBone || !sample) continue;
-        sample.position.push(liveBone.position.x, liveBone.position.y, liveBone.position.z);
-        sample.quaternion.push(liveBone.quaternion.x, liveBone.quaternion.y, liveBone.quaternion.z, liveBone.quaternion.w);
-      }
-    }
-    const tracks = [];
-    for (const [boneId, exportName] of exportBoneNames) {
-      const sample = samples.get(boneId);
-      if (!sample?.position.length) continue;
-      tracks.push(new THREE.VectorKeyframeTrack(`${exportName}.position`, times, sample.position));
-      tracks.push(new THREE.QuaternionKeyframeTrack(`${exportName}.quaternion`, times, sample.quaternion));
-    }
-    clips.push(new THREE.AnimationClip(gameCharacterSafeName(sourceClip?.name || clipId, clipId), end / fps, tracks));
-  }
-  return clips;
+const GAME_ENGINE_EXPORT_FPS = 24;
+const GAME_ENGINE_CLIP_SPECS = Object.freeze([
+  { name: "Lower_Idle", layer: "lower", aliases: ["lower idle", "idle guard", "idle"], loopMode: "loop" },
+  { name: "Lower_Walk", layer: "lower", aliases: ["lower walk", "walk guard", "walking", "walk"], loopMode: "loop" },
+  { name: "Lower_Run", layer: "lower", aliases: ["lower run", "running speed", "sprint", "running", "run"], loopMode: "loop" },
+  { name: "Lower_Jump", layer: "lower", aliases: ["lower jump", "jump"], loopMode: "once" },
+  { name: "Upper_Idle", layer: "upper", aliases: ["upper idle", "idle guard", "idle"], loopMode: "loop" },
+  { name: "Upper_Slash", layer: "upper", aliases: ["upper slash", "sword slash", "slash", "attack"], loopMode: "once" },
+  { name: "Upper_Thrust", layer: "upper", aliases: ["upper thrust", "sword thrust poke", "sword thrust", "poke", "thrust"], loopMode: "holdLast" },
+  { name: "Upper_Block", layer: "upper", aliases: ["upper block", "shield block", "blocking", "block"], loopMode: "holdLast" }
+]);
+
+function gameCharacterSearchToken(value) {
+  return String(value || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
 
-function gameCharacterManifest(baseName, glbName, rig, boundObjects, lods = []) {
-  const sockets = rig.bones.filter(bone => bone.role === "itemSocket" || bone.armorMount || bone.armorMountId).map(bone => ({
-    id: bone.armorMountId || `socket-${bone.id}`,
-    boneId: bone.id,
-    name: bone.name,
-    purpose: "equipment"
+function gameCharacterCanonicalBoneName(bone) {
+  const token = gameCharacterSearchToken(`${bone.id} ${bone.name}`);
+  if (token.includes("grip socket r")) return "grip_socket_r";
+  if (token.includes("grip socket l")) return "grip_socket_l";
+  const exact = ["root", "pelvis", "spine", "chest", "neck", "head"].find(name => token.split(" ").includes(name));
+  if (exact) return exact;
+  return gameCharacterSafeName(bone.id || bone.name || "bone").toLowerCase();
+}
+
+function gameCharacterFindSourceClip(spec) {
+  const entries = Object.entries(animationState.clips || {});
+  const select = document.querySelector(`[data-game-engine-clip="${spec.name}"]`);
+  if (select?.value && animationState.clips?.[select.value]) return select.value;
+  const exact = entries.find(([id, clip]) => gameCharacterSearchToken(clip?.name || id) === gameCharacterSearchToken(spec.name));
+  if (exact) return exact[0];
+  for (const alias of spec.aliases) {
+    const found = entries.find(([id, clip]) => gameCharacterSearchToken(clip?.name || id).includes(alias));
+    if (found) return found[0];
+  }
+  return "";
+}
+
+function syncGameEnginePluginUi({ forceAutoMap = false } = {}) {
+  const entries = Object.entries(animationState.clips || {});
+  for (const spec of GAME_ENGINE_CLIP_SPECS) {
+    const select = document.querySelector(`[data-game-engine-clip="${spec.name}"]`);
+    if (!select) continue;
+    const previous = forceAutoMap ? "" : select.value;
+    select.innerHTML = `<option value="">Generate bind-pose fallback</option>` + entries.map(([id, clip]) =>
+      `<option value="${animationTimelineEscape(id)}">${animationTimelineEscape(clip?.name || id)}</option>`).join("");
+    select.value = previous && animationState.clips?.[previous] ? previous : gameCharacterFindSourceClip(spec);
+  }
+  const mapped = GAME_ENGINE_CLIP_SPECS.filter(spec => gameCharacterFindSourceClip(spec)).length;
+  if (els.gameEngineExportStatus) els.gameEngineExportStatus.textContent = `${mapped}/8 runtime clips mapped. Missing clips export as explicit bind-pose tracks until you assign a source.`;
+}
+
+function gameCharacterExportBones() {
+  const bones = rigBones.filter(bone => bone.role !== "camera").map(bone => ({
+    ...bone,
+    bindPosition: (bone.bindPosition || bone.position).clone(),
+    bindRotation: (bone.bindRotation || bone.rotation || new THREE.Euler()).clone(),
+    bindTail: (bone.bindTail || bone.tail || bone.position).clone()
   }));
-  const attachments = boundObjects.map((object, index) => ({
-    id: object.userData?.id || object.uuid,
-    name: object.name || "Bound Part",
-    boneId: gameCharacterArmorBinding(object)?.bone?.id || null,
-    mountId: object.userData?.rigArmorMountId || null,
-    role: object.userData?.rigRole === "armor" ? "equipment" : "rigidPart",
-    attachment: "rigid",
-    meshIndex: index + 1,
-    materialIndex: index + 1,
-    detachable: true
-  }));
-  const armor = attachments.filter(item => item.role === "equipment");
-  const clips = Object.entries(rig.animation?.clips || {}).map(([id, clip]) => ({
-    id,
-    name: gameCharacterSafeName(clip?.name || id, id),
-    fps: Math.max(1, Number(clip?.fps) || 24),
-    frameCount: Math.max(1, Number(clip?.end) || 1) + 1,
-    durationSeconds: Math.max(1, Number(clip?.end) || 1) / Math.max(1, Number(clip?.fps) || 24)
-  }));
+  const tokenFor = bone => gameCharacterSearchToken(`${bone.id} ${bone.name}`);
+  for (const side of ["l", "r"]) {
+    const socketId = `grip_socket_${side}`;
+    if (bones.some(bone => gameCharacterCanonicalBoneName(bone) === socketId)) continue;
+    const words = side === "l" ? ["left hand", "lefthand", "hand l"] : ["right hand", "righthand", "hand r"];
+    const hand = bones.find(bone => words.some(word => tokenFor(bone).includes(word)));
+    if (!hand) continue;
+    bones.push({
+      id: socketId,
+      name: socketId,
+      parentId: hand.id,
+      role: "itemSocket",
+      bindPosition: hand.bindTail.clone(),
+      bindRotation: hand.bindRotation.clone(),
+      bindTail: hand.bindTail.clone().add(new THREE.Vector3(0, .08, 0)),
+      generatedForExport: true
+    });
+  }
+  return bones;
+}
+
+function gameCharacterBoneLayer(bone) {
+  const token = gameCharacterSearchToken(`${bone.id} ${bone.name}`);
+  return /(^| )(root|pelvis|thigh|shin|foot|leg)( |$)/.test(` ${token} `) ? "lower" : "upper";
+}
+
+function gameCharacterSampleKey(sourceClip, bone, frame) {
+  const frames = (sourceClip?.keys?.[bone.id] || []).slice().sort((a, b) => Number(a.frame) - Number(b.frame));
+  const bindPosition = bone.bindPosition;
+  const bindRotation = bone.bindRotation;
+  if (!frames.length) return { position: bindPosition.clone(), rotation: bindRotation.clone() };
+  let before = frames[0], after = frames[frames.length - 1];
+  for (const key of frames) {
+    if (Number(key.frame) <= frame) before = key;
+    if (Number(key.frame) >= frame) { after = key; break; }
+  }
+  const span = Math.max(1, Number(after.frame) - Number(before.frame));
+  const alpha = before === after ? 0 : (frame - Number(before.frame)) / span;
+  const startPosition = Array.isArray(before.position) ? before.position : bindPosition.toArray();
+  const endPosition = Array.isArray(after.position) ? after.position : startPosition;
+  const startRotation = Array.isArray(before.rotation) ? before.rotation : bindRotation.toArray();
+  const endRotation = Array.isArray(after.rotation) ? after.rotation : startRotation;
   return {
-    kind: "boltworks-game-character",
-    formatVersion: 1,
-    generator: "BoltWorks 3D AI Studio",
+    position: new THREE.Vector3(...startPosition.map((value, axis) => value + (endPosition[axis] - value) * alpha)),
+    rotation: new THREE.Euler(...startRotation.map((value, axis) => value + (endRotation[axis] - value) * alpha), "XYZ")
+  };
+}
+
+function gameCharacterAnimationClips(exportBones, exportBoneNames) {
+  syncActiveAnimationClip();
+  const clips = [];
+  const clipMeta = [];
+  for (const spec of GAME_ENGINE_CLIP_SPECS) {
+    const sourceId = gameCharacterFindSourceClip(spec);
+    const sourceClip = sourceId ? animationState.clips[sourceId] : null;
+    const sourceFps = Math.max(1, Number(sourceClip?.fps) || GAME_ENGINE_EXPORT_FPS);
+    const sourceEnd = Math.max(1, Number(sourceClip?.end) || GAME_ENGINE_EXPORT_FPS);
+    const outputEnd = Math.max(1, Math.round(sourceEnd * GAME_ENGINE_EXPORT_FPS / sourceFps));
+    const times = Array.from({ length: outputEnd + 1 }, (_, frame) => frame / GAME_ENGINE_EXPORT_FPS);
+    const tracks = [];
+    for (const bone of exportBones) {
+      const parent = exportBones.find(candidate => candidate.id === bone.parentId);
+      const positions = [];
+      const quaternions = [];
+      for (let outputFrame = 0; outputFrame <= outputEnd; outputFrame += 1) {
+        const sourceFrame = Math.min(sourceEnd, outputFrame * sourceFps / GAME_ENGINE_EXPORT_FPS);
+        const enabled = gameCharacterBoneLayer(bone) === spec.layer;
+        const pose = enabled ? gameCharacterSampleKey(sourceClip, bone, sourceFrame) : {
+          position: bone.bindPosition.clone(), rotation: bone.bindRotation.clone()
+        };
+        if (gameCharacterCanonicalBoneName(bone) === "root") pose.position.copy(bone.bindPosition);
+        const localPosition = parent
+          ? bone.bindPosition.clone().sub(parent.bindPosition).add(pose.position.clone().sub(bone.bindPosition))
+          : bone.bindPosition.clone().add(pose.position.clone().sub(bone.bindPosition));
+        const bindQuaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(
+          bone.bindRotation.x, bone.bindRotation.y, bone.bindRotation.z, "XYZ"
+        ));
+        const poseQuaternion = new THREE.Quaternion().setFromEuler(pose.rotation);
+        const localQuaternion = poseQuaternion.multiply(bindQuaternion.invert()).normalize();
+        positions.push(localPosition.x, localPosition.y, localPosition.z);
+        quaternions.push(localQuaternion.x, localQuaternion.y, localQuaternion.z, localQuaternion.w);
+      }
+      const exportName = exportBoneNames.get(bone.id);
+      tracks.push(new THREE.VectorKeyframeTrack(`${exportName}.position`, times, positions));
+      tracks.push(new THREE.QuaternionKeyframeTrack(`${exportName}.quaternion`, times, quaternions));
+    }
+    clips.push(new THREE.AnimationClip(spec.name, outputEnd / GAME_ENGINE_EXPORT_FPS, tracks));
+    clipMeta.push({
+      id: spec.name,
+      name: spec.name,
+      sourceClipId: sourceId || null,
+      sourceClipName: sourceClip?.name || null,
+      layer: spec.layer,
+      loopMode: spec.loopMode,
+      fps: GAME_ENGINE_EXPORT_FPS,
+      frameCount: outputEnd + 1,
+      durationSeconds: outputEnd / GAME_ENGINE_EXPORT_FPS,
+      allBonesExplicit: true,
+      unusedBones: "bindPose"
+    });
+  }
+  return { clips, clipMeta };
+}
+
+function gameCharacterObjectRole(object) {
+  const token = gameCharacterSearchToken(`${object.name} ${object.userData?.rigRole || ""}`);
+  if (/sword|weapon|blade/.test(token)) return { role: "equipment", socket: "grip_socket_r" };
+  if (/shield|off hand|offhand/.test(token)) return { role: "equipment", socket: "grip_socket_l" };
+  if (object.userData?.rigRole === "armor") return { role: "equipment", socket: null };
+  return { role: "skinPart", socket: null };
+}
+
+function gameCharacterManifest(baseName, glbName, exportBones, boundObjects, clipMeta, lods = []) {
+  const sockets = exportBones.filter(bone => gameCharacterCanonicalBoneName(bone).startsWith("grip_socket_")).map(bone => ({
+    id: gameCharacterCanonicalBoneName(bone), boneId: bone.id, name: gameCharacterCanonicalBoneName(bone), purpose: "equipment"
+  }));
+  const bodyParts = [];
+  const attachments = [];
+  boundObjects.forEach((object, index) => {
+    const classification = gameCharacterObjectRole(object);
+    const entry = {
+      id: object.userData?.id || object.uuid,
+      name: object.name || "Skinned Part",
+      boneId: classification.socket || gameCharacterArmorBinding(object)?.bone?.id || null,
+      role: classification.role,
+      attachment: "skinned",
+      meshSlot: index + 1
+    };
+    if (classification.role === "equipment") attachments.push(entry);
+    else bodyParts.push(entry);
+  });
+  return {
+    kind: "boltworks-game-engine-character",
+    formatVersion: 2,
+    generator: "BoltWorks 3D AI Studio / BoltWorks Game Engine plugin",
     generatedAt: new Date().toISOString(),
     name: baseName,
     model: { file: glbName, format: "glTF-binary-2.0", animationSource: "embedded", lods },
     coordinateSystem: { handedness: "right-handed", units: "meters", upAxis: "+Y", groundPlane: "XZ" },
     skeleton: {
-      rootBoneIds: rig.bones.filter(bone => !bone.parentId).map(bone => bone.id),
-      bones: rig.bones.map(bone => ({
+      stableAcrossClips: true,
+      rootBoneIds: exportBones.filter(bone => !bone.parentId).map(bone => bone.id),
+      bones: exportBones.map(bone => ({
         id: bone.id,
-        name: bone.name,
-        parentId: bone.parentId,
-        role: bone.role,
-        bindPosition: bone.bindPosition || bone.position,
-        bindRotation: bone.bindRotation || bone.rotation,
-        tail: bone.bindTail || bone.tail,
-        detachable: bone.role !== "camera"
+        name: gameCharacterCanonicalBoneName(bone),
+        parentId: bone.parentId || null,
+        role: bone.role || gameCharacterBoneLayer(bone),
+        bindPosition: bone.bindPosition.toArray(),
+        bindRotation: bone.bindRotation.toArray()
       }))
     },
-    animations: clips,
+    animations: clipMeta,
     sockets,
-    attachments,
-    armor,
-    gameplay: {
-      supportsDetachedLimbs: true,
-      detachRule: "Detach a bone subtree; attached armor and sockets stay with that subtree.",
-      skinPolicy: "Skinned body and rigid armor share the embedded glTF skeleton."
+    bodyParts,
+    equipment: attachments,
+    runtime: {
+      engine: "Raylib",
+      fps: GAME_ENGINE_EXPORT_FPS,
+      layeredTracks: ["lower", "upper"],
+      rootMotion: false,
+      skinnedMeshes: true,
+      animatedMeshNodeTransforms: false,
+      rigidPartAttachments: false,
+      everyClipContainsEveryBone: true,
+      unusedBonesUseBindPose: true
     }
   };
+}
+
+function validateGameEngineCharacter({ announce = false } = {}) {
+  const exportBones = gameCharacterExportBones();
+  const names = new Set(exportBones.map(gameCharacterCanonicalBoneName));
+  const required = ["root", "pelvis", "spine", "chest", "neck", "head", "grip_socket_r", "grip_socket_l"];
+  const missingBones = required.filter(name => !names.has(name));
+  const missingClips = GAME_ENGINE_CLIP_SPECS.filter(spec => !gameCharacterFindSourceClip(spec)).map(spec => spec.name);
+  const hasCharacter = !!activeSkinRuntime?.avatar?.isSkinnedMesh || rigBones.length > 0;
+  const messages = [];
+  if (!hasCharacter) messages.push("fit or glue a character skeleton first");
+  if (missingBones.length) messages.push(`missing bones: ${missingBones.join(", ")}`);
+  if (missingClips.length) messages.push(`bind-pose fallbacks: ${missingClips.join(", ")}`);
+  const text = messages.length ? `Check character — ${messages.join("; ")}.` : "Character is ready for the layered Raylib export.";
+  if (els.gameEngineExportStatus) els.gameEngineExportStatus.textContent = text;
+  if (announce) log(text);
+  return { valid: hasCharacter && !missingBones.length, exportBones, missingBones, missingClips };
 }
 
 function gameCharacterSimplifiedGeometry(source, keepRatio, skinBones = null) {
@@ -1846,7 +2001,7 @@ function gameCharacterSimplifiedGeometry(source, keepRatio, skinBones = null) {
   return geometry;
 }
 
-async function gameCharacterBuildGlb({ baseName, avatar, skinBones, boundObjects, boundRestWorlds, clips, keepRatio, level }) {
+async function gameCharacterBuildGlb({ baseName, avatar, skinBones, exportBones, exportBoneNames, boundObjects, boundRestWorlds, clips, keepRatio, level }) {
   avatar.updateMatrixWorld(true);
   const exportAvatar = cloneSkeleton(avatar);
   exportAvatar.name = `${baseName}_Skin_LOD${level}`;
@@ -1856,13 +2011,39 @@ async function gameCharacterBuildGlb({ baseName, avatar, skinBones, boundObjects
   exportAvatar.traverse(node => {
     const id = node.userData?.rigBoneId;
     if (!node.isBone || !id) return;
-    node.name = `BWS_${gameCharacterSafeName(id, "bone")}`;
+    node.name = exportBoneNames.get(id) || gameCharacterCanonicalBoneName({ id, name: node.name });
     exportBonesById.set(id, node);
   });
+  const pendingBones = exportBones.filter(bone => !exportBonesById.has(bone.id));
+  while (pendingBones.length) {
+    const index = pendingBones.findIndex(bone => !bone.parentId || exportBonesById.has(bone.parentId));
+    if (index < 0) break;
+    const bone = pendingBones.splice(index, 1)[0];
+    const node = new THREE.Bone();
+    node.name = exportBoneNames.get(bone.id);
+    node.userData.rigBoneId = bone.id;
+    const parentBone = exportBones.find(candidate => candidate.id === bone.parentId);
+    if (parentBone && exportBonesById.has(parentBone.id)) {
+      node.position.copy(bone.bindPosition).sub(parentBone.bindPosition);
+      exportBonesById.get(parentBone.id).add(node);
+    } else {
+      node.position.copy(bone.bindPosition);
+      exportAvatar.add(node);
+    }
+    exportBonesById.set(bone.id, node);
+    exportAvatar.skeleton.bones.push(node);
+  }
+  exportAvatar.updateMatrixWorld(true);
+  exportAvatar.skeleton.calculateInverses();
   const avatarWorldInverse = avatar.matrixWorld.clone().invert();
   for (const object of boundObjects) {
     const binding = gameCharacterArmorBinding(object);
-    const targetBone = exportBonesById.get(binding.bone.id);
+    const classification = gameCharacterObjectRole(object);
+    const socketBone = classification.socket
+      ? exportBones.find(bone => gameCharacterCanonicalBoneName(bone) === classification.socket)
+      : null;
+    const targetBoneId = socketBone?.id || binding?.bone?.id;
+    const targetBone = exportBonesById.get(targetBoneId);
     const boneIndex = exportAvatar.skeleton.bones.indexOf(targetBone);
     if (!targetBone || boneIndex < 0) continue;
     const restWorld = new THREE.Matrix4();
@@ -1890,25 +2071,25 @@ async function gameCharacterBuildGlb({ baseName, avatar, skinBones, boundObjects
     geometry.setAttribute("skinIndex", new THREE.Uint16BufferAttribute(indices, 4));
     geometry.setAttribute("skinWeight", new THREE.Float32BufferAttribute(weights, 4));
     const sourceMaterial = Array.isArray(object.material) ? object.material[0] : object.material;
-    const armorMesh = new THREE.SkinnedMesh(geometry, sourceMaterial.clone());
-    armorMesh.name = gameCharacterSafeName(object.name, "Bound_Part");
-    armorMesh.userData = {
-      bwsRole: object.userData?.rigRole === "armor" ? "equipment" : "rigidPart",
+    const skinnedPart = new THREE.SkinnedMesh(geometry, sourceMaterial.clone());
+    skinnedPart.name = gameCharacterSafeName(object.name, "Skinned_Part");
+    skinnedPart.userData = {
+      bwsRole: classification.role,
       bwsObjectId: object.userData?.id || object.uuid,
-      bwsBoneId: binding.bone.id,
-      bwsMountId: object.userData?.rigArmorMountId || null,
+      bwsBoneId: targetBoneId,
+      bwsSocket: classification.socket,
       bwsLodLevel: level
     };
-    exportAvatar.add(armorMesh);
-    armorMesh.bind(exportAvatar.skeleton, exportAvatar.bindMatrix);
+    exportAvatar.add(skinnedPart);
+    skinnedPart.bind(exportAvatar.skeleton, exportAvatar.bindMatrix);
   }
   exportAvatar.userData.bwsMeshSlots = [
     { role: "skin", index: 0, id: avatar.userData?.id || avatar.uuid },
     ...boundObjects.map((object, index) => ({
-      role: object.userData?.rigRole === "armor" ? "equipment" : "rigidPart",
+      role: gameCharacterObjectRole(object).role,
       index: index + 1,
       id: object.userData?.id || object.uuid,
-      boneId: gameCharacterArmorBinding(object)?.bone?.id || null
+      boneId: gameCharacterObjectRole(object).socket || gameCharacterArmorBinding(object)?.bone?.id || null
     }))
   ];
   const root = new THREE.Group();
@@ -1939,6 +2120,7 @@ async function exportGameCharacterPackage() {
     return;
   }
   syncActiveAnimationClip();
+  const validation = validateGameEngineCharacter();
   const rig = serializeBoneRig();
   const baseName = gameCharacterSafeName(currentProjectBaseName(), "boltworks-character");
   const glbName = `${baseName}.glb`;
@@ -1951,16 +2133,22 @@ async function exportGameCharacterPackage() {
     animationState.playing = false;
     if (!(animationState.bindingRest instanceof Map)) prepareAnimationBindingRest();
     const avatar = activeSkinRuntime.avatar;
-    const exportBoneNames = new Map(activeSkinRuntime.bones.map(bone => [
-      bone.id,
-      `BWS_${gameCharacterSafeName(bone.id, "bone")}`
-    ]));
+    const exportBones = validation.exportBones;
+    const usedNames = new Set();
+    const exportBoneNames = new Map(exportBones.map(bone => {
+      const base = gameCharacterCanonicalBoneName(bone);
+      let name = base;
+      let suffix = 2;
+      while (usedNames.has(name)) name = `${base}_${suffix++}`;
+      usedNames.add(name);
+      return [bone.id, name];
+    }));
     const boundObjects = objects.filter(object => object !== avatar
       && object.geometry?.getAttribute?.("position")
       && !object.userData?.editorHelper
       && gameCharacterArmorBinding(object));
     exportStage = "sample animation clips";
-    const clips = gameCharacterAnimationClips(exportBoneNames);
+    const { clips, clipMeta } = gameCharacterAnimationClips(exportBones, exportBoneNames);
     exportStage = "capture isolated bind pose";
     restoreAnimationBindPose({ render: false });
     activeSkinRuntime.avatar.updateMatrixWorld(true);
@@ -1987,7 +2175,7 @@ async function exportGameCharacterPackage() {
     const binaries = [];
     for (const level of levels) {
       exportStage = `build LOD ${level.level}`;
-      const binary = await gameCharacterBuildGlb({ baseName, avatar: exportAvatar, skinBones: exportSkinBones, boundObjects, boundRestWorlds, clips, ...level });
+      const binary = await gameCharacterBuildGlb({ baseName, avatar: exportAvatar, skinBones: exportSkinBones, exportBones, exportBoneNames, boundObjects, boundRestWorlds, clips, ...level });
       binaries.push({ ...level, binary });
     }
     exportStage = "build character manifest";
@@ -1997,23 +2185,31 @@ async function exportGameCharacterPackage() {
       minDistance: level.minDistance,
       keepDetailPercent: Math.round(level.keepRatio * 100)
     }));
-    const manifest = gameCharacterManifest(baseName, glbName, rig, boundObjects, manifestLods);
+    const manifest = gameCharacterManifest(baseName, glbName, exportBones, boundObjects, clipMeta, manifestLods);
+    const clipList = [
+      "Clip\tFrames\tFPS\tLayer\tPlayback\tSource",
+      ...clipMeta.map(clip => `${clip.name}\t${clip.frameCount}\t${clip.fps}\t${clip.layer}\t${clip.loopMode}\t${clip.sourceClipName || "bind-pose fallback"}`)
+    ].join("\n");
     const readme = [
-      "BoltWorks Game Character Package v1",
+      "BoltWorks Game Engine Character Package v2",
       "",
-      `${glbName} contains the full-detail live skinned body, detachable rigid parts, equipment previews, skeleton, embedded materials, and realtime skeletal animations.`,
-      useLods ? "LOD1 and LOD2 contain progressively lighter body, rigid-part, and equipment geometry for distance-based rendering." : "No distance LOD files were requested.",
-      `${baseName}.bws-character.json contains stable bone IDs, hand/item sockets, detachable-part ownership, and gameplay metadata.`,
-      "Raylib can load the GLB with LoadModel and drive its bones every game frame with LoadModelAnimations and UpdateModelAnimation."
+      `${glbName} contains one shared skeleton, skinned body parts, socketed/skinned equipment, and all eight explicit layered clips at 24 FPS.`,
+      useLods ? "LOD1 and LOD2 contain progressively lighter skinned geometry for distance-based rendering." : "No distance LOD files were requested.",
+      `${baseName}.bws-character.json contains the stable skeleton, grip sockets, layer masks, playback modes, and runtime guarantees.`,
+      `${baseName}.clip-list.txt lists clip names, frame counts, FPS, layers, playback modes, and their source clips.`,
+      "CONFIRMED: animated body meshes are skinned meshes; the package contains no rigidPart body attachments and no animated mesh-node transform channels.",
+      "Raylib can evaluate Lower_* and Upper_* clips independently, combine their bone masks, and hold the final Upper_Thrust or Upper_Block frame."
     ].join("\n");
     exportStage = "assemble character archive";
     const zip = makeZip([
       ...binaries.map(level => ({ name: level.file, data: new Uint8Array(level.binary) })),
       { name: `${baseName}.bws-character.json`, data: JSON.stringify(manifest, null, 2) },
+      { name: `${baseName}.clip-list.txt`, data: clipList },
       { name: "README.txt", data: readme }
     ]);
     downloadBlob(`${baseName}.bws-character.zip`, zip);
-    log(`Exported ${baseName}.bws-character.zip with ${levels.length} realtime LOD level${levels.length === 1 ? "" : "s"}, ${rig.bones.length} bones, ${clips.length} clips, and ${boundObjects.length} detachable bound parts.`);
+    if (els.gameEngineExportStatus) els.gameEngineExportStatus.textContent = `Exported ${clips.length} layered clips at 24 FPS with ${exportBones.length} stable bones.`;
+    log(`Exported ${baseName}.bws-character.zip with ${levels.length} LOD level${levels.length === 1 ? "" : "s"}, ${exportBones.length} bones, ${clips.length} layered clips, and ${boundObjects.length} skinned parts.`);
   } catch (error) {
     console.error(error);
     log(`Game Character export failed during ${exportStage}: ${error?.message || error}`);
@@ -2023,6 +2219,167 @@ async function exportGameCharacterPackage() {
       temporarySkinRuntime.avatar.geometry?.dispose?.();
       temporarySkinRuntime.avatar.material?.dispose?.();
     }
+  }
+}
+
+async function exportFullModelGlb() {
+  const exportRoot = new THREE.Group();
+  exportRoot.name = gameCharacterSafeName(currentProjectBaseName(), "boltworks-model");
+  const roots = [...new Set(objects.filter(object => !object.userData?.editorHelper).map(object => {
+    let root = object;
+    while (root.parent && root.parent !== scene) root = root.parent;
+    return root;
+  }))];
+  if (!roots.length) {
+    log("Full Model GLB needs at least one model in the workspace.");
+    return;
+  }
+  try {
+    const animations = [];
+    for (const object of roots) {
+      object.updateWorldMatrix(true, true);
+      let hasSkin = false;
+      object.traverse(node => { if (node.isSkinnedMesh) hasSkin = true; });
+      const clone = hasSkin ? cloneSkeleton(object) : object.clone(true);
+      object.matrixWorld.decompose(clone.position, clone.quaternion, clone.scale);
+      clone.visible = object.visible;
+      exportRoot.add(clone);
+      if (Array.isArray(object.userData?.bwsImportedAnimations)) animations.push(...object.userData.bwsImportedAnimations);
+    }
+    const binary = await new GLTFExporter().parseAsync(exportRoot, {
+      binary: true,
+      animations,
+      onlyVisible: false,
+      trs: true,
+      includeCustomExtensions: true
+    });
+    const fileName = `${gameCharacterSafeName(currentProjectBaseName(), "boltworks-model")}.glb`;
+    downloadBlob(fileName, new Blob([binary], { type: "model/gltf-binary" }));
+    log(`Exported ${fileName} as a standard full-model GLB. No game-engine layer masks or character manifest were added.`);
+  } catch (error) {
+    console.error(error);
+    log(`Full Model GLB export failed: ${error?.message || error}`);
+  }
+}
+
+function gameCharacterImportedClipKeys(clip, importedBones, boneNodes) {
+  const fps = 24;
+  const end = Math.max(1, Math.round(Math.max(clip.duration || 0, 1 / fps) * fps));
+  const trackMap = new Map();
+  for (const track of clip.tracks || []) {
+    const split = track.name.lastIndexOf(".");
+    if (split < 0) continue;
+    const nodeName = track.name.slice(0, split).replace(/^.*\//, "");
+    const channel = track.name.slice(split + 1);
+    trackMap.set(`${nodeName}:${channel}`, track.createInterpolant());
+  }
+  const keys = {};
+  for (const bone of importedBones) {
+    const node = boneNodes.get(bone.id);
+    const positionTrack = trackMap.get(`${node.name}:position`);
+    const quaternionTrack = trackMap.get(`${node.name}:quaternion`);
+    const scaleTrack = trackMap.get(`${node.name}:scale`);
+    if (!positionTrack && !quaternionTrack && !scaleTrack) continue;
+    keys[bone.id] = [];
+    for (let frame = 0; frame <= end; frame += 1) {
+      const time = Math.min(clip.duration || 0, frame / fps);
+      const localPosition = positionTrack ? positionTrack.evaluate(time) : node.position.toArray();
+      const localQuaternion = quaternionTrack ? quaternionTrack.evaluate(time) : node.quaternion.toArray();
+      const positionDelta = new THREE.Vector3().fromArray(localPosition).sub(node.position);
+      const rotation = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().fromArray(localQuaternion), "XYZ");
+      keys[bone.id].push({
+        frame,
+        position: bone.bindPosition.clone().add(positionDelta).toArray(),
+        rotation: rotation.toArray().slice(0, 3)
+      });
+    }
+  }
+  return { fps, end, keys };
+}
+
+async function importFullModelGlb(file) {
+  if (!file) return;
+  try {
+    const gltf = await new GLTFLoader().parseAsync(await file.arrayBuffer(), "");
+    const root = gltf.scene || gltf.scenes?.[0];
+    if (!root) throw new Error("The GLB does not contain a scene.");
+    recordHistory("import GLB");
+    root.name ||= file.name.replace(/\.glb$/i, "");
+    root.userData.bwsImportedAnimations = gltf.animations || [];
+    scene.add(root);
+    root.updateMatrixWorld(true);
+    const importedMeshes = [];
+    root.traverse(node => {
+      if (!node.isMesh) return;
+      node.userData ||= {};
+      node.userData.id = `obj-${idCounter++}`;
+      node.userData.shape ||= "glb";
+      node.userData.color ||= `#${(Array.isArray(node.material) ? node.material[0] : node.material)?.color?.getHexString?.() || "ffffff"}`;
+      node.castShadow = true;
+      node.receiveShadow = true;
+      objects.push(node);
+      importedMeshes.push(node);
+    });
+    const boneNodes = [];
+    root.traverse(node => { if (node.isBone && !boneNodes.includes(node)) boneNodes.push(node); });
+    if (boneNodes.length) {
+      const usedIds = new Set();
+      const idByNode = new Map(boneNodes.map((node, index) => {
+        const base = gameCharacterSafeName(node.name || `bone-${index + 1}`).toLowerCase();
+        let id = base;
+        let suffix = 2;
+        while (usedIds.has(id)) id = `${base}-${suffix++}`;
+        usedIds.add(id);
+        return [node, id];
+      }));
+      rigBones = boneNodes.map(node => {
+        const position = node.getWorldPosition(new THREE.Vector3());
+        const localRotation = new THREE.Euler().setFromQuaternion(node.quaternion, "XYZ");
+        const child = node.children.find(candidate => candidate.isBone);
+        const tail = child?.getWorldPosition?.(new THREE.Vector3()) || position.clone().add(new THREE.Vector3(0, .12, 0));
+        const bone = {
+          id: idByNode.get(node), name: node.name || idByNode.get(node), parentId: idByNode.get(node.parent) || null,
+          role: null, avatarObjectId: null, position: position.clone(), rotation: new THREE.Vector3(localRotation.x, localRotation.y, localRotation.z), tail: tail.clone(),
+          bindPosition: position.clone(), bindRotation: new THREE.Vector3(localRotation.x, localRotation.y, localRotation.z), bindTail: tail.clone(), tailOffset: tail.clone().sub(position)
+        };
+        node.userData.rigBoneId = bone.id;
+        return bone;
+      });
+      const nodeById = new Map(boneNodes.map(node => [idByNode.get(node), node]));
+      const primaryAvatar = importedMeshes.find(node => node.isSkinnedMesh);
+      if (primaryAvatar?.skeleton) {
+        primaryAvatar.userData.rigRole = "skin";
+        rigBones.forEach(bone => { bone.avatarObjectId = primaryAvatar.userData.id; });
+        activeSkinRuntime = { avatar: primaryAvatar, bones: rigBones, threeBones: nodeById, skeleton: primaryAvatar.skeleton };
+        bonesGlued = true;
+      }
+      const importedClips = {};
+      for (const [index, clip] of (gltf.animations || []).entries()) {
+        const base = gameCharacterSafeName(clip.name || `clip-${index + 1}`).toLowerCase();
+        let id = base;
+        let suffix = 2;
+        while (importedClips[id]) id = `${base}-${suffix++}`;
+        importedClips[id] = { name: clip.name || `Clip ${index + 1}`, ...gameCharacterImportedClipKeys(clip, rigBones, nodeById) };
+      }
+      if (Object.keys(importedClips).length) {
+        animationState.clips = importedClips;
+        animationState.activeClipId = Object.keys(importedClips)[0];
+        const first = importedClips[animationState.activeClipId];
+        Object.assign(animationState, { fps: first.fps, end: first.end, frame: 0, keys: first.keys, playing: false, bindingRest: null });
+      }
+      selectedBoneId = rigBones[0]?.id || null;
+      rebuildBoneVisuals();
+      syncBonePanel();
+      updateGlueButton();
+      updateAnimationPanel();
+      syncAnimationClipUi();
+    }
+    selectObject(importedMeshes[0] || null);
+    updateAll();
+    log(`Imported ${file.name} with ${importedMeshes.length} mesh${importedMeshes.length === 1 ? "" : "es"}, ${boneNodes.length} bones, and ${(gltf.animations || []).length} embedded animation clip${(gltf.animations || []).length === 1 ? "" : "s"}.`);
+  } catch (error) {
+    console.error(error);
+    log(`GLB import failed: ${error?.message || error}`);
   }
 }
 
