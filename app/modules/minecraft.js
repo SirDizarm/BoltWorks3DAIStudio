@@ -52,22 +52,24 @@ function renderPluginManager() {
   const plugins = allPluginManifests();
   if (els.pluginCountLabel) els.pluginCountLabel.textContent = String(plugins.length);
   if (!els.pluginList) return;
-  els.pluginList.innerHTML = plugins.map(plugin => `<div class="plugin-row"><div><strong>${plugin.name}</strong><span>${plugin.id} · v${plugin.version}</span></div><span class="plugin-ready">${plugin.enabled === false ? "Off" : plugin.builtIn ? "Built in" : "Installed"}</span></div>`).join("");
+  els.pluginList.innerHTML = plugins.map(plugin => `<div class="plugin-row" data-plugin-row="${minecraftEscapeHtml(plugin.id)}"><div class="plugin-summary"><strong>${minecraftEscapeHtml(plugin.name)}</strong><span>${minecraftEscapeHtml(plugin.id)} · v${minecraftEscapeHtml(plugin.version)} · ${plugin.bundled ? "Bundled package" : "Imported package"}</span></div><div class="plugin-actions"><span class="plugin-ready">${plugin.enabled ? "On" : "Off"}</span><button type="button" data-plugin-toggle="${minecraftEscapeHtml(plugin.id)}">${plugin.enabled ? "Disable" : "Enable"}</button>${plugin.bundled ? "" : `<button type="button" class="danger" data-plugin-remove="${minecraftEscapeHtml(plugin.id)}">Remove</button>`}</div></div>`).join("");
 }
 
 function downloadPluginTemplate() {
   download("boltworks-plugin-template.bwsplugin", JSON.stringify(pluginTemplate(), null, 2), "application/json");
-  log("Created an editable BoltWorks plugin manifest template.");
+  log("Created an editable BoltWorks .bwsplugin package template.");
 }
 
 async function importPluginManifest(file) {
-  const manifest = validPluginManifest(JSON.parse(await file.text()));
-  const index = installedPluginManifests.findIndex(plugin => plugin.id === manifest.id);
-  if (index >= 0) installedPluginManifests[index] = manifest;
-  else installedPluginManifests.push(manifest);
+  const pluginPackage = validPluginPackage(JSON.parse(await file.text()));
+  const manifest = pluginPackage.manifest;
+  const index = installedPluginPackages.findIndex(item => item.manifest.id === manifest.id);
+  if (index >= 0) installedPluginPackages[index] = pluginPackage;
+  else installedPluginPackages.push(pluginPackage);
   saveInstalledPlugins();
   renderPluginManager();
-  log(`Installed plugin manifest ${manifest.name} v${manifest.version}.`, { id: manifest.id, contributes: manifest.contributes });
+  applyPluginAvailability(els);
+  log(`Imported optional plugin package ${manifest.name} v${manifest.version}.`, { id: manifest.id, files: Object.keys(pluginPackage.files), contributes: manifest.contributes });
 }
 
 function blockbenchTextureData(project, element = null) {
@@ -903,5 +905,24 @@ function initializeMinecraftTools() {
     const file = event.target.files?.[0]; if (!file) return;
     try { await importPluginManifest(file); } catch (error) { log(`Plugin import failed: ${error.message}`); }
     event.target.value = "";
+  });
+  els.pluginList?.addEventListener("click", event => {
+    const toggle = event.target.closest("[data-plugin-toggle]");
+    if (toggle) {
+      const id = toggle.dataset.pluginToggle;
+      const plugin = pluginManifestById(id);
+      if (!plugin || !setPluginEnabled(id, !plugin.enabled)) return;
+      applyPluginAvailability(els);
+      renderPluginManager();
+      log(`${plugin.name} ${plugin.enabled ? "disabled" : "enabled"}.`);
+      return;
+    }
+    const remove = event.target.closest("[data-plugin-remove]");
+    if (!remove) return;
+    const plugin = pluginManifestById(remove.dataset.pluginRemove);
+    if (!plugin || !removeInstalledPlugin(plugin.id)) return;
+    applyPluginAvailability(els);
+    renderPluginManager();
+    log(`Removed plugin package ${plugin.name}.`);
   });
 }
