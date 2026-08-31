@@ -1603,6 +1603,94 @@ function gameCharacterTemporaryRigidRuntime() {
   return { avatar, bones, threeBones, skeleton, temporary: true };
 }
 
+function gameCharacterCaptureEditorState() {
+  return {
+    skinRuntime: activeSkinRuntime,
+    bindingRest: animationState.bindingRest,
+    animation: {
+      activeClipId: animationState.activeClipId,
+      fps: animationState.fps,
+      end: animationState.end,
+      frame: animationState.frame,
+      keys: animationState.keys,
+      playing: animationState.playing,
+      lastTime: animationState.lastTime
+    },
+    keySelection: [...animationKeySelection],
+    keySelectionAnchor: animationKeySelectionAnchor ? { ...animationKeySelectionAnchor } : null,
+    poseChannels: new Map([...rigPoseChannels].map(([id, pose]) => [id, {
+      position: pose.position.clone(),
+      rotation: pose.rotation.clone()
+    }])),
+    bones: new Map(rigBones.map(bone => [bone.id, {
+      position: bone.position.clone(),
+      rotation: bone.rotation.clone(),
+      tail: bone.tail?.clone?.() || null,
+      displayPosition: bone.displayPosition?.clone?.() || null,
+      displayTail: bone.displayTail?.clone?.() || null,
+      poseWorldQuaternion: bone.poseWorldQuaternion?.clone?.() || null
+    }])),
+    skinBones: new Map([...(activeSkinRuntime?.threeBones || [])].map(([id, bone]) => [id, {
+      position: bone.position.clone(),
+      quaternion: bone.quaternion.clone(),
+      scale: bone.scale.clone()
+    }])),
+    objects: objects.map(object => ({
+      object,
+      position: object.position.clone(),
+      quaternion: object.quaternion.clone(),
+      scale: object.scale.clone()
+    }))
+  };
+}
+
+function gameCharacterRestoreEditorState(state, { render = true } = {}) {
+  if (!state) return;
+  activeSkinRuntime = state.skinRuntime;
+  animationState.bindingRest = state.bindingRest;
+  Object.assign(animationState, state.animation);
+  rigPoseChannels.clear();
+  for (const [id, pose] of state.poseChannels) rigPoseChannels.set(id, {
+    position: pose.position.clone(),
+    rotation: pose.rotation.clone()
+  });
+  for (const bone of rigBones) {
+    const saved = state.bones.get(bone.id);
+    if (!saved) continue;
+    bone.position.copy(saved.position);
+    bone.rotation.copy(saved.rotation);
+    if (saved.tail && bone.tail) bone.tail.copy(saved.tail);
+    bone.displayPosition = saved.displayPosition?.clone?.() || null;
+    bone.displayTail = saved.displayTail?.clone?.() || null;
+    bone.poseWorldQuaternion = saved.poseWorldQuaternion?.clone?.() || null;
+  }
+  for (const { object, position, quaternion, scale } of state.objects) {
+    object.position.copy(position);
+    object.quaternion.copy(quaternion);
+    object.scale.copy(scale);
+    object.updateMatrixWorld(true);
+  }
+  if (activeSkinRuntime?.threeBones) {
+    for (const [id, saved] of state.skinBones) {
+      const bone = activeSkinRuntime.threeBones.get(id);
+      if (!bone) continue;
+      bone.position.copy(saved.position);
+      bone.quaternion.copy(saved.quaternion);
+      bone.scale.copy(saved.scale);
+    }
+    activeSkinRuntime.avatar.updateMatrixWorld(true);
+    activeSkinRuntime.skeleton?.update?.();
+  }
+  animationKeySelection.clear();
+  for (const id of state.keySelection) animationKeySelection.add(id);
+  animationKeySelectionAnchor = state.keySelectionAnchor ? { ...state.keySelectionAnchor } : null;
+  if (render) {
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateAnimationPanel();
+  }
+}
+
 function gameCharacterCompactGlbSkins(source) {
   const input = new Uint8Array(source);
   const inputView = new DataView(input.buffer, input.byteOffset, input.byteLength);
@@ -1758,12 +1846,12 @@ function gameCharacterSimplifiedGeometry(source, keepRatio, skinBones = null) {
   return geometry;
 }
 
-async function gameCharacterBuildGlb({ baseName, avatar, boundObjects, clips, keepRatio, level }) {
+async function gameCharacterBuildGlb({ baseName, avatar, skinBones, boundObjects, boundRestWorlds, clips, keepRatio, level }) {
   avatar.updateMatrixWorld(true);
   const exportAvatar = cloneSkeleton(avatar);
   exportAvatar.name = `${baseName}_Skin_LOD${level}`;
   exportAvatar.userData = { ...exportAvatar.userData, bwsRole: "skin", bwsLodLevel: level };
-  exportAvatar.geometry = gameCharacterSimplifiedGeometry(avatar.geometry, keepRatio, activeSkinRuntime.bones);
+  exportAvatar.geometry = gameCharacterSimplifiedGeometry(avatar.geometry, keepRatio, skinBones);
   const exportBonesById = new Map();
   exportAvatar.traverse(node => {
     const id = node.userData?.rigBoneId;
@@ -1778,7 +1866,9 @@ async function gameCharacterBuildGlb({ baseName, avatar, boundObjects, clips, ke
     const boneIndex = exportAvatar.skeleton.bones.indexOf(targetBone);
     if (!targetBone || boneIndex < 0) continue;
     const restWorld = new THREE.Matrix4();
-    if (binding.rest?.objectPosition) {
+    if (boundRestWorlds?.has(object)) {
+      restWorld.copy(boundRestWorlds.get(object));
+    } else if (binding.rest?.objectPosition) {
       restWorld.compose(
         binding.rest.objectPosition,
         binding.rest.objectQuaternion || new THREE.Quaternion().setFromEuler(binding.rest.objectRotation),
@@ -1835,22 +1925,28 @@ async function gameCharacterBuildGlb({ baseName, avatar, boundObjects, clips, ke
 }
 
 async function exportGameCharacterPackage() {
-  const previousSkinRuntime = activeSkinRuntime;
+  const editorState = gameCharacterCaptureEditorState();
+  let temporarySkinRuntime = null;
   if (!activeSkinRuntime?.avatar?.isSkinnedMesh || !activeSkinRuntime?.skeleton) {
-    activeSkinRuntime = gameCharacterTemporaryRigidRuntime();
+    temporarySkinRuntime = gameCharacterTemporaryRigidRuntime();
+    activeSkinRuntime = temporarySkinRuntime;
   }
   if (!activeSkinRuntime?.avatar?.isSkinnedMesh || !activeSkinRuntime?.skeleton) {
     log("Export Game Character needs a fitted bone rig with glued model parts.");
-    activeSkinRuntime = previousSkinRuntime;
+    gameCharacterRestoreEditorState(editorState);
+    temporarySkinRuntime?.avatar.geometry?.dispose?.();
+    temporarySkinRuntime?.avatar.material?.dispose?.();
     return;
   }
   syncActiveAnimationClip();
-  const originalClipId = animationState.activeClipId;
-  const originalFrame = animationState.frame;
-  const originalPlaying = animationState.playing;
+  const rig = serializeBoneRig();
   const baseName = gameCharacterSafeName(currentProjectBaseName(), "boltworks-character");
   const glbName = `${baseName}.glb`;
   let exportStage = "prepare animation bindings";
+  let exportAvatar = null;
+  let exportSkinBones = [];
+  let boundRestWorlds = null;
+  let editorRestored = false;
   try {
     animationState.playing = false;
     if (!(animationState.bindingRest instanceof Map)) prepareAnimationBindingRest();
@@ -1865,6 +1961,20 @@ async function exportGameCharacterPackage() {
       && gameCharacterArmorBinding(object));
     exportStage = "sample animation clips";
     const clips = gameCharacterAnimationClips(exportBoneNames);
+    exportStage = "capture isolated bind pose";
+    restoreAnimationBindPose({ render: false });
+    activeSkinRuntime.avatar.updateMatrixWorld(true);
+    exportAvatar = cloneSkeleton(activeSkinRuntime.avatar);
+    exportAvatar.updateMatrixWorld(true);
+    exportSkinBones = [...activeSkinRuntime.bones];
+    boundRestWorlds = new Map(boundObjects.map(object => {
+      object.updateMatrixWorld(true);
+      return [object, object.matrixWorld.clone()];
+    }));
+    // Sampling must never remain visible while GLB/LOD generation awaits. The
+    // detached bind-pose avatar above is now the only model used by the export.
+    gameCharacterRestoreEditorState(editorState);
+    editorRestored = true;
     const useLods = els.gameCharacterLodInput?.checked !== false;
     const mediumRatio = Math.max(.2, Math.min(.9, Number(els.gameOptimizeRatioInput?.value || 65) / 100));
     const levels = useLods
@@ -1877,11 +1987,10 @@ async function exportGameCharacterPackage() {
     const binaries = [];
     for (const level of levels) {
       exportStage = `build LOD ${level.level}`;
-      const binary = await gameCharacterBuildGlb({ baseName, avatar, boundObjects, clips, ...level });
+      const binary = await gameCharacterBuildGlb({ baseName, avatar: exportAvatar, skinBones: exportSkinBones, boundObjects, boundRestWorlds, clips, ...level });
       binaries.push({ ...level, binary });
     }
     exportStage = "build character manifest";
-    const rig = serializeBoneRig();
     const manifestLods = levels.map(level => ({
       level: level.level,
       file: level.file,
@@ -1909,14 +2018,11 @@ async function exportGameCharacterPackage() {
     console.error(error);
     log(`Game Character export failed during ${exportStage}: ${error?.message || error}`);
   } finally {
-    if (animationState.clips?.[originalClipId]) setActiveAnimationClip(originalClipId);
-    animationSetFrame(originalFrame, { render: true });
-    animationState.playing = originalPlaying;
-    if (activeSkinRuntime?.temporary) {
-      activeSkinRuntime.avatar.geometry?.dispose?.();
-      activeSkinRuntime.avatar.material?.dispose?.();
+    if (!editorRestored) gameCharacterRestoreEditorState(editorState);
+    if (temporarySkinRuntime?.temporary) {
+      temporarySkinRuntime.avatar.geometry?.dispose?.();
+      temporarySkinRuntime.avatar.material?.dispose?.();
     }
-    activeSkinRuntime = previousSkinRuntime;
   }
 }
 
