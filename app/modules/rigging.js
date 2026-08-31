@@ -1065,6 +1065,7 @@ function serializeBoneRig() {
   return {
     selectedBoneId,
     showGuides: els.showBonesInput?.checked ?? true,
+    tPoseFittingMode: !!tPoseFittingMode,
     guideScale: round(boneGuideScale),
     mirrorBoneEdits,
     selectionTarget: rigSelectionTarget,
@@ -1103,6 +1104,13 @@ function serializeBoneRig() {
 }
 
 function restoreBoneRig(data = {}) {
+  // Loading replaces the complete rig while the previous workspace mode is
+  // still live. Remember T-pose explicitly, then suspend it during hydration;
+  // otherwise the new rig can inherit a saved animated frame while the UI
+  // incorrectly says that Rig Fitting is active.
+  const restoreTPoseAfterLoad = data.tPoseFittingMode === true
+    || (data.tPoseFittingMode == null && tPoseFittingMode);
+  tPoseFittingMode = false;
   fitBoneCamera.restExtent = null;  // reframe Front/Side views for the new rig
   rigPoseChannels.clear();
   rigBones = (data.bones || []).map((bone, index) => ({
@@ -1188,11 +1196,18 @@ function restoreBoneRig(data = {}) {
     poseRigHierarchy();
     if (bonesGlued && !activeSkinRuntime && !animationState.bindingRest) captureAnimationBindingRest();
   }
+  if (restoreTPoseAfterLoad) {
+    tPoseFittingMode = true;
+    animationState.playing = false;
+    restoreAnimationBindPose({ render: false });
+  }
   rebuildBoneVisuals();
   applyRigModelOpacity();
   syncBonePanel();
   updateGlueButton();
   syncTPoseFittingUi();
+  syncAnimationClipUi();
+  if (typeof syncAnimatorClipSelect === "function") syncAnimatorClipSelect();
 }
 
 function animationPoseForBone(bone) {

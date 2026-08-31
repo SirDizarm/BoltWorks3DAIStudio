@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.87.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.88.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1669,7 +1669,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.87.js?v=49.60.87"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.88.js?v=49.60.88"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1737,7 +1737,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.87",
+  "tool-docking.js?v=49.60.88",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2550,8 +2550,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.87 Experimental") || !documentSource.includes("v49.60.87 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.87 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.88 Experimental") || !documentSource.includes("v49.60.88 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.88 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2781,6 +2781,9 @@ if (moduleSources.get("panels").includes('animationToggle?.addEventListener("cli
 }
 for (const emptyAnimationRequirement of ["function animationHasKeys()", "if (!animationHasKeys())", "Add at least one keyed pose before playing the animation."]) {
   if (!applicationSource.includes(emptyAnimationRequirement)) throw new Error(`Missing empty-animation safety requirement: ${emptyAnimationRequirement}`);
+}
+for (const tPoseLoadRequirement of ["tPoseFittingMode: !!tPoseFittingMode", "restoreTPoseAfterLoad", "restoreAnimationBindPose({ render: false })"]) {
+  if (!moduleSources.get("rigging").includes(tPoseLoadRequirement)) throw new Error(`Missing loaded-project T-pose restoration: ${tPoseLoadRequirement}`);
 }
 if (!moduleSources.get("plugins").includes('kind: "boltworks-plugin"') || !moduleSources.get("plugins").includes("validPluginManifest") || !moduleSources.get("plugins").includes("validPluginPackage") || !moduleSources.get("plugins").includes("setPluginEnabled")) {
   throw new Error("The studio must expose the manifest-based plugin foundation.");
