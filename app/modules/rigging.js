@@ -2252,7 +2252,10 @@ function syncAnimationKeyClipboardUi() {
   pruneAnimationKeySelection();
   const selectedCount = animationKeySelection.size;
   const copiedCount = animationKeyClipboard?.entries?.length || 0;
-  if (els.animationKeyCopyBtn) els.animationKeyCopyBtn.disabled = selectedCount < 1;
+  if (els.animationKeyCopyBtn) {
+    els.animationKeyCopyBtn.disabled = selectedCount < 1;
+    els.animationKeyCopyBtn.textContent = selectedCount > 1 ? `Copy Selected Keys (${selectedCount})` : "Copy Key";
+  }
   if (els.animationDeleteSelectedKeyBtn) {
     els.animationDeleteSelectedKeyBtn.disabled = selectedCount < 1;
     els.animationDeleteSelectedKeyBtn.textContent = selectedCount > 1 ? "Delete Selected Keys" : "Delete Selected Key";

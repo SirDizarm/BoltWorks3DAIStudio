@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.82.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.83.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1669,7 +1669,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.82.js?v=49.60.82"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.83.js?v=49.60.83"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1721,7 +1721,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.82",
+  "tool-docking.js?v=49.60.83",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2534,8 +2534,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.82 Experimental") || !documentSource.includes("v49.60.82 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.82 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.83 Experimental") || !documentSource.includes("v49.60.83 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.83 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -3007,9 +3007,11 @@ if (!documentSource.includes('id="animationKeyCopyBtn"')
   || !documentSource.includes('id="animationKeyPasteMirroredBtn"')
   || !rotationButtonRiggingSource.includes("function copySelectedAnimationKeys")
   || !rotationButtonRiggingSource.includes("function pasteCopiedAnimationKeys")
+  || !rotationButtonRiggingSource.includes('`Copy Selected Keys (${selectedCount})`')
+  || !rotationButtonRiggingSource.includes('"Copy Key"')
   || !rotationButtonRiggingSource.includes("animationState.frame + entry.frame - animationKeyClipboard.originFrame")
   || !rotationButtonRiggingSource.includes("targetRestPosition.x - positionDelta[0]")) {
-  throw new Error("The timeline must copy selected keys and paste them at the playhead on the same or mirrored bones.");
+  throw new Error("The timeline must label, copy, and paste the selected key count at the playhead on the same or mirrored bones.");
 }
 if (!documentSource.includes('aria-label="Animation timeline playhead"')
   || !documentSource.includes('id="animationSelectPlayheadKeysBtn"')
