@@ -894,7 +894,7 @@ function syncMeshRenderCulling(mesh) {
   const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
   const materialRule = normalizeMaterialRule(mesh.userData?.materialRule || "auto");
   const opacity = Number(mesh.userData?.opacity ?? primaryMeshMaterial(mesh)?.opacity ?? 1);
-  const needsInteriorView = materialRule === "glass" || opacity < .999;
+  const needsInteriorView = !!mesh.userData?.doubleSided || materialRule === "glass" || opacity < .999;
   for (const material of materials) {
     if (!material?.isMaterial) continue;
     material.side = needsInteriorView ? THREE.DoubleSide : THREE.FrontSide;
@@ -931,6 +931,11 @@ function loadTextureInstance(textureUrl, onLoad = null) {
 
   const texture = entry.source.clone();
   const notify = source => {
+    // A clone made before TextureLoader finishes has an empty Source. Point it
+    // at the completed image while preserving this clone's independent UV
+    // transform, wrapping, and color-space settings.
+    texture.source = source.source;
+    texture.image = source.image;
     texture.needsUpdate = true;
     onLoad?.(source);
   };
@@ -3511,7 +3516,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3548,6 +3553,7 @@ function createMesh(spec = {}) {
     tileTextureEdgeTrim: normalizedTileTextureEdgeTrim(tileTextureEdgeTrim),
     gameAsset: gameAsset && typeof gameAsset === "object" ? JSON.parse(JSON.stringify(gameAsset)) : null,
     textureHasTransparency: !!textureHasTransparency,
+    doubleSided: !!doubleSided,
     roughnessTextureUrl,
     roughnessTextureName,
     metalnessTextureUrl,
@@ -3621,6 +3627,223 @@ function addObject(spec = {}, { record = true, select = false, update = true } =
   if (update) updateAll();
   return mesh;
 }
+
+const gameItemImageState = {
+  name: "",
+  dataUrl: "",
+  image: null,
+  imageData: null
+};
+
+function gameItemNumber(input, fallback, min, max) {
+  const value = Number(input?.value);
+  return Math.max(min, Math.min(max, Number.isFinite(value) ? value : fallback));
+}
+
+function gameItemLargestMask(imageData) {
+  const sourceWidth = imageData.width;
+  const sourceHeight = imageData.height;
+  const scale = Math.min(1, 128 / Math.max(sourceWidth, sourceHeight));
+  const width = Math.max(12, Math.round(sourceWidth * scale));
+  const height = Math.max(12, Math.round(sourceHeight * scale));
+  const samples = new Array(width * height);
+  const cornerColors = [];
+  let hasTransparency = false;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const pixel = sampleReliefPixel(imageData, sourceWidth, sourceHeight,
+        x / Math.max(1, width - 1) * (sourceWidth - 1),
+        y / Math.max(1, height - 1) * (sourceHeight - 1));
+      samples[y * width + x] = pixel;
+      if (pixel.a < 245) hasTransparency = true;
+      if ((x < 3 || x >= width - 3) && (y < 3 || y >= height - 3)) cornerColors.push(pixel);
+    }
+  }
+  const background = cornerColors.reduce((sum, pixel) => ({ r: sum.r + pixel.r, g: sum.g + pixel.g, b: sum.b + pixel.b }), { r: 0, g: 0, b: 0 });
+  const divisor = Math.max(1, cornerColors.length);
+  background.r /= divisor; background.g /= divisor; background.b /= divisor;
+  const mask = samples.map(pixel => {
+    if (pixel.a <= 28) return false;
+    if (hasTransparency) return pixel.a >= 52;
+    const distance = Math.hypot(pixel.r - background.r, pixel.g - background.g, pixel.b - background.b);
+    return distance >= 24;
+  });
+  const visited = new Uint8Array(mask.length);
+  let largest = [];
+  for (let start = 0; start < mask.length; start++) {
+    if (!mask[start] || visited[start]) continue;
+    const component = [];
+    const queue = [start];
+    visited[start] = 1;
+    for (let cursor = 0; cursor < queue.length; cursor++) {
+      const index = queue[cursor];
+      component.push(index);
+      const x = index % width;
+      const y = Math.floor(index / width);
+      for (const next of [index - 1, index + 1, index - width, index + width]) {
+        if (next < 0 || next >= mask.length || visited[next] || !mask[next]) continue;
+        const nx = next % width;
+        const ny = Math.floor(next / width);
+        if (Math.abs(nx - x) + Math.abs(ny - y) !== 1) continue;
+        visited[next] = 1;
+        queue.push(next);
+      }
+    }
+    if (component.length > largest.length) largest = component;
+  }
+  if (largest.length < 12) throw new Error("The item silhouette could not be separated from its background. Use a PNG with a plain or transparent background.");
+  const largestSet = new Set(largest);
+  const bounds = { left: width, right: 0, top: height, bottom: 0 };
+  largest.forEach(index => {
+    const x = index % width;
+    const y = Math.floor(index / width);
+    bounds.left = Math.min(bounds.left, x); bounds.right = Math.max(bounds.right, x);
+    bounds.top = Math.min(bounds.top, y); bounds.bottom = Math.max(bounds.bottom, y);
+  });
+  const profiles = [];
+  for (let y = bounds.top; y <= bounds.bottom; y++) {
+    let left = width;
+    let right = -1;
+    for (let x = bounds.left; x <= bounds.right; x++) {
+      if (!largestSet.has(y * width + x)) continue;
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+    }
+    if (right >= left) profiles.push({ y, left, right, center: (left + right) * .5 });
+  }
+  for (let pass = 0; pass < 2; pass++) {
+    const copy = profiles.map(row => ({ ...row }));
+    for (let i = 1; i < profiles.length - 1; i++) {
+      copy[i].left = (profiles[i - 1].left + profiles[i].left * 2 + profiles[i + 1].left) / 4;
+      copy[i].right = (profiles[i - 1].right + profiles[i].right * 2 + profiles[i + 1].right) / 4;
+      copy[i].center = (copy[i].left + copy[i].right) * .5;
+    }
+    profiles.splice(0, profiles.length, ...copy);
+  }
+  return { width, height, bounds, profiles };
+}
+
+function gameItemGeometryParts(imageData, type, heightMeters, thickness) {
+  const silhouette = gameItemLargestMask(imageData);
+  const { width, height, bounds, profiles } = silhouette;
+  const sourceHeight = Math.max(1, bounds.bottom - bounds.top);
+  const unit = heightMeters / sourceHeight;
+  const centerX = (bounds.left + bounds.right) * .5;
+  const front = { positions: [], uvs: [] };
+  const back = { positions: [], uvs: [] };
+  const edge = { positions: [], uvs: [] };
+  const rim = { positions: [], uvs: [] };
+  const uvFor = (x, y) => [x / Math.max(1, width - 1), 1 - y / Math.max(1, height - 1)];
+  const point = (x, y, z) => [(x - centerX) * unit, (bounds.bottom - y) * unit, z];
+  const pushTriangle = (part, a, b, c, ua, ub, uc) => {
+    part.positions.push(...a, ...b, ...c);
+    part.uvs.push(...ua, ...ub, ...uc);
+  };
+  const pushQuad = (part, a, b, c, d, ua, ub, uc, ud, reverse = false) => {
+    if (reverse) {
+      pushTriangle(part, a, c, b, ua, uc, ub);
+      pushTriangle(part, a, d, c, ua, ud, uc);
+    } else {
+      pushTriangle(part, a, b, c, ua, ub, uc);
+      pushTriangle(part, a, c, d, ua, uc, ud);
+    }
+  };
+  const half = thickness * .5;
+  // Match the studio's visible Front Work side: source art faces -Z while the
+  // plain/material back faces +Z. This is the same convention used by the
+  // editor's imported front-facing model art.
+  const outerFrontZ = type === "sword" ? -thickness * .08 : -half;
+  const centerFrontZ = type === "sword" ? -half : -half - thickness * .18;
+  const outerBackZ = type === "sword" ? thickness * .08 : half;
+  const centerBackZ = half;
+  for (let i = 0; i < profiles.length - 1; i++) {
+    const a = profiles[i];
+    const b = profiles[i + 1];
+    const auL = uvFor(a.left, a.y), auC = uvFor(a.center, a.y), auR = uvFor(a.right, a.y);
+    const buL = uvFor(b.left, b.y), buC = uvFor(b.center, b.y), buR = uvFor(b.right, b.y);
+    pushQuad(front,
+      point(a.left, a.y, outerFrontZ), point(a.right, a.y, outerFrontZ), point(b.right, b.y, outerFrontZ), point(b.left, b.y, outerFrontZ),
+      auL, auR, buR, buL, true);
+    if (type === "sword") {
+      front.positions.splice(front.positions.length - 18, 18);
+      front.uvs.splice(front.uvs.length - 12, 12);
+      pushQuad(front, point(a.left, a.y, outerFrontZ), point(a.center, a.y, centerFrontZ), point(b.center, b.y, centerFrontZ), point(b.left, b.y, outerFrontZ), auL, auC, buC, buL, true);
+      pushQuad(front, point(a.center, a.y, centerFrontZ), point(a.right, a.y, outerFrontZ), point(b.right, b.y, outerFrontZ), point(b.center, b.y, centerFrontZ), auC, auR, buR, buC, true);
+    }
+    if (type === "sword") {
+      pushQuad(back, point(a.left, a.y, outerBackZ), point(b.left, b.y, outerBackZ), point(b.center, b.y, centerBackZ), point(a.center, a.y, centerBackZ), auL, buL, buC, auC, true);
+      pushQuad(back, point(a.center, a.y, centerBackZ), point(b.center, b.y, centerBackZ), point(b.right, b.y, outerBackZ), point(a.right, a.y, outerBackZ), auC, buC, buR, auR, true);
+    } else {
+      pushQuad(back, point(a.left, a.y, outerBackZ), point(b.left, b.y, outerBackZ), point(b.right, b.y, outerBackZ), point(a.right, a.y, outerBackZ), auL, buL, buR, auR, true);
+      const aInsetL = a.left + (a.right - a.left) * .12;
+      const aInsetR = a.right - (a.right - a.left) * .12;
+      const bInsetL = b.left + (b.right - b.left) * .12;
+      const bInsetR = b.right - (b.right - b.left) * .12;
+      const rimZ = outerBackZ - .004;
+      pushQuad(rim, point(a.left, a.y, rimZ), point(b.left, b.y, rimZ), point(bInsetL, b.y, rimZ), point(aInsetL, a.y, rimZ), auL, buL, uvFor(bInsetL, b.y), uvFor(aInsetL, a.y), true);
+      pushQuad(rim, point(aInsetR, a.y, rimZ), point(bInsetR, b.y, rimZ), point(b.right, b.y, rimZ), point(a.right, a.y, rimZ), uvFor(aInsetR, a.y), uvFor(bInsetR, b.y), buR, auR, true);
+    }
+    pushQuad(edge, point(a.left, a.y, outerFrontZ), point(b.left, b.y, outerFrontZ), point(b.left, b.y, outerBackZ), point(a.left, a.y, outerBackZ), auL, buL, buL, auL);
+    pushQuad(edge, point(a.right, a.y, outerBackZ), point(b.right, b.y, outerBackZ), point(b.right, b.y, outerFrontZ), point(a.right, a.y, outerFrontZ), auR, buR, buR, auR);
+  }
+  const first = profiles[0];
+  const last = profiles[profiles.length - 1];
+  pushQuad(edge, point(first.left, first.y, outerBackZ), point(first.right, first.y, outerBackZ), point(first.right, first.y, outerFrontZ), point(first.left, first.y, outerFrontZ), uvFor(first.left, first.y), uvFor(first.right, first.y), uvFor(first.right, first.y), uvFor(first.left, first.y));
+  pushQuad(edge, point(last.left, last.y, outerFrontZ), point(last.right, last.y, outerFrontZ), point(last.right, last.y, outerBackZ), point(last.left, last.y, outerBackZ), uvFor(last.left, last.y), uvFor(last.right, last.y), uvFor(last.right, last.y), uvFor(last.left, last.y));
+  return { front, back, edge, rim };
+}
+
+async function loadGameItemImageFile(file) {
+  if (!file) return;
+  const dataUrl = await readFileAsDataUrl(file);
+  const { image, imageData } = await decodeImageDataUrl(dataUrl);
+  gameItemImageState.name = file.name || "item.png";
+  gameItemImageState.dataUrl = dataUrl;
+  gameItemImageState.image = image;
+  gameItemImageState.imageData = imageData;
+  if (els.gameItemImageName) els.gameItemImageName.textContent = `${gameItemImageState.name} (${imageData.width}×${imageData.height})`;
+  if (els.gameItemBuildBtn) els.gameItemBuildBtn.disabled = false;
+  if (els.gameItemBuildStatus) els.gameItemBuildStatus.textContent = "Choose sword or shield, then build the solid item.";
+}
+
+function buildSolidGameItemFromImage() {
+  if (!gameItemImageState.imageData) return;
+  const type = els.gameItemTypeInput?.value === "shield" ? "shield" : "sword";
+  const height = gameItemNumber(els.gameItemHeightInput, 4, .25, 20);
+  const thickness = gameItemNumber(els.gameItemThicknessInput, .24, .02, 2);
+  try {
+    recordHistory("build solid game item");
+    const parts = gameItemGeometryParts(gameItemImageState.imageData, type, height, thickness);
+    const sourceBase = gameItemImageState.name.replace(/\.[^.]+$/, "").replace(/[^a-zA-Z0-9_-]+/g, "_") || type;
+    const displayName = `${type === "shield" ? "Shield" : "Sword"} ${sourceBase}`;
+    const group = createSceneGroupRecord({ name: `${displayName} (Solid Item)` });
+    const socketName = type === "shield" ? "grip_socket_l" : "grip_socket_r";
+    const socketToken = socketName.replaceAll("_", " ");
+    const socket = rigBones.find(bone => String(`${bone.id} ${bone.name}`).toLowerCase().replace(/[^a-z0-9]+/g, " ").includes(socketToken))
+      || rigBones.find(bone => String(bone.id || bone.name).toLowerCase() === socketName);
+    const gameAsset = { id: sourceBase.toLowerCase(), type: "equipment", slot: type === "shield" ? "off-hand" : "main-hand", attachBoneId: socketName, inventory: { width: 1, height: type === "shield" ? 2 : 3 }, hideParts: [] };
+    const common = { groupId: group.id, groupName: group.name, rigBoneId: socket?.id || null, rigRole: "armor", rigAttachment: socket ? "rigidArmor" : null, gameAsset };
+    const front = addObject({ ...common, shape: "custom", name: `${displayName} Front`, geometry: parts.front, color: "#ffffff", roughness: type === "shield" ? .62 : .34, textureUrl: gameItemImageState.dataUrl, textureName: gameItemImageState.name, textureHasTransparency: false, doubleSided: true }, { record: false, update: false });
+    const back = addObject({ ...common, shape: "custom", name: `${displayName} ${type === "shield" ? "Wood Back" : "Back"}`, geometry: parts.back, color: type === "shield" ? "#5b321d" : "#ffffff", roughness: type === "shield" ? .9 : .34, textureUrl: type === "sword" ? gameItemImageState.dataUrl : null, textureName: type === "sword" ? gameItemImageState.name : null, doubleSided: true }, { record: false, update: false });
+    front.material.side = THREE.DoubleSide;
+    back.material.side = THREE.DoubleSide;
+    front.material.needsUpdate = true;
+    back.material.needsUpdate = true;
+    addObject({ ...common, shape: "custom", name: `${displayName} Metal Edge`, geometry: parts.edge, color: "#6f7478", roughness: .35 }, { record: false, update: false });
+    if (type === "shield" && parts.rim.positions.length) addObject({ ...common, shape: "custom", name: `${displayName} Back Metal Rim`, geometry: parts.rim, color: "#777b7d", roughness: .38 }, { record: false, update: false });
+    updateAll();
+    selectGroupRecord(group.id);
+    frameSelected();
+    if (els.gameItemBuildStatus) els.gameItemBuildStatus.textContent = `Built ${group.name}: textured front, ${type === "shield" ? "wood back and metal rim" : "textured back and raised diamond ridge"}.`;
+    log(`Built socket-ready solid ${type} from ${gameItemImageState.name}.`);
+    return front;
+  } catch (error) {
+    console.error(error);
+    if (els.gameItemBuildStatus) els.gameItemBuildStatus.textContent = `Could not build item: ${error.message}`;
+    log(`Solid item build failed: ${error.message}`);
+  }
+}
+
 function reliefNumber(input, fallback, min, max) {
   const value = Number(input?.value);
   return Math.max(min, Math.min(max, Number.isFinite(value) ? value : fallback));

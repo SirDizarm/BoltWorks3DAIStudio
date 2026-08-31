@@ -34,6 +34,7 @@ function serializeObject(mesh) {
     tileTextureRepeatV: Number(mesh.userData.tileTextureRepeatV) || 1,
     tileTextureEdgeTrim: Number(mesh.userData.tileTextureEdgeTrim) || 0,
     textureHasTransparency: !!mesh.userData.textureHasTransparency,
+    doubleSided: !!mesh.userData.doubleSided,
     roughnessTextureUrl: mesh.userData.roughnessTextureUrl || null,
     roughnessTextureName: mesh.userData.roughnessTextureName || null,
     metalnessTextureUrl: mesh.userData.metalnessTextureUrl || null,
@@ -2103,6 +2104,134 @@ async function gameCharacterBuildGlb({ baseName, avatar, skinBones, exportBones,
     includeCustomExtensions: true
   });
   return gameCharacterCompactGlbSkins(rawBinary);
+}
+
+function gameCharacterArmGeometry(source, skinBones, side = "both") {
+  let working = source.clone();
+  addSkinAttributes(working, skinBones);
+  if (working.index) {
+    const nonIndexed = working.toNonIndexed();
+    working.dispose();
+    working = nonIndexed;
+  }
+  const allowed = new Set();
+  skinBones.forEach((bone, index) => {
+    const token = gameCharacterSearchToken(`${bone.id} ${bone.name}`);
+    const isArm = /(^| )(upper arm|forearm|hand|thumb|index|middle|ring|pinky|finger)( |$)/.test(` ${token} `);
+    const isLeft = /(^| )left( |$)/.test(` ${token} `);
+    const isRight = /(^| )right( |$)/.test(` ${token} `);
+    if (isArm && (side === "both" || (side === "left" && isLeft) || (side === "right" && isRight))) allowed.add(index);
+  });
+  if (!allowed.size) {
+    working.dispose();
+    throw new Error(`No ${side === "both" ? "arm" : `${side} arm`} bones were found in this rig.`);
+  }
+  const skinIndex = working.getAttribute("skinIndex");
+  const skinWeight = working.getAttribute("skinWeight");
+  const position = working.getAttribute("position");
+  if (!skinIndex || !skinWeight || !position) {
+    working.dispose();
+    throw new Error("The fitted character does not contain usable skin weights.");
+  }
+  const keptTriangles = [];
+  for (let vertex = 0; vertex < position.count; vertex += 3) {
+    let matchingVertices = 0;
+    let matchingWeight = 0;
+    for (let corner = 0; corner < 3; corner++) {
+      const index = vertex + corner;
+      let strongestWeight = -1;
+      let strongestBone = -1;
+      for (let slot = 0; slot < 4; slot++) {
+        const weight = skinWeight.array[index * skinWeight.itemSize + slot] || 0;
+        const boneIndex = skinIndex.array[index * skinIndex.itemSize + slot] || 0;
+        if (allowed.has(boneIndex)) matchingWeight += weight;
+        if (weight > strongestWeight) { strongestWeight = weight; strongestBone = boneIndex; }
+      }
+      if (allowed.has(strongestBone)) matchingVertices++;
+    }
+    if (matchingVertices >= 2 || matchingWeight >= 1.35) keptTriangles.push(vertex);
+  }
+  if (!keptTriangles.length) {
+    working.dispose();
+    throw new Error("No arm surface matched the selected arm bones. Refit the skin before exporting arms.");
+  }
+  const geometry = new THREE.BufferGeometry();
+  for (const [name, attribute] of Object.entries(working.attributes)) {
+    const values = [];
+    for (const triangleStart of keptTriangles) {
+      for (let corner = 0; corner < 3; corner++) {
+        const index = triangleStart + corner;
+        for (let component = 0; component < attribute.itemSize; component++) values.push(attribute.array[index * attribute.itemSize + component]);
+      }
+    }
+    const ArrayType = attribute.array?.constructor || Float32Array;
+    geometry.setAttribute(name, new THREE.BufferAttribute(new ArrayType(values), attribute.itemSize, attribute.normalized));
+  }
+  working.dispose();
+  geometry.computeVertexNormals();
+  geometry.computeBoundingBox();
+  geometry.computeBoundingSphere();
+  return geometry;
+}
+
+async function exportGameCharacterArmsGlb() {
+  if (!activeSkinRuntime?.avatar?.isSkinnedMesh || !activeSkinRuntime?.skeleton || !activeSkinRuntime?.bones?.length) {
+    const message = "Arm export needs a fitted skinned character. Glue the model to the rig first.";
+    if (els.gameEngineExportStatus) els.gameEngineExportStatus.textContent = message;
+    log(message);
+    return;
+  }
+  const side = ["left", "right", "both"].includes(els.gameArmExportSideInput?.value) ? els.gameArmExportSideInput.value : "both";
+  const editorState = gameCharacterCaptureEditorState();
+  let editorRestored = false;
+  let filteredAvatar = null;
+  try {
+    animationState.playing = false;
+    if (!(animationState.bindingRest instanceof Map)) prepareAnimationBindingRest();
+    syncActiveAnimationClip();
+    const exportBones = gameCharacterExportBones();
+    const usedNames = new Set();
+    const exportBoneNames = new Map(exportBones.map(bone => {
+      const base = gameCharacterCanonicalBoneName(bone);
+      let name = base;
+      let suffix = 2;
+      while (usedNames.has(name)) name = `${base}_${suffix++}`;
+      usedNames.add(name);
+      return [bone.id, name];
+    }));
+    const { clips } = gameCharacterAnimationClips(exportBones, exportBoneNames);
+    restoreAnimationBindPose({ render: false });
+    activeSkinRuntime.avatar.updateMatrixWorld(true);
+    filteredAvatar = cloneSkeleton(activeSkinRuntime.avatar);
+    filteredAvatar.geometry = gameCharacterArmGeometry(activeSkinRuntime.avatar.geometry, activeSkinRuntime.bones, side);
+    filteredAvatar.updateMatrixWorld(true);
+    const baseName = `${gameCharacterSafeName(currentProjectBaseName(), "boltworks-character")}-${side}-arms`;
+    gameCharacterRestoreEditorState(editorState);
+    editorRestored = true;
+    const binary = await gameCharacterBuildGlb({
+      baseName,
+      avatar: filteredAvatar,
+      skinBones: null,
+      exportBones,
+      exportBoneNames,
+      boundObjects: [],
+      boundRestWorlds: new Map(),
+      clips,
+      keepRatio: 1,
+      level: 0
+    });
+    downloadBlob(`${baseName}.glb`, new Blob([binary], { type: "model/gltf-binary" }));
+    const label = side === "both" ? "both arms" : `${side} arm`;
+    if (els.gameEngineExportStatus) els.gameEngineExportStatus.textContent = `Exported ${label} only, with skinning and animations but no held equipment.`;
+    log(`Exported ${baseName}.glb with ${label} geometry and no equipment.`);
+  } catch (error) {
+    console.error(error);
+    if (els.gameEngineExportStatus) els.gameEngineExportStatus.textContent = `Arm export failed: ${error.message || error}`;
+    log(`Arm export failed: ${error.message || error}`);
+  } finally {
+    if (!editorRestored) gameCharacterRestoreEditorState(editorState);
+    filteredAvatar?.geometry?.dispose?.();
+  }
 }
 
 async function exportGameCharacterPackage() {

@@ -3058,8 +3058,10 @@ function applyRigModelOpacity() {
   }
 }
 
-function syncRigModelOpacityUi() {
-  if (els.rigModelOpacityInput) els.rigModelOpacityInput.value = String(rigModelOpacity);
+function syncRigModelOpacityUi({ preserveRangeInput = false } = {}) {
+  // Do not assign the range's value while its own input event is active. Some
+  // browsers cancel the live thumb drag when script writes back into it.
+  if (els.rigModelOpacityInput && !preserveRangeInput) els.rigModelOpacityInput.value = String(rigModelOpacity);
   if (els.rigModelOpacityValue) els.rigModelOpacityValue.textContent = `${Math.round(rigModelOpacity * 100)}%`;
   if (typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive && selected && els.opacityInput) {
     els.opacityInput.value = String(rigModelOpacity);
@@ -3067,10 +3069,14 @@ function syncRigModelOpacityUi() {
   }
 }
 
-function setRigModelOpacity(value) {
-  rigModelOpacity = THREE.MathUtils.clamp(Number(value) || 1, .1, 1);
-  syncRigModelOpacityUi();
+function setRigModelOpacity(value, { fromRangeInput = false } = {}) {
+  const numericValue = Number(value);
+  rigModelOpacity = THREE.MathUtils.clamp(Number.isFinite(numericValue) ? numericValue : 1, .1, 1);
+  syncRigModelOpacityUi({ preserveRangeInput: fromRangeInput });
   applyRigModelOpacity();
+  // Opacity changes can coincide with a completed preview/export render that
+  // temporarily hid the editor environment. Reassert the user's grid choice.
+  if (typeof syncGridVisibility === "function") syncGridVisibility();
 }
 
 function setObjectLayer(object, layer) {

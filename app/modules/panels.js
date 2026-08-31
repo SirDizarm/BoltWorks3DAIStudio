@@ -1099,7 +1099,7 @@ els.mirrorBoneEditsInput?.addEventListener("change", event => {
   mirrorBoneEdits = event.target.checked;
   if (typeof updateSurfaceTransformGuides === "function") updateSurfaceTransformGuides();
 });
-els.rigModelOpacityInput?.addEventListener("input", event => setRigModelOpacity(event.target.value));
+els.rigModelOpacityInput?.addEventListener("input", event => setRigModelOpacity(event.target.value, { fromRangeInput: true }));
 frontBoneCanvas.addEventListener("pointerdown", event => {
   if (!beginReferenceViewPan(event, "front", frontBoneCanvas, frontBoneCamera)) beginBoneDrag(event, "front", frontBoneCanvas, frontBoneCamera);
 });
@@ -1839,6 +1839,18 @@ els.importGlbFile?.addEventListener("change", async event => {
   event.target.value = "";
 });
 document.querySelector("#exportGameCharacterBtn")?.addEventListener("click", exportGameCharacterPackage);
+document.querySelector("#exportGameArmsBtn")?.addEventListener("click", exportGameCharacterArmsGlb);
+document.querySelector("#gameItemImageBtn")?.addEventListener("click", () => els.gameItemImageFile?.click());
+els.gameItemImageFile?.addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  try { await loadGameItemImageFile(file); }
+  catch (error) {
+    console.error(error);
+    if (els.gameItemBuildStatus) els.gameItemBuildStatus.textContent = `Could not load image: ${error.message}`;
+  }
+  event.target.value = "";
+});
+document.querySelector("#gameItemBuildBtn")?.addEventListener("click", buildSolidGameItemFromImage);
 document.querySelector("#gameEngineAutoMapBtn")?.addEventListener("click", () => syncGameEnginePluginUi({ forceAutoMap: true }));
 document.querySelector("#gameEngineValidateBtn")?.addEventListener("click", () => validateGameEngineCharacter({ announce: true }));
 document.querySelector("#exportDaeBtn").addEventListener("click", () => {
