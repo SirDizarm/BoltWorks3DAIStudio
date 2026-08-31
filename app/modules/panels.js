@@ -1137,7 +1137,7 @@ els.animationClipSelect?.addEventListener("change", event => setActiveAnimationC
 els.animationClipAddBtn?.addEventListener("click", addAnimationClip);
 els.animationClipDeleteBtn?.addEventListener("click", deleteActiveAnimationClip);
 els.animationScrubber?.addEventListener("input", event => animationSetFrame(event.target.value));
-els.animationScrubber?.addEventListener("pointerup", event => selectAllAnimationKeysAtCurrentFrame({ add: event.ctrlKey || event.metaKey }));
+els.animationSelectPlayheadKeysBtn?.addEventListener("click", event => selectAllAnimationKeysAtCurrentFrame({ add: event.ctrlKey || event.metaKey }));
 els.animationKeyBtn?.addEventListener("click", keyAnimationPose);
 els.animationDeleteSelectedKeyBtn?.addEventListener("click", deleteSelectedAnimationKeys);
 els.animationDeleteFrameBtn?.addEventListener("click", deleteAnimationFrameKeys);

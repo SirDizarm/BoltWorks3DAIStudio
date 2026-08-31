@@ -879,6 +879,7 @@ const els = {
   animationNodeSaveFrameBtn: document.querySelector("#animationNodeSaveFrameBtn"),
   animationNodeSaveStatus: document.querySelector("#animationNodeSaveStatus"),
   animationKeyBtn: document.querySelector("#animationKeyBtn"),
+  animationSelectPlayheadKeysBtn: document.querySelector("#animationSelectPlayheadKeysBtn"),
   animationKeyCopyBtn: document.querySelector("#animationKeyCopyBtn"),
   animationKeyPasteBtn: document.querySelector("#animationKeyPasteBtn"),
   animationKeyPasteMirroredBtn: document.querySelector("#animationKeyPasteMirroredBtn"),
