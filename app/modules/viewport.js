@@ -468,12 +468,37 @@ liveMirrorPreviewGroup.name = "live mirror previews";
 liveMirrorPreviewGroup.userData.editorHelper = true;
 scene.add(liveMirrorPreviewGroup);
 const liveMirrorPreviewBySourceId = new Map();
+const wheelSelectionGuide = new THREE.Group();
+wheelSelectionGuide.name = "wheel selection volume";
+wheelSelectionGuide.userData.editorHelper = true;
+wheelSelectionGuide.visible = false;
+const wheelSelectionFill = new THREE.Mesh(
+  new THREE.CylinderGeometry(1, 1, 1, 48, 1, true),
+  new THREE.MeshBasicMaterial({
+    color: 0x35e6c4,
+    transparent: true,
+    opacity: .18,
+    depthTest: false,
+    depthWrite: false,
+    side: THREE.DoubleSide
+  })
+);
+wheelSelectionFill.renderOrder = 1180;
+wheelSelectionGuide.add(wheelSelectionFill);
+const wheelSelectionOutline = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.CylinderGeometry(1, 1, 1, 48, 1, false)),
+  new THREE.LineBasicMaterial({ color: 0x54ffe2, transparent: true, opacity: .9, depthTest: false })
+);
+wheelSelectionOutline.renderOrder = 1181;
+wheelSelectionGuide.add(wheelSelectionOutline);
+scene.add(wheelSelectionGuide);
 let selected = null;
 let facePickMode = false;
 let coplanarFacePickMode = false;
 let connectedTrianglePickMode = false;
 let wheelTrianglePickMode = false;
 let wheelTrianglePickStart = null;
+let wheelSelectionVolume = null;
 let openingPickMode = false;
 let lineSketchMode = false;
 let triangleBuildMode = false;
@@ -992,6 +1017,13 @@ const els = {
   faceRegionBtn: document.querySelector("#faceRegionBtn"),
   selectConnectedBtn: document.querySelector("#selectConnectedBtn"),
   selectWheelBtn: document.querySelector("#selectWheelBtn"),
+  wheelVolumeControls: document.querySelector("#wheelVolumeControls"),
+  wheelRadiusSmallerBtn: document.querySelector("#wheelRadiusSmallerBtn"),
+  wheelRadiusLargerBtn: document.querySelector("#wheelRadiusLargerBtn"),
+  wheelWidthNarrowerBtn: document.querySelector("#wheelWidthNarrowerBtn"),
+  wheelWidthWiderBtn: document.querySelector("#wheelWidthWiderBtn"),
+  applyWheelVolumeBtn: document.querySelector("#applyWheelVolumeBtn"),
+  cancelWheelVolumeBtn: document.querySelector("#cancelWheelVolumeBtn"),
   openingPickBtn: document.querySelector("#openingPickBtn"),
   lineToolBtn: document.querySelector("#lineToolBtn"),
   triangleBuildBtn: document.querySelector("#triangleBuildBtn"),

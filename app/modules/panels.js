@@ -1218,6 +1218,12 @@ document.querySelector("#facePickBtn").addEventListener("click", toggleClassicTr
 els.faceRegionBtn.addEventListener("click", toggleClassicFaceSelection);
 els.selectConnectedBtn?.addEventListener("click", () => setConnectedTrianglePickMode(!connectedTrianglePickMode));
 els.selectWheelBtn?.addEventListener("click", () => setWheelTrianglePickMode(!wheelTrianglePickMode));
+els.wheelRadiusSmallerBtn?.addEventListener("click", () => resizeWheelSelectionVolume("radius", .9));
+els.wheelRadiusLargerBtn?.addEventListener("click", () => resizeWheelSelectionVolume("radius", 1.1));
+els.wheelWidthNarrowerBtn?.addEventListener("click", () => resizeWheelSelectionVolume("width", .9));
+els.wheelWidthWiderBtn?.addEventListener("click", () => resizeWheelSelectionVolume("width", 1.1));
+els.applyWheelVolumeBtn?.addEventListener("click", applyWheelSelectionVolume);
+els.cancelWheelVolumeBtn?.addEventListener("click", () => cancelWheelSelectionVolume());
 els.openingPickBtn?.addEventListener("click", () => setOpeningPickMode(!openingPickMode));
 els.lineToolBtn.addEventListener("click", () => setLineSketchMode(!lineSketchMode));
 els.triangleBuildBtn?.addEventListener("click", () => setTriangleBuildMode(!triangleBuildMode));
@@ -2595,11 +2601,9 @@ window.addEventListener("keydown", event => {
     cancelConnectVertices("Connect Vertices cancelled. The source vertex remains selected.");
     return;
   }
-  if (wheelTrianglePickMode && wheelTrianglePickStart && event.key === "Escape") {
+  if (wheelTrianglePickMode && (wheelTrianglePickStart || wheelSelectionVolume) && event.key === "Escape") {
     event.preventDefault();
-    wheelTrianglePickStart = null;
-    updateFacePickHud();
-    log("Wheel center cancelled. Click a wheel center to start again.");
+    cancelWheelSelectionVolume("Wheel selection cylinder cancelled. Click a wheel center to start again.");
     return;
   }
   if (knifeCutMode && event.key === "Escape") {
@@ -2823,6 +2827,9 @@ window.ModelerStudio = {
   selectTrianglesInScreenRect,
   selectConnectedTrianglesFromHit,
   selectWheelTrianglesFromHit,
+  resizeWheelSelectionVolume,
+  applyWheelSelectionVolume,
+  cancelWheelSelectionVolume,
   copySelectedTriangles,
   pasteCopiedTriangles,
   pasteCopiedTrianglesMirrored,

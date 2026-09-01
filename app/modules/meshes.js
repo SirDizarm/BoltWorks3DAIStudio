@@ -7144,6 +7144,8 @@ function updateFacePickHud() {
   els.selectConnectedBtn?.setAttribute("aria-pressed", String(connectedTrianglePickMode));
   els.selectWheelBtn?.classList.toggle("active", wheelTrianglePickMode);
   els.selectWheelBtn?.setAttribute("aria-pressed", String(wheelTrianglePickMode));
+  if (els.wheelVolumeControls) els.wheelVolumeControls.hidden = !(wheelTrianglePickMode && wheelSelectionVolume);
+  if (!wheelTrianglePickMode) wheelSelectionGuide.visible = false;
   els.openingPickBtn?.classList.toggle("active", openingPickMode);
   els.areaTriBtn.classList.toggle("active", facePickMode && els.areaTriInput.checked);
   els.paintTriBtn?.classList.toggle("active", facePickMode && els.paintTriInput.checked);
@@ -7174,9 +7176,11 @@ function updateFacePickHud() {
     return;
   }
   if (wheelTrianglePickMode) {
-    els.hudText.textContent = wheelTrianglePickStart
-      ? "Wheel Select: click the outer rim to set the wheel size | Esc cancels the center point"
-      : "Wheel Select: click the center of the wheel, then click its outer rim | Shift/Ctrl adds another wheel";
+    els.hudText.textContent = wheelSelectionVolume
+      ? "Wheel cylinder ready: resize it if needed, then press Select Inside | Esc cancels"
+      : wheelTrianglePickStart
+        ? "Wheel Volume: click the outer rim to set the cylinder size | Esc cancels"
+        : "Wheel Volume: click the wheel center, then its outer rim | Shift/Ctrl adds to the current selection";
     return;
   }
   els.hudText.textContent = facePickMode
@@ -7272,6 +7276,8 @@ function setConnectedTrianglePickMode(enabled) {
 function setWheelTrianglePickMode(enabled) {
   wheelTrianglePickMode = !!enabled;
   wheelTrianglePickStart = null;
+  wheelSelectionVolume = null;
+  wheelSelectionGuide.visible = false;
   if (wheelTrianglePickMode) {
     connectedTrianglePickMode = false;
     if (knifeCutMode) setKnifeCutMode(false);
@@ -7287,12 +7293,88 @@ function setWheelTrianglePickMode(enabled) {
     setFacePickMode(true);
     wheelTrianglePickMode = true;
     updateFacePickHud();
-    log("Wheel Select enabled. Click the wheel center, then click its outer rim.");
+    log("Wheel Volume enabled. Click the wheel center, then click its outer rim to create the selection cylinder.");
   } else {
     updateFacePickHud();
     log("Wheel Select disabled.");
   }
   return wheelTrianglePickMode;
+}
+
+function updateWheelSelectionGuide() {
+  if (!wheelTrianglePickMode || !wheelSelectionVolume) {
+    wheelSelectionGuide.visible = false;
+    if (els.wheelVolumeControls) els.wheelVolumeControls.hidden = true;
+    return;
+  }
+  const volume = wheelSelectionVolume;
+  wheelSelectionGuide.position.copy(volume.centerWorld);
+  wheelSelectionGuide.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), volume.axisWorld);
+  wheelSelectionGuide.scale.set(volume.radius, volume.width, volume.radius);
+  wheelSelectionGuide.updateMatrixWorld(true);
+  wheelSelectionGuide.visible = true;
+  if (els.wheelVolumeControls) els.wheelVolumeControls.hidden = false;
+}
+
+function cancelWheelSelectionVolume(message = "Wheel selection cylinder cancelled.") {
+  wheelTrianglePickStart = null;
+  wheelSelectionVolume = null;
+  wheelSelectionGuide.visible = false;
+  updateFacePickHud();
+  if (message) log(message);
+}
+
+function resizeWheelSelectionVolume(kind, factor) {
+  if (!wheelSelectionVolume) {
+    log("Create a wheel cylinder first by clicking the wheel center and outer rim.");
+    return false;
+  }
+  if (kind === "radius") wheelSelectionVolume.radius = Math.max(.03, wheelSelectionVolume.radius * factor);
+  else wheelSelectionVolume.width = Math.max(.03, wheelSelectionVolume.width * factor);
+  wheelSelectionVolume.centerWorld.copy(wheelSelectionVolume.surfaceWorld)
+    .addScaledVector(wheelSelectionVolume.axisWorld, -wheelSelectionVolume.width * .5);
+  updateWheelSelectionGuide();
+  log(`Wheel cylinder ${kind} adjusted.`, {
+    radius: round(wheelSelectionVolume.radius),
+    width: round(wheelSelectionVolume.width)
+  });
+  return true;
+}
+
+function wheelVolumeContainsWorldPoint(point, volume = wheelSelectionVolume) {
+  if (!volume) return false;
+  const delta = point.clone().sub(volume.centerWorld);
+  const axial = delta.dot(volume.axisWorld);
+  if (Math.abs(axial) > volume.width * .5) return false;
+  const radial = delta.addScaledVector(volume.axisWorld, -axial).length();
+  return radial <= volume.radius;
+}
+
+function applyWheelSelectionVolume() {
+  if (!wheelSelectionVolume) {
+    log("Create a wheel cylinder first by clicking the wheel center and outer rim.");
+    return [];
+  }
+  const volume = wheelSelectionVolume;
+  const faces = [];
+  for (const mesh of objects.filter(object => object.visible && !object.userData?.hidden)) {
+    mesh.updateWorldMatrix(true, false);
+    for (const face of meshTriangleFaces(mesh)) {
+      const centerWorld = triangleCenter(face.localTrianglePoints).applyMatrix4(mesh.matrixWorld);
+      if (wheelVolumeContainsWorldPoint(centerWorld, volume)) faces.push(face);
+    }
+  }
+  wheelSelectionVolume = null;
+  wheelTrianglePickStart = null;
+  wheelSelectionGuide.visible = false;
+  setTriangleSelection(faces, { append: volume.append });
+  updateFacePickHud();
+  log(`Selected everything inside the wheel cylinder.`, {
+    added: faces.length,
+    selected: selectedFaces.length,
+    hint: "Use Extract Tri to turn the complete wheel into one riggable part."
+  });
+  return faces;
 }
 
 function dominantAxis(vector) {
@@ -13228,59 +13310,59 @@ function selectConnectedTrianglesFromHit(hit, { append = false } = {}) {
 function selectWheelTrianglesFromHit(hit, { append = false } = {}) {
   if (!hit?.object || !hit.face || !hit.point) return [];
   const mesh = hit.object;
-  const localPoint = mesh.worldToLocal(hit.point.clone());
+  if (wheelSelectionVolume) {
+    log("The wheel cylinder is ready. Resize it or press Select Inside before starting another wheel.");
+    return [];
+  }
   if (!wheelTrianglePickStart) {
-    const localNormal = hit.face.normal?.clone?.().normalize?.() || new THREE.Vector3(0, 0, 1);
-    const axleAxis = dominantAxis(localNormal);
+    mesh.updateWorldMatrix(true, false);
+    const axisWorld = (hit.face.normal?.clone?.() || new THREE.Vector3(0, 0, 1))
+      .transformDirection(mesh.matrixWorld)
+      .normalize();
+    if (axisWorld.dot(camera.position.clone().sub(hit.point)) < 0) axisWorld.negate();
     wheelTrianglePickStart = {
       mesh,
       meshId: mesh.userData?.id || mesh.uuid,
-      localPoint,
-      axleAxis,
-      outwardSign: Math.sign(localNormal.getComponent(axleAxis)) || Math.sign(localPoint.getComponent(axleAxis)) || 1,
+      surfaceWorld: hit.point.clone(),
+      axisWorld,
       append
     };
     updateFacePickHud();
-    log(`Wheel center set on ${mesh.name}. Click the outer rim to select the complete wheel.`);
+    log(`Wheel center set on ${mesh.name}. Click its outer rim to create the cylinder.`);
     return [];
   }
   const start = wheelTrianglePickStart;
   if (start.meshId !== (mesh.userData?.id || mesh.uuid)) {
-    wheelTrianglePickStart = null;
-    updateFacePickHud();
-    log("The wheel rim must be on the same mesh as its center. Click the wheel center again.");
+    cancelWheelSelectionVolume("The center and rim must be clicked on the same wheel surface. Click the wheel center again.");
     return [];
   }
-  const radialAxes = [0, 1, 2].filter(axis => axis !== start.axleAxis);
-  const radialDelta = new THREE.Vector2(
-    localPoint.getComponent(radialAxes[0]) - start.localPoint.getComponent(radialAxes[0]),
-    localPoint.getComponent(radialAxes[1]) - start.localPoint.getComponent(radialAxes[1])
-  );
-  const radius = radialDelta.length();
+  const delta = hit.point.clone().sub(start.surfaceWorld);
+  const axialDelta = delta.dot(start.axisWorld);
+  const radius = delta.addScaledVector(start.axisWorld, -axialDelta).length();
   if (radius < .03) {
-    log("Click farther out on the wheel rim so Wheel Select can measure its size.");
+    log("Click farther out on the wheel rim so the cylinder can measure its radius.");
     return [];
   }
-  const surfaceCoordinate = start.localPoint.getComponent(start.axleAxis);
-  const maximumDepth = Math.max(.08, radius * .95);
-  const faces = meshTriangleFaces(mesh).filter(face => {
-    const center = triangleCenter(face.localTrianglePoints);
-    const radialA = center.getComponent(radialAxes[0]) - start.localPoint.getComponent(radialAxes[0]);
-    const radialB = center.getComponent(radialAxes[1]) - start.localPoint.getComponent(radialAxes[1]);
-    if (Math.hypot(radialA, radialB) > radius * 1.08) return false;
-    const inwardDepth = (surfaceCoordinate - center.getComponent(start.axleAxis)) * start.outwardSign;
-    return inwardDepth >= -radius * .08 && inwardDepth <= maximumDepth;
-  });
+  const fittedRadius = radius * 1.08;
+  const width = Math.max(.08, fittedRadius * 1.15);
+  const centerWorld = start.surfaceWorld.clone().addScaledVector(start.axisWorld, -width * .5);
+  wheelSelectionVolume = {
+    surfaceWorld: start.surfaceWorld.clone(),
+    centerWorld,
+    axisWorld: start.axisWorld.clone(),
+    radius: fittedRadius,
+    width,
+    append: start.append || append
+  };
   wheelTrianglePickStart = null;
-  setTriangleSelection(faces, { append: start.append || append });
+  updateWheelSelectionGuide();
   updateFacePickHud();
-  log(`Selected the complete wheel region on ${mesh.name}.`, {
-    added: faces.length,
-    selected: selectedFaces.length,
-    radius: round(radius),
-    hint: "Use Extract Tri to turn this wheel into its own riggable part."
+  log(`Wheel selection cylinder created around ${mesh.name}.`, {
+    radius: round(fittedRadius),
+    width: round(width),
+    hint: "Resize it if needed, then press Select Inside."
   });
-  return faces;
+  return [];
 }
 
 function selectCoplanarFaceFromHit(hit, { append = false } = {}) {

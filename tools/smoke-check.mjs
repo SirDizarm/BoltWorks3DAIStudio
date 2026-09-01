@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.92.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.60.93.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -245,14 +245,19 @@ if (
 
 if (
   !documentSource.includes('id="selectWheelBtn"')
-  || !documentSource.includes("Select Wheel")
+  || !documentSource.includes("Select Wheel Volume")
+  || !documentSource.includes('id="wheelVolumeControls"')
+  || !documentSource.includes('id="applyWheelVolumeBtn"')
   || !viewportSource.includes("let wheelTrianglePickMode = false")
+  || !viewportSource.includes('wheelSelectionGuide.name = "wheel selection volume"')
   || !meshesSource.includes("function setWheelTrianglePickMode")
   || !meshesSource.includes("function selectWheelTrianglesFromHit")
-  || !meshesSource.includes("maximumDepth = Math.max(.08, radius * .95)")
+  || !meshesSource.includes("function applyWheelSelectionVolume")
+  || !meshesSource.includes("function resizeWheelSelectionVolume")
+  || !meshesSource.includes("wheelVolumeContainsWorldPoint")
   || !panelsSource.includes("if (wheelTrianglePickMode && hit)")
 ) {
-  throw new Error("Selection Tools must provide a two-click cylindrical wheel selector for complete riggable wheel regions.");
+  throw new Error("Selection Tools must provide a visible, resizable cylindrical volume that selects complete multi-mesh wheel regions.");
 }
 
 if (
@@ -1681,7 +1686,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.92.js?v=49.60.92"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.60.93.js?v=49.60.93"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1749,7 +1754,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.92",
+  "tool-docking.js?v=49.60.93",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2219,6 +2224,9 @@ for (const required of [
   "connectedTriangleFaces",
   "selectConnectedTrianglesFromHit",
   "selectWheelTrianglesFromHit",
+  "resizeWheelSelectionVolume",
+  "applyWheelSelectionVolume",
+  "cancelWheelSelectionVolume",
   "projectWorldPointToCanvas",
   "finishAreaSelection",
   "updateSelectionBox",
@@ -2563,8 +2571,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.92 Experimental") || !documentSource.includes("v49.60.92 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.92 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.93 Experimental") || !documentSource.includes("v49.60.93 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.60.93 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

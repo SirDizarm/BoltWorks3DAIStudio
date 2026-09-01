@@ -130,6 +130,21 @@ textarea {
   display: none;
 }
 
+.wheel-volume-controls {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(84, 255, 226, .5);
+  border-radius: 6px;
+  background: rgba(22, 91, 81, .22);
+}
+
+#applyWheelVolumeBtn {
+  border-color: #35e6c4;
+  color: #9affec;
+}
+
 /* Keep toolbar visibility usable even if another experimental script fails. */
 body:has(#toggleToolbarTransform:not(:checked)) #toolbarTransformGroup,
 body:has(#toggleToolbarMirror:not(:checked)) #toolbarMirrorGroup,
