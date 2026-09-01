@@ -4869,6 +4869,8 @@ function toggleSurfaceValueMode() {
 function setSurfaceSelectionMode(mode = "face") {
   if (connectVerticesMode) cancelConnectVertices(null, { sync: false });
   connectedTrianglePickMode = false;
+  wheelTrianglePickMode = false;
+  wheelTrianglePickStart = null;
   if (knifeCutMode) setKnifeCutMode(false);
   const normalized = ["vertex", "edge", "triangle", "face"].includes(mode) ? mode : "face";
   const releasingActiveMode = surfaceSelectionSource === "surface" && surfaceComponentMode === normalized;
@@ -4913,8 +4915,11 @@ function toggleClassicTriangleSelection() {
     && facePickMode
     && surfaceComponentMode === "triangle"
     && !coplanarFacePickMode
-    && !connectedTrianglePickMode;
+    && !connectedTrianglePickMode
+    && !wheelTrianglePickMode;
   connectedTrianglePickMode = false;
+  wheelTrianglePickMode = false;
+  wheelTrianglePickStart = null;
   releaseSurfaceInteractionForClassicSelection();
   if (releasing) {
     surfaceComponentMode = "none";
@@ -4936,6 +4941,8 @@ function toggleClassicTriangleSelection() {
 
 function toggleClassicFaceSelection() {
   connectedTrianglePickMode = false;
+  wheelTrianglePickMode = false;
+  wheelTrianglePickStart = null;
   if (knifeCutMode) setKnifeCutMode(false);
   const releasing = surfaceSelectionSource === "classic"
     && facePickMode
@@ -6550,6 +6557,8 @@ function setTriangleBuildMode(enabled) {
   triangleBuildMode = !!enabled;
   if (triangleBuildMode) {
     connectedTrianglePickMode = false;
+    wheelTrianglePickMode = false;
+    wheelTrianglePickStart = null;
     clearLineSketch({ silent: true, keepMode: false });
     facePickMode = false;
     coplanarFacePickMode = false;
@@ -6809,6 +6818,8 @@ function setLineSketchMode(enabled) {
   lineSketchMode = !!enabled;
   if (lineSketchMode) {
     connectedTrianglePickMode = false;
+    wheelTrianglePickMode = false;
+    wheelTrianglePickStart = null;
     clearTriangleBuild({ silent: true, keepMode: false });
     facePickMode = false;
     coplanarFacePickMode = false;
@@ -7131,6 +7142,8 @@ function updateFacePickHud() {
   els.faceRegionBtn.classList.toggle("active", coplanarFacePickMode);
   els.selectConnectedBtn?.classList.toggle("active", connectedTrianglePickMode);
   els.selectConnectedBtn?.setAttribute("aria-pressed", String(connectedTrianglePickMode));
+  els.selectWheelBtn?.classList.toggle("active", wheelTrianglePickMode);
+  els.selectWheelBtn?.setAttribute("aria-pressed", String(wheelTrianglePickMode));
   els.openingPickBtn?.classList.toggle("active", openingPickMode);
   els.areaTriBtn.classList.toggle("active", facePickMode && els.areaTriInput.checked);
   els.paintTriBtn?.classList.toggle("active", facePickMode && els.paintTriInput.checked);
@@ -7160,6 +7173,12 @@ function updateFacePickHud() {
     els.hudText.textContent = "Connected mode: click one triangle to select its complete connected island | Shift/Ctrl adds another island";
     return;
   }
+  if (wheelTrianglePickMode) {
+    els.hudText.textContent = wheelTrianglePickStart
+      ? "Wheel Select: click the outer rim to set the wheel size | Esc cancels the center point"
+      : "Wheel Select: click the center of the wheel, then click its outer rim | Shift/Ctrl adds another wheel";
+    return;
+  }
   els.hudText.textContent = facePickMode
     ? (surfaceComponentMode === "vertex"
       ? "Vertex mode: click the nearest corner | Shift/Ctrl adds vertices | use the X/Y/Z arrows to move"
@@ -7179,7 +7198,11 @@ function updateFacePickHud() {
 
 function setFacePickMode(enabled) {
   facePickMode = enabled;
-  if (!facePickMode) connectedTrianglePickMode = false;
+  if (!facePickMode) {
+    connectedTrianglePickMode = false;
+    wheelTrianglePickMode = false;
+    wheelTrianglePickStart = null;
+  }
   if (facePickMode) {
     clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
@@ -7191,6 +7214,8 @@ function setFacePickMode(enabled) {
 function setCoplanarFacePickMode(enabled, { activatePicker = true } = {}) {
   coplanarFacePickMode = !!enabled;
   if (coplanarFacePickMode) {
+    wheelTrianglePickMode = false;
+    wheelTrianglePickStart = null;
     clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
     openingPickMode = false;
@@ -7205,6 +7230,8 @@ function setOpeningPickMode(enabled) {
   openingPickMode = !!enabled;
   if (openingPickMode) {
     connectedTrianglePickMode = false;
+    wheelTrianglePickMode = false;
+    wheelTrianglePickStart = null;
     clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
     coplanarFacePickMode = false;
@@ -7221,6 +7248,8 @@ function setOpeningPickMode(enabled) {
 function setConnectedTrianglePickMode(enabled) {
   connectedTrianglePickMode = !!enabled;
   if (connectedTrianglePickMode) {
+    wheelTrianglePickMode = false;
+    wheelTrianglePickStart = null;
     if (knifeCutMode) setKnifeCutMode(false);
     releaseSurfaceInteractionForClassicSelection();
     clearTriangleBuild({ silent: true, keepMode: false });
@@ -7238,6 +7267,32 @@ function setConnectedTrianglePickMode(enabled) {
     log("Select Connected disabled.");
   }
   return connectedTrianglePickMode;
+}
+
+function setWheelTrianglePickMode(enabled) {
+  wheelTrianglePickMode = !!enabled;
+  wheelTrianglePickStart = null;
+  if (wheelTrianglePickMode) {
+    connectedTrianglePickMode = false;
+    if (knifeCutMode) setKnifeCutMode(false);
+    releaseSurfaceInteractionForClassicSelection();
+    clearTriangleBuild({ silent: true, keepMode: false });
+    clearLineSketch({ silent: true, keepMode: false });
+    openingPickMode = false;
+    coplanarFacePickMode = false;
+    surfaceComponentMode = "triangle";
+    surfaceSelectionSource = "classic";
+    els.paintTriInput.checked = false;
+    els.areaTriInput.checked = false;
+    setFacePickMode(true);
+    wheelTrianglePickMode = true;
+    updateFacePickHud();
+    log("Wheel Select enabled. Click the wheel center, then click its outer rim.");
+  } else {
+    updateFacePickHud();
+    log("Wheel Select disabled.");
+  }
+  return wheelTrianglePickMode;
 }
 
 function dominantAxis(vector) {
@@ -7753,6 +7808,8 @@ function handleConnectVerticesButton() {
     connectVerticesMode = true;
     connectVerticesTarget = null;
     connectedTrianglePickMode = false;
+    wheelTrianglePickMode = false;
+    wheelTrianglePickStart = null;
     if (dragPushMode) setDragPushMode(false, { silent: true });
     updateConnectVerticesGuide();
     syncSurfaceEditorUi();
@@ -13165,6 +13222,64 @@ function selectConnectedTrianglesFromHit(hit, { append = false } = {}) {
   const faces = connectedTriangleFaces(hit.object, triangleSignature(seed));
   setTriangleSelection(faces, { append });
   log(`Selected connected triangle island on ${hit.object.name}.`, { added: faces.length, selected: selectedFaces.length });
+  return faces;
+}
+
+function selectWheelTrianglesFromHit(hit, { append = false } = {}) {
+  if (!hit?.object || !hit.face || !hit.point) return [];
+  const mesh = hit.object;
+  const localPoint = mesh.worldToLocal(hit.point.clone());
+  if (!wheelTrianglePickStart) {
+    const localNormal = hit.face.normal?.clone?.().normalize?.() || new THREE.Vector3(0, 0, 1);
+    const axleAxis = dominantAxis(localNormal);
+    wheelTrianglePickStart = {
+      mesh,
+      meshId: mesh.userData?.id || mesh.uuid,
+      localPoint,
+      axleAxis,
+      outwardSign: Math.sign(localNormal.getComponent(axleAxis)) || Math.sign(localPoint.getComponent(axleAxis)) || 1,
+      append
+    };
+    updateFacePickHud();
+    log(`Wheel center set on ${mesh.name}. Click the outer rim to select the complete wheel.`);
+    return [];
+  }
+  const start = wheelTrianglePickStart;
+  if (start.meshId !== (mesh.userData?.id || mesh.uuid)) {
+    wheelTrianglePickStart = null;
+    updateFacePickHud();
+    log("The wheel rim must be on the same mesh as its center. Click the wheel center again.");
+    return [];
+  }
+  const radialAxes = [0, 1, 2].filter(axis => axis !== start.axleAxis);
+  const radialDelta = new THREE.Vector2(
+    localPoint.getComponent(radialAxes[0]) - start.localPoint.getComponent(radialAxes[0]),
+    localPoint.getComponent(radialAxes[1]) - start.localPoint.getComponent(radialAxes[1])
+  );
+  const radius = radialDelta.length();
+  if (radius < .03) {
+    log("Click farther out on the wheel rim so Wheel Select can measure its size.");
+    return [];
+  }
+  const surfaceCoordinate = start.localPoint.getComponent(start.axleAxis);
+  const maximumDepth = Math.max(.08, radius * .95);
+  const faces = meshTriangleFaces(mesh).filter(face => {
+    const center = triangleCenter(face.localTrianglePoints);
+    const radialA = center.getComponent(radialAxes[0]) - start.localPoint.getComponent(radialAxes[0]);
+    const radialB = center.getComponent(radialAxes[1]) - start.localPoint.getComponent(radialAxes[1]);
+    if (Math.hypot(radialA, radialB) > radius * 1.08) return false;
+    const inwardDepth = (surfaceCoordinate - center.getComponent(start.axleAxis)) * start.outwardSign;
+    return inwardDepth >= -radius * .08 && inwardDepth <= maximumDepth;
+  });
+  wheelTrianglePickStart = null;
+  setTriangleSelection(faces, { append: start.append || append });
+  updateFacePickHud();
+  log(`Selected the complete wheel region on ${mesh.name}.`, {
+    added: faces.length,
+    selected: selectedFaces.length,
+    radius: round(radius),
+    hint: "Use Extract Tri to turn this wheel into its own riggable part."
+  });
   return faces;
 }
 

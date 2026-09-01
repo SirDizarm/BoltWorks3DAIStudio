@@ -472,6 +472,8 @@ let selected = null;
 let facePickMode = false;
 let coplanarFacePickMode = false;
 let connectedTrianglePickMode = false;
+let wheelTrianglePickMode = false;
+let wheelTrianglePickStart = null;
 let openingPickMode = false;
 let lineSketchMode = false;
 let triangleBuildMode = false;
@@ -989,6 +991,7 @@ const els = {
   facePickBtn: document.querySelector("#facePickBtn"),
   faceRegionBtn: document.querySelector("#faceRegionBtn"),
   selectConnectedBtn: document.querySelector("#selectConnectedBtn"),
+  selectWheelBtn: document.querySelector("#selectWheelBtn"),
   openingPickBtn: document.querySelector("#openingPickBtn"),
   lineToolBtn: document.querySelector("#lineToolBtn"),
   triangleBuildBtn: document.querySelector("#triangleBuildBtn"),

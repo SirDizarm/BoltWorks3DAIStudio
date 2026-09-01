@@ -1217,6 +1217,7 @@ els.centerPivotBtn.addEventListener("click", centerSharedPivot);
 document.querySelector("#facePickBtn").addEventListener("click", toggleClassicTriangleSelection);
 els.faceRegionBtn.addEventListener("click", toggleClassicFaceSelection);
 els.selectConnectedBtn?.addEventListener("click", () => setConnectedTrianglePickMode(!connectedTrianglePickMode));
+els.selectWheelBtn?.addEventListener("click", () => setWheelTrianglePickMode(!wheelTrianglePickMode));
 els.openingPickBtn?.addEventListener("click", () => setOpeningPickMode(!openingPickMode));
 els.lineToolBtn.addEventListener("click", () => setLineSketchMode(!lineSketchMode));
 els.triangleBuildBtn?.addEventListener("click", () => setTriangleBuildMode(!triangleBuildMode));
@@ -2430,6 +2431,10 @@ canvas.addEventListener("pointerdown", event => {
     paintTriangleFromPointer(event);
     return;
   }
+  if (wheelTrianglePickMode && hit) {
+    selectWheelTrianglesFromHit(hit, { append: additiveSelectionRequested(event) });
+    return;
+  }
   if (connectedTrianglePickMode && hit) {
     selectConnectedTrianglesFromHit(hit, { append: additiveSelectionRequested(event) });
     return;
@@ -2588,6 +2593,13 @@ window.addEventListener("keydown", event => {
   if (connectVerticesMode && event.key === "Escape") {
     event.preventDefault();
     cancelConnectVertices("Connect Vertices cancelled. The source vertex remains selected.");
+    return;
+  }
+  if (wheelTrianglePickMode && wheelTrianglePickStart && event.key === "Escape") {
+    event.preventDefault();
+    wheelTrianglePickStart = null;
+    updateFacePickHud();
+    log("Wheel center cancelled. Click a wheel center to start again.");
     return;
   }
   if (knifeCutMode && event.key === "Escape") {
@@ -2810,6 +2822,7 @@ window.ModelerStudio = {
   extractSelectedTriangles,
   selectTrianglesInScreenRect,
   selectConnectedTrianglesFromHit,
+  selectWheelTrianglesFromHit,
   copySelectedTriangles,
   pasteCopiedTriangles,
   pasteCopiedTrianglesMirrored,
