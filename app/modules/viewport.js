@@ -400,7 +400,7 @@ for (const side of [-1, 1]) {
 const roadFog = new THREE.Fog(0xb3ced8, 55, 175);
 const sunsetFog = new THREE.Fog(0xc7836f, 55, 175);
 let suppressViewportEnvironment = false;
-const hemi = new THREE.HemisphereLight(0xe9f7ff, 0x283030, 1.8);
+const hemi = new THREE.HemisphereLight(0xf4fbff, 0x7b8790, 2.4);
 scene.add(hemi);
 
 const key = new THREE.DirectionalLight(0xffffff, 3.2);
@@ -411,6 +411,23 @@ scene.add(key);
 const fill = new THREE.PointLight(0xffffff, 1.2, 50);
 fill.position.set(0, 14, 0);
 scene.add(fill);
+
+const surroundFillTarget = new THREE.Object3D();
+surroundFillTarget.position.set(0, 1.5, 0);
+scene.add(surroundFillTarget);
+const surroundFillLights = [
+  [9, 5, 0],
+  [-9, 5, 0],
+  [0, 5, 9],
+  [0, 5, -9]
+].map(position => {
+  const light = new THREE.DirectionalLight(0xf4f8ff, .75);
+  light.position.fromArray(position);
+  light.target = surroundFillTarget;
+  light.castShadow = false;
+  scene.add(light);
+  return light;
+});
 
 const primarySpotTarget = new THREE.Object3D();
 const mirrorSpotTarget = new THREE.Object3D();
@@ -507,6 +524,9 @@ let triangleBuildHover = null;
 const triangleBuildPoints = [];
 let dragPushMode = false;
 let pullToTargetSession = null;
+let alignModelFaceSession = null;
+let keyholeCutterSession = null;
+let planeCutPreviewState = null;
 let lineSketchClosed = false;
 let lineSketchPlane = null;
 let lineSketchPlaneNormal = null;
@@ -622,6 +642,11 @@ const knifeCutGuideGroup = new THREE.Group();
 knifeCutGuideGroup.name = "knife cut guides";
 knifeCutGuideGroup.visible = false;
 scene.add(knifeCutGuideGroup);
+const cutPreviewGroup = new THREE.Group();
+cutPreviewGroup.name = "cut preview guides";
+cutPreviewGroup.userData.editorHelper = true;
+cutPreviewGroup.visible = false;
+scene.add(cutPreviewGroup);
 const selectionOutlineGroup = new THREE.Group();
 selectionOutlineGroup.name = "selected object silhouette";
 scene.add(selectionOutlineGroup);
@@ -736,6 +761,8 @@ const els = {
   selectionBox: document.querySelector("#selectionBox"),
   addMeshSection: document.querySelector("#addMeshSection"),
   addMeshToggle: document.querySelector("#addMeshToggle"),
+  viewportContextMenu: document.querySelector("#viewportContextMenu"),
+  viewportContextCenterAxis: document.querySelector("#viewportContextCenterAxis"),
   toolbarPicker: document.querySelector("#toolbarPicker"),
   toggleToolbarTransform: document.querySelector("#toggleToolbarTransform"),
   toggleToolbarMirror: document.querySelector("#toggleToolbarMirror"),
@@ -743,6 +770,7 @@ const els = {
   toggleToolbarProjectFiles: document.querySelector("#toggleToolbarProjectFiles"),
   toolbarTransformGroup: document.querySelector("#toolbarTransformGroup"),
   toolbarMirrorGroup: document.querySelector("#toolbarMirrorGroup"),
+  flipFromCenterInput: document.querySelector("#flipFromCenterInput"),
   toolbarSelectionToolsGroup: document.querySelector("#toolbarSelectionToolsGroup"),
   toolbarLineToolsGroup: document.querySelector("#toolbarLineToolsGroup"),
   toolbarMarkerToolsGroup: document.querySelector("#toolbarMarkerToolsGroup"),
@@ -861,6 +889,8 @@ const els = {
   boneStructureFile: document.querySelector("#boneStructureFile"),
   importGlbBtn: document.querySelector("#importGlbBtn"),
   importGlbFile: document.querySelector("#importGlbFile"),
+  importGltfBtn: document.querySelector("#importGltfBtn"),
+  importGltfFile: document.querySelector("#importGltfFile"),
   boneList: document.querySelector("#boneList"),
   boneNameInput: document.querySelector("#boneNameInput"),
   boneParentSelect: document.querySelector("#boneParentSelect"),
@@ -1010,6 +1040,7 @@ const els = {
   groupBtn: document.querySelector("#groupBtn"),
   ungroupBtn: document.querySelector("#ungroupBtn"),
   mergeMeshBtn: document.querySelector("#mergeMeshBtn"),
+  combineShellBtn: document.querySelector("#combineShellBtn"),
   pivotBtn: document.querySelector("#pivotBtn"),
   centerPivotBtn: document.querySelector("#centerPivotBtn"),
   rotationSnapSelect: document.querySelector("#rotationSnapSelect"),
@@ -1024,6 +1055,8 @@ const els = {
   wheelWidthWiderBtn: document.querySelector("#wheelWidthWiderBtn"),
   applyWheelVolumeBtn: document.querySelector("#applyWheelVolumeBtn"),
   cancelWheelVolumeBtn: document.querySelector("#cancelWheelVolumeBtn"),
+  selectInsideBoundaryBtn: document.querySelector("#selectInsideBoundaryBtn"),
+  extractInsideBoundaryBtn: document.querySelector("#extractInsideBoundaryBtn"),
   openingPickBtn: document.querySelector("#openingPickBtn"),
   lineToolBtn: document.querySelector("#lineToolBtn"),
   triangleBuildBtn: document.querySelector("#triangleBuildBtn"),
@@ -1032,6 +1065,7 @@ const els = {
   makeFaceBtn: document.querySelector("#makeFaceBtn"),
   fillLineBtn: document.querySelector("#fillLineBtn"),
   cutHoleSketchBtn: document.querySelector("#cutHoleSketchBtn"),
+  keyholeCutterBtn: document.querySelector("#keyholeCutterBtn"),
   clearLineBtn: document.querySelector("#clearLineBtn"),
   paintTriBtn: document.querySelector("#paintTriBtn"),
   paintTriInput: document.querySelector("#paintTriInput"),
@@ -1059,6 +1093,9 @@ const els = {
   extendFaceBtn: document.querySelector("#extendFaceBtn"),
   pullFaceBtn: document.querySelector("#pullFaceBtn"),
   pullToTargetBtn: document.querySelector("#pullToTargetBtn"),
+  alignModelFaceBtn: document.querySelector("#alignModelFaceBtn"),
+  alignModelFaceFacingSelect: document.querySelector("#alignModelFaceFacingSelect"),
+  alignModelFaceMoveAxisSelect: document.querySelector("#alignModelFaceMoveAxisSelect"),
   pushFaceBtn: document.querySelector("#pushFaceBtn"),
   surfaceEditorOpenBtn: document.querySelector("#surfaceEditorOpenBtn"),
   surfaceEditorWindow: document.querySelector("#surfaceEditorWindow"),
@@ -1256,6 +1293,11 @@ const els = {
   roughValue: document.querySelector("#roughValue"),
   opacityInput: document.querySelector("#opacityInput"),
   opacityValue: document.querySelector("#opacityValue"),
+  tintStrengthInput: document.querySelector("#tintStrengthInput"),
+  tintStrengthValue: document.querySelector("#tintStrengthValue"),
+  shadowFillInput: document.querySelector("#shadowFillInput"),
+  shadowFillValue: document.querySelector("#shadowFillValue"),
+  fourSideLightsInput: document.querySelector("#fourSideLightsInput"),
   cutSideSelect: document.querySelector("#cutSideSelect"),
   cutAmountInput: document.querySelector("#cutAmountInput"),
   cutMeshBtn: document.querySelector("#cutMeshBtn"),
@@ -1370,6 +1412,7 @@ const els = {
   meshDetailsCloseBtn: document.querySelector("#meshDetailsCloseBtn"),
   meshDetailsCancelBtn: document.querySelector("#meshDetailsCancelBtn"),
   meshDetailsSaveBtn: document.querySelector("#meshDetailsSaveBtn"),
+  meshDetailsUniqueBtn: document.querySelector("#meshDetailsUniqueBtn"),
   viewSpaceInput: document.querySelector("#viewSpaceInput"),
   shotSpaceInput: document.querySelector("#shotSpaceInput"),
   environmentSelect: document.querySelector("#environmentSelect"),
@@ -1409,6 +1452,7 @@ const els = {
   reliefDarkForegroundInput: document.querySelector("#reliefDarkForegroundInput"),
   createReliefMeshBtn: document.querySelector("#createReliefMeshBtn"),
   saveFrontPngBtn: document.querySelector("#saveFrontPngBtn"),
+  saveCurrentPngBtn: document.querySelector("#saveCurrentPngBtn"),
   saveBackPngBtn: document.querySelector("#saveBackPngBtn"),
   saveLeftPngBtn: document.querySelector("#saveLeftPngBtn"),
   saveRightPngBtn: document.querySelector("#saveRightPngBtn"),

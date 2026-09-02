@@ -1,4 +1,20 @@
 function serializeObject(mesh) {
+  const material = primaryMeshMaterial(mesh);
+  const importedGltfMesh = mesh.userData.shape === "glb";
+  let serializedPosition = mesh.position.toArray();
+  let serializedRotation = [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z].map(value => THREE.MathUtils.radToDeg(value));
+  let serializedScale = mesh.scale.toArray();
+  if (importedGltfMesh) {
+    mesh.updateWorldMatrix(true, false);
+    const worldPosition = new THREE.Vector3();
+    const worldQuaternion = new THREE.Quaternion();
+    const worldScale = new THREE.Vector3();
+    mesh.matrixWorld.decompose(worldPosition, worldQuaternion, worldScale);
+    const worldRotation = new THREE.Euler().setFromQuaternion(worldQuaternion, "XYZ");
+    serializedPosition = worldPosition.toArray();
+    serializedRotation = [worldRotation.x, worldRotation.y, worldRotation.z].map(value => THREE.MathUtils.radToDeg(value));
+    serializedScale = worldScale.toArray();
+  }
   const previewBaseMaterial = typeof rigModelBaseMaterialState === "function"
     ? rigModelBaseMaterialState(mesh.material)
     : null;
@@ -6,21 +22,23 @@ function serializeObject(mesh) {
     id: mesh.userData.id,
     name: mesh.name,
     shape: mesh.userData.shape,
-    geometry: mesh.userData.geometry,
+    geometry: mesh.userData.geometry || (importedGltfMesh && mesh.geometry ? geometryToData(mesh.geometry) : null),
     bevel: mesh.userData.bevel,
     depth: mesh.userData.depth,
     direction: mesh.userData.direction,
     cuts: mesh.userData.cuts || null,
     pivot: mesh.userData.pivot || null,
     linkId: mesh.userData.linkId || null,
-    position: mesh.position.toArray().map(round),
-    rotation: [mesh.rotation.x, mesh.rotation.y, mesh.rotation.z].map(v => round(THREE.MathUtils.radToDeg(v))),
-    scale: mesh.scale.toArray().map(round),
-    color: `#${mesh.material.color.getHexString()}`,
-    roughness: round(mesh.material.roughness),
+    position: serializedPosition.map(round),
+    rotation: serializedRotation.map(round),
+    scale: serializedScale.map(round),
+    color: mesh.userData.color || `#${material?.color?.getHexString?.() || "ffffff"}`,
+    roughness: round(material?.roughness ?? mesh.userData.roughness ?? .6),
+    tintColor: normalizeHexColor(mesh.userData.tintColor, "#ffffff"),
+    tintStrength: round(Math.max(0, Math.min(1, Number(mesh.userData.tintStrength) || 0))),
     // Animator rig opacity is a viewport aid, not an editable material value.
     // Saving while the rig is faded must preserve the mesh's true opacity.
-    opacity: round(previewBaseMaterial?.opacity ?? mesh.userData.opacity ?? mesh.material.opacity ?? 1),
+    opacity: round(previewBaseMaterial?.opacity ?? mesh.userData.opacity ?? material?.opacity ?? 1),
     hidden: !!mesh.userData.hidden,
     groupId: mesh.userData.groupId || null,
     groupName: mesh.userData.groupName || null,
@@ -56,6 +74,8 @@ function serializeObject(mesh) {
     } : null,
     lod: mesh.userData.lod ? { ...mesh.userData.lod } : null,
     minecraft: mesh.userData.minecraft ? JSON.parse(JSON.stringify(mesh.userData.minecraft)) : null,
+    generatedShell: !!mesh.userData.generatedShell,
+    shellResolution: mesh.userData.generatedShell ? Number(mesh.userData.shellResolution) || 42 : null,
     edgeBevelProtectedEdges: Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? [...mesh.userData.edgeBevelProtectedEdges] : [],
     dissolvedSurfaceEdges: Array.isArray(mesh.userData.dissolvedSurfaceEdges) ? [...mesh.userData.dissolvedSurfaceEdges] : []
   };
@@ -109,10 +129,10 @@ function projectCapabilities() {
   return {
     shapes: Object.keys(shapeFactories),
     transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
-    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "pullToTarget", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
+    faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "keyholeCutter", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "pullToTarget", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
     textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary", "baseColorPaint", "roughnessPaint", "metalnessPaint", "emissivePaint"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
-    sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes"],
+    sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes", "combineShell"],
     lighting: ["mainLamp", "mirrorLamp", "lightGuides", "lampAim", "lampStrength", "coneAngle"],
     notes: [
       "Project files store editable scene state plus editor/view settings.",
@@ -212,6 +232,7 @@ function projectState() {
       toolbars: toolbarVisibilityState(),
       tools: {
         rotationSnap: Number(els.rotationSnapSelect.value) || 0,
+        flipFromCenter: !!els.flipFromCenterInput?.checked,
         bevelType: els.bevelTypeSelect.value,
         bevelSize: Number(els.bevelSizeInput.value) || 0.16,
         bevelDepth: Number(els.bevelDepthInput.value) || 0.18,
@@ -253,6 +274,8 @@ function projectState() {
         cutAmount: els.cutAmountInput.value || "50%"
       },
       lighting: {
+        shadowFill: Number(els.shadowFillInput?.value) || 0,
+        fourSideFill: els.fourSideLightsInput?.checked ?? true,
         showGuides: !!els.showLightGuidesInput.checked,
         enablePrimary: !!els.enablePrimaryLightInput.checked,
         enableMirror: !!els.enableMirrorLightInput.checked,
@@ -475,12 +498,23 @@ function loadState(data, { record = true } = {}) {
       parentId: spec.parentId || null
     });
   }
-  for (const spec of data.objects || []) addObject(spec, { record: false, update: false });
+  let skippedBrokenGltf = 0;
+  for (const spec of data.objects || []) {
+    if (spec.shape === "glb" && !spec.geometry?.positions?.length) {
+      skippedBrokenGltf += 1;
+      continue;
+    }
+    addObject(spec, { record: false, update: false });
+  }
+  // Older saved projects can contain duplicated mesh IDs. Checkbox state and
+  // selection then leak between unrelated rows because both rows share a key.
+  ensureUniqueObjectIds();
   ensureLinkGroupColors();
   ensureSceneGroups();
   ensureModelGroups();
   selectObject(objects.at(-1) || null);
   updateAll();
+  if (skippedBrokenGltf) log(`Skipped ${skippedBrokenGltf} incomplete legacy glTF recovery object${skippedBrokenGltf === 1 ? "" : "s"}. Re-import the original glTF once; future recovery saves will preserve it correctly.`);
 }
 
 function applyProjectEditorState(editor = {}) {
@@ -506,6 +540,7 @@ function applyProjectEditorState(editor = {}) {
 
   const tools = editor.tools || {};
   els.rotationSnapSelect.value = String(tools.rotationSnap ?? 0);
+  if (els.flipFromCenterInput) els.flipFromCenterInput.checked = !!tools.flipFromCenter;
   applyRotationSnap();
   els.bevelTypeSelect.value = tools.bevelType || "inner";
   els.bevelSizeInput.value = String(tools.bevelSize ?? 0.16);
@@ -585,6 +620,8 @@ function applyProjectEditorState(editor = {}) {
   restoreReferenceImageState(editor.referenceImage || null);
 
   const lighting = editor.lighting || {};
+  if (els.shadowFillInput) els.shadowFillInput.value = String(lighting.shadowFill ?? 2.4);
+  if (els.fourSideLightsInput) els.fourSideLightsInput.checked = lighting.fourSideFill ?? true;
   els.showLightGuidesInput.checked = lighting.showGuides ?? false;
   els.enablePrimaryLightInput.checked = lighting.enablePrimary ?? false;
   els.enableMirrorLightInput.checked = lighting.enableMirror ?? false;
@@ -596,6 +633,7 @@ function applyProjectEditorState(editor = {}) {
   els.lightTargetZInput.value = String(lighting.lampTarget?.[2] ?? 0);
   els.lightIntensityInput.value = String(lighting.intensity ?? 10);
   els.lightAngleInput.value = String(lighting.angle ?? 24);
+  syncShadowFill();
   syncSpotLightRig();
   restoreBoneRig(editor.rigging || {});
   restoreMinecraftWorkspace(editor.minecraft || null);
@@ -929,7 +967,9 @@ function renderTree() {
     meshName.textContent = mesh.name;
     meshName.title = mesh.name;
     partCheck.addEventListener("click", event => event.stopPropagation());
-    partCheck.addEventListener("change", event => setChecked(mesh, event.target.checked));
+    partCheck.addEventListener("change", event => setChecked(mesh, event.target.checked, {
+      append: event.shiftKey || event.ctrlKey || event.metaKey
+    }));
     linkToggle.addEventListener("click", event => event.stopPropagation());
     linkCheck.addEventListener("change", event => {
       event.stopPropagation();
@@ -1124,7 +1164,9 @@ function syncInspector() {
     els.textureFile,
     els.textureLibrarySelect,
     els.textureLibraryUrlInput,
-    els.loadTextureLibraryUrlBtn
+    els.loadTextureLibraryUrlBtn,
+    els.shadowFillInput,
+    els.fourSideLightsInput
   ].filter(Boolean));
   for (const input of document.querySelectorAll(".props input, .props button, .props select")) {
     if (alwaysAvailableTextureControls.has(input)) continue;
@@ -1152,6 +1194,8 @@ function syncInspector() {
     els.roughValue.value = "0.60";
     els.opacityInput.value = 1;
     els.opacityValue.value = "1.00";
+    els.tintStrengthInput.value = 0;
+    els.tintStrengthValue.value = "0%";
     els.textureName.textContent = pivotEditMode
       ? (pivotTargets.length > 1 ? "Shared pivot edit mode" : "Single-part pivot edit mode")
       : (pivotTargets.length > 1 ? "Shared checked-parts transform" : "Single-part custom pivot transform");
@@ -1170,6 +1214,8 @@ function syncInspector() {
     if (els.modelToolsPaintFacesBtn) els.modelToolsPaintFacesBtn.disabled = selectedFaces.length < 1;
     els.opacityInput.value = 1;
     els.opacityValue.value = "1.00";
+    els.tintStrengthInput.value = 0;
+    els.tintStrengthValue.value = "0%";
     els.textureName.textContent = "No texture";
     els.cutSideSelect.disabled = true;
     els.cutAmountInput.disabled = true;
@@ -1190,21 +1236,25 @@ function syncInspector() {
   els.scaleX.value = round(selected.scale.x);
   els.scaleY.value = round(selected.scale.y);
   els.scaleZ.value = round(selected.scale.z);
-  els.colorInput.value = `#${selected.material.color.getHexString()}`;
-  els.colorHexInput.value = `#${selected.material.color.getHexString()}`.toUpperCase();
+  const material = primaryMeshMaterial(selected);
+  const inspectorColor = normalizeHexColor(selected.userData.tintColor || selected.userData.color || `#${material?.color?.getHexString?.() || "ffffff"}`, "#ffffff");
+  els.colorInput.value = inspectorColor;
+  els.colorHexInput.value = inspectorColor.toUpperCase();
   if (els.modelToolsMeshColorInput) els.modelToolsMeshColorInput.value = els.colorInput.value;
   if (els.modelToolsMeshColorHexInput) els.modelToolsMeshColorHexInput.value = els.colorHexInput.value;
   if (els.modelToolsApplyMeshColorBtn) els.modelToolsApplyMeshColorBtn.disabled = false;
   if (els.modelToolsPaintFacesBtn) els.modelToolsPaintFacesBtn.disabled = selectedFaces.length < 1;
   if (els.addColorToSceneBtn) { els.addColorToSceneBtn.disabled = false; els.addColorToSceneBtn.textContent = selected.userData.colorApplied ? "Mesh Color Applied" : "Apply Mesh Color"; }
-  els.roughInput.value = selected.material.roughness;
-  els.roughValue.value = Number(selected.material.roughness).toFixed(2);
+  els.roughInput.value = material?.roughness ?? .6;
+  els.roughValue.value = Number(material?.roughness ?? .6).toFixed(2);
   const baseMaterialState = typeof rigModelBaseMaterialState === "function" ? rigModelBaseMaterialState(selected.material) : null;
   const inspectorOpacity = typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive
     ? rigModelOpacity
-    : (baseMaterialState?.opacity ?? selected.material.opacity ?? 1);
+    : (baseMaterialState?.opacity ?? material?.opacity ?? 1);
   els.opacityInput.value = inspectorOpacity;
   els.opacityValue.value = Number(inspectorOpacity).toFixed(2);
+  els.tintStrengthInput.value = Math.max(0, Math.min(1, Number(selected.userData.tintStrength) || 0));
+  els.tintStrengthValue.value = `${Math.round(Number(els.tintStrengthInput.value) * 100)}%`;
   if (selected.userData.cuts?.bottom !== undefined) {
     els.cutSideSelect.value = "bottom";
     els.cutAmountInput.value = selected.userData.cuts.bottom;
@@ -1212,8 +1262,8 @@ function syncInspector() {
     els.cutSideSelect.value = "top";
     els.cutAmountInput.value = selected.userData.cuts.top;
   }
-  const textureLabel = selected.userData.textureName || (selected.material.map ? "Texture" : "No texture");
-  els.textureName.textContent = selected.material.map ? `${textureLabel} (${selected.userData.textureFlipY ?? true ? "flip V" : "normal V"}, rot ${normalizeTextureRotation(selected.userData.textureRotation || 0)} deg)` : textureLabel;
+  const textureLabel = selected.userData.textureName || (material?.map ? "Texture" : "No texture");
+  els.textureName.textContent = material?.map ? `${textureLabel} (${selected.userData.textureFlipY ?? true ? "flip V" : "normal V"}, rot ${normalizeTextureRotation(selected.userData.textureRotation || 0)} deg)` : textureLabel;
 }
 
 function inspectorNumber(input, fallback, { min = null } = {}) {
@@ -1282,24 +1332,33 @@ function applyInspector({ record = true } = {}) {
     inspectorNumber(els.scaleY, selected.scale.y, { min: .05 }),
     inspectorNumber(els.scaleZ, selected.scale.z, { min: .05 })
   );
-  if (selected.userData.colorApplied) selected.material.color.set(normalizedColor);
+  const materials = Array.isArray(selected.material) ? selected.material : [selected.material];
+  if (selected.userData.colorApplied) materials.forEach(material => material?.color?.set(normalizedColor));
   const reapplyRigOpacity = typeof restoreRigModelMaterials === "function" && restoreRigModelMaterials();
-  selected.material.roughness = +els.roughInput.value;
+  materials.forEach(material => { if (material) material.roughness = +els.roughInput.value; });
   const opacity = Math.max(.05, Math.min(1, Number(els.opacityInput.value) || 1));
   const editsRigPreviewOpacity = typeof animatorWorkspaceActive !== "undefined" && animatorWorkspaceActive && rigBones.length > 0;
   if (!editsRigPreviewOpacity) {
-    selected.material.transparent = opacity < .999 || !!selected.userData.textureHasTransparency;
-    selected.material.opacity = opacity;
-    selected.material.depthWrite = opacity >= .9;
+    materials.forEach(material => {
+      if (!material) return;
+      material.transparent = opacity < .999 || !!selected.userData.textureHasTransparency;
+      material.opacity = opacity;
+      material.depthWrite = opacity >= .9;
+    });
     selected.userData.opacity = opacity;
   }
-  selected.material.wireframe = false;
-  selected.material.needsUpdate = true;
+  materials.forEach(material => {
+    if (!material) return;
+    material.wireframe = false;
+    material.needsUpdate = true;
+  });
   selected.userData.color = normalizedColor;
   selected.userData.roughness = +els.roughInput.value;
+  applyMeshTint(selected, normalizedColor, els.tintStrengthInput.value);
   syncMeshRenderCulling(selected);
-  els.roughValue.value = Number(selected.material.roughness).toFixed(2);
+  els.roughValue.value = Number(+els.roughInput.value).toFixed(2);
   els.opacityValue.value = opacity.toFixed(2);
+  els.tintStrengthValue.value = `${Math.round((Number(els.tintStrengthInput.value) || 0) * 100)}%`;
   if (editsRigPreviewOpacity) setRigModelOpacity(opacity);
   else if (reapplyRigOpacity) applyRigModelOpacity();
   updateAll();
@@ -1356,7 +1415,33 @@ function updateState() {
   if (typeof scheduleProjectAutoSave === "function") scheduleProjectAutoSave();
 }
 
+function recoverUnregisteredImportedMeshes() {
+  const known = new Set(objects);
+  const usedIds = new Set(objects.map(object => object.userData?.id).filter(Boolean));
+  const recovered = [];
+  scene.traverse(node => {
+    if (!node?.isMesh || known.has(node) || node.userData?.editorHelper) return;
+    let ancestor = node.parent;
+    let imported = node.userData?.shape === "glb";
+    while (ancestor && ancestor !== scene) {
+      if (ancestor.userData?.bwsImportAnchor) imported = true;
+      ancestor = ancestor.parent;
+    }
+    if (!imported) return;
+    node.userData ||= {};
+    if (!node.userData.id || usedIds.has(node.userData.id)) node.userData.id = `obj-${idCounter++}`;
+    usedIds.add(node.userData.id);
+    node.userData.shape ||= "glb";
+    objects.push(node);
+    known.add(node);
+    recovered.push(node);
+  });
+  return recovered;
+}
+
 function updateAll() {
+  recoverUnregisteredImportedMeshes();
+  syncShadowFill();
   syncSpotLightRig();
   syncLiveMirrorPreview();
   syncLiveMirrorUi();
@@ -2356,7 +2441,7 @@ async function exportGameCharacterPackage() {
   }
 }
 
-async function exportFullModelGlb() {
+async function exportFullModelGltf({ binary = true } = {}) {
   const exportRoot = new THREE.Group();
   exportRoot.name = gameCharacterSafeName(currentProjectBaseName(), "boltworks-model");
   const roots = [...new Set(objects.filter(object => !object.userData?.editorHelper).map(object => {
@@ -2365,7 +2450,7 @@ async function exportFullModelGlb() {
     return root;
   }))];
   if (!roots.length) {
-    log("Full Model GLB needs at least one model in the workspace.");
+    log(`Full Model ${binary ? "GLB" : "glTF"} needs at least one model in the workspace.`);
     return;
   }
   try {
@@ -2380,20 +2465,26 @@ async function exportFullModelGlb() {
       exportRoot.add(clone);
       if (Array.isArray(object.userData?.bwsImportedAnimations)) animations.push(...object.userData.bwsImportedAnimations);
     }
-    const binary = await new GLTFExporter().parseAsync(exportRoot, {
-      binary: true,
+    const exported = await new GLTFExporter().parseAsync(exportRoot, {
+      binary,
       animations,
       onlyVisible: false,
       trs: true,
       includeCustomExtensions: true
     });
-    const fileName = `${gameCharacterSafeName(currentProjectBaseName(), "boltworks-model")}.glb`;
-    downloadBlob(fileName, new Blob([binary], { type: "model/gltf-binary" }));
-    log(`Exported ${fileName} as a standard full-model GLB. No game-engine layer masks or character manifest were added.`);
+    const extension = binary ? "glb" : "gltf";
+    const fileName = `${gameCharacterSafeName(currentProjectBaseName(), "boltworks-model")}.${extension}`;
+    const payload = binary ? exported : JSON.stringify(exported, null, 2);
+    downloadBlob(fileName, new Blob([payload], { type: binary ? "model/gltf-binary" : "model/gltf+json" }));
+    log(`Exported ${fileName} as a standard full-model ${binary ? "GLB" : "self-contained glTF"}. No game-engine layer masks or character manifest were added.`);
   } catch (error) {
     console.error(error);
-    log(`Full Model GLB export failed: ${error?.message || error}`);
+    log(`Full Model ${binary ? "GLB" : "glTF"} export failed: ${error?.message || error}`);
   }
+}
+
+async function exportFullModelGlb() {
+  return exportFullModelGltf({ binary: true });
 }
 
 function gameCharacterImportedClipKeys(clip, importedBones, boneNodes) {
@@ -2431,17 +2522,69 @@ function gameCharacterImportedClipKeys(clip, importedBones, boneNodes) {
   return { fps, end, keys };
 }
 
-async function importFullModelGlb(file) {
+function centerImportedModelRoot(root) {
+  root.updateWorldMatrix(true, true);
+  const before = new THREE.Box3().setFromObject(root, true);
+  if (before.isEmpty()) throw new Error("The imported model does not contain visible geometry.");
+  const center = before.getCenter(new THREE.Vector3());
+  root.position.add(new THREE.Vector3(-center.x, -before.min.y, -center.z));
+  root.updateWorldMatrix(true, true);
+  return new THREE.Box3().setFromObject(root, true);
+}
+
+function importedTextureDataUrl(texture) {
+  const image = texture?.image;
+  if (!image) return null;
+  const directSource = String(image.currentSrc || image.src || "");
+  if (directSource.startsWith("data:")) return directSource;
+  const width = Number(image.naturalWidth || image.videoWidth || image.width) || 0;
+  const height = Number(image.naturalHeight || image.videoHeight || image.height) || 0;
+  if (!width || !height) return null;
+  try {
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    canvas.getContext("2d", { alpha: true }).drawImage(image, 0, 0, width, height);
+    return canvas.toDataURL("image/png");
+  } catch (error) {
+    console.warn("Could not embed imported glTF texture for recovery", error);
+    return null;
+  }
+}
+
+function preserveImportedGltfMesh(mesh, fileName, index) {
+  const material = primaryMeshMaterial(mesh);
+  mesh.userData.geometry = geometryToData(mesh.geometry);
+  mesh.userData.color = `#${material?.color?.getHexString?.() || "ffffff"}`;
+  mesh.userData.roughness = Number(material?.roughness ?? .6);
+  mesh.userData.opacity = Number(material?.opacity ?? 1);
+  mesh.userData.doubleSided = material?.side === THREE.DoubleSide;
+  const textureUrl = importedTextureDataUrl(material?.map);
+  if (textureUrl) {
+    const textureName = `${fileName.replace(/\.(?:glb|gltf)$/i, "") || "Imported glTF"} texture ${index + 1}.png`;
+    mesh.userData.textureName = registerTextureAsset(textureName, textureUrl) || textureName;
+    mesh.userData.textureUrl = textureUrl;
+    mesh.userData.textureFlipY = material.map.flipY;
+    mesh.userData.textureRotation = THREE.MathUtils.radToDeg(material.map.rotation || 0);
+  }
+}
+
+async function importFullModelGltf(file) {
   if (!file) return;
   try {
-    const gltf = await new GLTFLoader().parseAsync(await file.arrayBuffer(), "");
-    const root = gltf.scene || gltf.scenes?.[0];
-    if (!root) throw new Error("The GLB does not contain a scene.");
-    recordHistory("import GLB");
-    root.name ||= file.name.replace(/\.glb$/i, "");
+    const isJsonGltf = /\.gltf$/i.test(file.name) || file.type === "model/gltf+json";
+    const source = isJsonGltf ? await file.text() : await file.arrayBuffer();
+    const gltf = await new GLTFLoader().parseAsync(source, "");
+    const loadedRoot = gltf.scene || gltf.scenes?.[0];
+    if (!loadedRoot) throw new Error("The glTF file does not contain a scene.");
+    recordHistory("import glTF model");
+    const root = new THREE.Group();
+    root.name = file.name.replace(/\.(?:glb|gltf)$/i, "") || "Imported glTF Model";
     root.userData.bwsImportedAnimations = gltf.animations || [];
+    root.userData.bwsImportAnchor = true;
+    root.add(loadedRoot);
     scene.add(root);
-    root.updateMatrixWorld(true);
+    const importedBounds = centerImportedModelRoot(root);
     const importedMeshes = [];
     root.traverse(node => {
       if (!node.isMesh) return;
@@ -2449,6 +2592,10 @@ async function importFullModelGlb(file) {
       node.userData.id = `obj-${idCounter++}`;
       node.userData.shape ||= "glb";
       node.userData.color ||= `#${(Array.isArray(node.material) ? node.material[0] : node.material)?.color?.getHexString?.() || "ffffff"}`;
+      node.userData.tintColor ||= "#ffffff";
+      node.userData.tintStrength = Math.max(0, Math.min(1, Number(node.userData.tintStrength) || 0));
+      preserveImportedGltfMesh(node, file.name, importedMeshes.length);
+      applyMeshTint(node, node.userData.tintColor, node.userData.tintStrength);
       node.castShadow = true;
       node.receiveShadow = true;
       objects.push(node);
@@ -2510,11 +2657,20 @@ async function importFullModelGlb(file) {
     }
     selectObject(importedMeshes[0] || null);
     updateAll();
-    log(`Imported ${file.name} with ${importedMeshes.length} mesh${importedMeshes.length === 1 ? "" : "es"}, ${boneNodes.length} bones, and ${(gltf.animations || []).length} embedded animation clip${(gltf.animations || []).length === 1 ? "" : "s"}.`);
+    setCameraToView("iso", { bounds: importedBounds, useCurrentZoom: false });
+    log(`Imported ${file.name}, centered it over the workspace grid, and framed the complete model.`, {
+      meshes: importedMeshes.length,
+      bones: boneNodes.length,
+      animationClips: (gltf.animations || []).length
+    });
   } catch (error) {
     console.error(error);
-    log(`GLB import failed: ${error?.message || error}`);
+    log(`glTF/GLB import failed: ${error?.message || error}`);
   }
+}
+
+async function importFullModelGlb(file) {
+  return importFullModelGltf(file);
 }
 
 function safeFileName(name, fallback = "mesh") {
@@ -6400,6 +6556,23 @@ async function saveSingleViewPng(viewName = "iso") {
   await waitForSceneTextures();
   const shot = captureView(viewName, { download: true, prefix });
   log(`Saved ${viewName} PNG view.`, shot.fileName);
+  return shot;
+}
+
+async function saveCurrentViewPng() {
+  const prefix = currentProjectBaseName();
+  await waitForSceneTextures();
+  const shot = captureView("current-view", {
+    download: true,
+    prefix,
+    cameraPoseOverride: {
+      position: camera.position.clone(),
+      target: orbit.target.clone(),
+      up: camera.up.clone(),
+      fov: camera.fov
+    }
+  });
+  log("Saved the current viewport camera as a PNG.", shot.fileName);
   return shot;
 }
 

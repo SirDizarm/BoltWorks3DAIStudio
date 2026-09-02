@@ -180,6 +180,13 @@
         "textureRobloxAssetId": { "type": "string" },
         "materialRule": { "type": "string" },
         "playerAvatar": { "type": "boolean" },
+        "generatedShell": { "type": "boolean" },
+        "shellResolution": {
+          "anyOf": [
+            { "type": "integer", "minimum": 18, "maximum": 64 },
+            { "type": "null" }
+          ]
+        },
         "lod": {
           "anyOf": [
             {

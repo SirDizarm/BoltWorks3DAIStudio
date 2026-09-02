@@ -19,6 +19,69 @@ sortSurfaceEditorToolsAlphabetically();
 // sweeping accidental text highlights across controls and labels.
 document.addEventListener("contextmenu", event => event.preventDefault());
 
+let viewportContextMenuEvent = null;
+
+function closeViewportContextMenu() {
+  if (!els.viewportContextMenu) return;
+  els.viewportContextMenu.hidden = true;
+  viewportContextMenuEvent = null;
+}
+
+function openViewportContextMenu(event) {
+  if (!els.viewportContextMenu || !event.altKey || event.button !== 2) return;
+  event.preventDefault();
+  event.stopPropagation();
+  viewportContextMenuEvent = event;
+  const menu = els.viewportContextMenu;
+  menu.hidden = false;
+  const menuRect = menu.getBoundingClientRect();
+  const maxLeft = Math.max(6, window.innerWidth - menuRect.width - 6);
+  const maxTop = Math.max(6, window.innerHeight - menuRect.height - 6);
+  menu.style.left = `${Math.max(6, Math.min(event.clientX, maxLeft))}px`;
+  menu.style.top = `${Math.max(6, Math.min(event.clientY, maxTop))}px`;
+  menu.querySelector("button")?.focus();
+}
+
+canvas.addEventListener("contextmenu", openViewportContextMenu);
+document.addEventListener("pointerdown", event => {
+  if (!els.viewportContextMenu?.hidden && !els.viewportContextMenu.contains(event.target)) closeViewportContextMenu();
+}, true);
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape") closeViewportContextMenu();
+});
+els.viewportContextMenu?.addEventListener("click", event => {
+  const button = event.target.closest("button");
+  if (!button) return;
+  const action = button.dataset.contextAction;
+  const shape = button.dataset.contextAdd;
+  const menuEvent = viewportContextMenuEvent;
+  closeViewportContextMenu();
+  if (shape && menuEvent) {
+    addObjectAtPointer(shape, menuEvent);
+    return;
+  }
+  if (action === "select-tri") els.facePickBtn?.click();
+  else if (action === "select-face") els.faceRegionBtn?.click();
+  else if (action === "select-connected") els.selectConnectedBtn?.click();
+  else if (action === "area-select") {
+    if (!facePickMode) els.facePickBtn?.click();
+    els.areaTriBtn?.click();
+  }
+  else if (action === "select-inside") els.selectInsideBoundaryBtn?.click();
+  else if (action === "move-face-center") moveSelectedSurfaceToCenter(els.viewportContextCenterAxis?.value);
+  else if (action === "move-face-xyz-center") moveSelectedSurfaceToCenter(els.viewportContextCenterAxis?.value);
+  else if (["move-selected-area", "rotate-selected-area", "scale-selected-area"].includes(action)) {
+    if (!surfaceComponentSelectionCount()) {
+      log("Select a triangle, face, edge, or vertex first.");
+      return;
+    }
+    const mode = action === "move-selected-area" ? "translate" : action === "rotate-selected-area" ? "rotate" : "scale";
+    setSurfaceGizmoMode(mode);
+    const label = mode === "translate" ? "Move" : mode === "rotate" ? "Rotate" : "Scale";
+    log(`${label} Selected Area enabled. Drag the ${mode === "translate" ? "axis arrows" : mode === "rotate" ? "rotation rings" : "scale handles"} around the selected area center.`);
+  }
+});
+
 async function copyProjectNameFromField() {
   const field = els.projectNameInput;
   if (!field) return false;
@@ -989,8 +1052,11 @@ document.querySelectorAll("[data-mode]").forEach(btn => {
   });
 });
 document.querySelectorAll("[data-flip-axis]").forEach(btn => {
-  btn.addEventListener("click", () => flipSelectedParts(btn.dataset.flipAxis));
+  btn.addEventListener("click", () => flipSelectedParts(btn.dataset.flipAxis, {
+    fromCenter: !!els.flipFromCenterInput?.checked
+  }));
 });
+els.flipFromCenterInput?.addEventListener("change", updateState);
 [
   els.toggleToolbarTransform,
   els.toggleToolbarMirror,
@@ -1212,6 +1278,7 @@ updateAnimationPanel();
 document.querySelector("#groupBtn").addEventListener("click", groupCheckedParts);
 document.querySelector("#ungroupBtn").addEventListener("click", ungroupParts);
 document.querySelector("#mergeMeshBtn").addEventListener("click", async () => mergeCheckedMeshes());
+els.combineShellBtn?.addEventListener("click", async () => combineCheckedMeshesIntoShell());
 els.pivotBtn.addEventListener("click", () => setPivotEditMode(!pivotEditMode));
 els.centerPivotBtn.addEventListener("click", centerSharedPivot);
 document.querySelector("#facePickBtn").addEventListener("click", toggleClassicTriangleSelection);
@@ -1224,6 +1291,8 @@ els.wheelWidthNarrowerBtn?.addEventListener("click", () => resizeWheelSelectionV
 els.wheelWidthWiderBtn?.addEventListener("click", () => resizeWheelSelectionVolume("width", 1.1));
 els.applyWheelVolumeBtn?.addEventListener("click", applyWheelSelectionVolume);
 els.cancelWheelVolumeBtn?.addEventListener("click", () => cancelWheelSelectionVolume());
+els.selectInsideBoundaryBtn?.addEventListener("click", () => selectTrianglesInsideBoundary({ extract: false }));
+els.extractInsideBoundaryBtn?.addEventListener("click", () => selectTrianglesInsideBoundary({ extract: true }));
 els.openingPickBtn?.addEventListener("click", () => setOpeningPickMode(!openingPickMode));
 els.lineToolBtn.addEventListener("click", () => setLineSketchMode(!lineSketchMode));
 els.triangleBuildBtn?.addEventListener("click", () => setTriangleBuildMode(!triangleBuildMode));
@@ -1232,6 +1301,7 @@ els.closeLineBtn.addEventListener("click", closeLineSketch);
 els.makeFaceBtn.addEventListener("click", createFaceFromLineSketch);
 els.fillLineBtn.addEventListener("click", fillLineSketch);
 els.cutHoleSketchBtn.addEventListener("click", cutHoleFromLineSketch);
+els.keyholeCutterBtn?.addEventListener("click", toggleKeyholeCutterSession);
 els.clearLineBtn.addEventListener("click", () => clearLineSketch({ keepMode: false }));
 document.querySelector("#markerBtn").addEventListener("click", addMarkerFromSelectedTriangle);
 document.querySelector("#clearTriBtn").addEventListener("click", clearTriangleSelection);
@@ -1349,6 +1419,7 @@ els.insetFaceBtn?.addEventListener("click", insetSelectedFace);
 els.extrudeRegionBtn?.addEventListener("click", extrudeSelectedRegion);
 document.querySelector("#pullFaceBtn").addEventListener("click", pullSelectedFaces);
 els.pullToTargetBtn?.addEventListener("click", togglePullToTargetSession);
+els.alignModelFaceBtn?.addEventListener("click", toggleAlignModelFaceSession);
 document.querySelector("#pushFaceBtn").addEventListener("click", pushSelectedFaces);
 els.softPullBtn?.addEventListener("click", () => softMoveSelectedFaces(1));
 els.softPushBtn?.addEventListener("click", () => softMoveSelectedFaces(-1));
@@ -1378,6 +1449,7 @@ els.showModelingEdgesInput?.addEventListener("change", () => {
   log(`Modeling edge overlay ${els.showModelingEdgesInput.checked ? "enabled" : "disabled"}.`);
 });
 [els.dragPushAxisSelect, els.dragPushStepInput, els.softRadiusInput, els.surfaceMouseFalloffSelect].forEach(input => input?.addEventListener("input", () => {
+  if (input === els.dragPushAxisSelect) syncSurfaceAxisUi();
   updateSurfaceGizmoAttachment();
   if (!dragPushMode) return;
   const shape = els.surfaceMouseFalloffSelect?.value === "soft"
@@ -1385,6 +1457,10 @@ els.showModelingEdgesInput?.addEventListener("change", () => {
     : "hard face";
   els.hudText.textContent = `Surface drag ready: ${shape} along ${dragPushAxisLabel()} in snapped ${dragPushStepSize()} steps`;
 }));
+els.dragPushAxisSelect?.addEventListener("change", () => {
+  syncSurfaceAxisUi();
+  updateSurfaceGizmoAttachment();
+});
 syncSurfaceEditorUi();
 document.querySelector("#bevelFaceBtn").addEventListener("click", bevelSelectedFace);
 els.edgeBevelBtn?.addEventListener("click", bevelSelectedEdge);
@@ -1401,6 +1477,10 @@ els.loopCutBtn?.addEventListener("click", applyLoopCut);
 els.knifeCutModeBtn?.addEventListener("click", () => setKnifeCutMode(!knifeCutMode));
 els.knifeCutCancelBtn?.addEventListener("click", () => cancelKnifeCutStroke());
 els.planeCutBtn?.addEventListener("click", applyPlaneCut);
+els.planeCutAxisSelect?.addEventListener("change", refreshPlaneCutPreview);
+els.planeCutPositionInput?.addEventListener("input", refreshPlaneCutPreview);
+els.planeCutResultSelect?.addEventListener("change", refreshPlaneCutPreview);
+els.planeCutCapInput?.addEventListener("change", refreshPlaneCutPreview);
 els.bridgeEdgeLoopsBtn?.addEventListener("click", bridgeSelectedEdgeLoops);
 els.recalculateNormalsBtn?.addEventListener("click", recalculateSelectedMeshNormals);
 els.flipNormalsBtn?.addEventListener("click", flipSelectedFaceNormals);
@@ -1582,7 +1662,7 @@ els.rotateSelectedUvRightBtn?.addEventListener("click", () => transformSelectedS
 els.flipSelectedUvUBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ flipU: true }));
 els.flipSelectedUvVBtn?.addEventListener("click", () => transformSelectedSurfaceUvs({ flipV: true }));
 els.planeCutResultSelect?.addEventListener("change", () => {
-  if (els.planeCutCapInput) els.planeCutCapInput.disabled = els.planeCutResultSelect.value === "both";
+  if (els.planeCutCapInput) els.planeCutCapInput.disabled = !!keyholeCutterSession || els.planeCutResultSelect.value === "both";
 });
 els.edgeSlideBtn?.addEventListener("click", slideSelectedEdges);
 els.surfaceScaleBtn?.addEventListener("click", scaleSelectedSurface);
@@ -1681,6 +1761,7 @@ canvas.addEventListener("wheel", event => {
   event.stopImmediatePropagation();
 }, { capture: true, passive: false });
 els.saveFrontPngBtn.addEventListener("click", async () => saveSingleViewPng("front"));
+els.saveCurrentPngBtn?.addEventListener("click", async () => saveCurrentViewPng());
 els.saveBackPngBtn.addEventListener("click", async () => saveSingleViewPng("back"));
 els.saveLeftPngBtn.addEventListener("click", async () => saveSingleViewPng("left"));
 els.saveRightPngBtn.addEventListener("click", async () => saveSingleViewPng("right"));
@@ -1838,11 +1919,18 @@ document.querySelector("#exportSelectedObjBtn")?.addEventListener("click", () =>
 });
 document.querySelector("#exportObjPartsBtn").addEventListener("click", exportObjParts);
 els.exportBolt2dBtn?.addEventListener("click", exportBolt2dPackage);
-document.querySelector("#exportGlbBtn")?.addEventListener("click", exportFullModelGlb);
+document.querySelector("#exportGlbBtn")?.addEventListener("click", () => exportFullModelGltf({ binary: true }));
+document.querySelector("#exportGltfBtn")?.addEventListener("click", () => exportFullModelGltf({ binary: false }));
 els.importGlbBtn?.addEventListener("click", () => els.importGlbFile?.click());
 els.importGlbFile?.addEventListener("change", async event => {
   const file = event.target.files?.[0];
-  await importFullModelGlb(file);
+  await importFullModelGltf(file);
+  event.target.value = "";
+});
+els.importGltfBtn?.addEventListener("click", () => els.importGltfFile?.click());
+els.importGltfFile?.addEventListener("change", async event => {
+  const file = event.target.files?.[0];
+  await importFullModelGltf(file);
   event.target.value = "";
 });
 document.querySelector("#exportGameCharacterBtn")?.addEventListener("click", exportGameCharacterPackage);
@@ -2070,6 +2158,7 @@ els.groupEditorModal.addEventListener("click", event => {
 els.meshDetailsCloseBtn.addEventListener("click", closeMeshDetails);
 els.meshDetailsCancelBtn.addEventListener("click", closeMeshDetails);
 els.meshDetailsSaveBtn.addEventListener("click", saveMeshDetails);
+els.meshDetailsUniqueBtn?.addEventListener("click", () => makeMeshUnique());
 els.meshMaterialRuleSelect?.addEventListener("change", event => {
   renderMeshMaterialRuleInfo(event.target.value);
 });
@@ -2303,7 +2392,7 @@ els.importDaeFile.addEventListener("change", async event => {
 
 const activeInspectorEdits = new WeakSet();
 document.querySelectorAll(".props input").forEach(input => {
-  if (input === els.cutAmountInput || input === els.textureFile) return;
+  if (input === els.cutAmountInput || input === els.textureFile || input === els.shadowFillInput || input === els.fourSideLightsInput) return;
   input.addEventListener("input", () => {
     if (input === els.colorInput) els.colorHexInput.value = input.value;
     if (input === els.colorHexInput) {
@@ -2319,6 +2408,16 @@ document.querySelectorAll(".props input").forEach(input => {
   input.addEventListener("blur", () => activeInspectorEdits.delete(input));
 });
 
+els.shadowFillInput?.addEventListener("input", () => {
+  syncShadowFill();
+  updateState();
+});
+els.fourSideLightsInput?.addEventListener("change", () => {
+  syncShadowFill();
+  updateState();
+  log(`Four-side workspace lights ${els.fourSideLightsInput.checked ? "enabled" : "disabled"}.`);
+});
+
 function pointerInsideMainCanvas(event) {
   const rect = canvas.getBoundingClientRect();
   return event.clientX >= rect.left && event.clientX <= rect.right
@@ -2327,6 +2426,15 @@ function pointerInsideMainCanvas(event) {
 
 function prioritizeUnselectedSurfaceTriangle(event) {
   if (!pointerInsideMainCanvas(event)) return;
+  if (event.type === "pointerdown" && alignModelFaceSession && facePickMode) {
+    const alignHit = hitFromPointerEvent(event);
+    if (alignHit?.face) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      alignModelFaceToHit(alignHit);
+      return;
+    }
+  }
   if (!surfaceTransform.visible || surfaceTransform.dragging || !facePickMode) {
     surfaceTransform.enabled = true;
     return;
@@ -2397,6 +2505,7 @@ canvas.addEventListener("pointerdown", event => {
   }
   const viewportSelectionTarget = activeViewportSelectionTarget();
   const hit = viewportTargetedObjectHit(event);
+  if (alignModelFaceSession && hit?.face && alignModelFaceToHit(hit)) return;
   if (pullToTargetSession && hit?.face && pullSelectedRegionToHit(hit)) return;
   if (dragPushMode && canStartDragPushFromHit(hit)) {
     beginDragPushSession(event);
@@ -2594,6 +2703,18 @@ window.addEventListener("keydown", event => {
     event.preventDefault();
     setPullToTargetSession(false);
     log("Pull to Target cancelled.");
+    return;
+  }
+  if (alignModelFaceSession && event.key === "Escape") {
+    event.preventDefault();
+    setAlignModelFaceSession(false);
+    log("Align Model by Face cancelled.");
+    return;
+  }
+  if (keyholeCutterSession && event.key === "Escape") {
+    event.preventDefault();
+    setKeyholeCutterSession(false);
+    log("Keyhole Cutter cancelled. The saved cutter was cleared.");
     return;
   }
   if (connectVerticesMode && event.key === "Escape") {
@@ -2920,6 +3041,7 @@ applyToolbarVisibility(setToolbarToggleState(defaultToolbarVisibility));
 syncGridVisibility();
 buildGridLabels();
 updateGridLabels();
+syncShadowFill();
 syncSpotLightRig();
 updateUndoButton();
 renderCustomCameraViews();

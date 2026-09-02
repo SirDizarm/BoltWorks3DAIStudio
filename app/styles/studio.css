@@ -236,6 +236,48 @@ body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup {
   width: auto;
 }
 
+#toolbarMirrorGroup .axis-flip {
+  font-weight: 700;
+}
+
+#toolbarMirrorGroup .axis-flip-x {
+  color: #ff7777;
+  border-color: rgba(255, 77, 77, .72);
+  background: rgba(120, 24, 24, .2);
+}
+
+#toolbarMirrorGroup .axis-flip-y {
+  color: #72e394;
+  border-color: rgba(55, 205, 100, .72);
+  background: rgba(22, 105, 49, .2);
+}
+
+#toolbarMirrorGroup .axis-flip-z {
+  color: #70aaff;
+  border-color: rgba(70, 135, 255, .72);
+  background: rgba(25, 62, 126, .22);
+}
+
+#toolbarMirrorGroup .axis-flip:hover,
+#toolbarMirrorGroup .axis-flip:focus-visible {
+  filter: brightness(1.25);
+}
+
+#toolbarMirrorGroup .flip-from-center {
+  min-height: 34px;
+  padding: 6px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--text);
+  cursor: pointer;
+}
+
+#toolbarMirrorGroup .flip-from-center:has(input:checked) {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
 .top .spacer {
   flex: 0 0 0;
   width: 0;
@@ -1142,7 +1184,9 @@ label {
   position: absolute;
   top: 8px;
   left: 8px;
-  z-index: 10001;
+  /* Keep reference-view chrome inside the viewport stacking context.  The
+     previous global value put these labels above dialogs and editor windows. */
+  z-index: 12;
   padding: 4px 7px;
   border: 1px solid #3b494f;
   border-radius: 4px;
@@ -1156,7 +1200,7 @@ label {
   position: absolute;
   top: 8px;
   right: 8px;
-  z-index: 10001;
+  z-index: 12;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-end;
@@ -1191,6 +1235,52 @@ label {
   color: #829195;
   font-size: 10px;
   pointer-events: none;
+}
+
+.viewport-context-menu {
+  position: fixed;
+  z-index: 10010;
+  width: 220px;
+  max-height: calc(100vh - 12px);
+  overflow-y: auto;
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid #4a5b62;
+  border-radius: 8px;
+  background: rgba(15, 22, 26, .98);
+  box-shadow: 0 14px 32px rgba(0, 0, 0, .45);
+}
+
+.viewport-context-menu[hidden] { display: none; }
+.viewport-context-menu button { width: 100%; text-align: left; }
+.viewport-context-axis {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 6px;
+  padding: 1px 2px 3px;
+  color: #b8c8cc;
+  font-size: 11px;
+}
+.viewport-context-axis select {
+  width: 100%;
+  min-width: 0;
+  padding: 4px 5px;
+  font-size: 11px;
+}
+.viewport-context-title {
+  padding: 2px 5px 4px;
+  color: #74e9d0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.viewport-context-divider {
+  height: 1px;
+  margin: 4px 0;
+  background: #33434a;
 }
 
 .bone-panel.section {
@@ -1786,6 +1876,23 @@ label {
   color: #dce7e9;
   border-color: #59676d;
   box-shadow: inset 3px 0 0 #8f9ba0;
+}
+
+/* Keep the native axis list visually consistent with the viewport gizmo. */
+#dragPushAxisSelect option[value="x"] {
+  color: #ff7777;
+}
+
+#dragPushAxisSelect option[value="y"] {
+  color: #73e690;
+}
+
+#dragPushAxisSelect option[value="z"] {
+  color: #78aaff;
+}
+
+#dragPushAxisSelect option[value="free"] {
+  color: #dce7e9;
 }
 
 #surfaceEditorWindow[data-interaction-mode="mouse"] .value-surface-control,

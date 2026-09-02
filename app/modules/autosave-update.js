@@ -1,6 +1,7 @@
 const BWS_RECOVERY_DB_NAME = "boltworks-studio-recovery";
 const BWS_RECOVERY_STORE = "projects";
 const BWS_RECOVERY_KEY = "latest-project";
+const BWS_RECOVERY_FALLBACK_KEY = "boltworks.recovery.latest-project";
 const BWS_AUTO_SAVE_DELAY_MS = 1200;
 const BWS_UPDATE_CHECK_MS = 45000;
 const bwsAutoSaveStatus = document.querySelector("#autoSaveStatus");
@@ -33,29 +34,52 @@ function openBwsRecoveryDatabase() {
 }
 
 async function writeBwsRecoveryRecord(project) {
-  const database = await openBwsRecoveryDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(BWS_RECOVERY_STORE, "readwrite");
-    transaction.objectStore(BWS_RECOVERY_STORE).put({
-      id: BWS_RECOVERY_KEY,
-      appVersion: bwsCurrentVersion,
-      savedAt: new Date().toISOString(),
-      project
+  const record = {
+    id: BWS_RECOVERY_KEY,
+    appVersion: bwsCurrentVersion,
+    savedAt: new Date().toISOString(),
+    project
+  };
+  let indexedDbSaved = false;
+  try {
+    const database = await openBwsRecoveryDatabase();
+    indexedDbSaved = await new Promise((resolve, reject) => {
+      const transaction = database.transaction(BWS_RECOVERY_STORE, "readwrite");
+      transaction.objectStore(BWS_RECOVERY_STORE).put(record);
+      transaction.oncomplete = () => resolve(true);
+      transaction.onerror = () => reject(transaction.error || new Error("Could not write the recovery save."));
+      transaction.onabort = () => reject(transaction.error || new Error("Recovery save was interrupted."));
     });
-    transaction.oncomplete = () => resolve(true);
-    transaction.onerror = () => reject(transaction.error || new Error("Could not write the recovery save."));
-    transaction.onabort = () => reject(transaction.error || new Error("Recovery save was interrupted."));
-  });
+  } catch (error) {
+    console.warn("BoltWorks IndexedDB recovery write failed", error);
+  }
+  try {
+    localStorage.setItem(BWS_RECOVERY_FALLBACK_KEY, JSON.stringify(record));
+  } catch (error) {
+    console.warn("BoltWorks local recovery fallback unavailable", error);
+  }
+  return indexedDbSaved;
 }
 
 async function readBwsRecoveryRecord() {
-  const database = await openBwsRecoveryDatabase();
-  return new Promise((resolve, reject) => {
-    const transaction = database.transaction(BWS_RECOVERY_STORE, "readonly");
-    const request = transaction.objectStore(BWS_RECOVERY_STORE).get(BWS_RECOVERY_KEY);
-    request.onsuccess = () => resolve(request.result || null);
-    request.onerror = () => reject(request.error || new Error("Could not read the recovery save."));
-  });
+  try {
+    const database = await openBwsRecoveryDatabase();
+    const record = await new Promise((resolve, reject) => {
+      const transaction = database.transaction(BWS_RECOVERY_STORE, "readonly");
+      const request = transaction.objectStore(BWS_RECOVERY_STORE).get(BWS_RECOVERY_KEY);
+      request.onsuccess = () => resolve(request.result || null);
+      request.onerror = () => reject(request.error || new Error("Could not read the recovery save."));
+    });
+    if (record) return record;
+  } catch (error) {
+    console.warn("BoltWorks IndexedDB recovery read failed", error);
+  }
+  try {
+    const fallback = localStorage.getItem(BWS_RECOVERY_FALLBACK_KEY);
+    return fallback ? JSON.parse(fallback) : null;
+  } catch (error) {
+    throw new Error(`Recovery storage unavailable (${error?.message || "browser storage error"}).`);
+  }
 }
 
 async function clearBwsRecoveryRecord() {
@@ -115,7 +139,7 @@ async function restoreAutoSavedProjectIfBlank() {
     return true;
   } catch (error) {
     console.warn("BoltWorks recovery restore failed", error);
-    setBwsAutoSaveStatus("Recovery storage unavailable", "problem");
+    setBwsAutoSaveStatus(`Recovery failed: ${error?.message || "unknown error"}`, "problem");
     return false;
   }
 }
