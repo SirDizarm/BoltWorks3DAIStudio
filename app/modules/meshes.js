@@ -18970,7 +18970,10 @@ function groupCheckedParts() {
   }
   const parentId = commonGroupParentId([
     ...selectedGroupIds.map(groupId => groupRecord(groupId)?.parentId || null),
-    ...looseMeshes.map(mesh => groupRecord(mesh.userData.groupId)?.parentId || null)
+    // A directly selected mesh already belongs to its immediate parent group.
+    // Using that group's parent here incorrectly ejects a new subgroup one
+    // level upward (or all the way to root).
+    ...looseMeshes.map(mesh => mesh.userData.groupId || null)
   ]);
   const baseName = groupObjects.every(mesh => normalizeGroupName(mesh.name) === normalizeGroupName(groupObjects[0].name))
     ? normalizeGroupName(groupObjects[0].name)

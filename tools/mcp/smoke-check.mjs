@@ -20,6 +20,7 @@ const REQUIRED_TOOLS = [
   "bws_get_scene",
   "bws_get_selection",
   "bws_create_objects",
+  "bws_combine_objects_into_shell",
   "bws_update_objects",
   "bws_delete_objects",
   "bws_select_objects",
@@ -185,6 +186,18 @@ try {
   assert.equal(created.structuredContent.accepted, true);
   assert.equal(relay.calls.at(-1).method, "objects.create");
   assert.equal(relay.calls.at(-1).params.expectedRevision, 7);
+
+  await client.callTool({
+    name: "bws_combine_objects_into_shell",
+    arguments: { ids: ["smoke-object", "smoke-object-2"], name: "Smoke Shell", resolution: 32, expectedRevision: 8 }
+  });
+  assert.equal(relay.calls.at(-1).method, "objects.combineShell");
+  assert.deepEqual(relay.calls.at(-1).params, {
+    ids: ["smoke-object", "smoke-object-2"],
+    name: "Smoke Shell",
+    resolution: 32,
+    expectedRevision: 8
+  });
 
   await client.callTool({
     name: "bws_select_objects",

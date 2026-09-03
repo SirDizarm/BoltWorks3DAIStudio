@@ -3316,6 +3316,9 @@ if (
 ) {
   throw new Error("Ungroup must dissolve only the selected hierarchy level so nested groups remain inside their parent.");
 }
+if (!moduleSources.get("meshes")?.includes("...looseMeshes.map(mesh => mesh.userData.groupId || null)")) {
+  throw new Error("Grouping a subset of an existing group must create the subgroup inside that immediate parent.");
+}
 if (!documentSource.includes('id="referenceViewportsToggleBtn"') || !moduleSources.get("import-export")?.includes("function setReferenceViewportsCollapsed") || !moduleSources.get("panels")?.includes("referenceViewportsToggleBtn") || !styleSource.includes(".viewport.reference-views-collapsed")) {
   throw new Error("The Front and Side reference view column must have a compact collapse arrow.");
 }

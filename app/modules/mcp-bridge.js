@@ -337,6 +337,7 @@ function mcpBridgeCapabilitiesResult() {
       "scene.get": { detail: ["summary", "objects", "project"] },
       "selection.get": {},
       "objects.create": { maxBatchSize: mcpBridgeMaxBatchSize, shapes: [...mcpBridgeAllowedShapes], geometry: { maxVertices: mcpBridgeMaxGeometryVertices } },
+      "objects.combineShell": { minObjects: 2, maxBatchSize: mcpBridgeMaxBatchSize, resolution: { min: 18, max: 64 }, replacesSources: true, undoable: true },
       "objects.update": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
       "objects.delete": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
       "selection.set": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
@@ -532,6 +533,34 @@ function mcpBridgeDeleteObjects(params) {
   return { revision: mcpBridgeRevision, deletedIds: ids };
 }
 
+async function mcpBridgeCombineShell(params) {
+  mcpBridgeAssertAllowedKeys(params, new Set(["ids", "name", "resolution", "expectedRevision"]), "params");
+  const ids = mcpBridgeUniqueIds(params.ids);
+  mcpBridgeAssert(ids.length >= 2, "INVALID_PARAMS", "objects.combineShell needs at least two object IDs.");
+  const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
+  const name = params.name === undefined
+    ? "AI Generated Shell"
+    : mcpBridgeString(params.name, "params.name", { required: true, maxLength: 120 });
+  const resolution = params.resolution === undefined
+    ? null
+    : mcpBridgeInteger(params.resolution, "params.resolution", { min: 18, max: 64 });
+  const result = await combineMeshesIntoShell(meshes, { name, resolution, announce: false });
+  mcpBridgeRevision++;
+  return {
+    revision: mcpBridgeRevision,
+    createdIds: [result.mesh.userData.id],
+    deletedIds: ids,
+    object: serializeObject(result.mesh),
+    shell: {
+      connectedComponents: result.shellCount,
+      sourceTriangles: result.sourceTriangles,
+      outputTriangles: result.outputTriangles,
+      resolution: result.resolution,
+      dimensions: result.dimensions
+    }
+  };
+}
+
 function mcpBridgeSelectObjects(params) {
   mcpBridgeAssertAllowedKeys(params, new Set(["ids", "expectedRevision"]), "params");
   const ids = mcpBridgeUniqueIds(params.ids, "ids", { allowEmpty: true });
@@ -567,7 +596,7 @@ function mcpBridgeNormalizeMethod(method) {
 }
 
 function mcpBridgeIsMutation(method) {
-  return ["objects.create", "objects.update", "objects.delete", "selection.set", "undo", "referenceMatch.createMesh"].includes(method);
+  return ["objects.create", "objects.combineShell", "objects.update", "objects.delete", "selection.set", "undo", "referenceMatch.createMesh"].includes(method);
 }
 
 function mcpBridgeValidateExpectedRevision(command, params, method) {
@@ -616,7 +645,7 @@ function mcpBridgeAuditParams(method, params) {
       ids: Array.isArray(params.objects) ? params.objects.map(entry => entry?.id).filter(Boolean).slice(0, mcpBridgeMaxBatchSize) : []
     };
   }
-  if (["objects.delete", "selection.set"].includes(method)) {
+  if (["objects.combineShell", "objects.delete", "selection.set"].includes(method)) {
     return { count: Array.isArray(params.ids) ? params.ids.length : 0, ids: Array.isArray(params.ids) ? params.ids.slice(0, mcpBridgeMaxBatchSize) : [] };
   }
   if (method === "referenceMatch.createMesh") {
@@ -698,6 +727,7 @@ async function mcpBridgeExecuteCommand(command) {
       result = mcpBridgeSelectionResult();
     }
     else if (method === "objects.create") result = mcpBridgeCreateObjects(params);
+    else if (method === "objects.combineShell") result = await mcpBridgeCombineShell(params);
     else if (method === "referenceMatch.createMesh") result = await mcpBridgeCreateMeshFromReferenceImage(params);
     else if (method === "objects.update") result = mcpBridgeUpdateObjects(params);
     else if (method === "objects.delete") result = mcpBridgeDeleteObjects(params);
