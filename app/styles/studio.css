@@ -876,7 +876,7 @@ label {
   width: 100%;
   min-height: 34px;
   display: grid;
-  grid-template-columns: 22px auto auto auto 22px minmax(0, 1fr) auto 52px;
+  grid-template-columns: 22px auto auto auto 22px minmax(0, 1fr) auto;
   gap: 6px;
   align-items: center;
   text-align: left;

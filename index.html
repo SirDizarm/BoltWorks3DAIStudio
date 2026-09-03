@@ -100,6 +100,7 @@
       </div>
       <div class="toolbar-group" id="toolbarLineToolsGroup" aria-label="Line tools">
         <button id="lineToolBtn" title="Place coplanar sketch points that close into a face or cut shape">Line Tool</button>
+        <button id="vertexLineToolBtn" type="button" aria-pressed="false" title="Snap between two existing vertices and add a construction edge without moving either vertex">Vertex Line</button>
         <button id="triangleBuildBtn" type="button" aria-pressed="false" title="Snap to three existing mesh corner points and create a real triangle face">Build Triangle</button>
         <button id="clearTriangleBuildBtn" type="button" title="Clear the current manual triangle points">Clear Triangle Points</button>
         <button id="closeLineBtn" title="Close the current sketch loop back to the first point">Close Line</button>
@@ -233,7 +234,7 @@
         </div>
         <div class="tree-controls">
           <button id="groupBtn" title="Move checked parts as one group">Group</button>
-          <button id="ungroupBtn" title="Split the selected group hierarchy or dissolve a shallow group selection">Ungroup</button>
+          <button id="ungroupBtn" title="Remove only the selected group level while keeping any parent or child hierarchy intact">Ungroup</button>
           <button id="mergeMeshBtn" title="Bake checked meshes or checked group contents into one editable mesh">Merge Mesh</button>
           <button id="combineShellBtn" title="Fuse checked touching or overlapping meshes into one watertight outer shell and remove internal faces">Combine into Shell</button>
         </div>

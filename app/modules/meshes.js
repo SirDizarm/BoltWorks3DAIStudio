@@ -3549,7 +3549,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, tintColor = "#ffffff", tintStrength = 0, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, generatedShell = false, shellResolution = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, tintColor = "#ffffff", tintStrength = 0, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, generatedShell = false, shellResolution = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [], manualTopologyEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3630,7 +3630,11 @@ function createMesh(spec = {}) {
     generatedShell: !!generatedShell,
     shellResolution: generatedShell ? Math.max(18, Math.min(64, Number(shellResolution) || 42)) : null,
     edgeBevelProtectedEdges: Array.isArray(edgeBevelProtectedEdges) ? edgeBevelProtectedEdges.filter(value => typeof value === "string") : [],
-    dissolvedSurfaceEdges: Array.isArray(dissolvedSurfaceEdges) ? dissolvedSurfaceEdges.filter(value => typeof value === "string") : []
+    dissolvedSurfaceEdges: Array.isArray(dissolvedSurfaceEdges) ? dissolvedSurfaceEdges.filter(value => typeof value === "string") : [],
+    manualTopologyEdges: Array.isArray(manualTopologyEdges)
+      ? manualTopologyEdges.filter(edge => Array.isArray(edge?.a) && edge.a.length === 3 && Array.isArray(edge?.b) && edge.b.length === 3)
+        .map(edge => ({ a: edge.a.map(Number), b: edge.b.map(Number) }))
+      : []
   };
   mesh.position.fromArray(position);
   mesh.rotation.set(
@@ -6661,6 +6665,173 @@ function clearTriangleBuildGuide() {
   triangleBuildGroup.visible = false;
 }
 
+function clearVertexLineGuide() {
+  while (vertexLineGroup.children.length) disposeObject3D(vertexLineGroup.children.pop());
+  vertexLineGroup.visible = false;
+}
+
+function resolvedVertexLinePoints() {
+  const mesh = findObject(vertexLineMeshId);
+  if (!mesh) return [];
+  mesh.updateMatrixWorld(true);
+  return vertexLinePoints.map(point => point.localPoint.clone().applyMatrix4(mesh.matrixWorld));
+}
+
+function updateVertexLineGuide() {
+  clearVertexLineGuide();
+  const points = resolvedVertexLinePoints();
+  if (!points.length && !vertexLineHover?.point) return;
+  vertexLineGroup.visible = true;
+  const radius = Math.max(.015, Math.min(.08, camera.position.distanceTo(orbit.target) * .005));
+  points.forEach((point, index) => {
+    const marker = new THREE.Mesh(
+      new THREE.SphereGeometry(radius, 10, 8),
+      new THREE.MeshBasicMaterial({ color: index ? "#55e7ff" : "#ffd36a", depthWrite: false })
+    );
+    marker.position.copy(point);
+    vertexLineGroup.add(marker);
+  });
+  const linePoints = [...points];
+  if (vertexLineHover?.point && points.length) linePoints.push(vertexLineHover.point);
+  if (linePoints.length >= 2) {
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(linePoints),
+      new THREE.LineBasicMaterial({ color: "#55e7ff", transparent: true, opacity: .98, depthTest: false, depthWrite: false })
+    );
+    line.renderOrder = 1006;
+    vertexLineGroup.add(line);
+  }
+}
+
+function vertexLinePickFromEvent(event) {
+  const hit = hitFromPointerEvent(event);
+  if (!hit?.face || !hit.object?.geometry || !objects.includes(hit.object)) return null;
+  if (vertexLineMeshId && hit.object.userData?.id !== vertexLineMeshId) return { wrongMesh: true, mesh: hit.object };
+  const position = hit.object.geometry.getAttribute("position");
+  const candidates = [hit.face.a, hit.face.b, hit.face.c].map(index => {
+    const localPoint = new THREE.Vector3(position.getX(index), position.getY(index), position.getZ(index));
+    const point = localPoint.clone().applyMatrix4(hit.object.matrixWorld);
+    return { mesh: hit.object, localPoint, point, key: vertexKey(localPoint) };
+  });
+  return candidates.sort((left, right) => left.point.distanceToSquared(hit.point) - right.point.distanceToSquared(hit.point))[0];
+}
+
+function setVertexLineHover(pick = null) {
+  vertexLineHover = pick?.point ? pick : null;
+  vertexLineCursor.visible = !!(vertexLineMode && vertexLineHover?.point);
+  if (vertexLineCursor.visible) {
+    vertexLineCursor.position.copy(vertexLineHover.point);
+    vertexLineCursor.scale.setScalar(Math.max(.02, Math.min(.1, camera.position.distanceTo(vertexLineHover.point) * .008)));
+  }
+  updateVertexLineGuide();
+}
+
+function clearVertexLine({ silent = false, keepMode = false } = {}) {
+  vertexLinePoints.length = 0;
+  vertexLineMeshId = null;
+  vertexLineHover = null;
+  vertexLineCursor.visible = false;
+  clearVertexLineGuide();
+  if (!keepMode) vertexLineMode = false;
+  updateFacePickHud();
+  if (!silent) log("Cleared the Vertex Line points.");
+}
+
+function setVertexLineMode(enabled) {
+  vertexLineMode = !!enabled;
+  if (vertexLineMode) {
+    setTriangleBuildMode(false);
+    clearLineSketch({ silent: true, keepMode: false });
+    connectedTrianglePickMode = false;
+    wheelTrianglePickMode = false;
+    wheelTrianglePickStart = null;
+    facePickMode = false;
+    coplanarFacePickMode = false;
+    openingPickMode = false;
+    els.paintTriInput.checked = false;
+    els.areaTriInput.checked = false;
+    activeTransformMode = null;
+    updateTransformAttachment();
+  } else {
+    clearVertexLine({ silent: true, keepMode: false });
+  }
+  updateFacePickHud();
+}
+
+function meshHasTopologyEdge(mesh, a, b) {
+  const wanted = localEdgeSignature(a, b);
+  const source = mesh.geometry.index ? mesh.geometry.toNonIndexed() : mesh.geometry;
+  const position = source.getAttribute("position");
+  let found = false;
+  for (let index = 0; index + 2 < position.count && !found; index += 3) {
+    const points = [0, 1, 2].map(offset => new THREE.Vector3(
+      position.getX(index + offset), position.getY(index + offset), position.getZ(index + offset)
+    ));
+    found = [[0, 1], [1, 2], [2, 0]].some(([from, to]) => localEdgeSignature(points[from], points[to]) === wanted);
+  }
+  if (source !== mesh.geometry) source.dispose();
+  return found;
+}
+
+function addVertexLinePointFromEvent(event) {
+  const pick = vertexLinePickFromEvent(event);
+  if (pick?.wrongMesh) {
+    log(`Continue the Vertex Line on ${findObject(vertexLineMeshId)?.name || "the first mesh"}, or press Escape to clear it.`);
+    return null;
+  }
+  if (!pick?.mesh) {
+    log("Vertex Line needs an existing mesh vertex.");
+    return null;
+  }
+  if (!vertexLineMeshId) {
+    vertexLineMeshId = pick.mesh.userData.id;
+    selectObject(pick.mesh);
+  }
+  if (vertexLinePoints[0]?.key === pick.key) {
+    log("Choose a different second vertex for the line.");
+    return null;
+  }
+  vertexLinePoints.push({ localPoint: pick.localPoint.clone(), key: pick.key });
+  if (vertexLinePoints.length < 2) {
+    updateVertexLineGuide();
+    log("Vertex Line start placed. Choose the second existing vertex.");
+    return pick;
+  }
+  const mesh = findObject(vertexLineMeshId);
+  const [start, end] = vertexLinePoints;
+  const manualEdges = Array.isArray(mesh.userData.manualTopologyEdges) ? mesh.userData.manualTopologyEdges : [];
+  const signature = localEdgeSignature(start.localPoint, end.localPoint);
+  const duplicate = manualEdges.some(edge => localEdgeSignature(new THREE.Vector3(...edge.a), new THREE.Vector3(...edge.b)) === signature);
+  const existingTriangleEdge = meshHasTopologyEdge(mesh, start.localPoint, end.localPoint);
+  const dissolvedEdges = new Set(mesh.userData.dissolvedSurfaceEdges || []);
+  if (existingTriangleEdge && dissolvedEdges.has(signature)) {
+    recordHistory("restore vertex edge");
+    dissolvedEdges.delete(signature);
+    mesh.userData.dissolvedSurfaceEdges = [...dissolvedEdges];
+    updateModelingEdgesOverlay();
+    updateAll();
+    log(`Restored the existing edge between those vertices on ${mesh.name}. No vertex positions changed.`, { undoReady: true });
+  } else if (duplicate || existingTriangleEdge) {
+    log(`Those vertices on ${mesh.name} already have an edge.`);
+  } else {
+    recordHistory("add vertex construction line");
+    mesh.userData.manualTopologyEdges = [...manualEdges, {
+      a: start.localPoint.toArray(),
+      b: end.localPoint.toArray()
+    }];
+    clearSelectedHoleLoop();
+    updateModelingEdgesOverlay();
+    updateAll();
+    log(`Added a Vertex Line on ${mesh.name}. No vertex positions changed. Fill Hole can use it to divide an opening rim.`, {
+      constructionEdges: mesh.userData.manualTopologyEdges.length,
+      undoReady: true
+    });
+  }
+  vertexLinePoints.splice(0, vertexLinePoints.length, { localPoint: end.localPoint.clone(), key: end.key });
+  updateVertexLineGuide();
+  return pick;
+}
+
 function resolvedTriangleBuildPoints() {
   const mesh = findObject(triangleBuildMeshId);
   if (!mesh) return [];
@@ -6729,6 +6900,7 @@ function clearTriangleBuild({ silent = false, keepMode = false } = {}) {
 function setTriangleBuildMode(enabled) {
   triangleBuildMode = !!enabled;
   if (triangleBuildMode) {
+    if (vertexLineMode) clearVertexLine({ silent: true, keepMode: false });
     connectedTrianglePickMode = false;
     wheelTrianglePickMode = false;
     wheelTrianglePickStart = null;
@@ -6990,6 +7162,7 @@ function clearLineSketch({ silent = false, keepMode = false } = {}) {
 function setLineSketchMode(enabled) {
   lineSketchMode = !!enabled;
   if (lineSketchMode) {
+    if (vertexLineMode) clearVertexLine({ silent: true, keepMode: false });
     connectedTrianglePickMode = false;
     wheelTrianglePickMode = false;
     wheelTrianglePickStart = null;
@@ -7324,8 +7497,16 @@ function updateFacePickHud() {
   els.paintTriBtn?.classList.toggle("active", facePickMode && els.paintTriInput.checked);
   els.paintTriBtn?.setAttribute("aria-pressed", String(facePickMode && els.paintTriInput.checked));
   els.lineToolBtn?.classList.toggle("active", lineSketchMode);
+  els.vertexLineToolBtn?.classList.toggle("active", vertexLineMode);
+  els.vertexLineToolBtn?.setAttribute("aria-pressed", String(vertexLineMode));
   els.triangleBuildBtn?.classList.toggle("active", triangleBuildMode);
   els.triangleBuildBtn?.setAttribute("aria-pressed", String(triangleBuildMode));
+  if (vertexLineMode) {
+    els.hudText.textContent = vertexLinePoints.length
+      ? "Vertex Line: first vertex ready | click a second existing vertex | Esc clears"
+      : "Vertex Line: click two existing vertices on the same mesh; vertices will not move";
+    return;
+  }
   if (triangleBuildMode) {
     const placed = triangleBuildPoints.length;
     els.hudText.textContent = placed
@@ -7381,6 +7562,7 @@ function setFacePickMode(enabled) {
     wheelTrianglePickStart = null;
   }
   if (facePickMode) {
+    if (vertexLineMode) clearVertexLine({ silent: true, keepMode: false });
     clearTriangleBuild({ silent: true, keepMode: false });
     lineSketchMode = false;
     openingPickMode = false;
@@ -7391,6 +7573,7 @@ function setFacePickMode(enabled) {
 function setCoplanarFacePickMode(enabled, { activatePicker = true } = {}) {
   coplanarFacePickMode = !!enabled;
   if (coplanarFacePickMode) {
+    if (vertexLineMode) clearVertexLine({ silent: true, keepMode: false });
     wheelTrianglePickMode = false;
     wheelTrianglePickStart = null;
     clearTriangleBuild({ silent: true, keepMode: false });
@@ -7406,6 +7589,7 @@ function setCoplanarFacePickMode(enabled, { activatePicker = true } = {}) {
 function setOpeningPickMode(enabled) {
   openingPickMode = !!enabled;
   if (openingPickMode) {
+    if (vertexLineMode) clearVertexLine({ silent: true, keepMode: false });
     connectedTrianglePickMode = false;
     wheelTrianglePickMode = false;
     wheelTrianglePickStart = null;
@@ -7425,6 +7609,7 @@ function setOpeningPickMode(enabled) {
 function setConnectedTrianglePickMode(enabled) {
   connectedTrianglePickMode = !!enabled;
   if (connectedTrianglePickMode) {
+    if (vertexLineMode) clearVertexLine({ silent: true, keepMode: false });
     wheelTrianglePickMode = false;
     wheelTrianglePickStart = null;
     if (knifeCutMode) setKnifeCutMode(false);
@@ -7452,6 +7637,7 @@ function setWheelTrianglePickMode(enabled) {
   wheelSelectionVolume = null;
   wheelSelectionGuide.visible = false;
   if (wheelTrianglePickMode) {
+    if (vertexLineMode) clearVertexLine({ silent: true, keepMode: false });
     connectedTrianglePickMode = false;
     if (knifeCutMode) setKnifeCutMode(false);
     releaseSurfaceInteractionForClassicSelection();
@@ -7959,11 +8145,15 @@ function updateModelingEdgesOverlay() {
     disposeObject3D(child);
   }
   const mesh = selected?.isMesh ? selected : (selectedSurfaceEdges[0]?.mesh || selectedSurfaceVertices[0]?.mesh || null);
+  const showTriangleEdges = !!(
+    els.showModelingEdgesInput?.checked
+    && !els.surfaceEditorWindow?.classList.contains("collapsed")
+  );
+  const hasVertexLines = Array.isArray(mesh?.userData?.manualTopologyEdges) && mesh.userData.manualTopologyEdges.length > 0;
   const shouldShow = !!(
     mesh?.geometry
     && mesh.visible
-    && els.showModelingEdgesInput?.checked
-    && !els.surfaceEditorWindow?.classList.contains("collapsed")
+    && (showTriangleEdges || hasVertexLines)
   );
   if (!shouldShow) {
     modelingEdgesOverlay.visible = false;
@@ -7991,24 +8181,46 @@ function updateModelingEdgesOverlay() {
   if (source !== mesh.geometry) source.dispose();
 
   const positions = [];
-  for (const [localA, localB] of uniqueEdges.values()) {
-    positions.push(
-      ...localA.clone().applyMatrix4(mesh.matrixWorld).toArray(),
-      ...localB.clone().applyMatrix4(mesh.matrixWorld).toArray()
+  if (showTriangleEdges) {
+    for (const [localA, localB] of uniqueEdges.values()) {
+      positions.push(
+        ...localA.clone().applyMatrix4(mesh.matrixWorld).toArray(),
+        ...localB.clone().applyMatrix4(mesh.matrixWorld).toArray()
+      );
+    }
+  }
+  const constructionPositions = [];
+  for (const edge of mesh.userData.manualTopologyEdges || []) {
+    if (!Array.isArray(edge?.a) || !Array.isArray(edge?.b)) continue;
+    constructionPositions.push(
+      ...new THREE.Vector3(...edge.a).applyMatrix4(mesh.matrixWorld).toArray(),
+      ...new THREE.Vector3(...edge.b).applyMatrix4(mesh.matrixWorld).toArray()
     );
   }
-  if (!positions.length) {
+  if (!positions.length && !constructionPositions.length) {
     modelingEdgesOverlay.visible = false;
     return;
   }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
-  const lines = new THREE.LineSegments(
-    geometry,
-    new THREE.LineBasicMaterial({ color: "#62c7df", transparent: true, opacity: .48, depthTest: false, depthWrite: false })
-  );
-  lines.renderOrder = 1003;
-  modelingEdgesOverlay.add(lines);
+  if (positions.length) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(positions, 3));
+    const lines = new THREE.LineSegments(
+      geometry,
+      new THREE.LineBasicMaterial({ color: "#62c7df", transparent: true, opacity: .48, depthTest: false, depthWrite: false })
+    );
+    lines.renderOrder = 1003;
+    modelingEdgesOverlay.add(lines);
+  }
+  if (constructionPositions.length) {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute("position", new THREE.Float32BufferAttribute(constructionPositions, 3));
+    const lines = new THREE.LineSegments(
+      geometry,
+      new THREE.LineBasicMaterial({ color: "#55e7ff", transparent: true, opacity: 1, depthTest: false, depthWrite: false })
+    );
+    lines.renderOrder = 1004;
+    modelingEdgesOverlay.add(lines);
+  }
   modelingEdgesOverlay.visible = true;
 }
 
@@ -12103,6 +12315,59 @@ function recalculateSelectedMeshNormals() {
   });
 }
 
+function splitOpeningLoopsWithVertexLines(mesh, loops) {
+  let splitLoops = loops.map(loop => ({
+    ...loop,
+    points: loop.points.map(point => point.clone()),
+    vertexKeys: [...loop.vertexKeys],
+    edgeKeys: [...loop.edgeKeys]
+  }));
+  mesh.updateMatrixWorld(true);
+  for (const edge of mesh.userData.manualTopologyEdges || []) {
+    if (!Array.isArray(edge?.a) || !Array.isArray(edge?.b)) continue;
+    const worldA = new THREE.Vector3(...edge.a).applyMatrix4(mesh.matrixWorld);
+    const worldB = new THREE.Vector3(...edge.b).applyMatrix4(mesh.matrixWorld);
+    const keyA = vertexKey(worldA);
+    const keyB = vertexKey(worldB);
+    const loopIndex = splitLoops.findIndex(loop => loop.vertexKeys.includes(keyA) && loop.vertexKeys.includes(keyB));
+    if (loopIndex < 0) continue;
+    const loop = splitLoops[loopIndex];
+    const indexA = loop.vertexKeys.indexOf(keyA);
+    const indexB = loop.vertexKeys.indexOf(keyB);
+    const count = loop.vertexKeys.length;
+    const separation = Math.abs(indexA - indexB);
+    if (separation <= 1 || separation === count - 1) continue;
+    const path = (start, end) => {
+      const indices = [];
+      for (let index = start; ; index = (index + 1) % count) {
+        indices.push(index);
+        if (index === end) break;
+      }
+      return indices;
+    };
+    const makeSplitLoop = indices => {
+      const points = indices.map(index => loop.points[index].clone());
+      const vertexKeys = indices.map(index => loop.vertexKeys[index]);
+      const edgeKeys = [];
+      for (let index = 0; index + 1 < indices.length; index++) {
+        edgeKeys.push(loop.edgeKeys[indices[index]] || [vertexKeys[index], vertexKeys[index + 1]].sort().join("|"));
+      }
+      edgeKeys.push([keyA, keyB].sort().join("|"));
+      return {
+        points,
+        vertexKeys,
+        keys: vertexKeys,
+        edgeKeys,
+        triangleIndices: [...(loop.triangleIndices || [])],
+        loopKey: edgeKeys.slice().sort().join("||"),
+        usesVertexLine: true
+      };
+    };
+    splitLoops.splice(loopIndex, 1, makeSplitLoop(path(indexA, indexB)), makeSplitLoop(path(indexB, indexA)));
+  }
+  return splitLoops;
+}
+
 function openingLoopDetailsForMesh(mesh) {
   const { triangleNormals, vertexPoints, edgeData, edgeKey } = meshEdgeTopology(mesh);
   const creaseDotThreshold = Math.cos(THREE.MathUtils.degToRad(35));
@@ -12116,7 +12381,7 @@ function openingLoopDetailsForMesh(mesh) {
     if (!normalA || !normalB) return false;
     return normalA.dot(normalB) <= creaseDotThreshold;
   });
-  return loopDetailsFromEdgeEntries(openingEdges, vertexPoints, edgeData, edgeKey);
+  return splitOpeningLoopsWithVertexLines(mesh, loopDetailsFromEdgeEntries(openingEdges, vertexPoints, edgeData, edgeKey));
 }
 
 function selectionAnchorForMesh(mesh) {
@@ -20118,16 +20383,16 @@ async function mergeCheckedMeshes() {
 
 function ungroupParts() {
   if (selectedGroupRecordId && groupRecord(selectedGroupRecordId)) {
-    recordHistory("split group");
-    splitGroupRecord(selectedGroupRecordId);
+    recordHistory("ungroup selected group");
+    dissolveGroupRecord(selectedGroupRecordId);
     return;
   }
   const groupObjects = selectionTargetsForGrouping();
   if (groupObjects.length) {
     const hierarchyGroupIds = selectedHierarchyGroupIds(groupObjects).filter(groupId => !!groupRecord(groupId));
     if (hierarchyGroupIds.length) {
-      recordHistory(hierarchyGroupIds.length === 1 ? "split group" : "split groups");
-      for (const groupId of hierarchyGroupIds) splitGroupRecord(groupId);
+      recordHistory(hierarchyGroupIds.length === 1 ? "ungroup selected group" : "ungroup selected groups");
+      for (const groupId of hierarchyGroupIds) dissolveGroupRecord(groupId);
       return;
     }
   }

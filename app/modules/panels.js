@@ -1295,6 +1295,7 @@ els.selectInsideBoundaryBtn?.addEventListener("click", () => selectTrianglesInsi
 els.extractInsideBoundaryBtn?.addEventListener("click", () => selectTrianglesInsideBoundary({ extract: true }));
 els.openingPickBtn?.addEventListener("click", () => setOpeningPickMode(!openingPickMode));
 els.lineToolBtn.addEventListener("click", () => setLineSketchMode(!lineSketchMode));
+els.vertexLineToolBtn?.addEventListener("click", () => setVertexLineMode(!vertexLineMode));
 els.triangleBuildBtn?.addEventListener("click", () => setTriangleBuildMode(!triangleBuildMode));
 els.clearTriangleBuildBtn?.addEventListener("click", () => clearTriangleBuild({ keepMode: triangleBuildMode }));
 els.closeLineBtn.addEventListener("click", closeLineSketch);
@@ -2499,6 +2500,10 @@ canvas.addEventListener("pointerdown", event => {
     addTriangleBuildPointFromEvent(event);
     return;
   }
+  if (vertexLineMode) {
+    addVertexLinePointFromEvent(event);
+    return;
+  }
   if (lineSketchMode) {
     addLineSketchPointFromEvent(event);
     return;
@@ -2596,6 +2601,10 @@ canvas.addEventListener("pointermove", event => {
     const pick = triangleBuildPickFromEvent(event);
     setTriangleBuildHover(pick?.wrongMesh ? null : pick);
   }
+  if (vertexLineMode && !spaceCameraMode) {
+    const pick = vertexLinePickFromEvent(event);
+    setVertexLineHover(pick?.wrongMesh ? null : pick);
+  }
   if (openingPickMode && !spaceCameraMode && !transform.dragging && !surfaceTransform.dragging) {
     updateHoveredHoleLoopFromHit(openingPickCandidateFromEvent(event));
   }
@@ -2641,6 +2650,11 @@ canvas.addEventListener("dblclick", event => {
     return;
   }
   if (triangleBuildMode) {
+    event.preventDefault();
+    pendingScenePick = null;
+    return;
+  }
+  if (vertexLineMode) {
     event.preventDefault();
     pendingScenePick = null;
     return;
@@ -2737,6 +2751,12 @@ window.addEventListener("keydown", event => {
     event.preventDefault();
     if (triangleBuildPoints.length) clearTriangleBuild({ keepMode: true });
     else setTriangleBuildMode(false);
+    return;
+  }
+  if (vertexLineMode && event.key === "Escape") {
+    event.preventDefault();
+    if (vertexLinePoints.length) clearVertexLine({ keepMode: true });
+    else setVertexLineMode(false);
     return;
   }
   if (textureEditorState.open && event.key === "Escape") {

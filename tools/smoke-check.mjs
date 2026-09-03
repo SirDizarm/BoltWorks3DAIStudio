@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.60.93.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.61.17.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -312,6 +312,107 @@ if (
 if (meshesSource.includes("cullCoincidentOpposingMergeTriangles") || meshesSource.includes("culledInternalTriangles")) {
   throw new Error("Merge Mesh must preserve source triangles instead of heuristically deleting coincident surfaces.");
 }
+if (!documentSource.includes('id="combineShellBtn"') || !meshesSource.includes("async function combineMeshesIntoShell(") || !meshesSource.includes("function surfaceUnionGeometry(") || !meshesSource.includes("async function shellUnionSpec(")) {
+  throw new Error("The editor must expose a separate Combine into Shell workflow without changing Merge Mesh semantics.");
+}
+if (!documentSource.includes('id="selectInsideBoundaryBtn"') || !documentSource.includes('id="extractInsideBoundaryBtn"') || !meshesSource.includes("function selectTrianglesInsideBoundary(") || !panelsSource.includes("selectInsideBoundaryBtn?.addEventListener")) {
+  throw new Error("Selection Tools must allow a closed helper mesh to stop connected geometry selection at its boundary.");
+}
+if (!meshesSource.includes("setTriangleSelection(faces, { selectSource: false })")
+    || !meshesSource.includes("function setTriangleSelection(faces, { append = false, selectSource = true } = {})")) {
+  throw new Error("Boundary selection must keep the boundary active instead of highlighting the complete source model.");
+}
+{
+  const context = { THREE };
+  vm.createContext(context);
+  vm.runInContext(["geometryInWorldSpace", "pointInsideWorldGeometry", "pointInsideBoundaryMesh", "boundaryMeshPointTester"].map(name => functionSource(meshesSource, name)).join("\n"), context);
+  const cylinder = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 2, 24), new THREE.MeshBasicMaterial());
+  cylinder.userData.shape = "cylinder";
+  cylinder.position.set(4, 3, -2);
+  cylinder.rotation.set(.2, .45, Math.PI / 2);
+  cylinder.scale.set(1.5, 2.25, .8);
+  cylinder.updateWorldMatrix(true, false);
+  const toWorld = point => point.clone().applyMatrix4(cylinder.matrixWorld);
+  if (!context.pointInsideBoundaryMesh(toWorld(new THREE.Vector3(.2, 0, .2)), cylinder)
+      || context.pointInsideBoundaryMesh(toWorld(new THREE.Vector3(.92, 0, .92)), cylinder)
+      || context.pointInsideBoundaryMesh(toWorld(new THREE.Vector3(0, 1.2, 0)), cylinder)) {
+    throw new Error("A transformed cylinder boundary must include only points inside its round volume.");
+  }
+  const cylinderWorld = context.geometryInWorldSpace(cylinder);
+  const containsCylinderPoint = context.boundaryMeshPointTester(cylinder, cylinderWorld);
+  if (!containsCylinderPoint(toWorld(new THREE.Vector3(.2, 0, .2)))
+      || containsCylinderPoint(toWorld(new THREE.Vector3(.92, 0, .92)))
+      || containsCylinderPoint(toWorld(new THREE.Vector3(0, 1.2, 0)))) {
+    throw new Error("The cached Keyhole Cutter cylinder test must remain accurate after rotation and scaling.");
+  }
+  cylinderWorld.dispose();
+  cylinder.geometry.dispose();
+  cylinder.material.dispose();
+}
+if (!documentSource.includes('id="saveCurrentPngBtn"') || !(moduleSources.get("import-export") || "").includes("async function saveCurrentViewPng()") || !panelsSource.includes("saveCurrentPngBtn?.addEventListener")) {
+  throw new Error("Save PNG Views must include a current viewport PNG action.");
+}
+if (!documentSource.includes('id="importGltfBtn"') || !documentSource.includes('id="exportGltfBtn"') || !(moduleSources.get("import-export") || "").includes("async function exportFullModelGltf(") || !(moduleSources.get("import-export") || "").includes("async function importFullModelGltf(")) {
+  throw new Error("Animator model exchange must support both GLB and self-contained glTF files.");
+}
+if (!(moduleSources.get("import-export") || "").includes("function centerImportedModelRoot(") || !(moduleSources.get("import-export") || "").includes('setCameraToView("iso", { bounds: importedBounds')) {
+  throw new Error("GLB and glTF imports must be centered, grounded, and framed as a complete model.");
+}
+if (!(moduleSources.get("import-export") || "").includes("function recoverUnregisteredImportedMeshes(") || !(moduleSources.get("import-export") || "").includes("recoverUnregisteredImportedMeshes();") || !meshesSource.includes("previousParent?.remove(mesh)")) {
+  throw new Error("Nested glTF meshes must remain registered and removable instead of becoming visible but unselectable ghosts.");
+}
+for (const gltfRecoveryRequirement of [
+  "geometry: mesh.userData.geometry || (importedGltfMesh && mesh.geometry ? geometryToData(mesh.geometry) : null)",
+  "mesh.matrixWorld.decompose(worldPosition, worldQuaternion, worldScale)",
+  "function preserveImportedGltfMesh(mesh, fileName, index)",
+  "mesh.userData.geometry = geometryToData(mesh.geometry)",
+  "function importedTextureDataUrl(texture)",
+  "if (spec.shape === \"glb\" && !spec.geometry?.positions?.length)"
+]) {
+  if (!(moduleSources.get("import-export") || "").includes(gltfRecoveryRequirement)) {
+    throw new Error(`glTF recovery persistence is missing: ${gltfRecoveryRequirement}`);
+  }
+}
+{
+  const context = { THREE };
+  vm.createContext(context);
+  vm.runInContext(functionSource(moduleSources.get("import-export") || "", "centerImportedModelRoot"), context);
+  const root = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4, 2, 6), new THREE.MeshBasicMaterial());
+  body.position.set(125, 18, -72);
+  root.add(body);
+  const bounds = context.centerImportedModelRoot(root);
+  const center = bounds.getCenter(new THREE.Vector3());
+  if (Math.abs(center.x) > 1e-5 || Math.abs(center.z) > 1e-5 || Math.abs(bounds.min.y) > 1e-5) {
+    throw new Error(`Imported model normalization must center X/Z and ground Y. ${JSON.stringify({ center: center.toArray(), minimumY: bounds.min.y })}`);
+  }
+  body.geometry.dispose();
+  body.material.dispose();
+}
+{
+  const context = { THREE, objects: [], scene: new THREE.Scene(), idCounter: 1 };
+  vm.createContext(context);
+  vm.runInContext(functionSource(moduleSources.get("import-export") || "", "recoverUnregisteredImportedMeshes"), context);
+  const anchor = new THREE.Group();
+  anchor.userData.bwsImportAnchor = true;
+  const importedMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+  importedMesh.userData.shape = "glb";
+  anchor.add(importedMesh);
+  context.scene.add(anchor);
+  const firstRecovery = context.recoverUnregisteredImportedMeshes();
+  const secondRecovery = context.recoverUnregisteredImportedMeshes();
+  if (firstRecovery.length !== 1 || secondRecovery.length !== 0 || context.objects[0] !== importedMesh || !importedMesh.userData.id) {
+    throw new Error("An imported nested mesh that fell out of the editor registry must be recovered exactly once.");
+  }
+  importedMesh.geometry.dispose();
+  importedMesh.material.dispose();
+}
+if (!documentSource.includes('id="alignModelFaceBtn"') || !documentSource.includes('id="alignModelFaceFacingSelect"') || !documentSource.includes('id="alignModelFaceMoveAxisSelect"') || !meshesSource.includes("function alignModelFaceToHit(") || !meshesSource.includes("function alignMeshFaceFrame(")) {
+  throw new Error("Surface Edit must expose the two-step full-model face alignment workflow.");
+}
+if (!(moduleSources.get("mcp-bridge") || "").includes('"objects.combineShell"')) {
+  throw new Error("AI authoring must be able to finish primitive assemblies as one generated shell.");
+}
 
 if (/depthWrite\s*=\s*[^;\n]*textureHasTransparency/.test(meshesSource) || /depthWrite\s*=\s*[^;\n]*textureHasTransparency/.test(readFileSync(new URL("../app/modules/import-export.js", import.meta.url), "utf8"))) {
   throw new Error("Texture alpha must not disable depth writing; only sub-1 mesh opacity may do that.");
@@ -358,7 +459,10 @@ if (
 }
 
 function functionSource(source, name) {
-  const start = source.indexOf(`function ${name}(`);
+  const asyncDeclaration = `async function ${name}(`;
+  const regularDeclaration = `function ${name}(`;
+  const asyncStart = source.indexOf(asyncDeclaration);
+  const start = asyncStart >= 0 ? asyncStart : source.indexOf(regularDeclaration);
   if (start < 0) throw new Error(`Missing ${name} in the mesh module.`);
   const parametersStart = source.indexOf("(", start);
   let parameterDepth = 0;
@@ -563,6 +667,176 @@ function functionSource(source, name) {
   context.selected = second;
   if (context.mergeSelectionTargets().length !== 2) {
     throw new Error("Merge Mesh must combine an active mesh with an additional checked mesh.");
+  }
+}
+
+{
+  const context = { THREE };
+  vm.createContext(context);
+  vm.runInContext([
+    "geometryFromPositions",
+    "addQuad",
+    "shellVoxelIndex",
+    "shellVoxelAt",
+    "shellGreedyGeometry"
+  ].map(name => functionSource(meshesSource, name)).join("\n"), context);
+  const occupied = new Uint8Array([1, 1]);
+  const geometry = context.shellGreedyGeometry(occupied, [2, 1, 1], new THREE.Vector3(), 1);
+  geometry.computeBoundingBox();
+  const triangles = geometry.getAttribute("position").count / 3;
+  const size = geometry.boundingBox.getSize(new THREE.Vector3());
+  if (triangles !== 12 || size.distanceTo(new THREE.Vector3(2, 1, 1)) > 1e-6) {
+    throw new Error(`Touching occupied cells must become one six-sided shell with no internal divider. ${JSON.stringify({ triangles, size: size.toArray() })}`);
+  }
+  geometry.dispose();
+}
+
+{
+  const context = { THREE };
+  vm.createContext(context);
+  vm.runInContext(functionSource(meshesSource, "alignMeshFaceFrame"), context);
+  const makeSource = () => {
+    const parent = new THREE.Group();
+    parent.position.set(-2, .5, 1);
+    parent.rotation.set(.1, -.35, .2);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+    mesh.position.set(.7, -.2, .4);
+    parent.add(mesh);
+    parent.updateMatrixWorld(true);
+    return { parent, mesh };
+  };
+  const targetPoint = new THREE.Vector3(3, 2, -1);
+  const targetNormal = new THREE.Vector3(0, 1, 0);
+  const localPoint = new THREE.Vector3(.5, 0, 0);
+  const localNormal = new THREE.Vector3(1, 0, 0);
+  for (const facing of ["opposite", "same"]) {
+    const { mesh } = makeSource();
+    const result = context.alignMeshFaceFrame(mesh, localPoint, localNormal, targetPoint, targetNormal, facing);
+    const expectedDot = facing === "same" ? 1 : -1;
+    if (!result || result.sourcePoint.distanceTo(targetPoint) > 1e-6 || Math.abs(result.sourceNormal.dot(targetNormal) - expectedDot) > 1e-6) {
+      throw new Error(`Face alignment must place the complete source model flush with the target plane. ${JSON.stringify({ facing, gap: result?.sourcePoint?.distanceTo(targetPoint), dot: result?.sourceNormal?.dot(targetNormal) })}`);
+    }
+    mesh.geometry.dispose();
+    mesh.material.dispose();
+  }
+  const verticalMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+  verticalMesh.position.set(4, 5, -3);
+  verticalMesh.updateMatrixWorld(true);
+  const undersidePoint = new THREE.Vector3(0, -.5, 0);
+  const undersideNormal = new THREE.Vector3(0, -1, 0);
+  const before = undersidePoint.clone().applyMatrix4(verticalMesh.matrixWorld);
+  const planeTarget = new THREE.Vector3(100, 1, 100);
+  const verticalResult = context.alignMeshFaceFrame(verticalMesh, undersidePoint, undersideNormal, planeTarget, undersideNormal, "same", "y");
+  if (!verticalResult
+      || Math.abs(verticalResult.planeGap) > 1e-6
+      || Math.abs(verticalResult.sourcePoint.x - before.x) > 1e-6
+      || Math.abs(verticalResult.sourcePoint.z - before.z) > 1e-6) {
+    throw new Error(`Green-axis face alignment must reach the target plane without changing sideways placement. ${JSON.stringify({ before: before.toArray(), after: verticalResult?.sourcePoint?.toArray(), planeGap: verticalResult?.planeGap })}`);
+  }
+  verticalMesh.geometry.dispose();
+  verticalMesh.material.dispose();
+}
+
+{
+  const context = {
+    THREE,
+    setTimeout,
+    requestAnimationFrame: callback => setTimeout(() => callback(0), 0),
+    round: value => Math.round(Number(value) * 1e6) / 1e6,
+    geometryToData: geometry => ({
+      positions: Array.from(geometry.getAttribute("position").array),
+      normals: Array.from(geometry.getAttribute("normal").array),
+      uvs: Array.from(geometry.getAttribute("uv").array)
+    }),
+    sharedMergeTextureState: () => null,
+    mergeSourceMaterialColor: () => "#40c7a5",
+    primaryMeshMaterial: mesh => mesh.material,
+    normalizeMaterialRule: value => value || "auto"
+  };
+  vm.createContext(context);
+  vm.runInContext([
+    "geometryFromPositions",
+    "addQuad",
+    "shellVoxelIndex",
+    "shellVoxelAt",
+    "shellGreedyGeometry",
+    "shellCloseSingleCellSeams",
+    "shellVoxelComponentCount",
+    "shellProjectedUvs",
+    "surfaceUnionGeometry",
+    "shellGeometryComponentCount",
+    "surfaceShellUnionSpec",
+    "voxelShellUnionSpec",
+    "shellUnionSpec"
+  ].map(name => functionSource(meshesSource, name)).join("\n"), context);
+  const material = new THREE.MeshStandardMaterial({ color: 0x40c7a5, roughness: .6 });
+  const first = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+  const second = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material.clone());
+  first.position.set(-.5, .5, 0);
+  second.position.set(.5, .5, 0);
+  first.userData = { id: "shell-first", materialRule: "auto", opacity: 1 };
+  second.userData = { id: "shell-second", materialRule: "auto", opacity: 1 };
+  first.updateMatrixWorld(true);
+  second.updateMatrixWorld(true);
+  const result = await context.shellUnionSpec([first, second], { resolution: 24 });
+  const outputTriangles = result?.spec?.geometry?.positions?.length / 9;
+  if (result?.method !== "surface" || result?.shellCount !== 1 || outputTriangles !== 12 || result.sourceTriangles !== 24) {
+    throw new Error(`Two touching cubes must become one connected cuboid shell. ${JSON.stringify({ shellCount: result?.shellCount, outputTriangles, sourceTriangles: result?.sourceTriangles })}`);
+  }
+  first.geometry.dispose();
+  second.geometry.dispose();
+  first.material.dispose();
+  second.material.dispose();
+
+  const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 24, 12), material.clone());
+  const overlap = new THREE.Mesh(new THREE.BoxGeometry(1.2, 1.2, 1.2), material.clone());
+  sphere.position.set(0, 1, 0);
+  overlap.position.set(.65, 1, 0);
+  sphere.userData = { id: "smooth-shell-sphere", materialRule: "auto", opacity: 1 };
+  overlap.userData = { id: "smooth-shell-box", materialRule: "auto", opacity: 1 };
+  sphere.updateMatrixWorld(true);
+  overlap.updateMatrixWorld(true);
+  const smoothResult = await context.shellUnionSpec([sphere, overlap]);
+  const smoothNormals = smoothResult?.spec?.geometry?.normals || [];
+  const curvedNormals = new Set();
+  for (let index = 0; index + 2 < smoothNormals.length; index += 3) {
+    const normal = smoothNormals.slice(index, index + 3);
+    if (normal.filter(value => Math.abs(value) > 1e-4).length >= 2) curvedNormals.add(normal.map(value => Math.round(value * 100)).join(","));
+  }
+  if (smoothResult?.method !== "surface" || curvedNormals.size < 12) {
+    throw new Error(`Shell union must preserve curved source surfaces instead of voxelizing them. ${JSON.stringify({ method: smoothResult?.method, curvedNormals: curvedNormals.size })}`);
+  }
+  sphere.geometry.dispose();
+  overlap.geometry.dispose();
+  sphere.material.dispose();
+  overlap.material.dispose();
+
+  const cleanBox = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material.clone());
+  const topCone = new THREE.Mesh(new THREE.ConeGeometry(.35, 2, 24), material.clone());
+  const bottomSphere = new THREE.Mesh(new THREE.SphereGeometry(.45, 24, 12), material.clone());
+  cleanBox.position.set(0, 0, 0);
+  topCone.position.set(0, 1.45, 0);
+  bottomSphere.position.set(0, -.85, 0);
+  for (const [index, mesh] of [cleanBox, topCone, bottomSphere].entries()) {
+    mesh.userData = { id: `clean-flat-shell-${index}`, materialRule: "auto", opacity: 1 };
+    mesh.updateMatrixWorld(true);
+  }
+  const cleanResult = await context.shellUnionSpec([cleanBox, topCone, bottomSphere]);
+  const cleanPositions = cleanResult?.spec?.geometry?.positions || [];
+  const cleanNormals = cleanResult?.spec?.geometry?.normals || [];
+  const maximumX = Math.max(...cleanPositions.filter((_, index) => index % 3 === 0));
+  let rightFaceTriangles = 0;
+  for (let index = 0; index + 8 < cleanPositions.length; index += 9) {
+    const onRightPlane = [0, 3, 6].every(offset => Math.abs(cleanPositions[index + offset] - maximumX) < 1e-4);
+    const facesRight = [0, 3, 6].every(offset => cleanNormals[index + offset] > .99);
+    if (onRightPlane && facesRight) rightFaceTriangles++;
+  }
+  if (rightFaceTriangles !== 2) {
+    throw new Error(`Shell union must restore an untouched cube side to two triangles instead of retaining boolean split lines. ${JSON.stringify({ rightFaceTriangles })}`);
+  }
+  for (const mesh of [cleanBox, topCone, bottomSphere]) {
+    mesh.geometry.dispose();
+    mesh.material.dispose();
   }
 }
 
@@ -1686,7 +1960,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.60.93.js?v=49.60.93"></script>')) {
+if (!documentSource.includes('<script defer src="./studio-test-bundle.js?v=49.61.18"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -1754,7 +2028,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.60.93",
+  "tool-docking.js?v=49.61.17",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2195,7 +2469,28 @@ for (const required of [
   "updateTransformAttachment",
   "flipSelectedParts",
   "mirrorMeshGeometry",
-  "Mirror selected part around its own",
+  "mirrorStoredPivotsAcrossWorldPlane",
+  "transform.object?.updateMatrixWorld(true)",
+  "keyholeCutterBtn",
+  "toggleKeyholeCutterSession",
+  "addEventListener(\"click\", toggleKeyholeCutterSession)",
+  "keyholeVolumeFromSelectedFaces",
+  "applyKeyholeCutterToTarget",
+  "triangles to remember as the cutting knife",
+  "captureKeyholeCutterSelection",
+  "skipKeyholeCapture",
+  "Leave only one cutter checked",
+  "Cut Selected Target",
+  "Keyhole cutter saved and deselected",
+  "boundaryMeshPointTester",
+  "No target triangles were found inside the saved cutter",
+  "Keyhole Cutter complete",
+  "flipFromCenterInput",
+  "axis-flip-x",
+  "axis-flip-y",
+  "axis-flip-z",
+  "fromCenter",
+  "opposite side across world",
   "triangleLocalPoints",
   "triangleLocalUvs",
   "worldTrianglePoints",
@@ -2239,8 +2534,8 @@ for (const required of [
   "copiedTrianglePatch",
   "makeTrianglePatchSpec",
   "patchUvs",
-  "textureUrl: firstMesh.userData.textureUrl",
-  "textureFlipY: firstMesh.userData.textureFlipY",
+  "const sourceSpec = serializeObject(firstMesh)",
+  "...sourceSpec",
   "paintTriangleFromPointer",
   "lastPaintLogAt",
   "performance.now",
@@ -2321,6 +2616,20 @@ for (const required of [
   "planeCutCapInput",
   "planeCutBtn",
   "splitGeometryAtCutPlane",
+  "cutPreviewGroup",
+  "showPlaneCutPreview",
+  "Confirm Plane Cut",
+  "keyholeBooleanResult",
+  "Confirm Keyhole Cut",
+  "subtractPolygons",
+  "intersectPolygons",
+  "targetTriangleFilter",
+  "triangleFilter: targetTriangleFilter",
+  "Separate Both Parts",
+  "Keep Target Outside",
+  "Keep Cutout Only",
+  "no target geometry remained outside the cutter",
+  "Keep Target Outside removed it",
   "appendPlaneCutCaps",
   "applyPlaneCut",
   "setKnifeCutMode",
@@ -2501,12 +2810,12 @@ for (const required of [
   "bevelSelectedFace",
   "createBevelFacePatch",
   "coplanarConnectedFaces",
-  "selected.material.transparent = opacity < .999",
-  "selected.material.opacity = opacity",
+  "material.transparent = opacity < .999",
+  "material.opacity = opacity",
   "opacityInput",
   "Opacity",
   "mesh.material.depthWrite = materialOpacity >= .9",
-  "selected.material.wireframe = false",
+  "material.wireframe = false",
   "position.getX(i) * METERS_PER_ROBLOX_STUD",
   "unitScale: ROBLOX_STUDS_PER_METER",
   "preserveScale: true"
@@ -2571,8 +2880,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.60.93 Experimental") || !documentSource.includes("v49.60.93 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.60.93 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.61.17 Experimental") || !documentSource.includes("v49.61.17 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.61.17 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -2998,6 +3307,15 @@ if (moduleSources.get("import-export")?.includes("groupCheck.indeterminate") || 
 if (!moduleSources.get("import-export")?.includes("group-info-btn") || !moduleSources.get("import-export")?.includes("openGroupEditor(record.id)") || !styleSource.includes(".app.animator-mode .object-row") || !styleSource.includes("display: none;")) {
   throw new Error("Animator hierarchy groups must expose a separate information button without overflowing individual mesh rows.");
 }
+if (!moduleSources.get("import-export")?.includes('setChecked(mesh, event.target.checked, { append: true })')) {
+  throw new Error("Scene-list mesh checkboxes must retain earlier checked parts so Group and Merge receive the complete selection.");
+}
+if (
+  !moduleSources.get("meshes")?.includes("dissolveGroupRecord(selectedGroupRecordId)")
+  || !moduleSources.get("meshes")?.includes("for (const groupId of hierarchyGroupIds) dissolveGroupRecord(groupId)")
+) {
+  throw new Error("Ungroup must dissolve only the selected hierarchy level so nested groups remain inside their parent.");
+}
 if (!documentSource.includes('id="referenceViewportsToggleBtn"') || !moduleSources.get("import-export")?.includes("function setReferenceViewportsCollapsed") || !moduleSources.get("panels")?.includes("referenceViewportsToggleBtn") || !styleSource.includes(".viewport.reference-views-collapsed")) {
   throw new Error("The Front and Side reference view column must have a compact collapse arrow.");
 }
@@ -3243,6 +3561,30 @@ for (const texturePaintBehavior of [
 }
 if (meshesSource.includes("textureEditorDrafts.delete(mesh.userData.id);")) {
   throw new Error("Apply Texture must preserve the frozen original so Restore Original survives reopening the editor.");
+}
+
+for (const lightingControl of ["tintStrengthInput", "tintStrengthValue", "shadowFillInput", "shadowFillValue", "fourSideLightsInput"]) {
+  if (!documentSource.includes(`id="${lightingControl}"`)) throw new Error(`Lighting control is missing: ${lightingControl}`);
+  if (!viewportSource.includes(`${lightingControl}: document.querySelector("#${lightingControl}")`)) {
+    throw new Error(`Lighting control is not connected: ${lightingControl}`);
+  }
+}
+for (const lightingBehavior of [
+  "function applyMeshTint(mesh, tintColor = \"#ffffff\", strength = 0)",
+  "material.emissive.copy(base).lerp(tint, amount)",
+  "function syncShadowFill()",
+  "light.intensity = fourSides ? value * .32 : 0"
+]) {
+  if (!meshesSource.includes(lightingBehavior)) throw new Error(`Tint/fill behavior is missing: ${lightingBehavior}`);
+}
+if (!viewportSource.includes("const surroundFillLights = [") || !viewportSource.includes("light.castShadow = false")) {
+  throw new Error("The four-sided fill rig must exist without creating competing shadows.");
+}
+if (!moduleSources.get("import-export")?.includes("tintStrength: round(")
+    || !moduleSources.get("import-export")?.includes("shadowFill: Number(els.shadowFillInput?.value) || 0")
+    || !moduleSources.get("import-export")?.includes("fourSideFill: els.fourSideLightsInput?.checked ?? true")
+    || !moduleSources.get("import-export")?.includes("applyMeshTint(selected, normalizedColor, els.tintStrengthInput.value)")) {
+  throw new Error("Tint and shadow-fill settings must be editable and preserved in project files.");
 }
 
 console.log("BoltWorks 3D AI Studio smoke check passed.");

@@ -518,6 +518,10 @@ let wheelTrianglePickStart = null;
 let wheelSelectionVolume = null;
 let openingPickMode = false;
 let lineSketchMode = false;
+let vertexLineMode = false;
+let vertexLineMeshId = null;
+let vertexLineHover = null;
+const vertexLinePoints = [];
 let triangleBuildMode = false;
 let triangleBuildMeshId = null;
 let triangleBuildHover = null;
@@ -685,6 +689,17 @@ const lineSketchCursor = new THREE.Mesh(
 lineSketchCursor.name = "line sketch cursor";
 lineSketchCursor.visible = false;
 scene.add(lineSketchCursor);
+const vertexLineGroup = new THREE.Group();
+vertexLineGroup.name = "vertex construction line guides";
+vertexLineGroup.visible = false;
+scene.add(vertexLineGroup);
+const vertexLineCursor = new THREE.Mesh(
+  new THREE.SphereGeometry(1, 12, 10),
+  new THREE.MeshBasicMaterial({ color: "#55e7ff", transparent: true, opacity: .95, depthWrite: false })
+);
+vertexLineCursor.name = "vertex construction line cursor";
+vertexLineCursor.visible = false;
+scene.add(vertexLineCursor);
 const triangleBuildGroup = new THREE.Group();
 triangleBuildGroup.name = "manual triangle build guides";
 triangleBuildGroup.visible = false;
@@ -1059,6 +1074,7 @@ const els = {
   extractInsideBoundaryBtn: document.querySelector("#extractInsideBoundaryBtn"),
   openingPickBtn: document.querySelector("#openingPickBtn"),
   lineToolBtn: document.querySelector("#lineToolBtn"),
+  vertexLineToolBtn: document.querySelector("#vertexLineToolBtn"),
   triangleBuildBtn: document.querySelector("#triangleBuildBtn"),
   clearTriangleBuildBtn: document.querySelector("#clearTriangleBuildBtn"),
   closeLineBtn: document.querySelector("#closeLineBtn"),

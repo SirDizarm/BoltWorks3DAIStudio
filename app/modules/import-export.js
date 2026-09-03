@@ -77,7 +77,10 @@ function serializeObject(mesh) {
     generatedShell: !!mesh.userData.generatedShell,
     shellResolution: mesh.userData.generatedShell ? Number(mesh.userData.shellResolution) || 42 : null,
     edgeBevelProtectedEdges: Array.isArray(mesh.userData.edgeBevelProtectedEdges) ? [...mesh.userData.edgeBevelProtectedEdges] : [],
-    dissolvedSurfaceEdges: Array.isArray(mesh.userData.dissolvedSurfaceEdges) ? [...mesh.userData.dissolvedSurfaceEdges] : []
+    dissolvedSurfaceEdges: Array.isArray(mesh.userData.dissolvedSurfaceEdges) ? [...mesh.userData.dissolvedSurfaceEdges] : [],
+    manualTopologyEdges: Array.isArray(mesh.userData.manualTopologyEdges)
+      ? mesh.userData.manualTopologyEdges.map(edge => ({ a: [...edge.a], b: [...edge.b] }))
+      : []
   };
 }
 
@@ -946,7 +949,7 @@ function renderTree() {
     const materialLabel = materialRulePill(mesh.userData.materialRule || "auto");
     row.className = `object-row child${mesh === selected || activeGroupIds.includes(mesh.userData.id) || (transformTargets.length > 1 && checkedIds.has(mesh.userData.id)) ? " selected" : ""}${mesh.userData.hidden ? " hidden-row" : ""}`;
     row.dataset.meshId = mesh.userData.id;
-    row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><label class="row-toggle armor-toggle" title="Include ${mesh.name} in the rigid armor system"><input class="armor-check" type="checkbox" aria-label="Mark ${mesh.name} as armor"><span>Armor</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${rowType}</small><button class="mesh-details-btn" type="button" title="Open mesh details for ${mesh.name}">...</button>`;
+    row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><label class="row-toggle armor-toggle" title="Include ${mesh.name} in the rigid armor system"><input class="armor-check" type="checkbox" aria-label="Mark ${mesh.name} as armor"><span>Armor</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${rowType}</small>`;
     const partCheck = row.querySelector(".part-check");
     const linkToggle = row.querySelector(".link-toggle");
     const linkCheck = row.querySelector(".link-check");
@@ -955,7 +958,6 @@ function renderTree() {
     const armorToggle = row.querySelector(".armor-toggle");
     const armorCheck = row.querySelector(".armor-check");
     const meshName = row.querySelector(".mesh-name");
-    const detailsBtn = row.querySelector(".mesh-details-btn");
     partCheck.checked = checkedIds.has(mesh.userData.id);
     linkCheck.checked = !!mesh.userData.linkId;
     linkToggle.classList.toggle("linked", !!mesh.userData.linkId);
@@ -965,11 +967,12 @@ function renderTree() {
     armorCheck.checked = mesh.userData.rigRole === "armor";
     armorToggle.classList.toggle("armor-enabled", armorCheck.checked);
     meshName.textContent = mesh.name;
-    meshName.title = mesh.name;
+    meshName.title = `Open mesh details for ${mesh.name} — double-click`;
     partCheck.addEventListener("click", event => event.stopPropagation());
-    partCheck.addEventListener("change", event => setChecked(mesh, event.target.checked, {
-      append: event.shiftKey || event.ctrlKey || event.metaKey
-    }));
+    // Scene-list checkboxes are an explicit multi-part basket. Checking a
+    // second row must keep earlier rows checked so Group and Merge receive the
+    // complete set without requiring a keyboard modifier.
+    partCheck.addEventListener("change", event => setChecked(mesh, event.target.checked, { append: true }));
     linkToggle.addEventListener("click", event => event.stopPropagation());
     linkCheck.addEventListener("change", event => {
       event.stopPropagation();
@@ -997,7 +1000,7 @@ function renderTree() {
       updateAll();
       log(`${mesh.name} is now ${event.target.checked ? "rigid armor" : "skin and bone"}.`);
     });
-    detailsBtn.addEventListener("click", event => {
+    meshName.addEventListener("dblclick", event => {
       event.stopPropagation();
       openMeshDetails(mesh.userData.id);
     });
