@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {createDicePhysics} from '../app/demos/dice-physics.js';
+let seed=417;const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/4294967296;};
+const demo=createDicePhysics({types:[4,6,'dice','coin'],random});
+demo.roll();for(let f=0;f<3100&&demo.snapshot().state==='rolling';f++)demo.step(1/120);
+const before=demo.snapshot();assert.ok(['settled','cocked'].includes(before.state));
+assert.equal(demo.shake(),true);assert.equal(demo.shake(),false,'Rapid repeated hits must be throttled');
+const hit=demo.snapshot();assert.equal(hit.state,'rolling');assert.ok(hit.dice.every(d=>d.result===null));
+assert.deepEqual(hit.dice.map(d=>d.position),before.dice.map(d=>d.position),'Hit must not respawn dice');
+assert.deepEqual(hit.props.map(d=>d.position),before.props.map(d=>d.position),'Hit must not reset props');
+for(let f=0;f<30;f++)demo.step(1/120);
+assert.notDeepEqual(demo.snapshot().dice.map(d=>d.position),before.dice.map(d=>d.position));
+assert.notDeepEqual(demo.snapshot().props.map(d=>d.position),before.props.map(d=>d.position));
+for(let f=0;f<3100&&demo.snapshot().state==='rolling';f++)demo.step(1/120);
+assert.ok(['settled','cocked'].includes(demo.snapshot().state));assert.equal(demo.snapshot().nudges,0);
+demo.reset();assert.equal(demo.snapshot().state,'ready');demo.dispose();console.log('Manual table hit: movement, no teleport, throttle, result recheck and reset passed');

@@ -78,7 +78,7 @@ textarea {
   height: calc(100% - var(--copyright-bar-height) - var(--notice-rail-height));
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr) 390px;
-  grid-template-rows: minmax(88px, auto) minmax(0, 1fr) calc(var(--bottom-info-height) + var(--notice-rail-height));
+  grid-template-rows: minmax(88px, auto) minmax(0, 1fr) auto;
   grid-template-areas:
     "top top top"
     "left view right"
@@ -344,7 +344,7 @@ body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
   gap: 10px;
-  padding: 10px 10px calc(10px + var(--notice-rail-height));
+  padding: 8px 10px;
   background: #15191b;
 }
 
@@ -1048,6 +1048,11 @@ label {
 .viewport.reference-views-collapsed {
   grid-template-columns: minmax(0, 1fr);
 }
+
+/* Gameplay owns the viewport temporarily; preserve the saved editor layout. */
+.viewport:has(.gameplay-preview:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
+.viewport:has(.gameplay-preview:not([hidden])) .reference-viewports,
+.viewport:has(.gameplay-preview:not([hidden])) .reference-viewports-toggle { display: none !important; }
 
 .viewport.reference-views-collapsed .reference-viewports {
   display: none;
@@ -2627,9 +2632,7 @@ body.footer-info-collapsed .bottom > * {
 }
 
 body.footer-info-collapsed .bottom {
-  grid-template-columns: 1fr;
-  gap: 0;
-  padding: 0 10px var(--notice-rail-height);
+  display: none;
 }
 
 .persistent-notice {

@@ -2,12 +2,14 @@ const BWS_RECOVERY_DB_NAME = "boltworks-studio-recovery";
 const BWS_RECOVERY_STORE = "projects";
 const BWS_RECOVERY_KEY = "latest-project";
 const BWS_RECOVERY_FALLBACK_KEY = "boltworks.recovery.latest-project";
+const BWS_RECOVERY_MANUAL_KEY = "boltworks.recovery.manual-only";
 const BWS_AUTO_SAVE_DELAY_MS = 1200;
 const BWS_UPDATE_CHECK_MS = 45000;
 const bwsAutoSaveStatus = document.querySelector("#autoSaveStatus");
 const bwsUpdateAvailableBtn = document.querySelector("#updateAvailableBtn");
 const bwsCurrentVersion = (document.querySelector('meta[name="application-version"]')?.content.match(/v?(\d+(?:\.\d+)+)/)?.[1]) || "0";
 let bwsAutoSaveTimer = null;
+let bwsStartingNewWorkspace = false;
 let bwsAutoSavePromise = Promise.resolve(false);
 let bwsRecoveryDatabasePromise = null;
 let bwsUpdateVersion = null;
@@ -41,6 +43,7 @@ async function writeBwsRecoveryRecord(project) {
     project
   };
   let indexedDbSaved = false;
+  let fallbackSaved = false;
   try {
     const database = await openBwsRecoveryDatabase();
     indexedDbSaved = await new Promise((resolve, reject) => {
@@ -55,10 +58,12 @@ async function writeBwsRecoveryRecord(project) {
   }
   try {
     localStorage.setItem(BWS_RECOVERY_FALLBACK_KEY, JSON.stringify(record));
+    fallbackSaved = true;
   } catch (error) {
     console.warn("BoltWorks local recovery fallback unavailable", error);
   }
-  return indexedDbSaved;
+  if (indexedDbSaved || fallbackSaved) localStorage.removeItem(BWS_RECOVERY_MANUAL_KEY);
+  return indexedDbSaved || fallbackSaved;
 }
 
 async function readBwsRecoveryRecord() {
@@ -87,14 +92,18 @@ async function clearBwsRecoveryRecord() {
     clearTimeout(bwsAutoSaveTimer);
     bwsAutoSaveTimer = null;
   }
+  // Finish queued writes before clearing either copy of the old workspace.
+  await bwsAutoSavePromise.catch(() => false);
   const database = await openBwsRecoveryDatabase();
-  return new Promise((resolve, reject) => {
+  await new Promise((resolve, reject) => {
     const transaction = database.transaction(BWS_RECOVERY_STORE, "readwrite");
     transaction.objectStore(BWS_RECOVERY_STORE).delete(BWS_RECOVERY_KEY);
     transaction.oncomplete = () => resolve(true);
     transaction.onerror = () => reject(transaction.error || new Error("Could not clear the recovery save."));
     transaction.onabort = () => reject(transaction.error || new Error("Clearing the recovery save was interrupted."));
   });
+  localStorage.removeItem(BWS_RECOVERY_FALLBACK_KEY);
+  return true;
 }
 
 function saveProjectAutoRecoveryNow() {
@@ -102,7 +111,7 @@ function saveProjectAutoRecoveryNow() {
     clearTimeout(bwsAutoSaveTimer);
     bwsAutoSaveTimer = null;
   }
-  if (isProjectLoading || isRestoring || !objects.length) return Promise.resolve(false);
+  if (bwsStartingNewWorkspace || isProjectLoading || isRestoring || !objects.length) return Promise.resolve(false);
   const project = projectState();
   setBwsAutoSaveStatus("Saving recovery…");
   bwsAutoSavePromise = bwsAutoSavePromise
@@ -122,18 +131,19 @@ function saveProjectAutoRecoveryNow() {
 }
 
 function scheduleProjectAutoSave() {
-  if (isProjectLoading || isRestoring || !objects.length) return;
+  if (bwsStartingNewWorkspace || isProjectLoading || isRestoring || !objects.length) return;
   if (bwsAutoSaveTimer) clearTimeout(bwsAutoSaveTimer);
   setBwsAutoSaveStatus("Unsaved changes…");
   bwsAutoSaveTimer = setTimeout(saveProjectAutoRecoveryNow, BWS_AUTO_SAVE_DELAY_MS);
 }
 
-async function restoreAutoSavedProjectIfBlank() {
-  if (objects.length) return false;
+async function restoreAutoSavedProjectIfBlank(force = false) {
+  if (!force && (objects.length || localStorage.getItem(BWS_RECOVERY_MANUAL_KEY))) return false;
   try {
     const recovery = await readBwsRecoveryRecord();
-    if (!recovery?.project?.scene?.objects?.length || objects.length) return false;
+    if (!recovery?.project?.scene?.objects?.length || (!force && objects.length)) return false;
     loadProjectData(recovery.project, `Automatic recovery (${recovery.savedAt || "latest"})`);
+    localStorage.removeItem(BWS_RECOVERY_MANUAL_KEY);
     const time = recovery.savedAt ? new Date(recovery.savedAt).toLocaleString() : "latest save";
     setBwsAutoSaveStatus(`Recovered ${time}`, "saved");
     return true;

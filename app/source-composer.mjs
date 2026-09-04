@@ -12,6 +12,7 @@ export const studioModuleOrder = Object.freeze([
   "minecraft",
   "animator-workspace",
   "pose-straightener",
+  "dice-demo",
   "panels"
 ]);
 

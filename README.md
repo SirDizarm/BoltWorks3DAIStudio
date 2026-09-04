@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.47.4**, with canonical feature modules for the toolbar, panels, viewport, meshes, rigging, animation, import/export, plugins, Minecraft workspace, and styling. GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.64.0**, including the dice demo: six editable authored toss clips, a separate physical Gameplay Preview tray, and an offline HTML randomizer. See [the dice workflow](docs/DICE-DEMO.md). GitHub Pages and the local adapter consume the same module sources.
 
 ## AI authorship note
 

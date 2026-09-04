@@ -3,10 +3,12 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 import { composeStudioSource } from "../app/source-composer.mjs";
+import { buildDiceDemo } from './build-dice-demo.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export async function buildStudioBundle({ outfile = join(root, "app", "studio-v49.61.17.js"), write = true } = {}) {
+export async function buildStudioBundle({ outfile = join(root, "app", "studio-v49.64.0.js"), write = true } = {}) {
+  if(write) await buildDiceDemo();
   const entrySource = await composeStudioSource(name =>
     readFile(join(root, "app", "modules", `${name}.js`), "utf8")
   );
@@ -20,6 +22,7 @@ export async function buildStudioBundle({ outfile = join(root, "app", "studio-v4
     },
     banner: { js: "/* Generated from app/modules. Do not edit this bundle directly. */" },
     bundle: true,
+    define: {__BWS_DICE_LOGO__:JSON.stringify('data:image/png;base64,'+(await readFile(join(root,'app/assets/branding/boltworks-logo.png'))).toString('base64')),__BWS_COIN_ART__:JSON.stringify('data:image/png;base64,'+(await readFile(join(root,'app/assets/branding/bw-coin-reference.png'))).toString('base64'))},
     format: "iife",
     target: ["es2020"],
     legalComments: "none",

@@ -2468,6 +2468,9 @@ function updateAnimation(delta) {
   // extra elapsed time and making the body plus armor appear in slow motion.
   animationState.lastTime -= elapsedFrames * frameDuration;
   const frameCount = Math.max(1, animationState.end + 1);
+  if (diceRandomTimeline && isDiceDemo() && animationState.frame + elapsedFrames >= frameCount) {
+    dicePickTimeline();animationState.playing=true;return;
+  }
   animationSetFrame((animationState.frame + elapsedFrames) % frameCount, { lightweightPanel: true });
 }
 function exportAnimationJson() { const blob = new Blob([JSON.stringify({ kind: "boltworks-animation", version: 1, ...serializeBoneRig().animation }, null, 2)], { type: "application/json" }); const link = document.createElement("a"); link.href = URL.createObjectURL(blob); link.download = "boltworks-animation.json"; link.click(); URL.revokeObjectURL(link.href); }

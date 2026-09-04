@@ -1,0 +1,20 @@
+import assert from 'node:assert/strict';
+import {createTurnTracker} from '../app/demos/dice-turns.js';
+import {createDicePhysics} from '../app/demos/dice-physics.js';
+const t=createTurnTracker();
+const result=(n)=>({state:'settled',total:n,dice:[{type:6,result:n}]});
+const limited=createTurnTracker();limited.setLimit(1);limited.update(result(6),'6');limited.advance();assert.ok(limited.finalTurn);limited.update(result(3),'3');limited.advance();assert.ok(limited.finished);assert.equal(limited.round,1);assert.deepEqual(limited.winners(),{points:6,players:[0]});limited.update(result(99),'99');assert.equal(limited.advance(),false);assert.equal(limited.history.length,2);limited.reset();assert.equal(limited.finished,false);assert.equal(limited.limit,1);
+assert.equal(t.advance(),false);
+t.update(result(3),'3');t.update(result(5),'5');assert.equal(t.history.length,0);
+assert.ok(t.advance());assert.equal(t.history[0].total,5);assert.equal(t.active,1);assert.equal(t.advance(),false);
+t.update({state:'cocked',total:null,dice:[{type:6,result:null}]},'');assert.equal(t.advance(),false);
+t.update(result(2),'2');t.advance();assert.equal(t.round,2);assert.equal(t.active,0);assert.equal(t.history.length,2);assert.equal(t.setSize(4),false);
+t.update({state:'settled',total:null,dice:[{type:'coin',result:2}]},'Spark');t.advance();assert.equal(t.history[2].label,'Spark');assert.equal(t.history[2].total,null);
+t.reset();assert.equal(t.history.length,0);t.setSize(1);t.update(result(1),'1');t.advance();assert.equal(t.round,2);
+const demo=createDicePhysics();const liquid=demo.scene.getObjectByName('Table ornaments').userData.liquid;
+demo.shake();for(let i=0;i<60;i++)demo.step(1/120);assert.equal(liquid.snapshot().spilled,0);
+for(let h=0;h<8;h++){demo.shake();for(let i=0;i<60;i++)demo.step(1/120);}
+for(let i=0;i<240;i++)demo.step(1/120);
+assert.ok(liquid.snapshot().spilled>0);assert.ok(liquid.snapshot().puddles>0);assert.ok(liquid.snapshot().amount<1);assert.ok(liquid.snapshot().activeDrops<=48);
+demo.reset();assert.equal(liquid.snapshot().amount,1);assert.equal(liquid.snapshot().puddles,0);demo.dispose();
+console.log('PASS: rerolls, accepted turns, rounds, coins, reset; repeated hits spill bounded water particles and reset refills.');

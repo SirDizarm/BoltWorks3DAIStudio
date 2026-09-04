@@ -150,6 +150,7 @@ function syncGameplayPlaybackUi() {
 
 function playGameplayPreview() {
   if (!gameplayPreviewVisible()) return false;
+  if (dicePhysicsPreview) { gameplayPlaybackPaused=false;gameplayLastFrame=performance.now();syncGameplayPlaybackUi();return true; }
   gameplayPlaybackPaused = false;
   gameplayLastFrame = performance.now();
   setGameplayCharacterAnimation(gameplayLocomotionKind || "idle");
@@ -161,6 +162,7 @@ function playGameplayPreview() {
 
 function pauseGameplayPreview() {
   if (!gameplayPreviewVisible()) return false;
+  if (dicePhysicsPreview) { gameplayPlaybackPaused=true;syncGameplayPlaybackUi();return true; }
   gameplayPlaybackPaused = true;
   gameplayKeys.clear();
   gameplayMouseButtons.clear();
@@ -172,6 +174,7 @@ function pauseGameplayPreview() {
 }
 
 function resetGameplayPreviewCamera() {
+  if (dicePhysicsPreview) { dicePhysicsPreview.reset();updateDiceScore(dicePhysicsPreview.snapshot());return; }
   if (!gameplayRenderer) return;
   const bounds = sceneBounds();
   const size = bounds.getSize(new THREE.Vector3());
@@ -626,6 +629,7 @@ function applyGameplayCharacterPreviewPose(poses) {
 }
 
 function openGameplayPreview() {
+  if (isDiceDemo()) { openDicePhysics();return true; }
   if (!els.gameplayPreview || !gameplayRenderer) return false;
   // The animator's live key collection is the newest source of truth. Commit
   // it before Gameplay Preview changes the active clip, otherwise a recovered
@@ -661,6 +665,7 @@ function openGameplayPreview() {
 }
 
 function closeGameplayPreview() {
+  if(dicePhysicsPreview){dicePhysicsPreview.dispose();dicePhysicsPreview=null;els.gameplayPreview.hidden=true;els.gameplayPreview.classList.remove('dice-preview');document.getElementById('diceRollAgainBtn').hidden=true;gameplayPlaybackPaused=true;syncGameplayPlaybackUi();updateGameplayHint();return true;}
   if (!els.gameplayPreview) return false;
   if (document.pointerLockElement === gameplayCanvas) document.exitPointerLock?.();
   els.gameplayPreview.hidden = true;
@@ -703,11 +708,13 @@ function resizeGameplayPreview() {
   gameplayRenderer.setSize(rect.width, rect.height, false);
   gameplayCamera.aspect = rect.width / rect.height;
   gameplayCamera.updateProjectionMatrix();
+  if(dicePhysicsPreview)dicePhysicsPreview.resize(rect.width/rect.height);
 }
 
 function updateGameplayPreview(deltaSeconds) {
   if (!gameplayPreviewVisible()) return;
   if (gameplayPlaybackPaused) return;
+  if (dicePhysicsPreview) { dicePhysicsPreview.step(deltaSeconds);return; }
   updateGameplayArena(deltaSeconds);
   const jumping = updateGameplayJump();
   if (!gameplayCameraLocked) {
@@ -781,6 +788,7 @@ function applyGameplayCrawlEquipmentStow() {
 
 function renderGameplayPreview() {
   if (!gameplayPreviewVisible()) return;
+  if (dicePhysicsPreview) { gameplayRenderer.render(dicePhysicsPreview.scene,dicePhysicsPreview.camera);return; }
   const helpers = [
     grid,
     gridLabelGroup,
@@ -1860,21 +1868,53 @@ els.saveProjectBtn.addEventListener("click", () => {
 });
 els.newWorkspaceBtn?.addEventListener("click", async () => {
   const hasWork = objects.length > 0;
-  if (hasWork && !window.confirm("Start a new empty workspace? Your current model will stay in the recovery save until you confirm this action.")) return;
+  if (hasWork && !window.confirm("Start an empty workspace? The last automatic save will be kept for Recover last save. New work will replace it when auto-saved. Download Save Project first if you need a permanent copy.")) return;
   els.newWorkspaceBtn.disabled = true;
+  bwsStartingNewWorkspace = true;
   try {
-    await clearBwsRecoveryRecord();
+    if (bwsAutoSaveTimer) clearTimeout(bwsAutoSaveTimer);
+    bwsAutoSaveTimer = null;
+    await bwsAutoSavePromise.catch(() => false);
+    localStorage.setItem(BWS_RECOVERY_MANUAL_KEY, "1");
+    if (gameplayPreviewVisible()) closeGameplayPreview();
     clearObjects({ record: false });
     resetRigForNewWorkspace();
     if (els.projectNameInput) els.projectNameInput.value = "modeler-project";
     setBwsAutoSaveStatus("Fresh workspace", "saved");
-    log("New empty workspace started. The previous automatic recovery save was cleared.");
+    log("New empty workspace started. Recover last save can restore the previous automatic save; Delete last save removes it. New work replaces it when auto-saved.");
   } catch (error) {
     console.warn("Could not start a fresh workspace", error);
     setBwsAutoSaveStatus("Could not start fresh workspace", "problem");
-    log("Could not start a new workspace because recovery storage could not be cleared.");
+    log("Could not start a new workspace because the recovery preference could not be saved.");
   } finally {
+    bwsStartingNewWorkspace = false;
     els.newWorkspaceBtn.disabled = false;
+  }
+});
+document.querySelector("#reloadLastSaveBtn")?.addEventListener("click", async () => {
+  if (objects.length && !window.confirm("Replace this workspace with the last automatic save? Download Save Project first to keep any current unsaved work.")) return;
+  bwsStartingNewWorkspace = true;
+  try {
+    if (bwsAutoSaveTimer) clearTimeout(bwsAutoSaveTimer);
+    bwsAutoSaveTimer = null;
+    await bwsAutoSavePromise.catch(() => false);
+    if (!(await restoreAutoSavedProjectIfBlank(true))) log("No automatic recovery save is available to reload.");
+  } finally {
+    bwsStartingNewWorkspace = false;
+  }
+});
+document.querySelector("#deleteLastSaveBtn")?.addEventListener("click", async () => {
+  if (!window.confirm("Delete the last automatic recovery save? Downloaded project files and the open model will not be deleted. Future edits can create a new automatic save.")) return;
+  bwsStartingNewWorkspace = true;
+  try {
+    await clearBwsRecoveryRecord();
+    setBwsAutoSaveStatus("Last recovery save deleted", "saved");
+    log("Deleted the automatic recovery copy from both browser stores. This cannot be undone; downloaded project files are unchanged.");
+  } catch (error) {
+    setBwsAutoSaveStatus("Could not delete recovery save", "problem");
+    console.warn("Could not delete recovery save", error);
+  } finally {
+    bwsStartingNewWorkspace = false;
   }
 });
 els.loadProjectBtn.addEventListener("click", () => els.importProjectFile.click());
@@ -2682,6 +2722,11 @@ canvas.addEventListener("dblclick", event => {
 
 window.addEventListener("keydown", event => {
   const editingText = event.target?.matches?.("input, textarea, select, [contenteditable='true']");
+  if (gameplayPreviewVisible() && dicePhysicsPreview) {
+    if(event.key==='Escape')closeGameplayPreview();
+    else if(!event.target?.closest?.('input, textarea, select, [contenteditable]') && !event.ctrlKey && !event.metaKey && !event.altKey && ['Space','Enter','NumpadEnter'].includes(event.code)){event.preventDefault();if(!event.repeat){if(event.code==='Space')hitTableButton.click();else rollDicePhysics();}}
+    return;
+  }
   if (gameplayPreviewVisible()) {
     if (event.key === "Escape") {
       event.preventDefault();
@@ -2873,6 +2918,7 @@ els.gameplayStrideScaleInput?.addEventListener("input", syncGameplayStrideContro
 syncGameplayStrideControls();
 gameplayCanvas?.addEventListener("click", () => {
   if (!gameplayPreviewVisible()) return;
+  if(dicePhysicsPreview)return;
   if (gameplayPlaybackPaused) {
     updateGameplayArenaStatus("Paused — press Play before taking control");
     return;
@@ -2901,6 +2947,7 @@ window.addEventListener("mouseup", event => {
 });
 gameplayCanvas?.addEventListener("wheel", event => {
   if (!gameplayPreviewVisible()) return;
+  if (dicePhysicsPreview) return;
   event.preventDefault();
   const factor = event.deltaY < 0 ? 1.1 : 1 / 1.1;
   gameplaySpeedMultiplier = THREE.MathUtils.clamp(
@@ -2939,6 +2986,7 @@ document.addEventListener("pointerlockchange", () => {
 
 window.ModelerStudio = {
   state,
+  diceDemoState: () => ({active:isDiceDemo(),frame:animationState.frame,clip:animationState.activeClipId,playing:animationState.playing,randomLoops:diceRandomTimeline,physics:dicePhysicsPreview?.snapshot() || null}),
   viewportState: () => ({
     environment: els.environmentSelect?.value || "plain",
     background: els.backgroundSelect?.value || "plain",

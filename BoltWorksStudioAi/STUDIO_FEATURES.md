@@ -7,6 +7,18 @@ contract; this file explains how to use the current editor.
 
 ## Game Asset Kit
 
+### Dice Gameplay demo (49.64.0)
+
+Launch from **Toolbars → Examples → Dice demo**. An optional right-side Players panel supports 1–12 editable names and a Next player turn-order control, wrapping back to the first without rerolling. This is local page-session state, also available in the standalone HTML.
+
+Gameplay Preview temporarily hides the side reference views, restoring them on close. Dice mode has Play/Pause icons, hides Preview Tools, and places Top view / Clean box / Hide decorations in a bottom-right dock. Space hits the table; Enter or clicking the tray rerolls, with form-control and held-key guards.
+
+Dice results use a separate scene scoreboard: vertical per-type subtotals on the left and a large gold total at the top center, retained when minimized. Result text cannot reflow the toolbar buttons. Rolling or reset clears stale totals; unreadable outcomes request a manual hit/reroll.
+
+The reference-inspired table uses walnut/gold inlays and green felt. **Hide decorations / Show decorations** toggles the external journal, quill/inkwell and goblet; these are visual-only and do not change physics. The decorated environment is included in the offline HTML, not the editable die timeline project.
+
+The dice handful supports 1–8 items: numbered D4/D6/D8/D10/D12/D20, dotted **Dice**, and a **BW coin** with placeholder Heads/Tails art. Polyhedral corners have narrow matching visual/collider bevels. Labels are enlarged. Results are grouped by type with subtotals and a numeric total, visible even when controls are minimized; coins are excluded from the total. **Hit the table** manually jolts existing pieces and rechecks results, never automatically. **Top view / Angled view** switches the camera. **Clean box / Restore props** removes/restores both the prop visuals and colliders, leaving dice intact. The green tray uses the existing BoltWorks logo. These features also ship in the offline HTML export and do not alter authored timeline animation. See `docs/DICE-DEMO.md` for details and limitations.
+
 The **Game Asset Kit** stores game-facing data on a selected mesh, group, or
 multiple parts: a stable asset ID, icon key, inventory width and height,
 asset type, equipment slot, attachment bone ID, and base parts to hide or
@@ -213,6 +225,14 @@ Use a fresh QA Sheet after changes to a rig, texture, model orientation, or
 export setting. For animated assets, also inspect the output sheet or video.
 
 ## Completion expectation for AI-authored assets
+
+### Die demo (49.63.1)
+
+Resting dice are never automatically kicked to obtain a readable result. Supported or touching dice may remain in place; ambiguous outcomes require a manual reroll. This supersedes the previous recovery-nudge behavior.
+
+**Dice handful** chooses one to eight independently configurable D4/D6/D8/D10/D12/D20 dice in Gameplay Preview and offline HTML. Apply starts a new throw; results remain in slot order, with a total only for fully settled hands. D4 reads its upper vertex, others their upper faces. The HTML export preserves the applied handful. The authored timeline remains the D6 example. **Minimize controls** leaves a small reroll/restore strip; the lower Scene/JSON panel now fits its content and disappears completely when minimized. The tray has a procedural tabletop/map setting and a cartoon wood block with end rings.
+
+The **Die demo** menu beside Gameplay Preview includes an editable rounded die with six authored landing clips, random clip selection, and a separate physical tray. The tray contains a rounded collision die, movable block, chess pawn and dominoes that can fall over. **Roll again** preserves fallen props; **Reset** restores the tray. Angled resting dice receive at most two physical nudges before reporting a cocked result. Physics is not run in the animation timeline. **Export dice randomizer HTML** shares the self-contained tray, not the current editor asset. See `docs/DICE-DEMO.md` for rig, unit and collider details.
 
 After a material geometry, UV, texture, orientation, or tile-export change:
 
