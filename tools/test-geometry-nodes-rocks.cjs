@@ -85,6 +85,25 @@ const assertClosedCapUvs = (object, slug) => {
   assert(downwardCap, `${slug} ${object.name} bottom cap must face downward`);
 };
 
+const assertClosedRockMesh = (object, slug) => {
+  const positions = object.geometry?.positions || [];
+  const savedIndices = object.geometry?.indices || [];
+  const indices = savedIndices.length ? savedIndices : Array.from({ length: positions.length / 3 }, (_, index) => index);
+  const pointKey = vertex => [0, 1, 2]
+    .map(axis => Math.round(Number(positions[vertex * 3 + axis]) * 100000))
+    .join(",");
+  const edgeCounts = new Map();
+  for (let index = 0; index < indices.length; index += 3) {
+    for (const [a, b] of [[indices[index], indices[index + 1]], [indices[index + 1], indices[index + 2]], [indices[index + 2], indices[index]]]) {
+      const points = [pointKey(a), pointKey(b)].sort();
+      const key = `${points[0]}|${points[1]}`;
+      edgeCounts.set(key, (edgeCounts.get(key) || 0) + 1);
+    }
+  }
+  const openEdges = Array.from(edgeCounts.values()).filter(count => count !== 2);
+  assert.equal(openEdges.length, 0, `${slug} ${object.name} must remain a closed solid without a variation seam`);
+};
+
 const assertGrassRootsOutsideSources = (project, slug) => {
   const grass = project.scene.objects.find(object => /Grass sheets$/.test(object.name || ""));
   assert(grass, `${slug} must contain procedural grass`);
@@ -123,18 +142,21 @@ const makeCluster = ({ name, sourceType, detailTypes, seed, params }) => {
 };
 
 const assets = [
+  { slug: "rock-variation-zero", sourceLabel: "Rock 1", minObjects: 2,
+    cluster: makeCluster({ name: "Rock Variation Zero", sourceType: "rocks", detailTypes: ["grass"], seed: 83,
+      params: { rockProfile: "rounded", rockArrangement: "single", rockCount: 1, rockSize: 1.3, rockVariation: 0, rockSpacing: .9, rockColor: "#59615e", grassCount: 3, grassHeight: .3, grassWidth: .03, grassSpread: .12, grassAvoidGeometry: true, grassClearance: .12 } }) },
   { slug: "rounded-rock-cluster-grass", sourceLabel: "Rock 1", minObjects: 7,
     cluster: makeCluster({ name: "Natural Boulder Cluster", sourceType: "rocks", detailTypes: ["moss", "grass"], seed: 117,
       params: { rockProfile: "boulder", rockArrangement: "cluster", rockCount: 6, rockSize: 1.2, rockVariation: .78, rockSpacing: 1.08, rockColor: "#535e59", mossPlacement: "top", mossCoverage: .48, mossThickness: .07, mossMoisture: .76, mossSunlight: .28, mossCrackBias: .25, mossColor: "#315f2a", grassCount: 12, grassHeight: .42, grassWidth: .036, grassSpread: .2, grassAvoidGeometry: true, grassClearance: .14 } }) },
   { slug: "stacked-fieldstones", sourceLabel: "Rock 1", minObjects: 11,
     cluster: makeCluster({ name: "Supported Fieldstone Cairn", sourceType: "rocks", detailTypes: ["grass"], seed: 219,
-      params: { rockProfile: "flat", rockArrangement: "stack", rockCount: 10, rockSize: 1.12, rockVariation: .58, rockSpacing: .9, rockColor: "#59635f", grassCount: 6, grassHeight: .32, grassWidth: .032, grassSpread: .12, grassAvoidGeometry: true, grassClearance: .12 } }) },
+      params: { rockProfile: "flat", rockArrangement: "stack", rockCount: 10, rockSize: 1.12, rockVariation: .5, rockSpacing: .9, rockColor: "#59635f", grassCount: 6, grassHeight: .32, grassWidth: .032, grassSpread: .12, grassAvoidGeometry: true, grassClearance: .12 } }) },
   { slug: "mossy-dry-stone-wall", sourceLabel: "Wall stone 1.1.1", minObjects: 180,
     cluster: makeCluster({ name: "Mossy Dry Stone Wall", sourceType: "stoneWall", detailTypes: ["moss", "grass"], seed: 311,
       params: { wallLength: 12, wallHeight: 3.2, wallDepth: 1.25, wallRows: 5, wallColumns: 9, wallDepthLayers: 3, wallIrregularity: .68, wallColorVariation: .66, wallColor: "#59625e", mossPlacement: "all", mossCoverage: .52, mossThickness: .065, mossMoisture: .86, mossSunlight: .22, mossCrackBias: .82, grassCount: 18, grassHeight: .38, grassWidth: .034, grassSpread: .18, grassAvoidGeometry: true, grassClearance: .14 } }) }
   ,{ slug: "jagged-rock-outcrop", sourceLabel: "Rock 1", minObjects: 5,
     cluster: makeCluster({ name: "Jagged Rock Outcrop", sourceType: "rocks", detailTypes: ["grass"], seed: 417,
-      params: { rockProfile: "jagged", rockArrangement: "cluster", rockCount: 4, rockSize: 1.2, rockVariation: .92, rockSpacing: 1.15, rockColor: "#505a57", grassCount: 8, grassHeight: .36, grassWidth: .032, grassSpread: .16, grassAvoidGeometry: true, grassClearance: .13 } }) }
+      params: { rockProfile: "jagged", rockArrangement: "cluster", rockCount: 4, rockSize: 1.3, rockVariation: 1, rockSpacing: 1.15, rockColor: "#505a57", grassCount: 8, grassHeight: .36, grassWidth: .032, grassSpread: .16, grassAvoidGeometry: true, grassClearance: .13 } }) }
   ,{ slug: "flat-mossy-fieldstones", sourceLabel: "Rock 1", minObjects: 6,
     cluster: makeCluster({ name: "Flat Mossy Fieldstones", sourceType: "rocks", detailTypes: ["moss", "grass"], seed: 509,
       params: { rockProfile: "flat", rockArrangement: "cluster", rockCount: 5, rockSize: 1.08, rockVariation: .7, rockSpacing: 1.12, rockColor: "#606963", mossPlacement: "top", mossCoverage: .66, mossThickness: .055, mossMoisture: .82, mossSunlight: .2, mossCrackBias: .3, mossColor: "#315f2a", grassCount: 9, grassHeight: .3, grassWidth: .03, grassSpread: .14, grassAvoidGeometry: true, grassClearance: .12 } }) }
@@ -199,6 +221,28 @@ const assets = [
         await page.waitForTimeout(250);
         await page.locator("#canvas").screenshot({ path: `exports/${asset.slug}-${viewName}.png` });
       }
+      if (asset.slug === "jagged-rock-outcrop") {
+        await page.locator("#previewIsoBtn").click();
+        const canvasBounds = await page.locator("#canvas").boundingBox();
+        assert(canvasBounds, "Jagged rock orbit QA requires a visible main viewport");
+        const centerX = canvasBounds.x + canvasBounds.width * .5;
+        const centerY = canvasBounds.y + canvasBounds.height * .52;
+        await page.mouse.move(centerX, centerY);
+        await page.mouse.down();
+        await page.mouse.move(centerX + canvasBounds.width * .28, centerY, { steps: 16 });
+        await page.mouse.up();
+        await page.waitForTimeout(250);
+        await page.locator("#canvas").screenshot({ path: "exports/jagged-rock-outcrop-orbit-rear.png" });
+        await page.mouse.move(centerX, centerY);
+        await page.mouse.down();
+        await page.mouse.move(centerX, centerY - canvasBounds.height * .34, { steps: 16 });
+        await page.mouse.up();
+        await page.waitForTimeout(250);
+        await page.locator("#canvas").screenshot({ path: "exports/jagged-rock-outcrop-orbit-under.png" });
+        await page.locator("#flat2dLookInput").check();
+        await page.waitForTimeout(250);
+        await page.locator("#canvas").screenshot({ path: "exports/jagged-rock-outcrop-orbit-under-unlit.png" });
+      }
       await popup.locator("#geometryNodeDetachedBakeBtn").click();
       const projectDownloadPromise = page.waitForEvent("download");
       await page.locator("#saveProjectBtn").click();
@@ -209,7 +253,10 @@ const assets = [
       assert(project.scene.objects.length >= asset.minObjects);
       assert(project.scene.objects.some(object => (object.geometry?.uvs || []).length > 0));
       const stoneSources = project.scene.objects.filter(object => /(?:Rock \d+|Wall stone \d+\.\d+\.\d+)$/.test(object.name || ""));
-      for (const source of stoneSources.slice(0, 12)) assertClosedCapUvs(source, asset.slug);
+      for (const source of stoneSources.slice(0, 12)) {
+        assertClosedCapUvs(source, asset.slug);
+        assertClosedRockMesh(source, asset.slug);
+      }
       for (const moss of project.scene.objects.filter(object => / Moss \d+$/.test(object.name || ""))) {
         assert.equal(moss.shape, "custom", `${asset.slug} moss must be a projected custom surface`);
         assert((moss.geometry?.positions || []).length > 0, `${asset.slug} moss overlay must contain surface triangles`);
@@ -286,7 +333,7 @@ const assets = [
       for (const nodeId of asset.cluster.graph.nodeOrder) assert.equal(await reloadPopup.locator(`[data-geometry-node="${nodeId}"]`).count(), 1, `${nodeId} must survive project reload`);
       await context.close();
     }
-    console.log("PASS: centered natural boulders, supported cairn, packed dry-stone wall, crack-aware moss, exclusion-masked grass, and PBR normal preview UI built, baked, saved, and reloaded.");
+    console.log("PASS: closed rocks at 0/0.5/1 variation, centered natural boulders, supported cairn, packed dry-stone wall, crack-aware moss, exclusion-masked grass, and PBR normal preview UI built, baked, saved, and reloaded.");
   } finally {
     await browser.close();
   }

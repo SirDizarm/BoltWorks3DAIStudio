@@ -3164,6 +3164,7 @@ for (const geometryNodeSourceRequirement of [
   "Junction Blend",
   "Cluster Scatter",
   "Rock Generator",
+  "const ringNoiseByRing",
   "const bottomRim",
   "const clusterSlots",
   "Stone Wall",

@@ -246,7 +246,9 @@ formats and do not preserve all BWS editing information.
   the rotated footprints of upstream rocks and wall stones.
   Rock meshes are closed solids with outward-facing top and bottom caps. Side,
   top, and bottom UV islands are separated so a stone material can cover every
-  face without side-strip smearing; compact clusters are neighbor-connected and
+  face without side-strip smearing. Variation deforms each unique ring point
+  while keeping the duplicated U=0/U=1 side-strip join welded, including at the
+  maximum setting; compact clusters are neighbor-connected and
   recentered. Stone Wall supports one to four staggered depth layers and defaults
   to three-layer masonry with a rubble core;
   its stone count scales with Length so long game-wall runs retain believable

@@ -1042,6 +1042,12 @@ function geometryNodeRockGeometry(profile, size, variation, random, wallStone = 
   const vertices = [], uvs = [], indices = [];
   const sideNoise = Array.from({ length: settings.sides }, () => 1 + (random() - .5) * variation * .62);
   const angleOffsets = Array.from({ length: settings.sides }, () => (random() - .5) * Math.PI * 2 / settings.sides * variation * .48);
+  // The side strip duplicates side zero at U=1. Keep both UV vertices at the
+  // exact same position by sampling deformation once per unique ring/side.
+  const ringNoiseByRing = settings.rings.map(() => Array.from(
+    { length: settings.sides },
+    () => 1 + (random() - .5) * variation * .2
+  ));
   const ringShifts = settings.rings.map((_, ring) => ({
     x: (random() - .5) * size * variation * .14 * Math.sin(ring / (settings.rings.length - 1) * Math.PI),
     z: (random() - .5) * size * variation * .14 * Math.sin(ring / (settings.rings.length - 1) * Math.PI)
@@ -1056,8 +1062,7 @@ function geometryNodeRockGeometry(profile, size, variation, random, wallStone = 
     for (let side = 0; side <= settings.sides; side++) {
       const wrappedSide = side % settings.sides;
       const angle = wrappedSide / settings.sides * Math.PI * 2 + angleOffsets[wrappedSide];
-      const ringNoise = 1 + (random() - .5) * variation * .2;
-      const radius = settings.rings[ring] * sideNoise[wrappedSide] * ringNoise;
+      const radius = settings.rings[ring] * sideNoise[wrappedSide] * ringNoiseByRing[ring][wrappedSide];
       const crownShift = Math.sin(t * Math.PI) * 1.4;
       vertices.push(
         Math.cos(angle) * size * .56 * xStretch * radius + xBias * crownShift + ringShifts[ring].x,

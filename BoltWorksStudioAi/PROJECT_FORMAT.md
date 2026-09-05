@@ -224,8 +224,10 @@ When enabled, clump roots are rejected from the rotated XZ footprints of every
 upstream rock or wall stone, with extra room for blade width and lean.
 Rock and wall meshes are closed solids. Their side strip and planar top/bottom
 caps use separate UV islands, and the bottom cap winding faces outward so an
-assigned stone material remains visible and aligned from underneath. Compact
-rock clusters place every later stone against an existing neighbor and recenter
+assigned stone material remains visible and aligned from underneath. Rock
+variation shares each ring's deformation across the duplicated U=0/U=1
+side-strip vertices, keeping the UV seam physically closed at every setting.
+Compact rock clusters place every later stone against an existing neighbor and recenter
 the completed arrangement. Stone Wall scales its course density with Length
 and supports one to four independently staggered
 depth layers; the three-layer default forms two visible faces around a rubble

@@ -183,8 +183,10 @@ outer faces and overlap neighboring stones. Combine into Shell is appropriate
 when a single exterior shell is wanted because the hidden moss volume is already
 inside the rock. Rock side strips and planar top/bottom caps have separate UV
 islands, so verify the underside as well as the hero view after assigning a
-material. In stacked arrangements, raised stones must overlap the measured top
-bounds of at least one lower support; a nominal layer height is not sufficient.
+material. The duplicated U=0/U=1 strip vertices must share identical deformed
+positions at minimum, medium, and maximum Variation so irregularity never tears
+open the rock seam. In stacked arrangements, raised stones must overlap the
+measured top bounds of at least one lower support; a nominal layer height is not sufficient.
 Wall
 courses should favor larger lower stones while retaining substantial seeded
 size variation throughout the wall. Use at least two staggered depth layers for
