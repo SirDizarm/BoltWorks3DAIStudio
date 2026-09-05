@@ -252,9 +252,11 @@ formats and do not preserve all BWS editing information.
   its stone count scales with Length so long game-wall runs retain believable
   stone size instead of stretching a fixed row. Seeded per-stone color and
   roughness variation creates mixed stone faces. Moss uses larger low-poly
-  cushion volumes embedded into source stones rather than floating cards;
-  sheltered crack growth intersects stones on both wall faces and is ready for
-  Combine into Shell. Moisture, sunlight, and crack preference control its
+  closed, outward-facing cushion volumes embedded into source stones rather
+  than floating or inside-out cards; sheltered crack growth uses thicker solid
+  lumps that intersect stones on both wall faces and are ready for Combine into
+  Shell. Stacked stones use measured support heights and deliberate overlap so
+  varied stone sizes do not leave layer gaps. Moisture, sunlight, and crack preference control its
   habitat. Wall courses use tightly packed,
   broken seams with broader seeded size variation and larger stones near the base.
 - The Texture Editor includes a live PBR material sphere and a Normal channel

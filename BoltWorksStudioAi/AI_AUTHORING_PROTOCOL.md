@@ -176,14 +176,16 @@ without an image texture, and Moss Growth for bottom, middle, top, or all-height
 coverage. Leave **Avoid source geometry** enabled for ground vegetation and tune
 **Mask clearance** so blade roots, width, and lean do not intersect upstream
 rocks or wall stones. Keep these detail stages separate when variants need
-different growth. Moss Growth uses volumetric cushions deliberately embedded
-into their source stones; preserve the shared source transform and use
+different growth. Moss Growth uses closed, outward-facing volumetric cushions
+deliberately embedded into their source stones; preserve the shared source transform and use
 Thickness to tune their exposed depth. On walls, crack growth should cover both
 outer faces and overlap neighboring stones. Combine into Shell is appropriate
 when a single exterior shell is wanted because the hidden moss volume is already
 inside the rock. Rock side strips and planar top/bottom caps have separate UV
 islands, so verify the underside as well as the hero view after assigning a
-material. Wall
+material. In stacked arrangements, raised stones must overlap the measured top
+bounds of at least one lower support; a nominal layer height is not sufficient.
+Wall
 courses should favor larger lower stones while retaining substantial seeded
 size variation throughout the wall. Use at least two staggered depth layers for
 a masonry wall; the three-layer default adds a rubble core and is preferred when

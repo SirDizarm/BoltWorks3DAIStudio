@@ -68042,13 +68042,13 @@ void main() {
       const rootA = Math.sqrt(random()), rootB = random();
       const center = face.a.clone().multiplyScalar(1 - rootA).add(face.b.clone().multiplyScalar(rootA * (1 - rootB))).add(face.c.clone().multiplyScalar(rootA * rootB));
       const tangent = face.b.clone().sub(face.a).normalize();
-      const bitangent = new Vector3().crossVectors(face.normal, tangent).normalize();
+      const bitangent = new Vector3().crossVectors(tangent, face.normal).normalize();
       const sourceLimit = Math.max(0.08, Math.min(surface.size.x, surface.size.y, surface.size.z) * 0.42);
       const radius = MathUtils.clamp(Math.sqrt(Math.max(1e-4, face.area)) * (0.3 + random() * 0.3), 0.055, sourceLimit);
       const radiusX = radius * (0.8 + random() * 0.55);
       const radiusY = radius * (0.62 + random() * 0.5);
-      const radiusNormal = Math.max(thickness * (0.7 + random() * 0.45), radius * (0.24 + random() * 0.14));
-      const patchCenter = center.clone().addScaledVector(face.normal, -radiusNormal * 0.58);
+      const radiusNormal = Math.max(thickness * (1.15 + random() * 0.55), radius * (0.42 + random() * 0.18));
+      const patchCenter = center.clone().addScaledVector(face.normal, -radiusNormal * 0.64);
       const lump = new SphereGeometry(1, 7, 4);
       const lumpPosition = lump.getAttribute("position");
       const offset = vertices.length / 3;
@@ -68072,11 +68072,6 @@ void main() {
   }
   function geometryNodeCrackMossGeometry(surfaces, placement, density, thickness, minY, span, random) {
     const vertices = [], indices = [];
-    const addDoubleTriangle = (a2, b2, c2) => {
-      const start = vertices.length / 3;
-      vertices.push(...a2, ...b2, ...c2);
-      indices.push(start, start + 1, start + 2, start + 2, start + 1, start);
-    };
     const wallSurfaces = surfaces.filter((item) => item.kind === "wall");
     const minWallZ = Math.min(...wallSurfaces.map((surface) => surface.position.z));
     const maxWallZ = Math.max(...wallSurfaces.map((surface) => surface.position.z));
@@ -68092,28 +68087,29 @@ void main() {
         const center = new Vector3(
           surface.position.x + edge * surface.size.x * 0.45 + (random() - 0.5) * surface.size.x * 0.14,
           surface.position.y + surface.size.y * (0.12 + random() * 0.72),
-          surface.position.z + faceSign * surface.size.z * 0.39
+          surface.position.z + faceSign * surface.size.z * 0.24
         );
-        const radiusX = Math.max(0.045, Math.min(surface.size.x * 0.28, surface.size.y * (0.18 + random() * 0.24)));
-        const radiusY = radiusX * (0.55 + random() * 0.52);
+        const radiusX = Math.max(0.065, Math.min(surface.size.x * 0.34, surface.size.y * (0.24 + random() * 0.3)));
+        const radiusY = radiusX * (0.68 + random() * 0.58);
         const lobes = 2 + Math.floor(random() * 4);
         for (let lobe = 0; lobe < lobes; lobe++) {
-          const lobeCenter = center.clone().add(new Vector3((random() - 0.5) * radiusX * 1.25, (random() - 0.5) * radiusY * 1.35, faceSign * lobe * 2e-3));
-          const ring = [];
-          const sides = 8;
-          for (let side = 0; side < sides; side++) {
-            const angle = side / sides * Math.PI * 2;
-            const wobble = 0.62 + random() * 0.52;
-            const point = lobeCenter.clone().add(new Vector3(Math.cos(angle) * radiusX * wobble, Math.sin(angle) * radiusY * wobble, 0));
-            point.y = Math.max(4e-3, point.y);
-            ring.push(point);
+          const lobeCenter = center.clone().add(new Vector3((random() - 0.5) * radiusX * 1.15, (random() - 0.5) * radiusY * 1.2, faceSign * lobe * 4e-3));
+          const radiusDepth = Math.max(thickness * (1.35 + random() * 0.45), radiusX * (0.48 + random() * 0.16), surface.size.z * 0.3);
+          const lump = new SphereGeometry(1, 7, 5);
+          const lumpPositions = lump.getAttribute("position");
+          const offset = vertices.length / 3;
+          for (let vertex2 = 0; vertex2 < lumpPositions.count; vertex2++) {
+            const localX = lumpPositions.getX(vertex2), localY = lumpPositions.getY(vertex2), localZ = lumpPositions.getZ(vertex2);
+            const wobble = 1 + Math.sin((localX + lobe * 0.37) * 5.3 + localY * 3.7) * 0.07;
+            vertices.push(
+              lobeCenter.x + localX * radiusX * wobble,
+              Math.max(4e-3, lobeCenter.y + localY * radiusY * wobble),
+              lobeCenter.z + localZ * radiusDepth * wobble
+            );
           }
-          const crown = lobeCenter.clone().add(new Vector3(0, 0, faceSign * Math.max(thickness, radiusX * 0.28)));
-          crown.y = Math.max(4e-3, crown.y);
-          for (let side = 0; side < sides; side++) {
-            if (faceSign > 0) addDoubleTriangle(crown, ring[side], ring[(side + 1) % sides]);
-            else addDoubleTriangle(crown, ring[(side + 1) % sides], ring[side]);
-          }
+          const lumpIndices = lump.index?.array || Array.from({ length: lumpPositions.count }, (_, index) => index);
+          for (const index of lumpIndices) indices.push(offset + Number(index));
+          lump.dispose();
         }
       }
     }
@@ -68261,6 +68257,7 @@ void main() {
       const count = p.rockArrangement === "single" ? 1 : p.rockCount;
       const stackSlots = [];
       const clusterSlots = [];
+      const stackPlaced = [];
       const rockMeshes = [];
       if (p.rockArrangement === "stack") {
         let remaining = count;
@@ -68291,9 +68288,19 @@ void main() {
           z = anchor.z + Math.sin(angle) * distance;
         } else if (p.rockArrangement === "stack") {
           const { layer, inLayer, layerCount } = stackSlots[index];
-          x = (inLayer - (layerCount - 1) / 2) * p.rockSize * p.rockSpacing * 0.9 + (random() - 0.5) * p.rockSize * 0.08;
-          z = (random() - 0.5) * p.rockSize * 0.18;
-          y = layer * p.rockSize * 0.22;
+          x = (inLayer - (layerCount - 1) / 2) * p.rockSize * p.rockSpacing * 0.66 + (random() - 0.5) * p.rockSize * 0.055;
+          z = (random() - 0.5) * p.rockSize * 0.1;
+          if (layer) {
+            let supports = stackPlaced.filter((item) => item.layer === layer - 1 && Math.abs(item.x - x) <= (item.width + bounds.x) * 0.54);
+            if (!supports.length) {
+              const candidates = stackPlaced.filter((item) => item.layer === layer - 1);
+              supports = candidates.sort((left, right) => Math.abs(left.x - x) - Math.abs(right.x - x)).slice(0, 1);
+            }
+            const supportTop = Math.min(...supports.map((item) => item.y + item.height));
+            const overlap = Math.min(bounds.y, ...supports.map((item) => item.height)) * (0.16 + random() * 0.08);
+            y = Math.max(0, supportTop - overlap);
+          }
+          stackPlaced.push({ layer, x, z, y, width: bounds.x, height: bounds.y, depth: bounds.z });
         }
         if (p.rockArrangement === "cluster") clusterSlots.push({ x, z, radius: Math.max(bounds.x, bounds.z) * 0.5 });
         const position = new Vector3(x, y, z);

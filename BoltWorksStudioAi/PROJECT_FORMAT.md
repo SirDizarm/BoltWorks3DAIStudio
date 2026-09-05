@@ -231,10 +231,12 @@ and supports one to four independently staggered
 depth layers; the three-layer default forms two visible faces around a rubble
 core so course gaps reveal another stone instead of the background. Per-stone
 color and roughness variation remain seeded and reproducible. Moss Growth
-generates larger low-poly cushion volumes partially embedded in source stones
-instead of floating face cards. Wall crack growth is emitted on both outer
-faces and intersects adjacent stones, so Combine into Shell can discard the
-hidden interior while retaining the visible growth. Moisture increases growth,
+generates closed, outward-facing low-poly cushion volumes partially embedded in
+source stones instead of floating or inside-out face cards. Wall crack growth
+uses thicker closed lumps on both outer faces and intersects adjacent stones,
+so Combine into Shell can discard the hidden interior while retaining the
+visible growth. Stacked arrangements seat every raised stone into the actual
+top bounds of lower supports rather than using a fixed layer gap. Moisture increases growth,
 sun exposure suppresses it, and crack preference moves more moss into protected
 wall joints.
 

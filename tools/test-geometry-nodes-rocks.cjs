@@ -31,6 +31,35 @@ const worldXZBounds = objects => {
   return { minX, maxX, minZ, maxZ };
 };
 
+const signedTriangleVolume = object => {
+  const positions = object.geometry?.positions || [];
+  let volume = 0;
+  for (let index = 0; index + 8 < positions.length; index += 9) {
+    const ax = Number(positions[index]), ay = Number(positions[index + 1]), az = Number(positions[index + 2]);
+    const bx = Number(positions[index + 3]), by = Number(positions[index + 4]), bz = Number(positions[index + 5]);
+    const cx = Number(positions[index + 6]), cy = Number(positions[index + 7]), cz = Number(positions[index + 8]);
+    volume += ax * (by * cz - bz * cy) + ay * (bz * cx - bx * cz) + az * (bx * cy - by * cx);
+  }
+  return volume / 6;
+};
+
+const worldObjectBounds = object => {
+  const positions = object.geometry?.positions || [];
+  const angle = Number(object.rotation?.[1] || 0) * Math.PI / 180;
+  const cosine = Math.cos(angle), sine = Math.sin(angle);
+  const bounds = { minX: Infinity, maxX: -Infinity, minY: Infinity, maxY: -Infinity, minZ: Infinity, maxZ: -Infinity };
+  for (let index = 0; index < positions.length; index += 3) {
+    const localX = Number(positions[index]), localY = Number(positions[index + 1]), localZ = Number(positions[index + 2]);
+    const x = localX * cosine + localZ * sine + Number(object.position?.[0] || 0);
+    const y = localY + Number(object.position?.[1] || 0);
+    const z = -localX * sine + localZ * cosine + Number(object.position?.[2] || 0);
+    bounds.minX = Math.min(bounds.minX, x); bounds.maxX = Math.max(bounds.maxX, x);
+    bounds.minY = Math.min(bounds.minY, y); bounds.maxY = Math.max(bounds.maxY, y);
+    bounds.minZ = Math.min(bounds.minZ, z); bounds.maxZ = Math.max(bounds.maxZ, z);
+  }
+  return bounds;
+};
+
 const assertClosedCapUvs = (object, slug) => {
   const positions = object.geometry?.positions || [], uvs = object.geometry?.uvs || [];
   const savedIndices = object.geometry?.indices || [];
@@ -165,12 +194,10 @@ const assets = [
       await page.locator("#resetZoomBtn").click();
       await page.waitForTimeout(450);
       await page.screenshot({ path: `exports/${asset.slug}-preview.png`, fullPage: false });
-      if (asset.cluster.graph.nodeOrder.includes("stoneWall")) {
-        for (const [viewName, buttonId] of [["front", "#previewFrontBtn"], ["back", "#previewBackBtn"], ["left", "#previewLeftBtn"], ["right", "#previewRightBtn"], ["top", "#previewTopBtn"], ["iso", "#previewIsoBtn"]]) {
-          await page.locator(buttonId).click();
-          await page.waitForTimeout(250);
-          await page.locator("#canvas").screenshot({ path: `exports/${asset.slug}-${viewName}.png` });
-        }
+      for (const [viewName, buttonId] of [["front", "#previewFrontBtn"], ["back", "#previewBackBtn"], ["left", "#previewLeftBtn"], ["right", "#previewRightBtn"], ["top", "#previewTopBtn"], ["iso", "#previewIsoBtn"]]) {
+        await page.locator(buttonId).click();
+        await page.waitForTimeout(250);
+        await page.locator("#canvas").screenshot({ path: `exports/${asset.slug}-${viewName}.png` });
       }
       await popup.locator("#geometryNodeDetachedBakeBtn").click();
       const projectDownloadPromise = page.waitForEvent("download");
@@ -197,6 +224,7 @@ const assets = [
           if (x >= sourceBounds.minX && x <= sourceBounds.maxX && y >= sourceBounds.minY && y <= sourceBounds.maxY && z >= sourceBounds.minZ && z <= sourceBounds.maxZ) embeddedVertices++;
         }
         assert(embeddedVertices > 0, `${asset.slug} moss must intersect its source rock for Combine into Shell`);
+        assert(signedTriangleVolume(moss) > .000001, `${asset.slug} ${moss.name} must be a closed outward-facing moss volume`);
       }
       const crackMoss = project.scene.objects.find(object => / Moss cracks$/.test(object.name || ""));
       if (asset.cluster.graph.nodeOrder.includes("stoneWall")) {
@@ -204,6 +232,7 @@ const assets = [
         if (crackMoss) {
           const crackBounds = geometryBounds(crackMoss);
           assert(crackBounds.minZ < -.1 && crackBounds.maxZ > .1, `${asset.slug} crack moss must cover both wall faces`);
+          assert(signedTriangleVolume(crackMoss) > .000001, `${asset.slug} crack moss must have closed outward-facing volume`);
         }
         const wallStones = project.scene.objects.filter(object => /Wall stone \d+\.\d+\.\d+$/.test(object.name || ""));
         assert(new Set(wallStones.map(object => object.name.match(/Wall stone (\d+)\./)?.[1])).size >= 2, `${asset.slug} must contain staggered depth layers`);
@@ -220,6 +249,20 @@ const assets = [
             const dz = Math.abs(Number(rock.position[2]) - Number(other.position[2]));
             return dx <= (bounds.halfX + otherBounds.halfX) * 1.08 && dz <= (bounds.halfZ + otherBounds.halfZ) * 1.08;
           }), `${asset.slug} ${rock.name} must touch the clustered outcrop`);
+        }
+      }
+      if (asset.cluster.graph.params.rockArrangement === "stack") {
+        const rocks = project.scene.objects.filter(object => / Rock \d+$/.test(object.name || ""));
+        const boundsByRock = new Map(rocks.map(rock => [rock, worldObjectBounds(rock)]));
+        for (const rock of rocks.filter(rock => Number(rock.position?.[1] || 0) > .04)) {
+          const bounds = boundsByRock.get(rock);
+          assert(rocks.some(other => {
+            if (other === rock || Number(other.position?.[1] || 0) >= Number(rock.position?.[1] || 0)) return false;
+            const support = boundsByRock.get(other);
+            return bounds.minX < support.maxX && bounds.maxX > support.minX
+              && bounds.minZ < support.maxZ && bounds.maxZ > support.minZ
+              && bounds.minY < support.maxY - .005;
+          }), `${asset.slug} ${rock.name} must overlap a lower support stone`);
         }
       }
       assertGrassRootsOutsideSources(project, asset.slug);
