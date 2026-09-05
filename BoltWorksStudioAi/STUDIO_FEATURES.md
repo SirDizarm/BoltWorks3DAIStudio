@@ -7,7 +7,7 @@ contract; this file explains how to use the current editor.
 
 ## Game Asset Kit
 
-### Dice Gameplay demo (49.64.0)
+### Dice Gameplay demo (49.64.1)
 
 Launch from **Toolbars → Examples → Dice demo**. An optional right-side Players panel supports 1–12 editable names and a Next player turn-order control, wrapping back to the first without rerolling. This is local page-session state, also available in the standalone HTML.
 
