@@ -222,14 +222,21 @@ with bottom, middle, top, or all-height placement. Grass Scatter stores a
 `grassAvoidGeometry` footprint-mask toggle and adjustable `grassClearance`.
 When enabled, clump roots are rejected from the rotated XZ footprints of every
 upstream rock or wall stone, with extra room for blade width and lean.
-Rock and wall meshes include outward-facing top caps. Stone Wall scales its
-course density with Length and supports one to four independently staggered
+Rock and wall meshes are closed solids. Their side strip and planar top/bottom
+caps use separate UV islands, and the bottom cap winding faces outward so an
+assigned stone material remains visible and aligned from underneath. Compact
+rock clusters place every later stone against an existing neighbor and recenter
+the completed arrangement. Stone Wall scales its course density with Length
+and supports one to four independently staggered
 depth layers; the three-layer default forms two visible faces around a rubble
 core so course gaps reveal another stone instead of the background. Per-stone
-color and roughness variation remain seeded and reproducible. Moss Growth generates
-small irregular surface cushions and crack growth instead of coating whole
-low-poly faces. Moisture increases growth, sun exposure suppresses it, and crack
-preference moves more moss into protected wall joints.
+color and roughness variation remain seeded and reproducible. Moss Growth
+generates larger low-poly cushion volumes partially embedded in source stones
+instead of floating face cards. Wall crack growth is emitted on both outer
+faces and intersects adjacent stones, so Combine into Shell can discard the
+hidden interior while retaining the visible growth. Moisture increases growth,
+sun exposure suppresses it, and crack preference moves more moss into protected
+wall joints.
 
 ### Portable node clusters (`.bwnc`)
 

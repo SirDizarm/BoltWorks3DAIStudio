@@ -244,13 +244,18 @@ formats and do not preserve all BWS editing information.
   Grass Scatter includes a default-on projected exclusion mask and adjustable
   clearance, preventing clump roots and leaning blades from clipping through
   the rotated footprints of upstream rocks and wall stones.
-  Rock meshes are closed with visible top caps. Stone Wall supports one to four
-  staggered depth layers and defaults to three-layer masonry with a rubble core;
+  Rock meshes are closed solids with outward-facing top and bottom caps. Side,
+  top, and bottom UV islands are separated so a stone material can cover every
+  face without side-strip smearing; compact clusters are neighbor-connected and
+  recentered. Stone Wall supports one to four staggered depth layers and defaults
+  to three-layer masonry with a rubble core;
   its stone count scales with Length so long game-wall runs retain believable
   stone size instead of stretching a fixed row. Seeded per-stone color and
-  roughness variation creates mixed stone faces. Moss is projected from source
-  surfaces as irregular cushions and sheltered crack growth. Moisture, sunlight,
-  and crack preference control its habitat. Wall courses use tightly packed,
+  roughness variation creates mixed stone faces. Moss uses larger low-poly
+  cushion volumes embedded into source stones rather than floating cards;
+  sheltered crack growth intersects stones on both wall faces and is ready for
+  Combine into Shell. Moisture, sunlight, and crack preference control its
+  habitat. Wall courses use tightly packed,
   broken seams with broader seeded size variation and larger stones near the base.
 - The Texture Editor includes a live PBR material sphere and a Normal channel
   alongside Base Color, Roughness, Metalness, and Emissive. Normal images are

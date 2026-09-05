@@ -67977,6 +67977,21 @@ void main() {
       const a2 = ring * stride + side, b2 = a2 + 1, c2 = a2 + stride, d = c2 + 1;
       indices.push(a2, c2, b2, b2, c2, d);
     }
+    const bottomRim = vertices.length / 3;
+    const topRingStart = (settings.rings.length - 1) * stride;
+    for (let side = 0; side < settings.sides; side++) {
+      const source = side;
+      vertices.push(vertices[source * 3], vertices[source * 3 + 1], vertices[source * 3 + 2]);
+      const angle = side / settings.sides * Math.PI * 2;
+      uvs.push(0.5 + Math.cos(angle) * 0.48, 0.5 + Math.sin(angle) * 0.48);
+    }
+    const topRim = vertices.length / 3;
+    for (let side = 0; side < settings.sides; side++) {
+      const source = topRingStart + side;
+      vertices.push(vertices[source * 3], vertices[source * 3 + 1], vertices[source * 3 + 2]);
+      const angle = side / settings.sides * Math.PI * 2;
+      uvs.push(0.5 + Math.cos(angle) * 0.48, 0.5 + Math.sin(angle) * 0.48);
+    }
     const bottomCenter = vertices.length / 3;
     vertices.push(0, 0, 0);
     uvs.push(0.5, 0.5);
@@ -67984,9 +67999,9 @@ void main() {
     vertices.push(xBias * 1.45, settings.height * size * 1.02, zBias * 1.45);
     uvs.push(0.5, 0.5);
     for (let side = 0; side < settings.sides; side++) {
-      indices.push(bottomCenter, side + 1, side);
-      const topStart = (settings.rings.length - 1) * stride;
-      indices.push(topCenter, topStart + side + 1, topStart + side);
+      const next = (side + 1) % settings.sides;
+      indices.push(bottomCenter, bottomRim + side, bottomRim + next);
+      indices.push(topCenter, topRim + next, topRim + side);
     }
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new Float32BufferAttribute(vertices, 3));
@@ -68021,35 +68036,31 @@ void main() {
       eligible.push({ a: a2.clone(), b: b2.clone(), c: c2.clone(), normal: normal.clone(), area: edgeA.cross(edgeB).length() * 0.5 });
     }
     if (!eligible.length) return null;
-    const addDoubleTriangle = (first, second, third) => {
-      const start = vertices.length / 3;
-      vertices.push(...first.toArray(), ...second.toArray(), ...third.toArray());
-      indices.push(start, start + 1, start + 2, start + 2, start + 1, start);
-    };
-    const patchCount = Math.max(3, Math.round(4 + coverage * 16));
+    const patchCount = Math.max(2, Math.round(2 + coverage * 9));
     for (let patch = 0; patch < patchCount; patch++) {
       const face = eligible[Math.floor(random() * eligible.length)];
       const rootA = Math.sqrt(random()), rootB = random();
       const center = face.a.clone().multiplyScalar(1 - rootA).add(face.b.clone().multiplyScalar(rootA * (1 - rootB))).add(face.c.clone().multiplyScalar(rootA * rootB));
       const tangent = face.b.clone().sub(face.a).normalize();
       const bitangent = new Vector3().crossVectors(face.normal, tangent).normalize();
-      const radius = Math.max(0.018, Math.sqrt(Math.max(1e-4, face.area)) * (0.13 + random() * 0.22));
-      const lift = Math.min(0.018, 4e-3 + thickness * 0.12);
-      const patchCenter = center.clone().addScaledVector(face.normal, lift);
-      const rim = [];
-      const sides = 7;
-      for (let side = 0; side < sides; side++) {
-        const angle = side / sides * Math.PI * 2;
-        const edgeRadius = radius * (0.62 + random() * 0.55);
-        rim.push(patchCenter.clone().addScaledVector(tangent, Math.cos(angle) * edgeRadius).addScaledVector(bitangent, Math.sin(angle) * edgeRadius));
+      const sourceLimit = Math.max(0.08, Math.min(surface.size.x, surface.size.y, surface.size.z) * 0.42);
+      const radius = MathUtils.clamp(Math.sqrt(Math.max(1e-4, face.area)) * (0.3 + random() * 0.3), 0.055, sourceLimit);
+      const radiusX = radius * (0.8 + random() * 0.55);
+      const radiusY = radius * (0.62 + random() * 0.5);
+      const radiusNormal = Math.max(thickness * (0.7 + random() * 0.45), radius * (0.24 + random() * 0.14));
+      const patchCenter = center.clone().addScaledVector(face.normal, -radiusNormal * 0.58);
+      const lump = new SphereGeometry(1, 7, 4);
+      const lumpPosition = lump.getAttribute("position");
+      const offset = vertices.length / 3;
+      for (let vertex2 = 0; vertex2 < lumpPosition.count; vertex2++) {
+        const localX = lumpPosition.getX(vertex2), localY = lumpPosition.getY(vertex2), localZ = lumpPosition.getZ(vertex2);
+        const point = patchCenter.clone().addScaledVector(tangent, localX * radiusX).addScaledVector(face.normal, localY * radiusNormal).addScaledVector(bitangent, localZ * radiusY);
+        point.y = Math.max(4e-3 - surface.position.y, point.y);
+        vertices.push(point.x, point.y, point.z);
       }
-      for (let side = 0; side < sides; side++) addDoubleTriangle(patchCenter, rim[side], rim[(side + 1) % sides]);
-      if (random() < 0.72) {
-        const tuftDirection = face.normal.clone().multiplyScalar(thickness * (0.45 + random() * 0.8)).addScaledVector(tangent, (random() - 0.5) * radius * 0.8);
-        const tuftTip = patchCenter.clone().add(tuftDirection);
-        const tuftHalfWidth = radius * (0.055 + random() * 0.045);
-        addDoubleTriangle(patchCenter.clone().addScaledVector(bitangent, -tuftHalfWidth), patchCenter.clone().addScaledVector(bitangent, tuftHalfWidth), tuftTip);
-      }
+      const lumpIndices = lump.index?.array || Array.from({ length: lumpPosition.count }, (_, index) => index);
+      for (const index of lumpIndices) indices.push(offset + Number(index));
+      lump.dispose();
     }
     const geometry = new BufferGeometry();
     geometry.setAttribute("position", new Float32BufferAttribute(vertices, 3));
@@ -68066,33 +68077,44 @@ void main() {
       vertices.push(...a2, ...b2, ...c2);
       indices.push(start, start + 1, start + 2, start + 2, start + 1, start);
     };
-    for (const surface of surfaces.filter((item) => item.kind === "wall")) {
+    const wallSurfaces = surfaces.filter((item) => item.kind === "wall");
+    const minWallZ = Math.min(...wallSurfaces.map((surface) => surface.position.z));
+    const maxWallZ = Math.max(...wallSurfaces.map((surface) => surface.position.z));
+    const hasSeparateFaces = maxWallZ - minWallZ > 0.05;
+    for (const surface of wallSurfaces) {
       const normalized = (surface.position.y + surface.size.y * 0.5 - minY) / span;
       const inBand = placement === "all" || placement === "bottom" && normalized <= 0.46 || placement === "middle" && normalized > 0.24 && normalized < 0.76 || placement === "top" && normalized >= 0.54;
-      if (!inBand || random() > density) continue;
-      const edge = random() < 0.72 ? random() < 0.5 ? -1 : 1 : 0;
-      const center = new Vector3(
-        surface.position.x + edge * surface.size.x * 0.46 + (random() - 0.5) * surface.size.x * 0.12,
-        surface.position.y + surface.size.y * (0.12 + random() * 0.72),
-        surface.position.z + surface.size.z * 0.52 + 6e-3
-      );
-      const radiusX = Math.max(0.025, Math.min(surface.size.x * 0.22, surface.size.y * (0.12 + random() * 0.17)));
-      const radiusY = radiusX * (0.48 + random() * 0.45);
-      const lobes = 2 + Math.floor(random() * 3);
-      for (let lobe = 0; lobe < lobes; lobe++) {
-        const lobeCenter = center.clone().add(new Vector3((random() - 0.5) * radiusX * 1.2, (random() - 0.5) * radiusY * 1.3, lobe * 2e-3));
-        const ring = [];
-        const sides = 8;
-        for (let side = 0; side < sides; side++) {
-          const angle = side / sides * Math.PI * 2;
-          const wobble = 0.62 + random() * 0.52;
-          const point = lobeCenter.clone().add(new Vector3(Math.cos(angle) * radiusX * wobble, Math.sin(angle) * radiusY * wobble, 0));
-          point.y = Math.max(4e-3, point.y);
-          ring.push(point);
+      if (!inBand) continue;
+      const faceSigns = hasSeparateFaces ? [surface.position.z <= (minWallZ + maxWallZ) * 0.5 ? -1 : 1] : [-1, 1];
+      for (const faceSign of faceSigns) {
+        if (random() > density) continue;
+        const edge = random() < 0.78 ? random() < 0.5 ? -1 : 1 : 0;
+        const center = new Vector3(
+          surface.position.x + edge * surface.size.x * 0.45 + (random() - 0.5) * surface.size.x * 0.14,
+          surface.position.y + surface.size.y * (0.12 + random() * 0.72),
+          surface.position.z + faceSign * surface.size.z * 0.39
+        );
+        const radiusX = Math.max(0.045, Math.min(surface.size.x * 0.28, surface.size.y * (0.18 + random() * 0.24)));
+        const radiusY = radiusX * (0.55 + random() * 0.52);
+        const lobes = 2 + Math.floor(random() * 4);
+        for (let lobe = 0; lobe < lobes; lobe++) {
+          const lobeCenter = center.clone().add(new Vector3((random() - 0.5) * radiusX * 1.25, (random() - 0.5) * radiusY * 1.35, faceSign * lobe * 2e-3));
+          const ring = [];
+          const sides = 8;
+          for (let side = 0; side < sides; side++) {
+            const angle = side / sides * Math.PI * 2;
+            const wobble = 0.62 + random() * 0.52;
+            const point = lobeCenter.clone().add(new Vector3(Math.cos(angle) * radiusX * wobble, Math.sin(angle) * radiusY * wobble, 0));
+            point.y = Math.max(4e-3, point.y);
+            ring.push(point);
+          }
+          const crown = lobeCenter.clone().add(new Vector3(0, 0, faceSign * Math.max(thickness, radiusX * 0.28)));
+          crown.y = Math.max(4e-3, crown.y);
+          for (let side = 0; side < sides; side++) {
+            if (faceSign > 0) addDoubleTriangle(crown, ring[side], ring[(side + 1) % sides]);
+            else addDoubleTriangle(crown, ring[(side + 1) % sides], ring[side]);
+          }
         }
-        const crown = lobeCenter.clone().add(new Vector3(0, 0, thickness * (0.34 + random() * 0.28)));
-        crown.y = Math.max(4e-3, crown.y);
-        for (let side = 0; side < sides; side++) addDoubleTriangle(crown, ring[side], ring[(side + 1) % sides]);
       }
     }
     if (!vertices.length) return null;
@@ -68238,6 +68260,8 @@ void main() {
     if (activeNodes.has("rocks")) {
       const count = p.rockArrangement === "single" ? 1 : p.rockCount;
       const stackSlots = [];
+      const clusterSlots = [];
+      const rockMeshes = [];
       if (p.rockArrangement === "stack") {
         let remaining = count;
         const baseCount = Math.max(1, Math.ceil((Math.sqrt(8 * count + 1) - 1) / 2));
@@ -68251,26 +68275,57 @@ void main() {
         const sizeSample = Math.pow(random(), 1.35);
         let scale = p.rockSize * (0.42 + sizeSample * (1.08 + p.rockVariation * 0.36));
         let x = 0, z = 0, y = 0;
-        if (p.rockArrangement === "line") x = (index - (count - 1) / 2) * p.rockSpacing * p.rockSize;
-        else if (p.rockArrangement === "cluster") {
-          const angle = random() * Math.PI * 2;
-          const radius = index ? p.rockSpacing * p.rockSize * (0.2 + Math.sqrt(random()) * 0.82) : 0;
-          x = Math.cos(angle) * radius;
-          z = Math.sin(angle) * radius;
-        } else if (p.rockArrangement === "stack") {
+        if (p.rockArrangement === "stack") {
           const { layer, inLayer, layerCount } = stackSlots[index];
           scale *= Math.max(0.58, 1.16 - layer * 0.16);
+        }
+        const geometry = geometryNodeRockGeometry(p.rockProfile, scale, p.rockVariation, random);
+        const bounds = geometry.boundingBox.getSize(new Vector3());
+        if (p.rockArrangement === "line") x = (index - (count - 1) / 2) * p.rockSpacing * p.rockSize;
+        else if (p.rockArrangement === "cluster" && index) {
+          const anchor = clusterSlots[Math.floor(random() * clusterSlots.length)];
+          const angle = random() * Math.PI * 2;
+          const footprintRadius = Math.max(bounds.x, bounds.z) * 0.5;
+          const distance = (anchor.radius + footprintRadius) * (0.58 + random() * 0.28);
+          x = anchor.x + Math.cos(angle) * distance;
+          z = anchor.z + Math.sin(angle) * distance;
+        } else if (p.rockArrangement === "stack") {
+          const { layer, inLayer, layerCount } = stackSlots[index];
           x = (inLayer - (layerCount - 1) / 2) * p.rockSize * p.rockSpacing * 0.9 + (random() - 0.5) * p.rockSize * 0.08;
           z = (random() - 0.5) * p.rockSize * 0.18;
           y = layer * p.rockSize * 0.22;
         }
-        const geometry = geometryNodeRockGeometry(p.rockProfile, scale, p.rockVariation, random);
-        const bounds = geometry.boundingBox.getSize(new Vector3());
+        if (p.rockArrangement === "cluster") clusterSlots.push({ x, z, radius: Math.max(bounds.x, bounds.z) * 0.5 });
         const position = new Vector3(x, y, z);
         const rotationY = random() * Math.PI * 2;
         natureSurfaces.push({ kind: "rock", position, size: bounds.clone(), rotationY, geometry: geometry.clone() });
         const shade = new Color(p.rockColor).offsetHSL((random() - 0.5) * 0.018, 0, (random() - 0.5) * 0.1);
-        addGenerated(geometryNodeCustomSpec(geometry, { name: `${outputName} Rock ${index + 1}`, position: position.toArray(), rotation: [0, MathUtils.radToDeg(rotationY), 0], color: `#${shade.getHexString()}`, roughness: 0.94, group }));
+        rockMeshes.push(addGenerated(geometryNodeCustomSpec(geometry, { name: `${outputName} Rock ${index + 1}`, position: position.toArray(), rotation: [0, MathUtils.radToDeg(rotationY), 0], color: `#${shade.getHexString()}`, roughness: 0.94, group })));
+      }
+      if (rockMeshes.length) {
+        const clusterBounds = new Box3().makeEmpty();
+        for (const surface of natureSurfaces.filter((surface2) => surface2.kind === "rock")) {
+          const positions = surface.geometry.getAttribute("position");
+          const cosine = Math.cos(surface.rotationY), sine = Math.sin(surface.rotationY);
+          for (let vertex2 = 0; vertex2 < positions.count; vertex2++) {
+            const localX = positions.getX(vertex2), localY = positions.getY(vertex2), localZ = positions.getZ(vertex2);
+            clusterBounds.expandByPoint(new Vector3(
+              localX * cosine + localZ * sine + surface.position.x,
+              localY + surface.position.y,
+              -localX * sine + localZ * cosine + surface.position.z
+            ));
+          }
+        }
+        const center = clusterBounds.getCenter(new Vector3());
+        const centerX = center.x, centerZ = center.z;
+        for (const surface of natureSurfaces.filter((surface2) => surface2.kind === "rock")) {
+          surface.position.x -= centerX;
+          surface.position.z -= centerZ;
+        }
+        for (const mesh of rockMeshes) {
+          mesh.position.x -= centerX;
+          mesh.position.z -= centerZ;
+        }
       }
     }
     if (activeNodes.has("stoneWall")) {
