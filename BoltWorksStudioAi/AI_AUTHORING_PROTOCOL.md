@@ -127,3 +127,64 @@ The asset is complete only when all are true:
 - all six cells were reviewed;
 - the asset reads correctly in silhouette and close detail;
 - remaining limitations are explicitly reported.
+
+## Geometry Nodes authoring
+
+For reusable assets that are not locked to the tree preset, start with Mesh
+Primitive or Tapered Stem, add Branch Array and Cluster Scatter as needed, and
+combine independent streams with Join Geometry. Junction Blend adds elongated
+collars at branch origins to visually bridge a branch into its supporting stem.
+Tapered Stem exposes base/top radius, segments, radial sides, lean, root flare,
+and color; Branch Array exposes count, length, rise, radius, taper, twist, and
+color. These cards are ordinary geometry stages and can be mixed with later
+non-tree generators.
+
+When the Geometry Nodes plugin is used, add optional stages from the node menu,
+set their exposed inputs, and keep Trunk and Group Output in the graph before
+building. Use Tree Variant for broad, round, tall, sparse, bare, seasonal, snowy,
+sapling, mature, and ancient forms before manually tuning the lower-level nodes.
+The Trunk node generates one continuous tapered mesh so its segment rings do not
+create open seams. Use Smooth Joints for branch junction coverage. Use Cut Knot
+for an inward-facing cut branch with visible rings at the trunk surface.
+Use Cut Rings when the underside of a trunk, stump, or felled tree will be visible.
+Before applying Smooth Geometry to a production tree, add Primitive Smooth Test
+and verify the cube, five-sided prism, and low-sided cone silhouettes. Right-click
+the exact node and add Smooth Geometry from its custom menu, or place a free
+Smooth Geometry card and draw its connections manually. Each attachment has
+independent settings, so Trunk, Branches, and Canopy can be tuned separately and
+can each receive more than one modifier. Unconnected nodes remain saved and do
+not affect Group Output. Use XYZ for normal asset
+smoothing; XY, XZ, YZ, and X/Y/Z-only modes constrain real vertex movement while
+leaving unselected coordinates unchanged. The same right-click menu exposes the
+node's normally hidden ID, socket types, canvas position, and connection counts.
+Use the mouse wheel to zoom and middle-drag or Space-drag to pan the detached board.
+Bake & Detach only after the generated result passes the same real-app
+render and visual inspection gates above; baking intentionally stops the scene
+parts from following later graph edits.
+
+Use **Copy node string** when another AI or collaborator needs the graph inline.
+Use **Save .bwnc** for a reusable node-cluster template. Both formats omit
+generated scene IDs. Import through **Paste node string** or **Load .bwnc**;
+the studio must create a new sanitized graph rather than overwrite the active
+graph. Build and inspect the imported graph before treating it as trusted model
+output.
+
+For nature props, Rock Generator creates single, clustered, lined, or stacked
+rounded, jagged, flat, or boulder stones. Stone Wall creates irregular
+dry-stacked courses. Chain Grass Scatter for lightweight crossed blade sheets
+without an image texture, and Moss Growth for bottom, middle, top, or all-height
+coverage. Leave **Avoid source geometry** enabled for ground vegetation and tune
+**Mask clearance** so blade roots, width, and lean do not intersect upstream
+rocks or wall stones. Keep these detail stages separate when variants need
+different growth. Moss Growth is a conforming projected surface; preserve its
+shared source transform and use Thickness only as a small normal offset. Wall
+courses should favor larger lower stones while retaining substantial seeded
+size variation throughout the wall. Use at least two staggered depth layers for
+a masonry wall; the three-layer default adds a rubble core and is preferred when
+the wall must not show daylight through aligned joints. Length can generate
+extended runs, while Stones / 7 units keeps stone scale consistent as the wall
+grows. Use Moisture, Sun exposure, and Crack
+preference to place moss by habitat rather than assuming it belongs only on top.
+Use the Texture Editor's live material sphere to judge Base Color, Roughness,
+Metalness, Normal, and Emissive together. A tangent-space normal map uses neutral
+`#8080ff`; it changes lighting detail and does not replace silhouette geometry.

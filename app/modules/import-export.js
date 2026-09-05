@@ -62,6 +62,8 @@ function serializeObject(mesh) {
     roughnessTextureName: mesh.userData.roughnessTextureName || null,
     metalnessTextureUrl: mesh.userData.metalnessTextureUrl || null,
     metalnessTextureName: mesh.userData.metalnessTextureName || null,
+    normalTextureUrl: mesh.userData.normalTextureUrl || null,
+    normalTextureName: mesh.userData.normalTextureName || null,
     emissiveTextureUrl: mesh.userData.emissiveTextureUrl || null,
     emissiveTextureName: mesh.userData.emissiveTextureName || null,
     playerAvatar: !!mesh.userData.playerAvatar,
@@ -133,7 +135,7 @@ function projectCapabilities() {
     shapes: Object.keys(shapeFactories),
     transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
     faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "keyholeCutter", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "pullToTarget", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
-    textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary", "baseColorPaint", "roughnessPaint", "metalnessPaint", "emissivePaint"],
+    textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary", "baseColorPaint", "roughnessPaint", "metalnessPaint", "normalPaint", "emissivePaint", "materialPreviewSphere"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
     sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes", "combineShell"],
     lighting: ["mainLamp", "mirrorLamp", "lightGuides", "lampAim", "lampStrength", "coneAngle"],
@@ -171,6 +173,7 @@ function projectState() {
     savedAt: new Date().toISOString(),
     capabilities: projectCapabilities(),
     textureLibrary: textureLibraryEntries,
+    pluginData: typeof serializeOptionalPluginProjectData === "function" ? serializeOptionalPluginProjectData() : {},
     scene,
     editor: {
       projectName,
@@ -320,6 +323,7 @@ function materialTextureReferenceFields() {
     ["textureUrl", "textureName"],
     ["roughnessTextureUrl", "roughnessTextureName"],
     ["metalnessTextureUrl", "metalnessTextureName"],
+    ["normalTextureUrl", "normalTextureName"],
     ["emissiveTextureUrl", "emissiveTextureName"]
   ];
 }
@@ -474,6 +478,7 @@ function undo() {
   }
   // Undo must restore the rig too (bones are part of the editor snapshot).
   if (previous.editor?.rigging && typeof restoreBoneRig === "function") restoreBoneRig(previous.editor.rigging);
+  if (typeof restoreOptionalPluginProjectData === "function") restoreOptionalPluginProjectData(previous.pluginData || {});
   isRestoring = false;
   updateUndoButton();
   log("Undo.");
@@ -686,6 +691,7 @@ function loadProjectData(data, fileName = "Project") {
       loadState(data.scene, { record: false });
       reconcileTextureRobloxIds();
       applyProjectEditorState(data.editor || {});
+      if (typeof restoreOptionalPluginProjectData === "function") restoreOptionalPluginProjectData(data.pluginData || {});
     } finally {
       isProjectLoading = false;
     }
@@ -703,6 +709,7 @@ function loadProjectData(data, fileName = "Project") {
       if (els.projectNameInput) els.projectNameInput.value = baseNameFromFileName(fileName, "modeler-scene");
       loadState(data, { record: false });
       reconcileTextureRobloxIds();
+      if (typeof restoreOptionalPluginProjectData === "function") restoreOptionalPluginProjectData({});
     } finally {
       isProjectLoading = false;
     }

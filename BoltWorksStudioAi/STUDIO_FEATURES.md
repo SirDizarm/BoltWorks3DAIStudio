@@ -220,6 +220,50 @@ formats and do not preserve all BWS editing information.
   workflows. Human AI Viewer and MCP work sessions provide visible, auditable
   AI-assisted editing rather than hidden background mutations.
 - Plugins can be created or imported through the Plugins panel.
+- The bundled Geometry Nodes plugin is disabled by default until explicitly
+  enabled in the Plugins menu. Once enabled, it provides a reusable procedural-tree graph
+  with Seed, Trunk, Branches, Canopy, and Group Output nodes. A graph can update
+  its linked tree repeatedly or bake the current result into ordinary editable
+  BWS parts. Disabling the plugin unloads the node editor but keeps its graph
+  data and generated scene objects; only Delete graph removes the saved graph.
+  **Open detached editor** opens the same live graph in a separate resizable
+  window, so it can stay beside the 3D viewport or move to another monitor.
+  The sidebar shows a fitted overview of the complete graph; use the detached
+  editor for readable full-size controls. Closing that window keeps the graph;
+  disabling the plugin closes it.
+- Geometry Nodes also includes general-purpose Mesh Primitive, Tapered Stem,
+  Branch Array, Junction Blend, Cluster Scatter, Join Geometry, Smooth Geometry,
+  and Output Transform cards. These can form a graph without Tree Variant or the
+  older tree-growth cards. Join Geometry accepts several incoming streams;
+  Junction Blend hides hard branch/stem transitions with adjustable collars.
+  The main action is labeled **Build / Update Geometry** because graphs may now
+  produce more than trees.
+- Nature nodes add single, clustered, lined, or stacked procedural rocks,
+  irregular dry-stacked stone walls, texture-free grass blade sheets, and moss
+  placement at the bottom, middle, top, or all heights of compatible geometry.
+  Grass Scatter includes a default-on projected exclusion mask and adjustable
+  clearance, preventing clump roots and leaning blades from clipping through
+  the rotated footprints of upstream rocks and wall stones.
+  Rock meshes are closed with visible top caps. Stone Wall supports one to four
+  staggered depth layers and defaults to three-layer masonry with a rubble core;
+  its stone count scales with Length so long game-wall runs retain believable
+  stone size instead of stretching a fixed row. Seeded per-stone color and
+  roughness variation creates mixed stone faces. Moss is projected from source
+  surfaces as irregular cushions and sheltered crack growth. Moisture, sunlight,
+  and crack preference control its habitat. Wall courses use tightly packed,
+  broken seams with broader seeded size variation and larger stones near the base.
+- The Texture Editor includes a live PBR material sphere and a Normal channel
+  alongside Base Color, Roughness, Metalness, and Emissive. Normal images are
+  saved in the project texture library and round-trip with editable projects.
+- New Workspace starts Geometry Nodes with a neutral Seed and Group Output board;
+  it does not insert the procedural-tree template. Saved tree graphs still load
+  unchanged.
+- **Copy node string** copies the active graph as portable JSON for another AI
+  or collaborator. **Paste node string** imports that text as a new editable
+  graph. **Save .bwnc** and **Load .bwnc** provide the same round-trip as a small
+  file containing nodes, settings, connections, positions, and graph view—but
+  no generated scene meshes or linked scene IDs. Imported clusters receive a
+  fresh graph ID and cannot overwrite the active graph.
 
 Use a fresh QA Sheet after changes to a rig, texture, model orientation, or
 export setting. For animated assets, also inspect the output sheet or video.

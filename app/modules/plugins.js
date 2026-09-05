@@ -4,13 +4,17 @@ const BUNDLED_PLUGINS = Object.freeze([
     contributes: Object.freeze({ workspaces: ["minecraft"], importers: ["bbmodel"], exporters: ["neoforge-1.21.1"] }) }),
   Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "scene-rendering", name: "Scene Rendering", version: "1.0.0", bundled: true, enabled: false }),
   Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "boltworks-game-engine", name: "BoltWorks Game Engine", version: "1.0.0", bundled: true, enabled: true,
-    contributes: Object.freeze({ exporters: ["glb", "bws-character"], runtimes: ["raylib-layered-character"] }) })
+    contributes: Object.freeze({ exporters: ["glb", "bws-character"], runtimes: ["raylib-layered-character"] }) }),
+  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "geometry-nodes", name: "Geometry Nodes", version: "0.1.0", bundled: true, enabled: false,
+    description: "A lightweight procedural node graph for building editable low-poly assets.",
+    contributes: Object.freeze({ panels: ["geometry-nodes"], generators: ["procedural-tree", "procedural-rocks", "procedural-stone-wall"] }) })
 ]);
 const pluginRegistry = {
   imageReliefMeshLab: BUNDLED_PLUGINS[0],
   minecraftModeling: BUNDLED_PLUGINS[1],
   sceneRenderingTools: BUNDLED_PLUGINS[2],
-  boltworksGameEngine: BUNDLED_PLUGINS[3]
+  boltworksGameEngine: BUNDLED_PLUGINS[3],
+  geometryNodes: BUNDLED_PLUGINS[4]
 };
 let installedPluginPackages = [];
 let pluginEnabledPreferences = {};
@@ -105,6 +109,8 @@ function applyPluginAvailability(elements) {
   const minecraftOption = elements.workspaceSelect?.querySelector('option[value="minecraft"]');
   if (minecraftOption) minecraftOption.hidden = !minecraftEnabled;
   if (!minecraftEnabled && document.body.dataset.workspace === "minecraft") setWorkspace("general", { quiet: true });
+  const geometryNodesEnabled = pluginManifestById("geometry-nodes")?.enabled === true;
+  if (typeof setGeometryNodesPluginEnabled === "function") setGeometryNodesPluginEnabled(geometryNodesEnabled);
 }
 
 loadInstalledPlugins();

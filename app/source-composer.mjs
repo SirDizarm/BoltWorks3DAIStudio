@@ -4,6 +4,7 @@ export const studioModuleOrder = Object.freeze([
   "viewport",
   "toolbar",
   "meshes",
+  "geometry-nodes",
   "import-export",
   "autosave-update",
   "mcp-bridge",

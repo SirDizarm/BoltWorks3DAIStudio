@@ -57,6 +57,7 @@
         <button type="button" data-mobile-selector="[data-flip-axis='x']">Flip X</button>
         <button type="button" data-mobile-selector="[data-flip-axis='y']">Flip Y</button>
         <button type="button" data-mobile-selector="[data-flip-axis='z']">Flip Z</button>
+        <button type="button" data-mobile-target="flipFromCenterInput">Flip From Center</button>
         <button type="button" data-mobile-target="modelToolsOpenBtn">Model Tools</button>
         <button type="button" data-mobile-target="surfaceEditorOpenBtn">Surface Edit</button>
         <button type="button" data-mobile-target="cameraControlsOpenBtn">Camera</button>

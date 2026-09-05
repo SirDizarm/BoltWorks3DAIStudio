@@ -2261,6 +2261,22 @@ label {
   margin-left: 4px;
 }
 
+.texture-editor-material-ball {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.texture-editor-material-ball canvas {
+  width: 72px;
+  height: 72px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 28%, #34434a, #071014 72%);
+}
+
 .texture-editor-tool-picker button.active {
   color: var(--accent);
   border-color: var(--accent);
@@ -3366,6 +3382,68 @@ body[data-workspace="minecraft"] #addMeshSection button[data-add]:not([data-add=
 .plugin-row .plugin-actions { display:flex; align-items:center; justify-content:flex-end; gap:5px; flex:0 1 auto; flex-wrap:wrap; }
 .plugin-row .plugin-actions button { min-width:58px; padding:5px 7px; font-size:11px; }
 #minecraftBody > button { width:100%; margin-top:8px; }
+
+.geometry-node-toolbar select { min-width: 130px; flex: 1 1 130px; }
+.geometry-node-toolbar #geometryNodeDetachBtn { flex: 1 1 100%; }
+.geometry-node-palette { position:relative; margin:7px 0; }
+.geometry-node-palette > summary { display:block; padding:7px 9px; border:1px solid #4d666b; border-radius:6px; background:#182328; color:#f2f6f5; cursor:pointer; font-weight:700; list-style:none; }
+.geometry-node-palette > summary::-webkit-details-marker { display:none; }
+.geometry-node-palette[open] > summary { border-color:#40c7a5; color:#40c7a5; }
+.geometry-node-palette-list { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:7px; margin-top:6px; padding:7px; border:1px solid #33464b; border-radius:7px; background:#0d171a; }
+.geometry-node-palette-list section { display:grid; align-content:start; gap:4px; min-width:0; }
+.geometry-node-palette-list strong { color:#e1b14b; font-size:9px; letter-spacing:.06em; text-transform:uppercase; }
+.geometry-node-palette-list button { min-width:0; padding:5px 6px; overflow:hidden; text-align:left; text-overflow:ellipsis; white-space:nowrap; }
+.geometry-node-popout-shell .geometry-node-palette { grid-column:1 / -1; margin:0; }
+.geometry-node-popout-shell .geometry-node-palette-list { grid-template-columns:repeat(4,minmax(120px,1fr)); }
+.geometry-node-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin:7px 0; }
+.geometry-node-actions .danger { grid-column:1 / -1; }
+.geometry-node-share-actions { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; margin:7px 0; }
+.geometry-node-share-actions button { min-width:0; padding:6px; white-space:nowrap; }
+.geometry-node-popout-shell .geometry-node-share-actions { display:flex; flex-wrap:wrap; gap:6px; margin:0; }
+.geometry-node-popout-shell .geometry-node-share-actions button { flex:0 1 auto; }
+.geometry-node-viewport { position:relative; width:100%; min-height:430px; overflow:auto; border:1px solid #33464b; border-radius:7px; background:#0c1417; }
+#geometryNodeViewport { overflow:hidden; }
+#geometryNodeViewport[data-fit-label]:not([data-fit-label=""])::after { content:attr(data-fit-label); position:absolute; left:6px; right:6px; bottom:5px; padding:4px 6px; border-radius:4px; background:rgba(7,17,20,.82); color:#e1b14b; font-size:9px; text-align:center; pointer-events:none; }
+.geometry-node-canvas { position:relative; width:920px; height:430px; background-image:linear-gradient(rgba(64,199,165,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(64,199,165,.07) 1px,transparent 1px); background-size:20px 20px; }
+.geometry-node-links { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
+.geometry-node-link { fill:none; stroke:#e1b14b; stroke-width:3; opacity:.85; }
+.geometry-node-link.pending { stroke:#68b9d4; stroke-dasharray:8 6; }
+.geometry-node-link-hit { fill:none; stroke:transparent; stroke-width:14; pointer-events:stroke; cursor:context-menu; }
+.geometry-node-card { position:absolute; width:154px; border:1px solid #4d666b; border-radius:7px; background:#152126; box-shadow:0 6px 14px rgba(0,0,0,.28); color:#f2f6f5; overflow:hidden; }
+.geometry-node-card.inactive { border-style:dashed; opacity:.72; }
+.geometry-node-card.output { border-color:#e1b14b; }
+.geometry-node-title { display:flex; align-items:center; justify-content:space-between; gap:7px; cursor:grab; user-select:none; padding:7px 9px; font-weight:700; color:#07110f; background:#40c7a5; }
+.geometry-node-title button { flex:0 0 auto; min-width:20px; min-height:20px; padding:0 4px; border-color:rgba(7,17,15,.35); background:rgba(7,17,15,.14); color:inherit; line-height:1; }
+.geometry-node-card.output .geometry-node-title { background:#e1b14b; }
+.geometry-node-card[data-geometry-node-type="smoothGeometry"] .geometry-node-title { background:#68b9d4; }
+.geometry-node-fields { display:grid; gap:6px; padding:8px; }
+.geometry-node-fields label { display:grid; grid-template-columns:minmax(0,1fr) 64px; align-items:center; gap:6px; color:var(--muted); font-size:10px; }
+.geometry-node-fields input[type="number"], .geometry-node-fields input[type="text"], .geometry-node-fields select { width:100%; min-width:0; padding:5px; }
+.geometry-node-fields input[type="checkbox"] { justify-self:end; }
+.geometry-node-card-note { margin:0; color:var(--muted); font-size:10px; line-height:1.35; }
+.geometry-node-field-group { margin-top:3px; padding-top:6px; border-top:1px solid #33464b; color:#e1b14b; font-size:9px; letter-spacing:.06em; text-transform:uppercase; }
+.geometry-node-socket { position:relative; display:flex; align-items:center; min-height:18px; padding:3px 8px; color:#aababc; font-size:9px; }
+.geometry-node-socket.output-socket { justify-content:flex-end; }
+.geometry-node-port { position:absolute; top:50%; width:17px; min-width:17px; height:17px; min-height:17px; padding:0; border:2px solid #0c1417; border-radius:50%; background:#e1b14b; color:#07110f; font-size:13px; font-weight:900; line-height:12px; transform:translateY(-50%); }
+.geometry-node-port.input { left:-9px; }
+.geometry-node-port.output { right:-9px; background:#40c7a5; }
+.geometry-node-port.connected { border-color:#e1b14b; }
+.geometry-node-port:hover, .geometry-node-port.connecting { border-color:#f6d47d; box-shadow:0 0 0 3px rgba(225,177,75,.28); }
+.geometry-node-view-tools { display:flex; align-items:center; gap:5px; margin-left:auto; }
+.geometry-node-view-tools span { min-width:42px; color:#cbd7d7; font:11px ui-monospace,SFMono-Regular,Consolas,monospace; text-align:center; }
+.geometry-node-context-note { color:#889a9d; font-size:10px; }
+.geometry-node-context-library { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.geometry-node-context-library section { display:grid; align-content:start; gap:4px; }
+.geometry-node-context-library button { width:100%; min-width:0; padding:5px 6px; overflow:hidden; text-align:left; text-overflow:ellipsis; white-space:nowrap; }
+.geometry-node-context-menu { position:fixed; z-index:100000; display:grid; gap:7px; width:238px; max-height:calc(100vh - 16px); overflow:auto; box-sizing:border-box; padding:10px; border:1px solid #5c777c; border-radius:8px; background:#101a1e; box-shadow:0 16px 38px rgba(0,0,0,.55); color:#f2f6f5; }
+.geometry-node-context-menu > strong { color:#40c7a5; font-size:13px; }
+.geometry-node-context-label { color:#e1b14b; font-size:9px; font-weight:700; letter-spacing:.07em; text-transform:uppercase; }
+.geometry-node-context-menu > button { width:100%; text-align:left; }
+.geometry-node-context-menu details { padding-top:6px; border-top:1px solid #33464b; }
+.geometry-node-context-menu summary { color:#cbd7d7; cursor:pointer; font-size:11px; }
+.geometry-node-context-menu dl { display:grid; grid-template-columns:66px minmax(0,1fr); gap:5px 8px; margin:8px 0 0; font-size:10px; }
+.geometry-node-context-menu dt { color:#889a9d; }
+.geometry-node-context-menu dd { min-width:0; margin:0; overflow:hidden; color:#f2f6f5; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; text-overflow:ellipsis; white-space:nowrap; }
 
 /* Mobile Studio reuses the complete BWS editor and presents its panels as touch drawers. */
 .mobile-workspace-nav,

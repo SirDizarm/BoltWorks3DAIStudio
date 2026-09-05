@@ -622,6 +622,37 @@
             <p class="api-note">The ZIP contains the model, renderer, client registration, animation definitions, and a README showing where each file belongs.</p>
           </div>
         </section>
+        <section class="section collapsed geometry-nodes-section" id="geometryNodesSection" data-plugin-id="geometry-nodes" data-collapse-persist="geometry-nodes">
+          <button class="section-header" id="geometryNodesToggle" type="button" aria-expanded="false" aria-controls="geometryNodesBody"><h2>Geometry Nodes</h2><span id="geometryNodesStatusChip" class="plugin-ready">Assets</span></button>
+          <div class="section-body" id="geometryNodesBody">
+            <p class="api-note">Build reusable procedural geometry from connected nodes. Copy a graph as a node string or save it as a portable .bwnc node cluster. Disabling this plugin preserves every graph and generated model.</p>
+            <div class="compact-row geometry-node-toolbar">
+              <select id="geometryNodeGraphSelect" aria-label="Geometry node graph"></select>
+              <button id="geometryNodeNewBtn" type="button">New graph</button>
+              <button id="geometryNodeDetachBtn" type="button" title="Open this graph editor in a separate window">Open detached editor</button>
+            </div>
+            <details class="geometry-node-palette">
+              <summary>+ Add node</summary>
+              <div class="geometry-node-palette-list" data-geometry-node-palette></div>
+            </details>
+            <div class="geometry-node-actions">
+              <button id="geometryNodeBuildBtn" class="primary" type="button">Build / Update Geometry</button>
+              <button id="geometryNodeBakeBtn" type="button" title="Keep the current generated parts as ordinary editable BWS objects">Bake &amp; Detach</button>
+              <button id="geometryNodeDeleteBtn" class="danger" type="button">Delete graph</button>
+            </div>
+            <div class="geometry-node-share-actions">
+              <button id="geometryNodeCopyBtn" type="button">Copy node string</button>
+              <button id="geometryNodePasteBtn" type="button">Paste node string</button>
+              <button id="geometryNodeSaveClusterBtn" type="button">Save .bwnc</button>
+              <button id="geometryNodeLoadClusterBtn" type="button">Load .bwnc</button>
+              <input id="geometryNodeClusterFile" type="file" accept=".bwnc,application/json" hidden />
+            </div>
+            <div id="geometryNodeViewport" class="geometry-node-viewport">
+              <div id="geometryNodeCanvas" class="geometry-node-canvas" aria-label="Procedural geometry node graph"></div>
+            </div>
+            <p id="geometryNodeStatus" class="api-note">Ready. Adjust the nodes, then build the geometry.</p>
+          </div>
+        </section>
         <section class="section collapsed" id="pluginManagerSection" data-collapse-persist="plugin-manager">
           <button class="section-header" id="pluginManagerToggle" type="button" aria-expanded="false" aria-controls="pluginManagerBody"><h2>Plugins</h2><span id="pluginCountLabel" class="plugin-ready">0</span></button>
           <div class="section-body" id="pluginManagerBody">
@@ -1435,6 +1466,10 @@
         <label class="texture-editor-part-picker">Part
           <select id="textureEditorPartSelect" title="Choose which textured model part and UV layout to edit"></select>
         </label>
+        <div class="texture-editor-material-ball" title="Live PBR material preview">
+          <canvas id="textureEditorMaterialPreview" width="112" height="112" aria-label="Material preview sphere"></canvas>
+          <span>Material</span>
+        </div>
         <button id="textureEditorCloseBtn" type="button">Close</button>
       </div>
       <div class="texture-editor-channel-picker" role="group" aria-label="What painting affects">
@@ -1442,16 +1477,17 @@
         <button type="button" data-texture-channel="baseColor" class="active" title="Paint the visible surface color">Base Color</button>
         <button type="button" data-texture-channel="roughness" title="White is rough, black is glossy">Roughness</button>
         <button type="button" data-texture-channel="metalness" title="White is metallic, black is non-metallic">Metalness</button>
+        <button type="button" data-texture-channel="normal" title="RGB tangent-space normal detail">Normal</button>
         <button type="button" data-texture-channel="emissive" title="Paint areas that emit light">Emissive</button>
         <span id="textureEditorChannelInfo" class="api-note">Color and artwork you see on the model.</span>
       </div>
       <div class="texture-editor-source-row" id="textureEditorBaseColorSource">
-        <label for="textureEditorTextureUrl">Replace texture</label>
+        <label for="textureEditorTextureUrl">Replace channel image</label>
         <input id="textureEditorTextureUrl" type="url" inputmode="url" spellcheck="false" placeholder="https://textures.minecraft.net/... or another image URL" />
         <button id="textureEditorLoadUrlBtn" type="button">Load URL</button>
         <button id="textureEditorChooseFileBtn" type="button">Choose Image</button>
         <input id="textureEditorTextureFile" type="file" accept="image/*" hidden />
-        <span id="textureEditorTextureStatus" class="api-note">Replaces the editable Base Color texture for this part.</span>
+        <span id="textureEditorTextureStatus" class="api-note">Replaces the image for the active material channel.</span>
       </div>
       <div class="texture-editor-toolbar">
         <div class="texture-editor-uv-scale" role="group" aria-label="UV scale">

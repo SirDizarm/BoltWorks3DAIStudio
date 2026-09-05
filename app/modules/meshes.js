@@ -1077,7 +1077,7 @@ function applyTextureToMesh(mesh, textureUrl, textureName = "Texture", textureFl
   mesh.userData.textureFlipY = textureUrl ? textureFlipY : true;
   mesh.userData.textureRotation = textureUrl ? normalizeTextureRotation(textureRotation) : 0;
   syncMinecraftTextureRendering(mesh);
-  for (const channel of ["roughness", "metalness", "emissive"]) {
+  for (const channel of ["roughness", "metalness", "normal", "emissive"]) {
     const config = materialTextureChannels[channel];
     const channelTexture = mesh.material[config.mapKey];
     if (channelTexture) configureMaterialChannelTexture(channelTexture, channel, mesh);
@@ -1105,6 +1105,13 @@ const materialTextureChannels = {
     nameKey: "metalnessTextureName",
     mapKey: "metalnessMap",
     info: "Choose a paint tool, then paint a value: 0% is non-metal and 100% is metal. Use intermediate values only when the material needs a transition."
+  },
+  normal: {
+    label: "Normal",
+    urlKey: "normalTextureUrl",
+    nameKey: "normalTextureName",
+    mapKey: "normalMap",
+    info: "Tangent-space surface detail. Import an RGB normal map or paint around neutral #8080ff; this changes lighting without adding geometry."
   },
   emissive: {
     label: "Emissive",
@@ -1139,7 +1146,7 @@ function configureMaterialChannelTexture(texture, channel, mesh) {
     tileTextureEdgeTrim: mesh.userData.tileTextureEdgeTrim
   });
   if ("colorSpace" in texture) {
-    texture.colorSpace = channel === "roughness" || channel === "metalness"
+    texture.colorSpace = channel === "roughness" || channel === "metalness" || channel === "normal"
       ? (THREE.NoColorSpace || "")
       : (THREE.SRGBColorSpace || texture.colorSpace);
   }
@@ -1169,6 +1176,7 @@ function applyMaterialTextureChannel(mesh, channel, textureUrl, textureName) {
   mesh.userData[config.urlKey] = textureUrl || null;
   mesh.userData[config.nameKey] = textureUrl ? (textureName || `${mesh.name} ${config.label}`) : null;
   if (normalized === "metalness") mesh.material.metalness = textureUrl ? 1 : (normalizeMaterialRule(mesh.userData.materialRule) === "metal" ? .52 : .05);
+  if (normalized === "normal") mesh.material.normalScale.set(1, 1);
   if (normalized === "emissive") {
     mesh.material.emissive.set(textureUrl ? 0xffffff : 0x000000);
     mesh.material.emissiveIntensity = textureUrl ? 1 : 0;
@@ -1417,9 +1425,9 @@ function syncTextureEditorToolSettings(tool = "none") {
   for (const control of els.textureEditorToolSettings || []) {
     const setting = control.dataset.textureSetting;
     const channelAllowsSetting = setting === "color"
-      ? channel === "baseColor" || channel === "emissive"
+      ? channel === "baseColor" || channel === "normal" || channel === "emissive"
       : setting === "channelValue"
-        ? channel !== "baseColor"
+        ? channel !== "baseColor" && channel !== "normal"
         : true;
     control.hidden = !visibleSettings.includes(setting) || !channelAllowsSetting;
   }
@@ -2263,6 +2271,36 @@ function drawUvTriangleOverlay(context, triangle, drawRect, color, lineWidth = 1
   context.stroke();
 }
 
+let textureEditorMaterialPreviewRuntime = null;
+
+function renderTextureEditorMaterialPreview() {
+  const canvas = els.textureEditorMaterialPreview;
+  const mesh = textureEditorMesh();
+  const sourceMaterial = mesh ? primaryMeshMaterial(mesh) : null;
+  if (!canvas || !sourceMaterial) return;
+  if (!textureEditorMaterialPreviewRuntime) {
+    const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true, preserveDrawingBuffer: true });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(112, 112, false);
+    renderer.outputColorSpace = THREE.SRGBColorSpace;
+    const previewScene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(34, 1, .1, 20);
+    camera.position.set(0, .05, 3.15);
+    const sphere = new THREE.Mesh(new THREE.SphereGeometry(1, 48, 32), sourceMaterial.clone());
+    previewScene.add(sphere);
+    const key = new THREE.DirectionalLight(0xffffff, 2.2); key.position.set(2.5, 3, 4); previewScene.add(key);
+    const fill = new THREE.DirectionalLight(0x8fb8ff, 1.05); fill.position.set(-3, 1, 2); previewScene.add(fill);
+    previewScene.add(new THREE.AmbientLight(0xffffff, .38));
+    textureEditorMaterialPreviewRuntime = { renderer, previewScene, camera, sphere };
+  }
+  const runtime = textureEditorMaterialPreviewRuntime;
+  runtime.sphere.material?.dispose?.();
+  runtime.sphere.material = sourceMaterial.clone();
+  runtime.sphere.material.side = THREE.FrontSide;
+  runtime.sphere.rotation.set(-.12, .42, 0);
+  runtime.renderer.render(runtime.previewScene, runtime.camera);
+}
+
 function renderTextureEditor() {
   if (!textureEditorState.open) return;
   const mesh = textureEditorMesh();
@@ -2422,6 +2460,7 @@ function renderTextureEditor() {
   if (els.textureEditorZoomValue) els.textureEditorZoomValue.textContent = `${Math.round(zoom * 100)}%`;
   syncTextureEditorSelectionUi();
   renderTextureEditorBrushPreview();
+  renderTextureEditorMaterialPreview();
 }
 
 function textureEditorStrokeTo(point) {
@@ -2616,7 +2655,7 @@ function defaultMaterialChannelCanvas(mesh, channel, width, height) {
   const context = canvas.getContext("2d", { willReadFrequently: true });
   context.fillStyle = channel === "baseColor"
     ? `#${mesh?.material?.color?.getHexString?.() || "ffffff"}`
-    : channel === "roughness" ? "#ffffff" : "#000000";
+    : channel === "roughness" ? "#ffffff" : channel === "normal" ? "#8080ff" : "#000000";
   context.fillRect(0, 0, canvas.width, canvas.height);
   return canvas;
 }
@@ -2660,7 +2699,7 @@ function syncTextureEditorChannelUi(channel) {
   }
   if (els.textureEditorChannelInfo) els.textureEditorChannelInfo.textContent = config.info;
   if (els.textureEditorApplyBtn) els.textureEditorApplyBtn.textContent = `Apply ${config.label}`;
-  if (els.textureEditorBaseColorSource) els.textureEditorBaseColorSource.hidden = normalized !== "baseColor";
+  if (els.textureEditorBaseColorSource) els.textureEditorBaseColorSource.hidden = false;
   syncTextureEditorChannelValueUi();
   syncTextureEditorToolSettings(textureEditorState.tool);
 }
@@ -2675,20 +2714,22 @@ function textureEditorRemoteTextureName(url) {
   }
 }
 
-async function replaceTextureEditorBaseColor(dataUrl, textureName) {
+async function replaceTextureEditorChannel(dataUrl, textureName) {
   const mesh = textureEditorMesh();
   if (!mesh || !dataUrl) return;
+  const channel = normalizedMaterialTextureChannel(textureEditorState.channel);
+  const config = materialTextureChannels[channel];
   recordHistory("replace texture in editor");
   const registeredName = registerTextureAsset(textureName || "Texture", dataUrl, { replace: true }) || textureName || "Texture";
-  textureEditorDrafts.delete(textureEditorDraftKey(mesh.userData.id, "baseColor"));
-  applyTextureToMesh(mesh, dataUrl, registeredName, mesh.userData.textureFlipY ?? true, mesh.userData.textureRotation || 0);
-  await loadTextureEditorChannel(mesh, "baseColor");
+  textureEditorDrafts.delete(textureEditorDraftKey(mesh.userData.id, channel));
+  applyMaterialTextureChannel(mesh, channel, dataUrl, registeredName);
+  await loadTextureEditorChannel(mesh, channel);
   refreshTextureLibraryUi();
   syncInspector();
   updateAll();
   renderTextureEditor();
   if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = `Loaded ${registeredName}.`;
-  log(`Replaced ${mesh.name}'s Base Color texture with ${registeredName}.`);
+  log(`Replaced ${mesh.name}'s ${config.label} texture with ${registeredName}.`);
 }
 
 async function loadTextureEditorTextureUrl() {
@@ -2713,7 +2754,7 @@ async function loadTextureEditorTextureUrl() {
     if (!response.ok) throw new Error(`Image server returned ${response.status}.`);
     const blob = await response.blob();
     if (!blob.type.startsWith("image/")) throw new Error("The URL did not return an image.");
-    await replaceTextureEditorBaseColor(await readFileAsDataUrl(blob), textureEditorRemoteTextureName(parsed.href));
+    await replaceTextureEditorChannel(await readFileAsDataUrl(blob), textureEditorRemoteTextureName(parsed.href));
   } catch (error) {
     const message = error?.message || "The image host blocked browser access.";
     if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = `Could not load URL: ${message}`;
@@ -2785,7 +2826,7 @@ async function loadTextureEditorTextureFile(file) {
   if (!file) return;
   if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = "Loading image...";
   try {
-    await replaceTextureEditorBaseColor(await readFileAsDataUrl(file), file.name || "Texture");
+    await replaceTextureEditorChannel(await readFileAsDataUrl(file), file.name || "Texture");
   } catch (error) {
     const message = error?.message || "Could not read the image.";
     if (els.textureEditorTextureStatus) els.textureEditorTextureStatus.textContent = message;
@@ -2862,7 +2903,9 @@ async function loadTextureEditorChannel(mesh, channel = "baseColor") {
   if (els.textureEditorColor) {
     els.textureEditorColor.value = draftMatchesTexture && draft?.color
       ? draft.color
-      : channelData.channel === "emissive"
+      : channelData.channel === "normal"
+        ? "#8080ff"
+        : channelData.channel === "emissive"
         ? "#ffffff"
         : "#ff7f50";
   }
@@ -3549,7 +3592,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, tintColor = "#ffffff", tintStrength = 0, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, generatedShell = false, shellResolution = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [], manualTopologyEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, tintColor = "#ffffff", tintStrength = 0, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, normalTextureUrl = null, normalTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, generatedShell = false, shellResolution = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [], manualTopologyEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3593,6 +3636,8 @@ function createMesh(spec = {}) {
     roughnessTextureName,
     metalnessTextureUrl,
     metalnessTextureName,
+    normalTextureUrl,
+    normalTextureName,
     emissiveTextureUrl,
     emissiveTextureName,
     materialRule: normalizedMaterialRule,
@@ -3653,6 +3698,7 @@ function createMesh(spec = {}) {
   }
   if (roughnessTextureUrl) applyMaterialTextureChannel(mesh, "roughness", roughnessTextureUrl, roughnessTextureName);
   if (metalnessTextureUrl) applyMaterialTextureChannel(mesh, "metalness", metalnessTextureUrl, metalnessTextureName);
+  if (normalTextureUrl) applyMaterialTextureChannel(mesh, "normal", normalTextureUrl, normalTextureName);
   if (emissiveTextureUrl) applyMaterialTextureChannel(mesh, "emissive", emissiveTextureUrl, emissiveTextureName);
   applyMeshTint(mesh, mesh.userData.tintColor, mesh.userData.tintStrength);
   syncMinecraftTextureRendering(mesh);

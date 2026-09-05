@@ -10,6 +10,11 @@
     "name": { "type": "string", "minLength": 1 },
     "savedAt": { "type": "string" },
     "capabilities": { "type": "object" },
+    "pluginData": {
+      "type": "object",
+      "description": "Project-owned state for optional plugins, keyed by stable plugin id.",
+      "additionalProperties": true
+    },
     "textureLibrary": {
       "type": "array",
       "items": { "$ref": "#/$defs/texture" }
@@ -158,6 +163,18 @@
           ]
         },
         "metalnessTextureUrl": {
+          "anyOf": [
+            { "type": "string" },
+            { "type": "null" }
+          ]
+        },
+        "normalTextureName": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        },
+        "normalTextureUrl": {
           "anyOf": [
             { "type": "string" },
             { "type": "null" }

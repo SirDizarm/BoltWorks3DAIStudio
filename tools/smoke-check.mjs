@@ -2919,8 +2919,11 @@ for (const fullTexturePaintFeature of [
   'id="textureEditorLoadUrlBtn"',
   'id="textureEditorChooseFileBtn"',
   'id="textureEditorTextureFile"',
+  'id="textureEditorMaterialPreview"',
+  'data-texture-channel="normal"',
   "async function loadTextureEditorTextureUrl()",
-  "async function replaceTextureEditorBaseColor(dataUrl, textureName)",
+  "async function replaceTextureEditorChannel(dataUrl, textureName)",
+  "normalTextureUrl",
   "if (els.textureEditorSelectedOnly?.checked) {"
 ]) {
   if (!html.includes(fullTexturePaintFeature)) throw new Error(`Missing full-texture/URL paint feature: ${fullTexturePaintFeature}`);
@@ -3117,6 +3120,80 @@ for (const tPoseLoadRequirement of ["tPoseFittingMode: !!tPoseFittingMode", "res
 }
 if (!moduleSources.get("plugins").includes('kind: "boltworks-plugin"') || !moduleSources.get("plugins").includes("validPluginManifest") || !moduleSources.get("plugins").includes("validPluginPackage") || !moduleSources.get("plugins").includes("setPluginEnabled")) {
   throw new Error("The studio must expose the manifest-based plugin foundation.");
+}
+for (const geometryNodeUiRequirement of [
+  'id="geometryNodesSection"',
+  'data-plugin-id="geometry-nodes"',
+  'id="geometryNodeCanvas"',
+  'id="geometryNodeDetachBtn"',
+  'id="geometryNodeBuildBtn"',
+  'id="geometryNodeBakeBtn"',
+  'id="geometryNodeDeleteBtn"',
+  'id="geometryNodeCopyBtn"',
+  'id="geometryNodePasteBtn"',
+  'id="geometryNodeSaveClusterBtn"',
+  'id="geometryNodeLoadClusterBtn"',
+  'data-geometry-node-palette'
+]) {
+  if (!documentSource.includes(geometryNodeUiRequirement)) throw new Error(`Missing Geometry Nodes UI requirement: ${geometryNodeUiRequirement}`);
+}
+for (const geometryNodeSourceRequirement of [
+  "function buildGeometryNodeTree()",
+  "function bakeGeometryNodeTree()",
+  "function serializeOptionalPluginProjectData()",
+  "function restoreOptionalPluginProjectData(",
+  "function setGeometryNodesPluginEnabled(",
+  "function openGeometryNodesDetachedWindow()",
+  "function fitGeometryNodeSidebarOverview()",
+  "function geometryNodeClusterPayload(",
+  "function defaultEmptyGeometryNodeProjectState()",
+  "function importGeometryNodeClusterText(",
+  'kind: "boltworks-node-cluster"',
+  'window.open("", "bws-geometry-nodes"',
+  "liveGeometryNodesDetachedWindow()?.close()",
+  "Plugin unloaded. Saved node graphs remain in this project.",
+  "data-geometry-add-node",
+  "Tree Variant",
+  "Root Flare",
+  "Trunk Bend",
+  "Smooth Joints",
+  "Cut Knot",
+  "Mesh Primitive",
+  "Tapered Stem",
+  "Branch Array",
+  "Junction Blend",
+  "Cluster Scatter",
+  "Rock Generator",
+  "Stone Wall",
+  "wallDepthLayers",
+  "wallColorVariation",
+  "Grass Scatter",
+  "grassAvoidGeometry",
+  "Mask clearance",
+  "Moss Growth",
+  "geometryNodeMossOverlayGeometry",
+  "geometryNodeCrackMossGeometry",
+  "mossMoisture",
+  "mossSunlight",
+  "mossCrackBias",
+  "Join Geometry",
+  "Cut Rings",
+  "Primitive Smooth Test",
+  "Smooth Geometry",
+  "smoothNodes",
+  "data-geometry-attach-type",
+  "geometry-node-context-menu",
+  "connectGeometryNodes",
+  "geometryNodeActiveNodeIds",
+  "Output Transform"
+]) {
+  if (!moduleSources.get("geometry-nodes")?.includes(geometryNodeSourceRequirement)) throw new Error(`Missing Geometry Nodes behavior: ${geometryNodeSourceRequirement}`);
+}
+if (!moduleSources.get("plugins").includes('id: "geometry-nodes"')
+  || !moduleSources.get("import-export").includes("pluginData: typeof serializeOptionalPluginProjectData")
+  || !moduleSources.get("import-export").includes("restoreOptionalPluginProjectData(previous.pluginData || {})")
+  || !moduleSources.get("panels").includes("resetGeometryNodeProjectState()")) {
+  throw new Error("Geometry Nodes must be a bundled unloadable plugin whose graph state follows project save, load, and new-workspace lifecycle.");
 }
 for (const gameAssetUiRequirement of [
   'id="exportGameArmsBtn"',

@@ -135,6 +135,7 @@ Supported object fields:
 | `materialRule` | Material/export rule; use `"auto"` unless the workflow specifies another value. |
 | `roughnessTextureName`, `roughnessTextureUrl` | Optional grayscale roughness paint channel. White is rougher; black is smoother. |
 | `metalnessTextureName`, `metalnessTextureUrl` | Optional grayscale metalness paint channel. White is metallic; black is non-metallic. |
+| `normalTextureName`, `normalTextureUrl` | Optional RGB tangent-space normal map. Neutral flat normal is `#8080ff`. |
 | `emissiveTextureName`, `emissiveTextureUrl` | Optional colored emissive paint channel. Colored pixels emit light-independent surface color. |
 
 If `geometry` exists, it takes precedence over the built-in shape geometry.
@@ -185,3 +186,81 @@ Important fields are:
 
 Valid environments are `plain`, `studio`, `road`. Valid backgrounds are
 `plain`, `studio`, `sky`, `sunset`.
+
+## Optional plugin data
+
+Projects can contain a top-level `pluginData` object. Bundled plugins own data
+under their stable plugin ID. Geometry Nodes uses `geometry-nodes` to store its
+graphs, parameters, canvas positions, and IDs of scene parts still linked to a
+generated result. Each graph stores `nodeOrder`, explicit `connections`, and a
+saved pan/zoom `view`. Nodes that do not lead to Group Output remain editable but
+are not evaluated when the tree is rebuilt. Smooth modifier instances are stored
+in `smoothNodes`, including their position and independent settings.
+The current library contains reusable Mesh Primitive, Tapered Stem, Branch Array,
+Junction Blend, Cluster Scatter, Join Geometry, Smooth Geometry, and Output
+Transform nodes alongside the tree-oriented Seed, Tree Variant, Root Flare,
+Trunk, Trunk Bend, Branches, Smooth Joints, Twigs, Canopy, Cut Knot, Cut Rings,
+Primitive Smooth Test, and Group Output nodes. Tree Variant stores
+silhouette, season, maturity, and variation settings. Smooth Joints stores blend
+size and seam coverage. Cut Knot creates inward branch stubs with concentric
+end-grain rings at the trunk surface. Cut Rings stores end-grain ring count,
+layer depth, and color contrast.
+Primitive Smooth Test creates cube, five-sided prism, and low-sided cone
+before/after pairs. Smooth Geometry is added from a compatible node's right-click
+menu or board menu and stores XYZ, XY, XZ, YZ, or single-axis scope,
+subdivision passes, unrestricted strength, and size preservation. Its effect is
+determined by explicit socket connections. Nodes expose clickable typed sockets;
+connections may be redrawn or removed without deleting either node.
+This data remains in the project when the plugin is disabled.
+Join Geometry accepts multiple incoming geometry streams. The reusable geometry
+nodes can be connected without Tree Variant or the older tree-growth cards, so
+one graph can mix a tapered stem, procedural branch array, independent mesh
+primitives, cluster scatter, and separately tuned junction/smoothing modifiers.
+The same payload supports Rock Generator arrangements and profiles, Stone Wall
+dimensions and courses, generated Grass Scatter blade sheets, and Moss Growth
+with bottom, middle, top, or all-height placement. Grass Scatter stores a
+`grassAvoidGeometry` footprint-mask toggle and adjustable `grassClearance`.
+When enabled, clump roots are rejected from the rotated XZ footprints of every
+upstream rock or wall stone, with extra room for blade width and lean.
+Rock and wall meshes include outward-facing top caps. Stone Wall scales its
+course density with Length and supports one to four independently staggered
+depth layers; the three-layer default forms two visible faces around a rubble
+core so course gaps reveal another stone instead of the background. Per-stone
+color and roughness variation remain seeded and reproducible. Moss Growth generates
+small irregular surface cushions and crack growth instead of coating whole
+low-poly faces. Moisture increases growth, sun exposure suppresses it, and crack
+preference moves more moss into protected wall joints.
+
+### Portable node clusters (`.bwnc`)
+
+Geometry Nodes can exchange one graph without including the project scene. A
+`.bwnc` file and the **Copy node string** action use the same JSON envelope:
+
+```json
+{
+  "kind": "boltworks-node-cluster",
+  "version": 1,
+  "name": "Hybrid Smooth Stem Tree",
+  "savedAt": "2026-09-05T12:00:00.000Z",
+  "graph": {}
+}
+```
+
+`graph` contains the same sanitized node order, parameters, connections,
+positions, modifier instances, and pan/zoom view stored in project plugin data.
+Generated scene IDs are always removed and `buildVersion` is reset to zero on
+export. Loading a `.bwnc` file or pasting a node string creates a new graph with
+a fresh graph ID and a non-conflicting name; it never replaces the current
+graph or imports generated model parts.
+
+```json
+{
+  "pluginData": {
+    "geometry-nodes": {
+      "version": 1,
+      "activeGraphId": "tree-example",
+      "graphs": []
+    }
+  }
+}
+```

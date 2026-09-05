@@ -1366,6 +1366,7 @@ const els = {
   textureEditorIdleHint: document.querySelector("#textureEditorIdleHint"),
   textureEditorChannelButtons: [...document.querySelectorAll("[data-texture-channel]")],
   textureEditorChannelInfo: document.querySelector("#textureEditorChannelInfo"),
+  textureEditorMaterialPreview: document.querySelector("#textureEditorMaterialPreview"),
   textureEditorColorLabel: document.querySelector("#textureEditorColorLabel"),
   textureEditorColor: document.querySelector("#textureEditorColor"),
   textureEditorChannelValue: document.querySelector("#textureEditorChannelValue"),

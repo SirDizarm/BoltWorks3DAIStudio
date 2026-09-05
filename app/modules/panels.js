@@ -1879,6 +1879,7 @@ els.newWorkspaceBtn?.addEventListener("click", async () => {
     if (gameplayPreviewVisible()) closeGameplayPreview();
     clearObjects({ record: false });
     resetRigForNewWorkspace();
+    if (typeof resetGeometryNodeProjectState === "function") resetGeometryNodeProjectState();
     if (els.projectNameInput) els.projectNameInput.value = "modeler-project";
     setBwsAutoSaveStatus("Fresh workspace", "saved");
     log("New empty workspace started. Recover last save can restore the previous automatic save; Delete last save removes it. New work replaces it when auto-saved.");
