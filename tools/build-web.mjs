@@ -38,7 +38,7 @@ for (const directory of ["assets", "styles", "panels", "selection", "meshes"]) {
 }
 await copyFile(join(root, "CNAME"), join(output, "CNAME"));
 
-await buildStudioBundle({ outfile: join(output, "app", "studio-v49.64.4.js") });
+await buildStudioBundle({ outfile: join(output, "app", "studio-v49.64.5.js") });
 await mkdir(join(output, "demos"), { recursive: true });
 for (const file of ["BWS-dice-randomizer.html", "BWS-die-demo.modelerproj"]) {
   await copyFile(join(root, "demos", file), join(output, "demos", file));

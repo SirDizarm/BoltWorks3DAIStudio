@@ -200,6 +200,17 @@ try {
   });
 
   await client.callTool({
+    name: "bws_combine_objects_into_shell",
+    arguments: { ids: ["smoke-object"], name: "Compound Smoke Shell", expectedRevision: 8 }
+  });
+  assert.equal(relay.calls.at(-1).method, "objects.combineShell");
+  assert.deepEqual(relay.calls.at(-1).params, {
+    ids: ["smoke-object"],
+    name: "Compound Smoke Shell",
+    expectedRevision: 8
+  });
+
+  await client.callTool({
     name: "bws_select_objects",
     arguments: { ids: ["smoke-object"], expectedRevision: 8 }
   });

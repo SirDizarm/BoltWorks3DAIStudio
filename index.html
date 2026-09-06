@@ -4,25 +4,25 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#101214" />
-  <title>BoltWorks 3D AI Studio v49.64.4 Experimental</title>
-  <meta name="application-version" content="v49.64.4 modular studio" />
+  <title>BoltWorks 3D AI Studio v49.64.5 Experimental</title>
+  <meta name="application-version" content="v49.64.5 modular studio" />
   <link rel="icon" type="image/png" href="./app/assets/branding/boltworks-logo.png" />
   <script>if(new URLSearchParams(location.search).get("mobile")==="1"||(new URLSearchParams(location.search).get("mobile")!=="0"&&matchMedia("(max-width: 820px)").matches))document.documentElement.classList.add("mobile-layout");</script>
-  <link rel="stylesheet" href="./app/styles/studio.css?v=49.64.4" />
+  <link rel="stylesheet" href="./app/styles/studio.css?v=49.64.5" />
 
 </head>
 <body>
-  <script defer src="./app/panels/panel-collapse.js?v=49.64.4"></script>
-  <script defer src="./app/panels/tool-docking.js?v=49.64.4"></script>
-  <script defer src="./app/panels/mobile-workspace.js?v=49.64.4"></script>
+  <script defer src="./app/panels/panel-collapse.js?v=49.64.5"></script>
+  <script defer src="./app/panels/tool-docking.js?v=49.64.5"></script>
+  <script defer src="./app/panels/mobile-workspace.js?v=49.64.5"></script>
 
   <div class="persistent-notices" aria-label="Version and copyright notices">
-    <div class="persistent-notice experimental-notice" role="status"><strong>v49.64.4 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span><button id="supportBwsBtn" class="support-bws-button" type="button">♥ Support BWS</button><button id="noticeRailCollapseBtn" class="notice-rail-collapse" type="button" aria-expanded="true">Minimize Lower Panel</button></div>
+    <div class="persistent-notice experimental-notice" role="status"><strong>v49.64.5 Experimental preview</strong><span>This tool is under active development. Features may be incomplete and bugs can occur.</span><button id="supportBwsBtn" class="support-bws-button" type="button">♥ Support BWS</button><button id="noticeRailCollapseBtn" class="notice-rail-collapse" type="button" aria-expanded="true">Minimize Lower Panel</button></div>
     <div class="persistent-notice copyright-notice" role="note"><strong>© 2026 Daniel Rydin</strong><span>BoltWorks branding and visual assets. All rights reserved.</span></div>
   </div>
   <main class="app">
     <header class="top">
-      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.64.4 Experimental</small></span></div>
+      <div class="brand"><img class="mark" src="./app/assets/branding/boltworks-logo.png" alt="BoltWorks" /><span>BoltWorks 3D AI Studio <small>v49.64.5 Experimental</small></span></div>
       <div class="toolbar-group workspace-picker" aria-label="Workspace">
         <label>Workspace <select id="workspaceSelect"><option value="general">General 3D</option><option value="minecraft">Minecraft</option></select></label>
       </div>
@@ -238,7 +238,7 @@
           <button id="groupBtn" title="Move checked parts as one group">Group</button>
           <button id="ungroupBtn" title="Remove only the selected group level while keeping any parent or child hierarchy intact">Ungroup</button>
           <button id="mergeMeshBtn" title="Bake checked meshes or checked group contents into one editable mesh">Merge Mesh</button>
-          <button id="combineShellBtn" title="Fuse checked touching or overlapping meshes into one watertight outer shell and remove internal faces">Combine into Shell</button>
+          <button id="combineShellBtn" title="Turn the selected mesh or group, or checked touching meshes, into a watertight outer shell and remove internal faces">Combine into Shell</button>
         </div>
         <div class="tree-controls">
           <button id="goToSelectedMeshBtn" type="button" title="Find the currently selected viewport mesh in the scene list">Go to Selected Mesh</button>
@@ -1742,7 +1742,7 @@
     </div>
   </div>
 
-  <script defer src="./app/studio-v49.64.4.js"></script>
+  <script defer src="./app/studio-v49.64.5.js"></script>
 <script src="./app/selection/runtime-bridge.js"></script>
 </body>
 </html>

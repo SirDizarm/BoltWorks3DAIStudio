@@ -337,7 +337,7 @@ function mcpBridgeCapabilitiesResult() {
       "scene.get": { detail: ["summary", "objects", "project"] },
       "selection.get": {},
       "objects.create": { maxBatchSize: mcpBridgeMaxBatchSize, shapes: [...mcpBridgeAllowedShapes], geometry: { maxVertices: mcpBridgeMaxGeometryVertices } },
-      "objects.combineShell": { minObjects: 2, maxBatchSize: mcpBridgeMaxBatchSize, resolution: { min: 18, max: 64 }, replacesSources: true, undoable: true },
+      "objects.combineShell": { minObjects: 1, maxBatchSize: mcpBridgeMaxBatchSize, resolution: { min: 18, max: 64 }, replacesSources: true, undoable: true },
       "objects.update": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
       "objects.delete": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
       "selection.set": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
@@ -536,7 +536,7 @@ function mcpBridgeDeleteObjects(params) {
 async function mcpBridgeCombineShell(params) {
   mcpBridgeAssertAllowedKeys(params, new Set(["ids", "name", "resolution", "expectedRevision"]), "params");
   const ids = mcpBridgeUniqueIds(params.ids);
-  mcpBridgeAssert(ids.length >= 2, "INVALID_PARAMS", "objects.combineShell needs at least two object IDs.");
+  mcpBridgeAssert(ids.length >= 1, "INVALID_PARAMS", "objects.combineShell needs at least one object ID.");
   const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
   const name = params.name === undefined
     ? "AI Generated Shell"

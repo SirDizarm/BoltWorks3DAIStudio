@@ -20023,6 +20023,204 @@ function shellProjectedUvs(geometry) {
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
 }
 
+function shellConnectedGeometryParts(geometry) {
+  if (!geometry?.getAttribute?.("position")) return [];
+  const source = geometry.index ? geometry.toNonIndexed() : geometry.clone();
+  const position = source.getAttribute("position");
+  const triangleCount = Math.floor(position.count / 3);
+  if (triangleCount < 2) return triangleCount ? [source] : [];
+  const vertexTriangles = new Map();
+  const triangleKeys = Array.from({ length: triangleCount }, () => []);
+  for (let triangle = 0; triangle < triangleCount; triangle++) {
+    for (let corner = 0; corner < 3; corner++) {
+      const point = new THREE.Vector3().fromBufferAttribute(position, triangle * 3 + corner);
+      const key = point.toArray().map(value => Math.round(value * 1e5)).join(",");
+      triangleKeys[triangle].push(key);
+      if (!vertexTriangles.has(key)) vertexTriangles.set(key, []);
+      vertexTriangles.get(key).push(triangle);
+    }
+  }
+  const visited = new Uint8Array(triangleCount);
+  const components = [];
+  for (let start = 0; start < triangleCount; start++) {
+    if (visited[start]) continue;
+    const component = [];
+    const stack = [start];
+    visited[start] = 1;
+    while (stack.length) {
+      const triangle = stack.pop();
+      component.push(triangle);
+      for (const key of triangleKeys[triangle]) {
+        for (const neighbor of vertexTriangles.get(key) || []) {
+          if (visited[neighbor]) continue;
+          visited[neighbor] = 1;
+          stack.push(neighbor);
+        }
+      }
+    }
+    components.push(component);
+  }
+  if (components.length === 1) return [source];
+  const parts = components.map(component => {
+    const part = new THREE.BufferGeometry();
+    for (const [name, attribute] of Object.entries(source.attributes)) {
+      const values = new attribute.array.constructor(component.length * 3 * attribute.itemSize);
+      let target = 0;
+      for (const triangle of component) {
+        for (let corner = 0; corner < 3; corner++) {
+          const sourceOffset = (triangle * 3 + corner) * attribute.itemSize;
+          for (let item = 0; item < attribute.itemSize; item++) values[target++] = attribute.array[sourceOffset + item];
+        }
+      }
+      part.setAttribute(name, new THREE.BufferAttribute(values, attribute.itemSize, attribute.normalized));
+    }
+    part.computeBoundingBox();
+    return part;
+  });
+  source.dispose();
+  return parts;
+}
+
+async function surfaceCullCompoundSpec(mesh, parts, { name = "Combined Shell", groupId = null, groupName = null, progress = null } = {}) {
+  mesh.updateMatrixWorld(true);
+  const probes = parts.map(geometry => {
+    const worldGeometry = geometry.clone().applyMatrix4(mesh.matrixWorld);
+    worldGeometry.computeBoundingBox();
+    const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+    const probe = new THREE.Mesh(worldGeometry, material);
+    probe.updateMatrixWorld(true);
+    return { geometry: worldGeometry, material, probe, box: worldGeometry.boundingBox.clone() };
+  });
+  const attributeNames = Object.keys(probes[0]?.geometry?.attributes || {});
+  const kept = Object.fromEntries(attributeNames.map(attributeName => [attributeName, []]));
+  const raycaster = new THREE.Raycaster();
+  const direction = new THREE.Vector3(1, .371, .173).normalize();
+  raycaster.ray.direction.copy(direction);
+  raycaster.near = 1e-6;
+  raycaster.far = 1e7;
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), center = new THREE.Vector3();
+  const sourceTriangles = probes.reduce((total, entry) => total + Math.floor(entry.geometry.getAttribute("position").count / 3), 0);
+  let processed = 0;
+  try {
+    for (let componentIndex = 0; componentIndex < probes.length; componentIndex++) {
+      const entry = probes[componentIndex];
+      const position = entry.geometry.getAttribute("position");
+      const triangleCount = Math.floor(position.count / 3);
+      for (let triangle = 0; triangle < triangleCount; triangle++) {
+        a.fromBufferAttribute(position, triangle * 3);
+        b.fromBufferAttribute(position, triangle * 3 + 1);
+        c.fromBufferAttribute(position, triangle * 3 + 2);
+        center.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+        let covered = false;
+        for (let candidateIndex = 0; candidateIndex < probes.length; candidateIndex++) {
+          if (candidateIndex === componentIndex) continue;
+          const candidate = probes[candidateIndex];
+          if (!candidate.box.containsPoint(center)) continue;
+          raycaster.ray.origin.copy(center);
+          const hits = raycaster.intersectObject(candidate.probe, false);
+          let crossings = 0;
+          let previousDistance = -Infinity;
+          for (const hit of hits) {
+            if (hit.distance <= raycaster.near || Math.abs(hit.distance - previousDistance) <= 1e-5) continue;
+            previousDistance = hit.distance;
+            crossings++;
+          }
+          if (crossings % 2 === 1) {
+            covered = true;
+            break;
+          }
+        }
+        if (!covered) {
+          for (const attributeName of attributeNames) {
+            const attribute = entry.geometry.getAttribute(attributeName);
+            for (let corner = 0; corner < 3; corner++) {
+              const sourceOffset = (triangle * 3 + corner) * attribute.itemSize;
+              for (let item = 0; item < attribute.itemSize; item++) kept[attributeName].push(attribute.array[sourceOffset + item]);
+            }
+          }
+        }
+        processed++;
+        if (processed % 250 === 0) {
+          progress?.(.08 + .87 * processed / Math.max(1, sourceTriangles));
+          await new Promise(resolve => requestAnimationFrame(resolve));
+        }
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    for (const attributeName of attributeNames) {
+      const sourceAttribute = probes[0].geometry.getAttribute(attributeName);
+      const values = new sourceAttribute.array.constructor(kept[attributeName]);
+      geometry.setAttribute(attributeName, new THREE.BufferAttribute(values, sourceAttribute.itemSize, sourceAttribute.normalized));
+    }
+    if (!geometry.getAttribute("position")?.count) throw new Error("The compound shell did not retain any exterior faces.");
+    if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+    if (!geometry.getAttribute("uv")) shellProjectedUvs(geometry);
+    geometry.computeBoundingBox();
+    const outputCenter = geometry.boundingBox.getCenter(new THREE.Vector3());
+    geometry.translate(-outputCenter.x, -outputCenter.y, -outputCenter.z);
+    geometry.computeBoundingSphere();
+    const geometryData = geometryToData(geometry);
+    const outputTriangles = Math.floor(geometry.getAttribute("position").count / 3);
+    geometry.dispose();
+    const textureState = sharedMergeTextureState([mesh]);
+    const countGeometry = geometryFromPositions(geometryData.positions);
+    const shellCount = shellGeometryComponentCount(countGeometry);
+    countGeometry.dispose();
+    return {
+      spec: {
+        shape: "custom", geometry: geometryData, name,
+        position: outputCenter.toArray().map(round), rotation: [0, 0, 0], scale: [1, 1, 1],
+        color: textureState?.color || mergeSourceMaterialColor(mesh),
+        opacity: textureState?.opacity ?? Math.max(.05, Math.min(1, Number(mesh.userData.opacity ?? primaryMeshMaterial(mesh)?.opacity ?? 1) || 1)),
+        roughness: Number(primaryMeshMaterial(mesh)?.roughness || 0),
+        textureUrl: textureState?.textureUrl || null, textureName: textureState?.textureName || null,
+        textureFlipY: textureState?.textureFlipY ?? true, textureRotation: textureState?.textureRotation ?? 0,
+        textureRobloxAssetId: textureState?.textureRobloxAssetId || "",
+        materialRule: normalizeMaterialRule(mesh.userData.materialRule || "auto"),
+        groupId, groupName, hidden: false, linkId: null, linkColor: null,
+        generatedShell: true, shellResolution: null
+      },
+      sourceTriangles, outputTriangles, filledCells: 0, sealedCells: 0,
+      shellCount,
+      resolution: null, dimensions: null, method: "surface-cull"
+    };
+  } finally {
+    probes.forEach(entry => {
+      entry.geometry.dispose();
+      entry.material.dispose();
+    });
+  }
+}
+
+async function surfaceShellUnionCompoundSpec(mesh, options = {}) {
+  const parts = shellConnectedGeometryParts(mesh.geometry);
+  if (parts.length < 2) {
+    parts.forEach(part => part.dispose());
+    return surfaceShellUnionSpec([mesh], options);
+  }
+  if (parts.length > 32) {
+    try {
+      return await surfaceCullCompoundSpec(mesh, parts, options);
+    } finally {
+      parts.forEach(part => part.dispose());
+    }
+  }
+  const componentMeshes = parts.map((geometry, index) => {
+    const component = new THREE.Mesh(geometry, mesh.material);
+    component.name = `${mesh.name || "Mesh"} part ${index + 1}`;
+    component.userData = { ...mesh.userData };
+    component.matrixAutoUpdate = false;
+    component.matrix.copy(mesh.matrixWorld);
+    component.matrixWorld.copy(mesh.matrixWorld);
+    return component;
+  });
+  try {
+    return surfaceShellUnionSpec(componentMeshes, options);
+  } finally {
+    parts.forEach(part => part.dispose());
+  }
+}
+
 function surfaceShellUnionSpec(meshes, { name = "Combined Shell", groupId = null, groupName = null } = {}) {
   const sourceTriangles = meshes.reduce((total, mesh) => (
     total + Math.floor((mesh.geometry.index?.count || mesh.geometry.getAttribute("position")?.count || 0) / 3)
@@ -20082,24 +20280,33 @@ function surfaceShellUnionSpec(meshes, { name = "Combined Shell", groupId = null
 }
 
 async function voxelShellUnionSpec(meshes, { name = "Combined Shell", resolution = null, groupId = null, groupName = null, progress = null } = {}) {
-  if (!Array.isArray(meshes) || meshes.length < 2) return null;
+  if (!Array.isArray(meshes) || meshes.length < 1) return null;
   const bounds = new THREE.Box3();
   const probes = [];
   let sourceTriangles = 0;
   for (const mesh of meshes) {
     mesh.updateMatrixWorld(true);
-    const box = new THREE.Box3().setFromObject(mesh);
-    if (box.isEmpty()) continue;
-    bounds.union(box);
     sourceTriangles += Math.floor((mesh.geometry.index?.count || mesh.geometry.getAttribute("position")?.count || 0) / 3);
-    const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
-    const probe = new THREE.Mesh(mesh.geometry, material);
-    probe.matrixAutoUpdate = false;
-    probe.matrixWorld.copy(mesh.matrixWorld);
-    probes.push({ probe, box });
+    for (const partGeometry of shellConnectedGeometryParts(mesh.geometry)) {
+      partGeometry.computeBoundingBox();
+      const box = partGeometry.boundingBox.clone().applyMatrix4(mesh.matrixWorld);
+      if (box.isEmpty()) {
+        partGeometry.dispose();
+        continue;
+      }
+      bounds.union(box);
+      const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+      const probe = new THREE.Mesh(partGeometry, material);
+      probe.matrixAutoUpdate = false;
+      probe.matrixWorld.copy(mesh.matrixWorld);
+      probes.push({ probe, box });
+    }
   }
-  if (bounds.isEmpty() || probes.length < 2) {
-    probes.forEach(entry => entry.probe.material.dispose());
+  if (bounds.isEmpty() || probes.length < 1) {
+    probes.forEach(entry => {
+      entry.probe.geometry.dispose();
+      entry.probe.material.dispose();
+    });
     return null;
   }
   const size = bounds.getSize(new THREE.Vector3());
@@ -20114,7 +20321,10 @@ async function voxelShellUnionSpec(meshes, { name = "Combined Shell", resolution
   ];
   const cellCount = dimensions[0] * dimensions[1] * dimensions[2];
   if (cellCount > 300000) {
-    probes.forEach(entry => entry.probe.material.dispose());
+    probes.forEach(entry => {
+      entry.probe.geometry.dispose();
+      entry.probe.material.dispose();
+    });
     throw new Error("The selected shell volume is too large. Move the parts closer together or use a lower shell resolution.");
   }
   const origin = bounds.min.clone().addScalar(-cellSize);
@@ -20158,7 +20368,10 @@ async function voxelShellUnionSpec(meshes, { name = "Combined Shell", resolution
     if (progress) progress((x + 1) / dimensions[0]);
     if (x % 3 === 2) await new Promise(resolve => requestAnimationFrame(resolve));
   }
-  probes.forEach(entry => entry.probe.material.dispose());
+  probes.forEach(entry => {
+    entry.probe.geometry.dispose();
+    entry.probe.material.dispose();
+  });
   if (!filled) throw new Error("No closed volume was found. Combine into Shell needs closed meshes rather than open planes.");
   const sealedCells = shellCloseSingleCellSeams(occupied, dimensions);
   const shellCount = shellVoxelComponentCount(occupied, dimensions);
@@ -20217,7 +20430,22 @@ async function voxelShellUnionSpec(meshes, { name = "Combined Shell", resolution
 }
 
 async function shellUnionSpec(meshes, options = {}) {
-  if (!Array.isArray(meshes) || meshes.length < 2) return null;
+  if (!Array.isArray(meshes) || meshes.length < 1) return null;
+  if (meshes.length === 1) {
+    try {
+      options.progress?.(.08);
+      const result = await surfaceShellUnionCompoundSpec(meshes[0], options);
+      options.progress?.(1);
+      return result;
+    } catch (surfaceError) {
+      if (options.voxelFallback !== false) {
+        const fallback = await voxelShellUnionSpec(meshes, options);
+        if (fallback) fallback.fallbackReason = surfaceError?.message || "Compound surface boolean union failed.";
+        return fallback;
+      }
+      throw surfaceError;
+    }
+  }
   try {
     options.progress?.(.08);
     const result = surfaceShellUnionSpec(meshes, options);
@@ -20240,7 +20468,7 @@ async function combineMeshesIntoShell(targetMeshes, {
   voxelFallback = true
 } = {}) {
   const meshes = [...new Set((targetMeshes || []).filter(mesh => mesh?.isMesh))];
-  if (meshes.length < 2) throw new Error("Combine into Shell needs at least two meshes.");
+  if (!meshes.length) throw new Error("Combine into Shell needs a selected mesh or group.");
   const selectedGroupIds = selectedHierarchyGroupIds(meshes);
   const groupedMeshIds = new Set(selectedGroupIds.flatMap(groupId => descendantMeshesForGroup(groupId).map(mesh => mesh.userData.id)));
   const looseMeshes = meshes.filter(mesh => !groupedMeshIds.has(mesh.userData.id));
@@ -20278,27 +20506,38 @@ async function combineMeshesIntoShell(targetMeshes, {
   updateTransformAttachment();
   updateAll();
   if (announce) {
+    const shellMethod = result.method === "surface"
+      ? "surface-preserving boolean"
+      : result.method === "surface-cull"
+        ? "surface-preserving internal-face cleanup"
+        : "voxel fallback";
+    const note = result.method === "surface-cull"
+      ? "Covered internal faces were removed without voxelizing or flattening the original stone surfaces."
+      : result.shellCount === 1
+        ? "Internal faces were removed and original slopes, curves, normals, and UVs were preserved."
+        : `The result contains ${result.shellCount} disconnected islands because some selected parts did not touch.`;
     log(`Combined ${meshes.length} meshes into one outer shell.`, {
       sourceMeshes: meshes.map(mesh => mesh.name),
       sourceTriangles: result.sourceTriangles,
       outputTriangles: result.outputTriangles,
-      shellMethod: result.method === "surface" ? "surface-preserving boolean" : "voxel fallback",
+      shellMethod,
       shellResolution: result.resolution,
       shellGrid: result.dimensions,
       smallSeamsClosed: result.sealedCells,
       connectedShells: result.shellCount,
-      note: result.shellCount === 1
-        ? "Internal faces were removed and original slopes, curves, normals, and UVs were preserved."
-        : `The result contains ${result.shellCount} disconnected islands because some selected parts did not touch.`
+      note
     });
   }
   return { mesh: combined, ...result };
 }
 
 async function combineCheckedMeshesIntoShell() {
-  const targetMeshes = [...new Set(mergeSelectionTargets().filter(Boolean))];
-  if (targetMeshes.length < 2) {
-    log("Check or select two or more touching meshes before combining them into a shell.");
+  const targetMeshes = [...new Set([
+    ...mergeSelectionTargets(),
+    ...selectedFaceMeshes()
+  ].filter(Boolean))];
+  if (!targetMeshes.length) {
+    log("Select a mesh or group, or check the meshes you want to combine into a shell.");
     return null;
   }
   const originalLabel = els.combineShellBtn?.textContent || "Combine into Shell";

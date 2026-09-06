@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.64.4.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.64.5.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -763,9 +763,12 @@ function functionSource(source, name) {
     "shellCloseSingleCellSeams",
     "shellVoxelComponentCount",
     "shellProjectedUvs",
+    "shellConnectedGeometryParts",
     "surfaceUnionGeometry",
     "shellGeometryComponentCount",
     "surfaceShellUnionSpec",
+    "surfaceCullCompoundSpec",
+    "surfaceShellUnionCompoundSpec",
     "voxelShellUnionSpec",
     "shellUnionSpec"
   ].map(name => functionSource(meshesSource, name)).join("\n"), context);
@@ -790,6 +793,51 @@ function functionSource(source, name) {
   if (fallbackResult?.method !== "voxel" || fallbackResult?.shellCount !== 1 || fallbackResult?.fallbackReason !== "forced surface failure") {
     throw new Error(`Combine into Shell must automatically recover with a connected voxel shell when the smooth surface union fails. ${JSON.stringify({ method: fallbackResult?.method, shellCount: fallbackResult?.shellCount, fallbackReason: fallbackResult?.fallbackReason })}`);
   }
+  const leftGeometry = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+  const rightGeometry = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
+  leftGeometry.translate(-.3, 0, 0);
+  rightGeometry.translate(.3, 0, 0);
+  const compoundPositions = new Float32Array(
+    leftGeometry.getAttribute("position").array.length + rightGeometry.getAttribute("position").array.length
+  );
+  compoundPositions.set(leftGeometry.getAttribute("position").array, 0);
+  compoundPositions.set(rightGeometry.getAttribute("position").array, leftGeometry.getAttribute("position").array.length);
+  const compoundGeometry = new THREE.BufferGeometry();
+  compoundGeometry.setAttribute("position", new THREE.BufferAttribute(compoundPositions, 3));
+  compoundGeometry.computeVertexNormals();
+  const compound = new THREE.Mesh(compoundGeometry, material.clone());
+  compound.userData = { id: "single-compound-shell", materialRule: "auto", opacity: 1 };
+  compound.updateMatrixWorld(true);
+  const compoundResult = await context.shellUnionSpec([compound], { resolution: 18 });
+  const compoundTriangles = compoundResult?.spec?.geometry?.positions?.length / 9;
+  if (compoundResult?.method !== "surface" || compoundResult?.shellCount !== 1 || compoundResult?.sourceTriangles !== 24 || compoundTriangles !== 12) {
+    throw new Error(`One selected mesh containing overlapping parts must preserve its surfaces while becoming one connected outer shell. ${JSON.stringify({ method: compoundResult?.method, shellCount: compoundResult?.shellCount, sourceTriangles: compoundResult?.sourceTriangles, compoundTriangles })}`);
+  }
+  const largePositions = [];
+  for (let index = 0; index < 40; index++) {
+    const stone = new THREE.BoxGeometry(1, .8 + (index % 3) * .08, .9 + (index % 2) * .1).toNonIndexed();
+    stone.translate(index * .72, (index % 2) * .08, 0);
+    largePositions.push(...stone.getAttribute("position").array);
+    stone.dispose();
+  }
+  const largeGeometry = new THREE.BufferGeometry();
+  largeGeometry.setAttribute("position", new THREE.Float32BufferAttribute(largePositions, 3));
+  largeGeometry.computeVertexNormals();
+  context.shellProjectedUvs(largeGeometry);
+  const largeCompound = new THREE.Mesh(largeGeometry, material.clone());
+  largeCompound.userData = { id: "large-compound-shell", materialRule: "auto", opacity: 1 };
+  largeCompound.updateMatrixWorld(true);
+  const largeResult = await context.shellUnionSpec([largeCompound], { voxelFallback: false });
+  const largeTriangles = largeResult?.spec?.geometry?.positions?.length / 9;
+  if (largeResult?.method !== "surface-cull" || !largeTriangles || largeTriangles >= largeResult.sourceTriangles) {
+    throw new Error(`Large merged compounds must use the bounded surface-preserving cleanup rather than voxelizing or stalling. ${JSON.stringify({ method: largeResult?.method, sourceTriangles: largeResult?.sourceTriangles, largeTriangles })}`);
+  }
+  largeGeometry.dispose();
+  largeCompound.material.dispose();
+  leftGeometry.dispose();
+  rightGeometry.dispose();
+  compoundGeometry.dispose();
+  compound.material.dispose();
   first.geometry.dispose();
   second.geometry.dispose();
   first.material.dispose();
@@ -1967,7 +2015,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.64.4.js"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.64.5.js"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -2035,7 +2083,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.64.4",
+  "tool-docking.js?v=49.64.5",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2897,8 +2945,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.4 Experimental") || !documentSource.includes("v49.64.4 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.64.4 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.5 Experimental") || !documentSource.includes("v49.64.5 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.64.5 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

@@ -7,7 +7,7 @@ import { buildDiceDemo } from './build-dice-demo.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-export async function buildStudioBundle({ outfile = join(root, "app", "studio-v49.64.4.js"), write = true } = {}) {
+export async function buildStudioBundle({ outfile = join(root, "app", "studio-v49.64.5.js"), write = true } = {}) {
   if(write) await buildDiceDemo();
   const entrySource = await composeStudioSource(name =>
     readFile(join(root, "app", "modules", `${name}.js`), "utf8")

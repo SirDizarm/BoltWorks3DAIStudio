@@ -269,9 +269,9 @@ async function createServer() {
     "bws_combine_objects_into_shell",
     {
       title: "Combine BoltWorks objects into one shell",
-      description: "Fuse two or more touching or overlapping editable meshes into one watertight outer shell. Internal faces are removed, tiny one-cell seams are closed, and the source objects are replaced by the generated mesh. This is the final step for AI-authored models assembled from primitives. Inspect the scene and include expectedRevision before changing it.",
+      description: "Convert one multi-part mesh, or fuse multiple touching or overlapping editable meshes, into one watertight outer shell. Internal faces are removed, tiny one-cell seams are closed, and the source objects are replaced by the generated mesh. This is the final step for AI-authored models assembled from primitives. Inspect the scene and include expectedRevision before changing it.",
       inputSchema: z.object({
-        ids: z.array(exactId).min(2).max(MAX_OBJECTS_PER_CALL).refine(
+        ids: z.array(exactId).min(1).max(MAX_OBJECTS_PER_CALL).refine(
           (ids) => new Set(ids).size === ids.length,
           "IDs must be unique."
         ),
