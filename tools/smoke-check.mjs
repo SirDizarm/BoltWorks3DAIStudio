@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.64.1.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.64.2.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -1960,7 +1960,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.64.1.js"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.64.2.js"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -2028,7 +2028,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.64.1",
+  "tool-docking.js?v=49.64.2",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2303,6 +2303,12 @@ for (const required of [
   "geometryWithManualTriangle",
   "Created one real triangle face",
   "noticeRailCollapseBtn",
+  "supportBwsBtn",
+  "supportBwsModal",
+  "boltworks-wordmark.png",
+  "Donations are <strong>entirely voluntary</strong>",
+  "Thank you for helping me keep the spark alive.",
+  "GLSPC22G3WYJL",
   "Minimize Lower Panel",
   "Expand Lower Panel",
   "boltworks.bottomInfoCollapsed",
@@ -2880,8 +2886,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.1 Experimental") || !documentSource.includes("v49.64.1 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.64.1 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.2 Experimental") || !documentSource.includes("v49.64.2 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.64.2 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

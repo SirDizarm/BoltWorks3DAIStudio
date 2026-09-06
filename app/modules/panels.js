@@ -114,7 +114,28 @@ els.projectNameInput?.addEventListener("dblclick", event => {
 });
 
 const noticeRailCollapseBtn = document.querySelector("#noticeRailCollapseBtn");
+const supportBwsBtn = document.querySelector("#supportBwsBtn");
+const supportBwsModal = document.querySelector("#supportBwsModal");
+const supportBwsCloseBtn = document.querySelector("#supportBwsCloseBtn");
 let lowerInfoCollapsed = localStorage.getItem("boltworks.bottomInfoCollapsed") === "true";
+
+function setSupportBwsOpen(open) {
+  if (!supportBwsModal) return;
+  document.body.classList.toggle("support-bws-open", open);
+  supportBwsModal.classList.toggle("open", open);
+  supportBwsModal.setAttribute("aria-hidden", String(!open));
+  if (open) supportBwsCloseBtn?.focus();
+  else supportBwsBtn?.focus();
+}
+
+supportBwsBtn?.addEventListener("click", () => setSupportBwsOpen(true));
+supportBwsCloseBtn?.addEventListener("click", () => setSupportBwsOpen(false));
+supportBwsModal?.addEventListener("click", event => {
+  if (event.target === supportBwsModal) setSupportBwsOpen(false);
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && supportBwsModal?.classList.contains("open")) setSupportBwsOpen(false);
+});
 
 function syncFooterNoticeRail() {
   document.body.classList.toggle("footer-info-collapsed", lowerInfoCollapsed);
