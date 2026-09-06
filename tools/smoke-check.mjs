@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.64.6.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.64.7.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -760,12 +760,17 @@ function functionSource(source, name) {
     "shellVoxelIndex",
     "shellVoxelAt",
     "shellGreedyGeometry",
+    "shellMarchingTetraGeometry",
+    "shellSurfaceNetGeometry",
     "shellCloseSingleCellSeams",
+    "shellFillEnclosedVoids",
     "shellVoxelComponentCount",
     "shellProjectedUvs",
+    "shellTransferNearestUvs",
     "shellConnectedGeometryParts",
     "surfaceUnionGeometry",
     "shellGeometryComponentCount",
+    "surfaceShellCopySpec",
     "surfaceShellUnionSpec",
     "surfaceCullCompoundSpec",
     "surfaceShellUnionCompoundSpec",
@@ -773,6 +778,14 @@ function functionSource(source, name) {
     "shellUnionSpec"
   ].map(name => functionSource(meshesSource, name)).join("\n"), context);
   const material = new THREE.MeshStandardMaterial({ color: 0x40c7a5, roughness: .6 });
+  const hollowDimensions = [5, 5, 5];
+  const hollow = new Uint8Array(125);
+  for (let x = 1; x < 4; x++) for (let y = 1; y < 4; y++) for (let z = 1; z < 4; z++) {
+    if (x === 1 || x === 3 || y === 1 || y === 3 || z === 1 || z === 3) hollow[context.shellVoxelIndex(x, y, z, hollowDimensions)] = 1;
+  }
+  if (context.shellFillEnclosedVoids(hollow, hollowDimensions) !== 1 || !hollow[context.shellVoxelIndex(2, 2, 2, hollowDimensions)]) {
+    throw new Error("Combine into Shell must fill enclosed internal cavities before reconstructing the outside surface.");
+  }
   const first = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
   const second = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material.clone());
   first.position.set(-.5, .5, 0);
@@ -790,7 +803,7 @@ function functionSource(source, name) {
   context.surfaceShellUnionSpec = () => { throw new Error("forced surface failure"); };
   const fallbackResult = await context.shellUnionSpec([first, second], { resolution: 24 });
   context.surfaceShellUnionSpec = originalSurfaceShellUnionSpec;
-  if (fallbackResult?.method !== "voxel" || fallbackResult?.shellCount !== 1 || fallbackResult?.fallbackReason !== "forced surface failure") {
+  if (fallbackResult?.method !== "voxel-surface" || fallbackResult?.shellCount !== 1 || fallbackResult?.fallbackReason !== "forced surface failure") {
     throw new Error(`Combine into Shell must automatically recover with a connected voxel shell when the smooth surface union fails. ${JSON.stringify({ method: fallbackResult?.method, shellCount: fallbackResult?.shellCount, fallbackReason: fallbackResult?.fallbackReason })}`);
   }
   const leftGeometry = new THREE.BoxGeometry(1, 1, 1).toNonIndexed();
@@ -827,11 +840,40 @@ function functionSource(source, name) {
   const largeCompound = new THREE.Mesh(largeGeometry, material.clone());
   largeCompound.userData = { id: "large-compound-shell", materialRule: "auto", opacity: 1 };
   largeCompound.updateMatrixWorld(true);
-  const largeResult = await context.shellUnionSpec([largeCompound], { voxelFallback: false });
+  const largeResult = await context.shellUnionSpec([largeCompound], { voxelFallback: false, resolution: 48 });
   const largeTriangles = largeResult?.spec?.geometry?.positions?.length / 9;
-  if (largeResult?.method !== "surface-cull" || largeTriangles !== largeResult.sourceTriangles) {
-    throw new Error(`Large merged compounds must preserve partially exposed faces rather than voxelizing, stalling, or punching holes. ${JSON.stringify({ method: largeResult?.method, sourceTriangles: largeResult?.sourceTriangles, largeTriangles })}`);
+  if (largeResult?.method !== "voxel-surface" || !largeTriangles || largeResult.shellCount !== 1) {
+    throw new Error(`Large merged compounds must become one reconstructed volume shell rather than a triangle-counting cleanup. ${JSON.stringify({ method: largeResult?.method, shellCount: largeResult?.shellCount, sourceTriangles: largeResult?.sourceTriangles, largeTriangles })}`);
   }
+  const shellEdges = new Map();
+  const shellPositions = largeResult.spec.geometry.positions;
+  const pointKey = offset => [0, 1, 2].map(axis => Number(shellPositions[offset + axis]).toFixed(5)).join(",");
+  for (let offset = 0; offset + 8 < shellPositions.length; offset += 9) {
+    const points = [pointKey(offset), pointKey(offset + 3), pointKey(offset + 6)];
+    for (const [left, right] of [[0, 1], [1, 2], [2, 0]]) {
+      const edge = [points[left], points[right]].sort().join("|");
+      shellEdges.set(edge, (shellEdges.get(edge) || 0) + 1);
+    }
+  }
+  const openShellEdges = [...shellEdges.values()].filter(count => count !== 2).length;
+  if (openShellEdges) {
+    throw new Error(`The reconstructed large-compound shell must be closed and manifold. ${JSON.stringify({ openShellEdges })}`);
+  }
+  const repeatedGeometry = new THREE.BufferGeometry();
+  repeatedGeometry.setAttribute("position", new THREE.Float32BufferAttribute(largeResult.spec.geometry.positions, 3));
+  repeatedGeometry.setAttribute("normal", new THREE.Float32BufferAttribute(largeResult.spec.geometry.normals, 3));
+  repeatedGeometry.setAttribute("uv", new THREE.Float32BufferAttribute(largeResult.spec.geometry.uvs, 2));
+  const repeatedShell = new THREE.Mesh(repeatedGeometry, material.clone());
+  repeatedShell.position.fromArray(largeResult.spec.position);
+  repeatedShell.userData = { id: "repeated-large-shell", materialRule: "auto", opacity: 1, generatedShell: true, shellResolution: largeResult.resolution };
+  repeatedShell.updateMatrixWorld(true);
+  const repeatedResult = await context.shellUnionSpec([repeatedShell], { voxelFallback: false });
+  const repeatedTriangles = repeatedResult?.spec?.geometry?.positions?.length / 9;
+  if (repeatedResult?.method !== "existing-surface" || repeatedTriangles !== largeTriangles) {
+    throw new Error(`Combining an existing shell again must preserve it exactly. ${JSON.stringify({ method: repeatedResult?.method, largeTriangles, repeatedTriangles })}`);
+  }
+  repeatedGeometry.dispose();
+  repeatedShell.material.dispose();
   largeGeometry.dispose();
   largeCompound.material.dispose();
   leftGeometry.dispose();
@@ -2015,7 +2057,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.64.6.js"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.64.7.js"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -2083,7 +2125,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.64.6",
+  "tool-docking.js?v=49.64.7",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2945,8 +2987,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.6 Experimental") || !documentSource.includes("v49.64.6 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.64.6 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.7 Experimental") || !documentSource.includes("v49.64.7 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.64.7 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {

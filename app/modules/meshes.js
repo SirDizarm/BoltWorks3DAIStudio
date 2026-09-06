@@ -19885,6 +19885,137 @@ function shellVoxelAt(occupied, dimensions, x, y, z) {
   return occupied[shellVoxelIndex(x, y, z, dimensions)] === 1;
 }
 
+function shellMarchingTetraGeometry(occupied, dimensions, origin = new THREE.Vector3(), cellSize = 1) {
+  const positions = [];
+  const cornerOffsets = [
+    [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
+  ];
+  const tetrahedra = [
+    [0, 5, 1, 6], [0, 1, 2, 6], [0, 2, 3, 6],
+    [0, 3, 7, 6], [0, 7, 4, 6], [0, 4, 5, 6]
+  ];
+  const tetraEdges = [[0, 1], [1, 2], [2, 0], [0, 3], [1, 3], [2, 3]];
+  const addTriangle = (first, second, third, outward) => {
+    const normal = new THREE.Vector3().crossVectors(second.clone().sub(first), third.clone().sub(first));
+    if (normal.dot(outward) < 0) [second, third] = [third, second];
+    positions.push(...first.toArray(), ...second.toArray(), ...third.toArray());
+  };
+  for (let x = 0; x < dimensions[0] - 1; x++) {
+    for (let y = 0; y < dimensions[1] - 1; y++) {
+      for (let z = 0; z < dimensions[2] - 1; z++) {
+        const points = cornerOffsets.map(([dx, dy, dz]) => new THREE.Vector3(
+          origin.x + (x + dx + .5) * cellSize,
+          origin.y + (y + dy + .5) * cellSize,
+          origin.z + (z + dz + .5) * cellSize
+        ));
+        const states = cornerOffsets.map(([dx, dy, dz]) => !!shellVoxelAt(occupied, dimensions, x + dx, y + dy, z + dz));
+        if (states.every(Boolean) || states.every(state => !state)) continue;
+        for (const tetrahedron of tetrahedra) {
+          const inside = tetrahedron.filter(index => states[index]);
+          const outside = tetrahedron.filter(index => !states[index]);
+          if (!inside.length || !outside.length) continue;
+          const crossings = [];
+          for (const [edgeStart, edgeEnd] of tetraEdges) {
+            const firstIndex = tetrahedron[edgeStart];
+            const secondIndex = tetrahedron[edgeEnd];
+            if (states[firstIndex] === states[secondIndex]) continue;
+            crossings.push(points[firstIndex].clone().lerp(points[secondIndex], .5));
+          }
+          if (crossings.length < 3) continue;
+          const insideCenter = inside.reduce((sum, index) => sum.add(points[index]), new THREE.Vector3()).multiplyScalar(1 / inside.length);
+          const outsideCenter = outside.reduce((sum, index) => sum.add(points[index]), new THREE.Vector3()).multiplyScalar(1 / outside.length);
+          const outward = outsideCenter.sub(insideCenter).normalize();
+          if (crossings.length === 3) {
+            addTriangle(crossings[0], crossings[1], crossings[2], outward);
+            continue;
+          }
+          const center = crossings.reduce((sum, point) => sum.add(point), new THREE.Vector3()).multiplyScalar(1 / crossings.length);
+          const basis = crossings[0].clone().sub(center).normalize();
+          const tangent = new THREE.Vector3().crossVectors(outward, basis).normalize();
+          crossings.sort((left, right) => {
+            const leftOffset = left.clone().sub(center);
+            const rightOffset = right.clone().sub(center);
+            return Math.atan2(leftOffset.dot(tangent), leftOffset.dot(basis))
+              - Math.atan2(rightOffset.dot(tangent), rightOffset.dot(basis));
+          });
+          for (let index = 1; index < crossings.length - 1; index++) addTriangle(crossings[0], crossings[index], crossings[index + 1], outward);
+        }
+      }
+    }
+  }
+  return geometryFromPositions(positions);
+}
+
+function shellSurfaceNetGeometry(occupied, dimensions, origin = new THREE.Vector3(), cellSize = 1) {
+  const [nx, ny, nz] = dimensions;
+  const cellDimensions = [nx - 1, ny - 1, nz - 1];
+  const cellVertices = new Int32Array(cellDimensions[0] * cellDimensions[1] * cellDimensions[2]);
+  cellVertices.fill(-1);
+  const vertices = [];
+  const positions = [];
+  const cornerOffsets = [
+    [0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
+    [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1]
+  ];
+  const cubeEdges = [
+    [0, 1], [1, 2], [2, 3], [3, 0],
+    [4, 5], [5, 6], [6, 7], [7, 4],
+    [0, 4], [1, 5], [2, 6], [3, 7]
+  ];
+  const cellIndex = (x, y, z) => (x * cellDimensions[1] + y) * cellDimensions[2] + z;
+  const cellVertex = (x, y, z) => {
+    if (x < 0 || y < 0 || z < 0 || x >= cellDimensions[0] || y >= cellDimensions[1] || z >= cellDimensions[2]) return -1;
+    return cellVertices[cellIndex(x, y, z)];
+  };
+  for (let x = 0; x < cellDimensions[0]; x++) {
+    for (let y = 0; y < cellDimensions[1]; y++) {
+      for (let z = 0; z < cellDimensions[2]; z++) {
+        const states = cornerOffsets.map(([dx, dy, dz]) => !!shellVoxelAt(occupied, dimensions, x + dx, y + dy, z + dz));
+        if (states.every(Boolean) || states.every(state => !state)) continue;
+        const average = new THREE.Vector3();
+        let crossings = 0;
+        for (const [first, second] of cubeEdges) {
+          if (states[first] === states[second]) continue;
+          const firstOffset = cornerOffsets[first];
+          const secondOffset = cornerOffsets[second];
+          average.add(new THREE.Vector3(
+            origin.x + (x + (firstOffset[0] + secondOffset[0]) * .5 + .5) * cellSize,
+            origin.y + (y + (firstOffset[1] + secondOffset[1]) * .5 + .5) * cellSize,
+            origin.z + (z + (firstOffset[2] + secondOffset[2]) * .5 + .5) * cellSize
+          ));
+          crossings++;
+        }
+        if (!crossings) continue;
+        average.multiplyScalar(1 / crossings);
+        cellVertices[cellIndex(x, y, z)] = vertices.length;
+        vertices.push(average);
+      }
+    }
+  }
+  const addQuad = (indices, forward) => {
+    if (indices.some(index => index < 0)) return;
+    const ordered = forward ? indices : [indices[0], indices[3], indices[2], indices[1]];
+    for (const index of [0, 1, 2, 0, 2, 3]) positions.push(...vertices[ordered[index]].toArray());
+  };
+  for (let x = 0; x < nx - 1; x++) for (let y = 1; y < ny - 1; y++) for (let z = 1; z < nz - 1; z++) {
+    const startInside = !!shellVoxelAt(occupied, dimensions, x, y, z);
+    if (startInside === !!shellVoxelAt(occupied, dimensions, x + 1, y, z)) continue;
+    addQuad([cellVertex(x, y - 1, z - 1), cellVertex(x, y, z - 1), cellVertex(x, y, z), cellVertex(x, y - 1, z)], startInside);
+  }
+  for (let x = 1; x < nx - 1; x++) for (let y = 0; y < ny - 1; y++) for (let z = 1; z < nz - 1; z++) {
+    const startInside = !!shellVoxelAt(occupied, dimensions, x, y, z);
+    if (startInside === !!shellVoxelAt(occupied, dimensions, x, y + 1, z)) continue;
+    addQuad([cellVertex(x - 1, y, z - 1), cellVertex(x - 1, y, z), cellVertex(x, y, z), cellVertex(x, y, z - 1)], startInside);
+  }
+  for (let x = 1; x < nx - 1; x++) for (let y = 1; y < ny - 1; y++) for (let z = 0; z < nz - 1; z++) {
+    const startInside = !!shellVoxelAt(occupied, dimensions, x, y, z);
+    if (startInside === !!shellVoxelAt(occupied, dimensions, x, y, z + 1)) continue;
+    addQuad([cellVertex(x - 1, y - 1, z), cellVertex(x, y - 1, z), cellVertex(x, y, z), cellVertex(x - 1, y, z)], startInside);
+  }
+  return geometryFromPositions(positions);
+}
+
 function shellGreedyGeometry(occupied, dimensions, origin = new THREE.Vector3(), cellSize = 1) {
   const positions = [];
   const mask = [];
@@ -19972,6 +20103,54 @@ function shellCloseSingleCellSeams(occupied, dimensions) {
   return additions.length;
 }
 
+function shellFillEnclosedVoids(occupied, dimensions) {
+  const exterior = new Uint8Array(occupied.length);
+  const queue = new Int32Array(occupied.length);
+  let head = 0;
+  let tail = 0;
+  const enqueue = (x, y, z) => {
+    if (x < 0 || y < 0 || z < 0 || x >= dimensions[0] || y >= dimensions[1] || z >= dimensions[2]) return;
+    const index = shellVoxelIndex(x, y, z, dimensions);
+    if (occupied[index] || exterior[index]) return;
+    exterior[index] = 1;
+    queue[tail++] = index;
+  };
+  for (let x = 0; x < dimensions[0]; x++) {
+    for (let y = 0; y < dimensions[1]; y++) {
+      enqueue(x, y, 0);
+      enqueue(x, y, dimensions[2] - 1);
+    }
+  }
+  for (let x = 0; x < dimensions[0]; x++) {
+    for (let z = 0; z < dimensions[2]; z++) {
+      enqueue(x, 0, z);
+      enqueue(x, dimensions[1] - 1, z);
+    }
+  }
+  for (let y = 0; y < dimensions[1]; y++) {
+    for (let z = 0; z < dimensions[2]; z++) {
+      enqueue(0, y, z);
+      enqueue(dimensions[0] - 1, y, z);
+    }
+  }
+  const neighbors = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
+  while (head < tail) {
+    const index = queue[head++];
+    const z = index % dimensions[2];
+    const yz = (index - z) / dimensions[2];
+    const y = yz % dimensions[1];
+    const x = (yz - y) / dimensions[1];
+    for (const [dx, dy, dz] of neighbors) enqueue(x + dx, y + dy, z + dz);
+  }
+  let filledVoids = 0;
+  for (let index = 0; index < occupied.length; index++) {
+    if (occupied[index] || exterior[index]) continue;
+    occupied[index] = 1;
+    filledVoids++;
+  }
+  return filledVoids;
+}
+
 function shellVoxelComponentCount(occupied, dimensions) {
   const visited = new Uint8Array(occupied.length);
   const neighbors = [[1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1]];
@@ -20021,6 +20200,46 @@ function shellProjectedUvs(geometry) {
     }
   }
   geometry.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+}
+
+function shellTransferNearestUvs(geometry, probes, searchDistance) {
+  const position = geometry.getAttribute("position");
+  if (!position?.count || !probes.some(entry => entry.probe.geometry.getAttribute("uv"))) return false;
+  const outputUvs = new Float32Array(position.count * 2);
+  const point = new THREE.Vector3();
+  const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3();
+  const closest = new THREE.Vector3(), barycentric = new THREE.Vector3();
+  const triangle = new THREE.Triangle();
+  for (let vertexIndex = 0; vertexIndex < position.count; vertexIndex++) {
+    point.fromBufferAttribute(position, vertexIndex);
+    let bestDistanceSquared = Infinity;
+    let bestU = 0, bestV = 0;
+    let nearestBoxDistance = Infinity;
+    for (const entry of probes) nearestBoxDistance = Math.min(nearestBoxDistance, entry.box.distanceToPoint(point));
+    const limit = Math.max(searchDistance, nearestBoxDistance + searchDistance * .25);
+    for (const entry of probes) {
+      if (entry.box.distanceToPoint(point) > limit) continue;
+      const sourcePosition = entry.probe.geometry.getAttribute("position");
+      const sourceUv = entry.probe.geometry.getAttribute("uv");
+      if (!sourcePosition || !sourceUv) continue;
+      for (let offset = 0; offset + 2 < sourcePosition.count; offset += 3) {
+        a.fromBufferAttribute(sourcePosition, offset).applyMatrix4(entry.probe.matrixWorld);
+        b.fromBufferAttribute(sourcePosition, offset + 1).applyMatrix4(entry.probe.matrixWorld);
+        c.fromBufferAttribute(sourcePosition, offset + 2).applyMatrix4(entry.probe.matrixWorld);
+        triangle.set(a, b, c).closestPointToPoint(point, closest);
+        const distanceSquared = closest.distanceToSquared(point);
+        if (distanceSquared >= bestDistanceSquared) continue;
+        triangle.getBarycoord(closest, barycentric);
+        bestDistanceSquared = distanceSquared;
+        bestU = sourceUv.getX(offset) * barycentric.x + sourceUv.getX(offset + 1) * barycentric.y + sourceUv.getX(offset + 2) * barycentric.z;
+        bestV = sourceUv.getY(offset) * barycentric.x + sourceUv.getY(offset + 1) * barycentric.y + sourceUv.getY(offset + 2) * barycentric.z;
+      }
+    }
+    outputUvs[vertexIndex * 2] = bestU;
+    outputUvs[vertexIndex * 2 + 1] = bestV;
+  }
+  geometry.setAttribute("uv", new THREE.BufferAttribute(outputUvs, 2));
+  return true;
 }
 
 function shellConnectedGeometryParts(geometry) {
@@ -20205,17 +20424,19 @@ async function surfaceCullCompoundSpec(mesh, parts, { name = "Combined Shell", g
 }
 
 async function surfaceShellUnionCompoundSpec(mesh, options = {}) {
+  if (mesh.userData.generatedShell) {
+    const existingShellCount = shellGeometryComponentCount(mesh.geometry);
+    if (existingShellCount === 1) return surfaceShellCopySpec(mesh, options);
+    return voxelShellUnionSpec([mesh], options);
+  }
   const parts = shellConnectedGeometryParts(mesh.geometry);
   if (parts.length < 2) {
     parts.forEach(part => part.dispose());
     return surfaceShellUnionSpec([mesh], options);
   }
   if (parts.length > 32) {
-    try {
-      return await surfaceCullCompoundSpec(mesh, parts, options);
-    } finally {
-      parts.forEach(part => part.dispose());
-    }
+    parts.forEach(part => part.dispose());
+    return voxelShellUnionSpec([mesh], options);
   }
   const componentMeshes = parts.map((geometry, index) => {
     const component = new THREE.Mesh(geometry, mesh.material);
@@ -20231,6 +20452,38 @@ async function surfaceShellUnionCompoundSpec(mesh, options = {}) {
   } finally {
     parts.forEach(part => part.dispose());
   }
+}
+
+function surfaceShellCopySpec(mesh, { name = "Combined Shell", groupId = null, groupName = null } = {}) {
+  mesh.updateMatrixWorld(true);
+  const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
+  const sourceTriangles = Math.floor((geometry.index?.count || geometry.getAttribute("position")?.count || 0) / 3);
+  const shellCount = shellGeometryComponentCount(geometry);
+  geometry.computeBoundingBox();
+  const center = geometry.boundingBox.getCenter(new THREE.Vector3());
+  geometry.translate(-center.x, -center.y, -center.z);
+  geometry.computeBoundingSphere();
+  const geometryData = geometryToData(geometry);
+  geometry.dispose();
+  const textureState = sharedMergeTextureState([mesh]);
+  return {
+    spec: {
+      shape: "custom", geometry: geometryData, name,
+      position: center.toArray().map(round), rotation: [0, 0, 0], scale: [1, 1, 1],
+      color: textureState?.color || mergeSourceMaterialColor(mesh),
+      opacity: textureState?.opacity ?? Math.max(.05, Math.min(1, Number(mesh.userData.opacity ?? primaryMeshMaterial(mesh)?.opacity ?? 1) || 1)),
+      roughness: Number(primaryMeshMaterial(mesh)?.roughness || 0),
+      textureUrl: textureState?.textureUrl || null, textureName: textureState?.textureName || null,
+      textureFlipY: textureState?.textureFlipY ?? true, textureRotation: textureState?.textureRotation ?? 0,
+      textureRobloxAssetId: textureState?.textureRobloxAssetId || "",
+      materialRule: normalizeMaterialRule(mesh.userData.materialRule || "auto"),
+      groupId, groupName, hidden: false, linkId: null, linkColor: null,
+      generatedShell: true, shellResolution: Number(mesh.userData.shellResolution) || null
+    },
+    sourceTriangles, outputTriangles: sourceTriangles, filledCells: 0, sealedCells: 0,
+    shellCount, resolution: Number(mesh.userData.shellResolution) || null,
+    dimensions: null, method: "existing-surface"
+  };
 }
 
 function surfaceShellUnionSpec(meshes, { name = "Combined Shell", groupId = null, groupName = null } = {}) {
@@ -20323,8 +20576,10 @@ async function voxelShellUnionSpec(meshes, { name = "Combined Shell", resolution
   }
   const size = bounds.getSize(new THREE.Vector3());
   const longest = Math.max(size.x, size.y, size.z, .001);
-  const automaticResolution = sourceTriangles > 12000 ? 26 : sourceTriangles > 3000 ? 32 : 42;
-  const axisResolution = Math.max(18, Math.min(64, Math.round(Number(resolution) || automaticResolution)));
+  const aspectVolume = Math.max(.0001, (size.x / longest) * (size.y / longest) * (size.z / longest));
+  const safeResolution = Math.floor(Math.cbrt(240000 / aspectVolume)) - 2;
+  const automaticResolution = sourceTriangles > 12000 ? 96 : sourceTriangles > 3000 ? 80 : 64;
+  const axisResolution = Math.max(18, Math.min(160, safeResolution, Math.round(Number(resolution) || automaticResolution)));
   const cellSize = longest / axisResolution;
   const dimensions = [
     Math.max(3, Math.ceil(size.x / cellSize) + 2),
@@ -20380,26 +20635,46 @@ async function voxelShellUnionSpec(meshes, { name = "Combined Shell", resolution
     if (progress) progress((x + 1) / dimensions[0]);
     if (x % 3 === 2) await new Promise(resolve => requestAnimationFrame(resolve));
   }
-  probes.forEach(entry => {
-    entry.probe.geometry.dispose();
-    entry.probe.material.dispose();
-  });
-  if (!filled) throw new Error("No closed volume was found. Combine into Shell needs closed meshes rather than open planes.");
+  if (!filled) {
+    probes.forEach(entry => {
+      entry.probe.geometry.dispose();
+      entry.probe.material.dispose();
+    });
+    throw new Error("No closed volume was found. Combine into Shell needs closed meshes rather than open planes.");
+  }
   const sealedCells = shellCloseSingleCellSeams(occupied, dimensions);
-  const shellCount = shellVoxelComponentCount(occupied, dimensions);
-  const geometry = shellGreedyGeometry(occupied, dimensions, origin, cellSize);
+  const filledVoids = shellFillEnclosedVoids(occupied, dimensions);
+  const volumeShellCount = shellVoxelComponentCount(occupied, dimensions);
+  let geometry = shellSurfaceNetGeometry(occupied, dimensions, origin, cellSize);
   if (!geometry.getAttribute("position")?.count) {
     geometry.dispose();
+    probes.forEach(entry => {
+      entry.probe.geometry.dispose();
+      entry.probe.material.dispose();
+    });
     throw new Error("The selected meshes did not produce an outer shell.");
+  }
+  if (!shellTransferNearestUvs(geometry, probes, cellSize * 2)) shellProjectedUvs(geometry);
+  const shellCount = shellGeometryComponentCount(geometry);
+  if (volumeShellCount === 1 && shellCount !== 1) {
+    geometry.dispose();
+    probes.forEach(entry => {
+      entry.probe.geometry.dispose();
+      entry.probe.material.dispose();
+    });
+    throw new Error(`The reconstructed surface split into ${shellCount} pieces instead of one shell.`);
   }
   geometry.computeBoundingBox();
   const center = geometry.boundingBox.getCenter(new THREE.Vector3());
   geometry.translate(-center.x, -center.y, -center.z);
-  shellProjectedUvs(geometry);
   geometry.computeBoundingSphere();
   const geometryData = geometryToData(geometry);
   const outputTriangles = Math.floor(geometry.getAttribute("position").count / 3);
   geometry.dispose();
+  probes.forEach(entry => {
+    entry.probe.geometry.dispose();
+    entry.probe.material.dispose();
+  });
   const first = meshes[0];
   const textureState = sharedMergeTextureState(meshes);
   const sameRule = meshes.every(mesh => normalizeMaterialRule(mesh.userData.materialRule || "auto") === normalizeMaterialRule(first.userData.materialRule || "auto"))
@@ -20434,10 +20709,11 @@ async function voxelShellUnionSpec(meshes, { name = "Combined Shell", resolution
     outputTriangles,
     filledCells: filled,
     sealedCells,
+    filledVoids,
     shellCount,
     resolution: axisResolution,
     dimensions,
-    method: "voxel"
+    method: "voxel-surface"
   };
 }
 
@@ -20520,11 +20796,19 @@ async function combineMeshesIntoShell(targetMeshes, {
   if (announce) {
     const shellMethod = result.method === "surface"
       ? "surface-preserving boolean"
+      : result.method === "existing-surface"
+        ? "existing watertight surface"
       : result.method === "surface-cull"
         ? "surface-preserving internal-face cleanup"
-        : "voxel fallback";
-    const note = result.method === "surface-cull"
+        : result.method === "voxel-surface"
+          ? "high-resolution volumetric union"
+          : "voxel fallback";
+    const note = result.method === "existing-surface"
+      ? "This mesh was already one outer shell, so its geometry was preserved unchanged."
+      : result.method === "surface-cull"
       ? "Covered internal faces were removed without voxelizing or flattening the original stone surfaces."
+      : result.method === "voxel-surface" && result.shellCount === 1
+        ? "A new watertight outer surface was reconstructed around the complete combined volume."
       : result.shellCount === 1
         ? "Internal faces were removed and original slopes, curves, normals, and UVs were preserved."
         : `The result contains ${result.shellCount} disconnected islands because some selected parts did not touch.`;
@@ -20536,6 +20820,7 @@ async function combineMeshesIntoShell(targetMeshes, {
       shellResolution: result.resolution,
       shellGrid: result.dimensions,
       smallSeamsClosed: result.sealedCells,
+      enclosedVoidsFilled: result.filledVoids || 0,
       connectedShells: result.shellCount,
       note
     });
