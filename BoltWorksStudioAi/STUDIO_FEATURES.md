@@ -188,6 +188,9 @@ The screenshot view contract is Front from `+Z`, Back from `-Z`, Left from
 
 - Save Project and Load Project preserve the editable `.modelerproj` scene,
   editor state, lighting, textures, groups, and rig data.
+- Save Project first opens a summary with object, vertex, triangle, and estimated
+  file-size totals. Large-scene warnings appear before JSON serialization, and
+  supported browsers can choose the destination with the system file picker.
 - **Insert OBJ** adds an OBJ as editable parts in the current workspace without
   clearing the models already there. Select its OBJ, MTL, and texture images
   together to bring in its available colours and textures; the inserted model
@@ -241,9 +244,11 @@ formats and do not preserve all BWS editing information.
 - Nature nodes add single, clustered, lined, or stacked procedural rocks,
   irregular dry-stacked stone walls, texture-free grass blade sheets, and moss
   placement at the bottom, middle, top, or all heights of compatible geometry.
-  Grass Scatter includes a default-on projected exclusion mask and adjustable
-  clearance, preventing clump roots and leaning blades from clipping through
-  the rotated footprints of upstream rocks and wall stones.
+  Grass Scatter includes a default-on projected exclusion mask, adjustable
+  clearance, and independent −X, +X, −Z, and +Z outer-side switches. This keeps
+  selected wall connection ends clear while preventing clump roots and leaning
+  blades from clipping through upstream rocks and wall stones. Y-side growth is
+  reserved for future vegetation that can grow on vertical or overhead surfaces.
   Rock meshes are closed solids with outward-facing top and bottom caps. Side,
   top, and bottom UV islands are separated so a stone material can cover every
   face without side-strip smearing. Variation deforms each unique ring point

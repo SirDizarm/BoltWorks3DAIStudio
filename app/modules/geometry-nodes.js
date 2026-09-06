@@ -158,6 +158,10 @@ function defaultGeometryNodeGraph(name = "Procedural Geometry") {
       ,grassSpread: 0.35
       ,grassAvoidGeometry: true
       ,grassClearance: 0.12
+      ,grassGrowNegativeX: true
+      ,grassGrowPositiveX: true
+      ,grassGrowNegativeZ: true
+      ,grassGrowPositiveZ: true
       ,grassColor: "#376f2d"
       ,mossPlacement: "bottom"
       ,mossCoverage: 0.55
@@ -300,6 +304,10 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
       grassSpread: geometryNodeNumber(params.grassSpread, fallback.params.grassSpread, 0, 3),
       grassAvoidGeometry: params.grassAvoidGeometry !== false,
       grassClearance: geometryNodeNumber(params.grassClearance, fallback.params.grassClearance, 0, 2),
+      grassGrowNegativeX: params.grassGrowNegativeX !== false,
+      grassGrowPositiveX: params.grassGrowPositiveX !== false,
+      grassGrowNegativeZ: params.grassGrowNegativeZ !== false,
+      grassGrowPositiveZ: params.grassGrowPositiveZ !== false,
       grassColor: /^#[0-9a-f]{6}$/i.test(params.grassColor) ? params.grassColor : fallback.params.grassColor,
       mossPlacement: ["bottom", "middle", "top", "all"].includes(params.mossPlacement) ? params.mossPlacement : fallback.params.mossPlacement,
       mossCoverage: geometryNodeNumber(params.mossCoverage, fallback.params.mossCoverage, 0, 1),
@@ -581,7 +589,7 @@ function geometryNodeFields(graph, type, instanceId = type) {
   if (type === "clusterScatter") return geometryNodeField("Count", "clusterScatterCount", p.clusterScatterCount, { min: 0, max: 64 }) + geometryNodeField("Size", "clusterScatterSize", p.clusterScatterSize, { min: .05, max: 8, step: .05 }) + geometryNodeField("Spread", "clusterScatterSpread", p.clusterScatterSpread, { min: 0, max: 4, step: .05 }) + geometryNodeField("Color", "clusterScatterColor", p.clusterScatterColor, { type: "color" });
   if (type === "rocks") return geometryNodeSelectField("Profile", "rockProfile", p.rockProfile, [["rounded", "Rounded"], ["jagged", "Jagged"], ["flat", "Flat fieldstone"], ["boulder", "Boulder"]]) + geometryNodeSelectField("Arrangement", "rockArrangement", p.rockArrangement, [["single", "Single"], ["cluster", "Cluster"], ["line", "Line"], ["stack", "Stacked"]]) + geometryNodeField("Count", "rockCount", p.rockCount, { min: 1, max: 48 }) + geometryNodeField("Size", "rockSize", p.rockSize, { min: .1, max: 8, step: .05 }) + geometryNodeField("Variation", "rockVariation", p.rockVariation, { min: 0, max: 1, step: .05 }) + geometryNodeField("Spacing", "rockSpacing", p.rockSpacing, { min: .2, max: 4, step: .05 }) + geometryNodeField("Color", "rockColor", p.rockColor, { type: "color" });
   if (type === "stoneWall") return geometryNodeField("Length", "wallLength", p.wallLength, { min: 1, max: 500, step: .5 }) + geometryNodeField("Height", "wallHeight", p.wallHeight, { min: .5, max: 12, step: .1 }) + geometryNodeField("Depth", "wallDepth", p.wallDepth, { min: .3, max: 6, step: .05 }) + geometryNodeField("Rows", "wallRows", p.wallRows, { min: 1, max: 12 }) + geometryNodeField("Stones / 7 units", "wallColumns", p.wallColumns, { min: 2, max: 30 }) + geometryNodeField("Depth layers", "wallDepthLayers", p.wallDepthLayers, { min: 1, max: 4 }) + geometryNodeField("Shape variation", "wallIrregularity", p.wallIrregularity, { min: 0, max: 1, step: .05 }) + geometryNodeField("Color variation", "wallColorVariation", p.wallColorVariation, { min: 0, max: 1, step: .05 }) + geometryNodeField("Base color", "wallColor", p.wallColor, { type: "color" });
-  if (type === "grass") return geometryNodeField("Clump count", "grassCount", p.grassCount, { min: 1, max: 160 }) + geometryNodeField("Height", "grassHeight", p.grassHeight, { min: .05, max: 3, step: .02 }) + geometryNodeField("Width", "grassWidth", p.grassWidth, { min: .01, max: .8, step: .01 }) + geometryNodeField("Edge spread", "grassSpread", p.grassSpread, { min: 0, max: 3, step: .05 }) + geometryNodeField("Avoid source geometry", "grassAvoidGeometry", p.grassAvoidGeometry, { type: "checkbox" }) + geometryNodeField("Mask clearance", "grassClearance", p.grassClearance, { min: 0, max: 2, step: .02 }) + geometryNodeField("Color", "grassColor", p.grassColor, { type: "color" });
+  if (type === "grass") return geometryNodeField("Clump count", "grassCount", p.grassCount, { min: 1, max: 160 }) + geometryNodeField("Height", "grassHeight", p.grassHeight, { min: .05, max: 3, step: .02 }) + geometryNodeField("Width", "grassWidth", p.grassWidth, { min: .01, max: .8, step: .01 }) + geometryNodeField("Edge spread", "grassSpread", p.grassSpread, { min: 0, max: 3, step: .05 }) + geometryNodeField("Avoid source geometry", "grassAvoidGeometry", p.grassAvoidGeometry, { type: "checkbox" }) + geometryNodeField("Mask clearance", "grassClearance", p.grassClearance, { min: 0, max: 2, step: .02 }) + geometryNodeField("Grow on −X side", "grassGrowNegativeX", p.grassGrowNegativeX, { type: "checkbox" }) + geometryNodeField("Grow on +X side", "grassGrowPositiveX", p.grassGrowPositiveX, { type: "checkbox" }) + geometryNodeField("Grow on −Z side", "grassGrowNegativeZ", p.grassGrowNegativeZ, { type: "checkbox" }) + geometryNodeField("Grow on +Z side", "grassGrowPositiveZ", p.grassGrowPositiveZ, { type: "checkbox" }) + geometryNodeField("Color", "grassColor", p.grassColor, { type: "color" });
   if (type === "moss") return geometryNodeSelectField("Height zone", "mossPlacement", p.mossPlacement, [["bottom", "Bottom"], ["middle", "Middle"], ["top", "Top"], ["all", "All heights"]]) + geometryNodeField("Coverage", "mossCoverage", p.mossCoverage, { min: 0, max: 1, step: .05 }) + geometryNodeField("Cushion height", "mossThickness", p.mossThickness, { min: .02, max: .6, step: .01 }) + geometryNodeField("Moisture", "mossMoisture", p.mossMoisture, { min: 0, max: 1, step: .05 }) + geometryNodeField("Sun exposure", "mossSunlight", p.mossSunlight, { min: 0, max: 1, step: .05 }) + geometryNodeField("Crack preference", "mossCrackBias", p.mossCrackBias, { min: 0, max: 1, step: .05 }) + geometryNodeField("Color", "mossColor", p.mossColor, { type: "color" });
   if (type === "join") return '<p class="geometry-node-card-note">Combines every connected geometry stream.</p>';
   if (type === "primitiveTest") return '<p class="geometry-node-card-note">Builds cube, pentagon, and low-cone before/after pairs.</p>';
@@ -1509,29 +1517,33 @@ function buildGeometryNodeTree() {
   natureSurfaces.forEach(surface => surface.geometry?.dispose());
   if (activeNodes.has("grass") && natureSurfaces.length) {
     const blades = [];
+    const grassSides = [
+      p.grassGrowNegativeZ && { axis: "z", sign: -1 },
+      p.grassGrowPositiveZ && { axis: "z", sign: 1 },
+      p.grassGrowNegativeX && { axis: "x", sign: -1 },
+      p.grassGrowPositiveX && { axis: "x", sign: 1 }
+    ].filter(Boolean);
+    const natureBounds = natureSurfaces.reduce((bounds, surface) => {
+      const halfX = surface.size.x * .5;
+      const halfZ = surface.size.z * .5;
+      bounds.minX = Math.min(bounds.minX, surface.position.x - halfX);
+      bounds.maxX = Math.max(bounds.maxX, surface.position.x + halfX);
+      bounds.minZ = Math.min(bounds.minZ, surface.position.z - halfZ);
+      bounds.maxZ = Math.max(bounds.maxZ, surface.position.z + halfZ);
+      return bounds;
+    }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity });
     const bladeReach = p.grassWidth * 2 + p.grassHeight * .12;
     const clearance = p.grassClearance + bladeReach;
     const maxAttempts = Math.max(40, p.grassCount * 36);
-    for (let attempt = 0; blades.length < p.grassCount && attempt < maxAttempts; attempt++) {
-      const surface = natureSurfaces[Math.floor(random() * natureSurfaces.length)];
-      let x;
-      let z;
-      if (surface.kind === "wall") {
-        const side = attempt % 4;
-        const halfX = surface.size.x * .5 + clearance;
-        const halfZ = surface.size.z * .5 + clearance;
-        const localX = side < 2 ? (random() - .5) * surface.size.x : (side === 2 ? -halfX - random() * p.grassSpread : halfX + random() * p.grassSpread);
-        const localZ = side >= 2 ? (random() - .5) * surface.size.z : (side === 0 ? -halfZ - random() * p.grassSpread : halfZ + random() * p.grassSpread);
-        x = surface.position.x + localX * Math.cos(surface.rotationY) - localZ * Math.sin(surface.rotationY);
-        z = surface.position.z + localX * Math.sin(surface.rotationY) + localZ * Math.cos(surface.rotationY);
-      } else {
-        const angle = random() * Math.PI * 2;
-        const radialSpread = random() * p.grassSpread;
-        const localX = Math.cos(angle) * (surface.size.x * .5 + clearance + radialSpread);
-        const localZ = Math.sin(angle) * (surface.size.z * .5 + clearance + radialSpread);
-        x = surface.position.x + localX * Math.cos(surface.rotationY) - localZ * Math.sin(surface.rotationY);
-        z = surface.position.z + localX * Math.sin(surface.rotationY) + localZ * Math.cos(surface.rotationY);
-      }
+    for (let attempt = 0; grassSides.length && blades.length < p.grassCount && attempt < maxAttempts; attempt++) {
+      const growthSide = grassSides[attempt % grassSides.length];
+      const outside = clearance + random() * p.grassSpread;
+      const x = growthSide.axis === "x"
+        ? (growthSide.sign < 0 ? natureBounds.minX - outside : natureBounds.maxX + outside)
+        : THREE.MathUtils.lerp(natureBounds.minX, natureBounds.maxX, random());
+      const z = growthSide.axis === "z"
+        ? (growthSide.sign < 0 ? natureBounds.minZ - outside : natureBounds.maxZ + outside)
+        : THREE.MathUtils.lerp(natureBounds.minZ, natureBounds.maxZ, random());
       if (p.grassAvoidGeometry && geometryNodeGrassPointBlocked(x, z, natureSurfaces, clearance)) continue;
       blades.push(new THREE.Vector3(x, .015, z));
     }

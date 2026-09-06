@@ -219,9 +219,14 @@ primitives, cluster scatter, and separately tuned junction/smoothing modifiers.
 The same payload supports Rock Generator arrangements and profiles, Stone Wall
 dimensions and courses, generated Grass Scatter blade sheets, and Moss Growth
 with bottom, middle, top, or all-height placement. Grass Scatter stores a
-`grassAvoidGeometry` footprint-mask toggle and adjustable `grassClearance`.
+`grassAvoidGeometry` footprint-mask toggle, adjustable `grassClearance`, and
+`grassGrowNegativeX`, `grassGrowPositiveX`, `grassGrowNegativeZ`, and
+`grassGrowPositiveZ` outer-side switches.
 When enabled, clump roots are rejected from the rotated XZ footprints of every
-upstream rock or wall stone, with extra room for blade width and lean.
+upstream rock or wall stone, with extra room for blade width and lean. Side
+switches use the complete generated asset bounds, allowing a wall connection
+end to remain clear. Grass currently grows from the XZ ground plane, so Y-side
+controls are intentionally reserved for future wall and ceiling vegetation.
 Rock and wall meshes are closed solids. Their side strip and planar top/bottom
 caps use separate UV islands, and the bottom cap winding faces outward so an
 assigned stone material remains visible and aligned from underneath. Rock

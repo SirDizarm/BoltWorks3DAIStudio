@@ -1878,14 +1878,123 @@ document.querySelector("#captureViewsBtn").addEventListener("click", async () =>
   log(`Saved ${shots.length} reference screenshots for AI review.`, shots.map(shot => shot.fileName));
 });
 
-els.saveProjectBtn.addEventListener("click", () => {
-  const projectName = currentProjectBaseName();
-  download(`${projectName}.modelerproj`, JSON.stringify(projectState(), null, 2), "application/json");
-  log("Saved full project file.", {
-    project: projectName,
-    objects: objects.length,
-    checked: checkedIds.size
-  });
+const saveProjectModal = document.querySelector("#saveProjectModal");
+const saveProjectCloseBtn = document.querySelector("#saveProjectCloseBtn");
+const saveProjectCancelBtn = document.querySelector("#saveProjectCancelBtn");
+const saveProjectConfirmBtn = document.querySelector("#saveProjectConfirmBtn");
+const saveProjectNameInput = document.querySelector("#saveProjectNameInput");
+const saveProjectWarning = document.querySelector("#saveProjectWarning");
+
+function formatEstimatedFileSize(bytes) {
+  if (bytes < 1024) return `${Math.max(0, Math.round(bytes))} B`;
+  const units = ["KB", "MB", "GB"];
+  let value = bytes / 1024;
+  let unit = units[0];
+  for (let index = 1; index < units.length && value >= 1024; index++) {
+    value /= 1024;
+    unit = units[index];
+  }
+  return `${value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${unit}`;
+}
+
+function estimateEditableProjectSave() {
+  let vertices = 0;
+  let triangles = 0;
+  let numericValues = 0;
+  const textureUrls = new Set();
+  for (const mesh of objects) {
+    const geometry = mesh.geometry;
+    const position = geometry?.getAttribute?.("position");
+    const vertexCount = position?.count || 0;
+    vertices += vertexCount;
+    triangles += Math.floor((geometry?.index?.count || vertexCount) / 3);
+    const stored = mesh.userData?.geometry;
+    if (stored) {
+      for (const key of ["positions", "normals", "colors", "uvs", "indices"]) numericValues += Array.isArray(stored[key]) || ArrayBuffer.isView(stored[key]) ? stored[key].length : 0;
+    } else if (mesh.userData?.shape === "glb") {
+      numericValues += vertexCount * (6 + (geometry?.getAttribute?.("uv") ? 2 : 0) + (geometry?.getAttribute?.("color") ? 3 : 0));
+    }
+    for (const key of ["textureUrl", "roughnessTextureUrl", "metalnessTextureUrl", "normalTextureUrl", "emissiveTextureUrl"]) {
+      const url = mesh.userData?.[key];
+      if (typeof url === "string" && url.startsWith("data:")) textureUrls.add(url);
+    }
+  }
+  const textureBytes = [...textureUrls].reduce((sum, value) => sum + value.length, 0);
+  const estimatedBytes = 24000 + objects.length * 1400 + numericValues * 12 + textureBytes;
+  return { objects: objects.length, vertices, triangles, estimatedBytes };
+}
+
+function setSaveProjectModalOpen(open) {
+  if (!saveProjectModal) return;
+  document.body.classList.toggle("save-project-open", open);
+  saveProjectModal.classList.toggle("open", open);
+  saveProjectModal.setAttribute("aria-hidden", String(!open));
+  if (!open) return void els.saveProjectBtn?.focus();
+  const estimate = estimateEditableProjectSave();
+  saveProjectNameInput.value = `${currentProjectBaseName()}.modelerproj`;
+  document.querySelector("#saveProjectObjectCount").textContent = estimate.objects.toLocaleString();
+  document.querySelector("#saveProjectVertexCount").textContent = estimate.vertices.toLocaleString();
+  document.querySelector("#saveProjectTriangleCount").textContent = estimate.triangles.toLocaleString();
+  document.querySelector("#saveProjectEstimatedSize").textContent = `About ${formatEstimatedFileSize(estimate.estimatedBytes)}`;
+  const heavy = estimate.triangles >= 1000000 || estimate.estimatedBytes >= 200 * 1024 * 1024;
+  saveProjectWarning.hidden = !heavy;
+  saveProjectWarning.textContent = heavy
+    ? "Large project warning: preparing this editable file may require substantial memory and could overwhelm the browser. Consider reducing geometry or saving smaller sections first."
+    : "";
+  saveProjectModal.dataset.estimatedBytes = String(estimate.estimatedBytes);
+  saveProjectNameInput.focus();
+  saveProjectNameInput.select();
+}
+
+function safeProjectFileName(value) {
+  const base = String(value || currentProjectBaseName()).trim().replace(/[<>:\"/\\|?*\u0000-\u001f]/g, "-") || "modeler-project";
+  return base.toLowerCase().endsWith(".modelerproj") ? base : `${base}.modelerproj`;
+}
+
+async function saveEditableProjectFromDialog() {
+  const fileName = safeProjectFileName(saveProjectNameInput.value);
+  const estimatedBytes = Number(saveProjectModal.dataset.estimatedBytes) || 0;
+  if (estimatedBytes >= 750 * 1024 * 1024 && !window.confirm("This project is estimated above 750 MB and may crash this browser while being prepared. Try saving anyway?")) return;
+  let fileHandle = null;
+  try {
+    if (typeof window.showSaveFilePicker === "function") {
+      fileHandle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{ description: "BoltWorks editable project", accept: { "application/json": [".modelerproj"] } }]
+      });
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+  }
+  saveProjectConfirmBtn.disabled = true;
+  saveProjectConfirmBtn.textContent = "Preparing project…";
+  try {
+    const text = JSON.stringify(projectState(), null, 2);
+    if (fileHandle) {
+      const writable = await fileHandle.createWritable();
+      await writable.write(text);
+      await writable.close();
+    } else download(fileName, text, "application/json");
+    setSaveProjectModalOpen(false);
+    log("Saved full project file.", { project: fileName, size: formatEstimatedFileSize(text.length), objects: objects.length, checked: checkedIds.size });
+  } catch (error) {
+    saveProjectWarning.hidden = false;
+    saveProjectWarning.textContent = `The project could not be saved: ${error?.message || "the browser ran out of available resources"}`;
+  } finally {
+    saveProjectConfirmBtn.disabled = false;
+    saveProjectConfirmBtn.textContent = "Choose Save Location";
+  }
+}
+
+els.saveProjectBtn.addEventListener("click", () => setSaveProjectModalOpen(true));
+saveProjectCloseBtn?.addEventListener("click", () => setSaveProjectModalOpen(false));
+saveProjectCancelBtn?.addEventListener("click", () => setSaveProjectModalOpen(false));
+saveProjectConfirmBtn?.addEventListener("click", saveEditableProjectFromDialog);
+saveProjectModal?.addEventListener("click", event => {
+  if (event.target === saveProjectModal) setSaveProjectModalOpen(false);
+});
+document.addEventListener("keydown", event => {
+  if (event.key === "Escape" && saveProjectModal?.classList.contains("open")) setSaveProjectModalOpen(false);
 });
 els.newWorkspaceBtn?.addEventListener("click", async () => {
   const hasWork = objects.length > 0;

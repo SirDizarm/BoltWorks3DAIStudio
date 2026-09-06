@@ -10,6 +10,7 @@ const { chromium } = require("C:/Users/sir_d/.cache/codex-runtimes/codex-primary
   });
   try {
     const context = await browser.newContext({ viewport: { width: 1600, height: 1050 }, acceptDownloads: true, permissions: ["clipboard-read", "clipboard-write"] });
+    await context.addInitScript(() => { Object.defineProperty(window, "showSaveFilePicker", { value: undefined, configurable: true }); });
     const page = await context.newPage();
     await page.goto("http://127.0.0.1:4173/?geometry-hybrid-tree-qa=1");
     await page.waitForFunction(() => !!window.ModelerStudio);
@@ -98,8 +99,10 @@ const { chromium } = require("C:/Users/sir_d/.cache/codex-runtimes/codex-primary
     await page.waitForTimeout(350);
     await page.screenshot({ path: "exports/hybrid-smooth-stem-tree-preview.png", fullPage: false });
 
-    const downloadPromise = page.waitForEvent("download");
     await page.locator("#saveProjectBtn").click();
+    await page.locator("#saveProjectModal.open").waitFor();
+    const downloadPromise = page.waitForEvent("download");
+    await page.locator("#saveProjectConfirmBtn").click();
     const download = await downloadPromise;
     await download.saveAs(path.resolve("exports/hybrid-smooth-stem-tree.modelerproj"));
     assert.equal(await popup.locator(".geometry-node-card.inactive").count(), 0);

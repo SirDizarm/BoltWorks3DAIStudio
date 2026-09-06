@@ -128,6 +128,7 @@ const assertGrassRootsOutsideSources = (project, slug) => {
       assert(!inside, `${slug} grass root clips ${source.name}`);
     }
   }
+  return roots;
 };
 
 const makeCluster = ({ name, sourceType, detailTypes, seed, params }) => {
@@ -153,7 +154,7 @@ const assets = [
       params: { rockProfile: "flat", rockArrangement: "stack", rockCount: 10, rockSize: 1.12, rockVariation: .5, rockSpacing: .9, rockColor: "#59635f", grassCount: 6, grassHeight: .32, grassWidth: .032, grassSpread: .12, grassAvoidGeometry: true, grassClearance: .12 } }) },
   { slug: "mossy-dry-stone-wall", sourceLabel: "Wall stone 1.1.1", minObjects: 180,
     cluster: makeCluster({ name: "Mossy Dry Stone Wall", sourceType: "stoneWall", detailTypes: ["moss", "grass"], seed: 311,
-      params: { wallLength: 12, wallHeight: 3.2, wallDepth: 1.25, wallRows: 5, wallColumns: 9, wallDepthLayers: 3, wallIrregularity: .68, wallColorVariation: .66, wallColor: "#59625e", mossPlacement: "all", mossCoverage: .52, mossThickness: .065, mossMoisture: .86, mossSunlight: .22, mossCrackBias: .82, grassCount: 18, grassHeight: .38, grassWidth: .034, grassSpread: .18, grassAvoidGeometry: true, grassClearance: .14 } }) }
+      params: { wallLength: 12, wallHeight: 3.2, wallDepth: 1.25, wallRows: 5, wallColumns: 9, wallDepthLayers: 3, wallIrregularity: .68, wallColorVariation: .66, wallColor: "#59625e", mossPlacement: "all", mossCoverage: .52, mossThickness: .065, mossMoisture: .86, mossSunlight: .22, mossCrackBias: .82, grassCount: 18, grassHeight: .38, grassWidth: .034, grassSpread: .18, grassAvoidGeometry: true, grassClearance: .14, grassGrowPositiveX: false } }) }
   ,{ slug: "jagged-rock-outcrop", sourceLabel: "Rock 1", minObjects: 5,
     cluster: makeCluster({ name: "Jagged Rock Outcrop", sourceType: "rocks", detailTypes: ["grass"], seed: 417,
       params: { rockProfile: "jagged", rockArrangement: "cluster", rockCount: 4, rockSize: 1.3, rockVariation: 1, rockSpacing: 1.15, rockColor: "#505a57", grassCount: 8, grassHeight: .36, grassWidth: .032, grassSpread: .16, grassAvoidGeometry: true, grassClearance: .13 } }) }
@@ -168,6 +169,7 @@ const assets = [
     const selectedAssets = process.env.BWS_ASSET ? assets.filter(asset => asset.slug === process.env.BWS_ASSET) : assets;
     for (const asset of selectedAssets) {
       const context = await browser.newContext({ viewport: { width: 1700, height: 1050 }, acceptDownloads: true });
+      await context.addInitScript(() => { Object.defineProperty(window, "showSaveFilePicker", { value: undefined, configurable: true }); });
       const page = await context.newPage();
       page.on("dialog", dialog => dialog.accept());
       page.on("pageerror", error => console.error(`PAGE ERROR (${asset.slug}):`, error));
@@ -244,8 +246,10 @@ const assets = [
         await page.locator("#canvas").screenshot({ path: "exports/jagged-rock-outcrop-orbit-under-unlit.png" });
       }
       await popup.locator("#geometryNodeDetachedBakeBtn").click();
-      const projectDownloadPromise = page.waitForEvent("download");
       await page.locator("#saveProjectBtn").click();
+      await page.locator("#saveProjectModal.open").waitFor();
+      const projectDownloadPromise = page.waitForEvent("download");
+      await page.locator("#saveProjectConfirmBtn").click();
       const projectDownload = await projectDownloadPromise;
       const projectPath = path.resolve("exports", `${asset.slug}.modelerproj`);
       await projectDownload.saveAs(projectPath);
@@ -312,8 +316,11 @@ const assets = [
           }), `${asset.slug} ${rock.name} must overlap a lower support stone`);
         }
       }
-      assertGrassRootsOutsideSources(project, asset.slug);
+      const grassRoots = assertGrassRootsOutsideSources(project, asset.slug);
       const centeredBounds = worldXZBounds(stoneSources);
+      if (asset.cluster.graph.params.grassGrowPositiveX === false) {
+        assert(grassRoots.every(([x]) => x <= centeredBounds.maxX + .001), `${asset.slug} must keep the +X connection end clear of grass`);
+      }
       const centerX = (centeredBounds.minX + centeredBounds.maxX) * .5;
       const centerZ = (centeredBounds.minZ + centeredBounds.maxZ) * .5;
       assert(Math.abs(centerX) < .12 && Math.abs(centerZ) < .12, `${asset.slug} should remain centered, got ${centerX}, ${centerZ}`);
