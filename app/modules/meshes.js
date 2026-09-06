@@ -20224,7 +20224,7 @@ async function shellUnionSpec(meshes, options = {}) {
     options.progress?.(1);
     return result;
   } catch (surfaceError) {
-    if (options.voxelFallback === true) {
+    if (options.voxelFallback !== false) {
       const fallback = await voxelShellUnionSpec(meshes, options);
       if (fallback) fallback.fallbackReason = surfaceError?.message || "Surface boolean union failed.";
       return fallback;
@@ -20233,7 +20233,12 @@ async function shellUnionSpec(meshes, options = {}) {
   }
 }
 
-async function combineMeshesIntoShell(targetMeshes, { name = "Combined Shell", resolution = null, announce = true } = {}) {
+async function combineMeshesIntoShell(targetMeshes, {
+  name = "Combined Shell",
+  resolution = null,
+  announce = true,
+  voxelFallback = true
+} = {}) {
   const meshes = [...new Set((targetMeshes || []).filter(mesh => mesh?.isMesh))];
   if (meshes.length < 2) throw new Error("Combine into Shell needs at least two meshes.");
   const selectedGroupIds = selectedHierarchyGroupIds(meshes);
@@ -20247,6 +20252,7 @@ async function combineMeshesIntoShell(targetMeshes, { name = "Combined Shell", r
   const result = await shellUnionSpec(meshes, {
     name,
     resolution,
+    voxelFallback,
     groupId: parentId,
     groupName: parentRecord?.name || null,
     progress: announce ? ratio => {
