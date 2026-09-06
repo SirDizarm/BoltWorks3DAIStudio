@@ -20086,10 +20086,14 @@ async function surfaceCullCompoundSpec(mesh, parts, { name = "Combined Shell", g
   const probes = parts.map(geometry => {
     const worldGeometry = geometry.clone().applyMatrix4(mesh.matrixWorld);
     worldGeometry.computeBoundingBox();
+    const box = worldGeometry.boundingBox.clone();
+    const interiorBox = box.clone();
+    const margin = Math.max(1e-5, box.getSize(new THREE.Vector3()).length() * 1e-5);
+    interiorBox.expandByScalar(-margin);
     const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
     const probe = new THREE.Mesh(worldGeometry, material);
     probe.updateMatrixWorld(true);
-    return { geometry: worldGeometry, material, probe, box: worldGeometry.boundingBox.clone() };
+    return { geometry: worldGeometry, material, probe, box, interiorBox };
   });
   const attributeNames = Object.keys(probes[0]?.geometry?.attributes || {});
   const kept = Object.fromEntries(attributeNames.map(attributeName => [attributeName, []]));
@@ -20099,6 +20103,19 @@ async function surfaceCullCompoundSpec(mesh, parts, { name = "Combined Shell", g
   raycaster.near = 1e-6;
   raycaster.far = 1e7;
   const a = new THREE.Vector3(), b = new THREE.Vector3(), c = new THREE.Vector3(), center = new THREE.Vector3();
+  const pointInsideProbe = (point, candidate) => {
+    if (!candidate.interiorBox.containsPoint(point)) return false;
+    raycaster.ray.origin.copy(point);
+    const hits = raycaster.intersectObject(candidate.probe, false);
+    let crossings = 0;
+    let previousDistance = -Infinity;
+    for (const hit of hits) {
+      if (hit.distance <= raycaster.near || Math.abs(hit.distance - previousDistance) <= 1e-5) continue;
+      previousDistance = hit.distance;
+      crossings++;
+    }
+    return crossings % 2 === 1;
+  };
   const sourceTriangles = probes.reduce((total, entry) => total + Math.floor(entry.geometry.getAttribute("position").count / 3), 0);
   let processed = 0;
   try {
@@ -20115,17 +20132,12 @@ async function surfaceCullCompoundSpec(mesh, parts, { name = "Combined Shell", g
         for (let candidateIndex = 0; candidateIndex < probes.length; candidateIndex++) {
           if (candidateIndex === componentIndex) continue;
           const candidate = probes[candidateIndex];
-          if (!candidate.box.containsPoint(center)) continue;
-          raycaster.ray.origin.copy(center);
-          const hits = raycaster.intersectObject(candidate.probe, false);
-          let crossings = 0;
-          let previousDistance = -Infinity;
-          for (const hit of hits) {
-            if (hit.distance <= raycaster.near || Math.abs(hit.distance - previousDistance) <= 1e-5) continue;
-            previousDistance = hit.distance;
-            crossings++;
-          }
-          if (crossings % 2 === 1) {
+          if (
+            pointInsideProbe(center, candidate)
+            && pointInsideProbe(a, candidate)
+            && pointInsideProbe(b, candidate)
+            && pointInsideProbe(c, candidate)
+          ) {
             covered = true;
             break;
           }

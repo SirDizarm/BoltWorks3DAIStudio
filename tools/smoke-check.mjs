@@ -14,7 +14,7 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.64.5.js", import.meta.url), "utf8");
+const directBundle = readFileSync(new URL("../app/studio-v49.64.6.js", import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -829,8 +829,8 @@ function functionSource(source, name) {
   largeCompound.updateMatrixWorld(true);
   const largeResult = await context.shellUnionSpec([largeCompound], { voxelFallback: false });
   const largeTriangles = largeResult?.spec?.geometry?.positions?.length / 9;
-  if (largeResult?.method !== "surface-cull" || !largeTriangles || largeTriangles >= largeResult.sourceTriangles) {
-    throw new Error(`Large merged compounds must use the bounded surface-preserving cleanup rather than voxelizing or stalling. ${JSON.stringify({ method: largeResult?.method, sourceTriangles: largeResult?.sourceTriangles, largeTriangles })}`);
+  if (largeResult?.method !== "surface-cull" || largeTriangles !== largeResult.sourceTriangles) {
+    throw new Error(`Large merged compounds must preserve partially exposed faces rather than voxelizing, stalling, or punching holes. ${JSON.stringify({ method: largeResult?.method, sourceTriangles: largeResult?.sourceTriangles, largeTriangles })}`);
   }
   largeGeometry.dispose();
   largeCompound.material.dispose();
@@ -2015,7 +2015,7 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.64.5.js"></script>')) {
+if (!documentSource.includes('<script defer src="./app/studio-v49.64.6.js"></script>')) {
   throw new Error("index.html must load the direct-open classic studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
@@ -2083,7 +2083,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.64.5",
+  "tool-docking.js?v=49.64.6",
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2945,8 +2945,8 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.5 Experimental") || !documentSource.includes("v49.64.5 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.64.5 version.");
+if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.6 Experimental") || !documentSource.includes("v49.64.6 Experimental preview")) {
+  throw new Error("The document must expose the single canonical v49.64.6 version.");
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
