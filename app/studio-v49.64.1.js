@@ -82603,7 +82603,63 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     copyProjectNameFromField();
   });
   var noticeRailCollapseBtn = document.querySelector("#noticeRailCollapseBtn");
+  var supportBwsBtn = document.querySelector("#supportBwsBtn");
+  var supportBwsModal = document.querySelector("#supportBwsModal");
+  var supportBwsCloseBtn = document.querySelector("#supportBwsCloseBtn");
+  var paypalDonationButtonPromise = null;
   var lowerInfoCollapsed = localStorage.getItem("boltworks.bottomInfoCollapsed") === "true";
+  function loadPayPalDonationButton() {
+    if (window.PayPal?.Donation?.Button) return Promise.resolve(window.PayPal);
+    if (paypalDonationButtonPromise) return paypalDonationButtonPromise;
+    paypalDonationButtonPromise = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = "https://www.paypalobjects.com/donate/sdk/donate-sdk.js";
+      script.charset = "UTF-8";
+      script.addEventListener("load", () => resolve(window.PayPal));
+      script.addEventListener("error", () => reject(new Error("PayPal donation service could not be loaded.")));
+      document.head.appendChild(script);
+    });
+    return paypalDonationButtonPromise;
+  }
+  async function renderPayPalDonationButton() {
+    const target = document.querySelector("#donate-button");
+    if (!target || target.dataset.rendered === "true") return;
+    target.textContent = "Preparing the secure PayPal button\u2026";
+    try {
+      const paypal = await loadPayPalDonationButton();
+      if (!paypal?.Donation?.Button) throw new Error("PayPal donation button is unavailable.");
+      target.textContent = "";
+      paypal.Donation.Button({
+        env: "production",
+        hosted_button_id: "GLSPC22G3WYJL",
+        image: {
+          src: "https://www.paypalobjects.com/en_US/SE/i/btn/btn_donateCC_LG.gif",
+          alt: "Donate with PayPal button",
+          title: "PayPal - The safer, easier way to pay online!"
+        }
+      }).render("#donate-button");
+      target.dataset.rendered = "true";
+    } catch (error) {
+      target.textContent = "PayPal could not load here. You can use the link below instead.";
+    }
+  }
+  function setSupportBwsOpen(open) {
+    if (!supportBwsModal) return;
+    supportBwsModal.classList.toggle("open", open);
+    supportBwsModal.setAttribute("aria-hidden", String(!open));
+    if (open) {
+      renderPayPalDonationButton();
+      supportBwsCloseBtn?.focus();
+    } else supportBwsBtn?.focus();
+  }
+  supportBwsBtn?.addEventListener("click", () => setSupportBwsOpen(true));
+  supportBwsCloseBtn?.addEventListener("click", () => setSupportBwsOpen(false));
+  supportBwsModal?.addEventListener("click", (event) => {
+    if (event.target === supportBwsModal) setSupportBwsOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && supportBwsModal?.classList.contains("open")) setSupportBwsOpen(false);
+  });
   function syncFooterNoticeRail() {
     document.body.classList.toggle("footer-info-collapsed", lowerInfoCollapsed);
     if (!noticeRailCollapseBtn) return;

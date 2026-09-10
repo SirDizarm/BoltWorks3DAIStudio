@@ -1,16 +1,20 @@
 const GEOMETRY_NODES_STORAGE_KEY = "boltworks.geometryNodes.v1";
 const GEOMETRY_NODE_DEFINITIONS = Object.freeze({
+  ...Object.fromEntries(Object.entries(BWS_ASSET_NODES).map(([type, node]) => [type, Object.freeze({title:node.title, category:node.category || "Game Assets", input:node.attachment ? "Geometry" : "Seed", inputSockets:[node.attachment ? "Geometry" : "Seed","Texture"], output:"Geometry"})])),
   seed: Object.freeze({ title: "Seed", category: "Inputs", input: null, output: "Seed" }),
+  textureRandomizer: Object.freeze({ title: "Texture / Color Randomizer", category: "Inputs", input: "Texture", inputSockets: ["Texture", "Texture 2", "Texture 3", "Texture 4"], output: "Texture" }),
+  colorPalette: Object.freeze({title:"Color Palette",category:"Inputs",input:"Texture",inputSockets:["Texture"],output:"Texture"}),
+  textureInput: Object.freeze({ title: "Texture Input", category: "Inputs", input: null, output: "Texture" }),
   variant: Object.freeze({ title: "Tree Variant", category: "Inputs", input: "Seed", output: "Seed" }),
   primitive: Object.freeze({ title: "Mesh Primitive", category: "Geometry", input: null, output: "Geometry" }),
   stem: Object.freeze({ title: "Tapered Stem", category: "Geometry", input: "Seed", output: "Geometry" }),
   branchArray: Object.freeze({ title: "Branch Array", category: "Geometry", input: "Geometry", output: "Geometry" }),
   clusterScatter: Object.freeze({ title: "Cluster Scatter", category: "Geometry", input: "Geometry", output: "Geometry" }),
-  rocks: Object.freeze({ title: "Rock Generator", category: "Nature", input: "Seed", output: "Geometry" }),
-  stoneWall: Object.freeze({ title: "Stone Wall", category: "Nature", input: "Seed", output: "Geometry" }),
+  rocks: Object.freeze({ title: "Rock Generator", category: "Nature", input: "Seed", inputSockets: ["Seed", "Texture"], output: "Geometry" }),
+  stoneWall: Object.freeze({ title: "Stone Wall", category: "Nature", input: "Seed", inputSockets: ["Seed", "Upper", "Middle", "Bottom", "Overall"], output: "Geometry" }),
   grass: Object.freeze({ title: "Grass Scatter", category: "Nature Details", input: "Geometry", output: "Geometry" }),
   moss: Object.freeze({ title: "Moss Growth", category: "Nature Details", input: "Geometry", output: "Geometry" }),
-  join: Object.freeze({ title: "Join Geometry", category: "Layout", input: "Geometry", output: "Geometry", multiInput: true }),
+  join: Object.freeze({ title: "Join Geometry", category: "Layout", input: "Geometry", inputSockets: ["Geometry", "Geometry 2", "Geometry 3", "Geometry 4"], output: "Geometry", multiInput: true }),
   primitiveTest: Object.freeze({ title: "Primitive Smooth Test", category: "Testing", input: "Seed", output: "Geometry" }),
   roots: Object.freeze({ title: "Root Flare", category: "Growth", input: "Seed", output: "Seed" }),
   trunk: Object.freeze({ title: "Trunk", category: "Growth", input: "Seed", output: "Trunk" }),
@@ -24,13 +28,14 @@ const GEOMETRY_NODE_DEFINITIONS = Object.freeze({
   cutSurface: Object.freeze({ title: "Cut Rings", category: "Modifiers", input: "Geometry", output: "Geometry" }),
   smoothGeometry: Object.freeze({ title: "Smooth Geometry", category: "Modifiers", input: "Geometry", output: "Geometry", contextOnly: true }),
   transform: Object.freeze({ title: "Output Transform", category: "Modifiers", input: "Geometry", output: "Geometry" }),
-  output: Object.freeze({ title: "Group Output", category: "Output", input: "Geometry", output: null })
+  output: Object.freeze({ title: "Group Output", category: "Output", input: "Geometry", inputSockets: ["Geometry", "Geometry 2", "Geometry 3", "Geometry 4"], multiInput: true, output: null })
 });
 const GEOMETRY_NODE_TYPES = Object.freeze(Object.keys(GEOMETRY_NODE_DEFINITIONS));
-const GEOMETRY_NODE_SOURCE_TYPES = Object.freeze(["primitive", "primitiveTest", "stem", "trunk", "rocks", "stoneWall"]);
+const GEOMETRY_NODE_SOURCE_TYPES = Object.freeze(["primitive", "primitiveTest", "stem", "trunk", "rocks", "stoneWall", ...Object.keys(BWS_ASSET_NODES).filter(type => !BWS_ASSET_NODES[type].attachment)]);
 const GEOMETRY_NODE_DEFAULT_ORDER = Object.freeze(["seed", "variant", "trunk", "branches", "smoothJoints", "twigs", "canopy", "cutSurface", "output"]);
 let geometryNodesRuntimeEnabled = false;
 let geometryNodesInitialized = false;
+let geometryNodePendingDeleteId = null;
 let geometryNodesDetachedWindow = null;
 const geometryNodeInteractionByDocument = new WeakMap();
 
@@ -66,6 +71,7 @@ function defaultGeometryNodeGraph(name = "Procedural Geometry") {
     type: "tree",
     seed: 42,
     params: {
+      ...assetNodeDefaults(),
       height: 8,
       variantStyle: "classic",
       variantSeason: "summer",
@@ -108,8 +114,19 @@ function defaultGeometryNodeGraph(name = "Procedural Geometry") {
       transformX: 0,
       transformY: 0,
       transformZ: 0,
+      transformRotX: 0,
+      transformRotY: 0,
+      transformRotZ: 0,
       transformScale: 1,
       outputName: name,
+      textureName: "",
+      textureData: "",
+      texturePoolSeed: 0,
+      texturePoolUvs: true,
+      texturePoolVariation: .75,
+      textureRandomize: true,
+      textureVariation: 1,
+      wallOverallTextureMix: .35,
       primitiveShape: "facetedBallLow",
       primitiveSizeX: 1,
       primitiveSizeY: 1,
@@ -143,6 +160,10 @@ function defaultGeometryNodeGraph(name = "Procedural Geometry") {
       ,rockVariation: 0.42
       ,rockSpacing: 1.05
       ,rockColor: "#59635f"
+      ,rockColorSecondary: "#7b8782"
+      ,rockColorTertiary: "#b1beb8"
+      ,rockTextureName: ""
+      ,rockAddInnerPanel: true
       ,wallLength: 12
       ,wallHeight: 2.8
       ,wallDepth: 1.15
@@ -152,6 +173,14 @@ function defaultGeometryNodeGraph(name = "Procedural Geometry") {
       ,wallIrregularity: 0.32
       ,wallColorVariation: 0.58
       ,wallColor: "#5e6662"
+      ,wallColorSecondary: "#7c8782"
+      ,wallColorTertiary: "#b4c0ba"
+      ,wallTextureName: ""
+      ,wallAddInnerPanel: true
+      ,joinAddInnerPanel: true
+      ,joinPanelInset: 0.16
+      ,joinPanelAxis: "auto"
+      ,joinPanelColor: "#5e6662"
       ,grassCount: 18
       ,grassHeight: 0.48
       ,grassWidth: 0.045
@@ -170,25 +199,27 @@ function defaultGeometryNodeGraph(name = "Procedural Geometry") {
       ,mossSunlight: 0.3
       ,mossCrackBias: 0.68
       ,mossColor: "#315f2a"
+      ,natureOutputMode: "both"
     },
+    nodeParams: {},
     nodeOrder,
     nodePositions,
     smoothNodes: [],
     connections: nodeOrder.slice(0, -1).map((fromNodeId, index) => ({ id: geometryNodeId("link"), fromNodeId, toNodeId: nodeOrder[index + 1] })),
     view: { x: 0, y: 0, scale: 1 },
     generatedIds: [],
+    centerOutput: false,
     buildVersion: 0
   };
 }
 
 function defaultGeometryNodeProjectState() {
-  const graph = defaultGeometryNodeGraph();
-  return { version: 1, activeGraphId: graph.id, graphs: [graph] };
+  return defaultEmptyGeometryNodeProjectState();
 }
 
 function defaultEmptyGeometryNodeProjectState() {
   const graph = defaultGeometryNodeGraph("Untitled Geometry");
-  graph.nodeOrder = ["seed", "output"];
+  graph.nodeOrder = [];
   graph.nodePositions.seed = [80, 160];
   graph.nodePositions.output = [430, 160];
   graph.connections = [];
@@ -212,6 +243,7 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
     seed: Math.round(geometryNodeNumber(source.seed, fallback.seed, 0, 999999)),
     params: {
       ...params,
+      ...assetNodeSanitize(params),
       height: geometryNodeNumber(params.height, fallback.params.height, 1, 30),
       variantStyle: ["classic", "broad", "round", "tall", "sparse", "bare"].includes(params.variantStyle) ? params.variantStyle : fallback.params.variantStyle,
       variantSeason: ["spring", "summer", "autumn", "winter", "snowy"].includes(params.variantSeason) ? params.variantSeason : fallback.params.variantSeason,
@@ -254,9 +286,16 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
       transformX: geometryNodeNumber(params.transformX, fallback.params.transformX, -50, 50),
       transformY: geometryNodeNumber(params.transformY, fallback.params.transformY, -50, 50),
       transformZ: geometryNodeNumber(params.transformZ, fallback.params.transformZ, -50, 50),
+      transformRotX: geometryNodeNumber(params.transformRotX, fallback.params.transformRotX, -180, 180),
+      transformRotY: geometryNodeNumber(params.transformRotY, fallback.params.transformRotY, -180, 180),
+      transformRotZ: geometryNodeNumber(params.transformRotZ, fallback.params.transformRotZ, -180, 180),
       transformScale: geometryNodeNumber(params.transformScale, fallback.params.transformScale, .05, 10),
       outputName: String(params.outputName || source.name || fallbackName).trim().slice(0, 80) || fallbackName,
-      primitiveShape: ["box", "cylinder", "cone", "facetedBallLow", "facetedBallMedium"].includes(params.primitiveShape) ? params.primitiveShape : fallback.params.primitiveShape,
+      textureName: typeof params.textureName === "string" ? params.textureName.slice(0, 160) : fallback.params.textureName,
+      textureData: typeof params.textureData === "string" && params.textureData.startsWith("data:image/") ? params.textureData.slice(0, 16000000) : fallback.params.textureData,
+      textureRandomize: params.textureRandomize !== false,
+      textureVariation: geometryNodeNumber(params.textureVariation, fallback.params.textureVariation, 0, 1),
+      primitiveShape: ["box", "sphere", "cylinder", "cone", "torus", "panel", "wedge", "hollowBox", "tube", "curvedPanel", "ring", "arch", "hemisphere", "dome", "capsule", "pyramid", "prism", "tetrahedron", "pyramidFrustum", "facetedBallLow", "facetedBallMedium", "facetedBallHigh", "heart", "stair"].includes(params.primitiveShape) ? params.primitiveShape : fallback.params.primitiveShape,
       primitiveSizeX: geometryNodeNumber(params.primitiveSizeX, fallback.params.primitiveSizeX, .05, 30),
       primitiveSizeY: geometryNodeNumber(params.primitiveSizeY, fallback.params.primitiveSizeY, .05, 30),
       primitiveSizeZ: geometryNodeNumber(params.primitiveSizeZ, fallback.params.primitiveSizeZ, .05, 30),
@@ -289,6 +328,10 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
       rockVariation: geometryNodeNumber(params.rockVariation, fallback.params.rockVariation, 0, 1),
       rockSpacing: geometryNodeNumber(params.rockSpacing, fallback.params.rockSpacing, .2, 4),
       rockColor: /^#[0-9a-f]{6}$/i.test(params.rockColor) ? params.rockColor : fallback.params.rockColor,
+      rockColorSecondary: /^#[0-9a-f]{6}$/i.test(params.rockColorSecondary) ? params.rockColorSecondary : fallback.params.rockColorSecondary,
+      rockColorTertiary: /^#[0-9a-f]{6}$/i.test(params.rockColorTertiary) ? params.rockColorTertiary : fallback.params.rockColorTertiary,
+      rockTextureName: typeof params.rockTextureName === "string" ? params.rockTextureName.slice(0, 160) : fallback.params.rockTextureName,
+      rockAddInnerPanel: params.rockAddInnerPanel !== false,
       wallLength: geometryNodeNumber(params.wallLength, fallback.params.wallLength, 1, 500),
       wallHeight: geometryNodeNumber(params.wallHeight, fallback.params.wallHeight, .5, 12),
       wallDepth: geometryNodeNumber(params.wallDepth, fallback.params.wallDepth, .15, 4),
@@ -298,6 +341,15 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
       wallIrregularity: geometryNodeNumber(params.wallIrregularity, fallback.params.wallIrregularity, 0, 1),
       wallColorVariation: geometryNodeNumber(params.wallColorVariation, fallback.params.wallColorVariation, 0, 1),
       wallColor: /^#[0-9a-f]{6}$/i.test(params.wallColor) ? params.wallColor : fallback.params.wallColor,
+      wallColorSecondary: /^#[0-9a-f]{6}$/i.test(params.wallColorSecondary) ? params.wallColorSecondary : fallback.params.wallColorSecondary,
+      wallColorTertiary: /^#[0-9a-f]{6}$/i.test(params.wallColorTertiary) ? params.wallColorTertiary : fallback.params.wallColorTertiary,
+      wallTextureName: typeof params.wallTextureName === "string" ? params.wallTextureName.slice(0, 160) : fallback.params.wallTextureName,
+      wallOverallTextureMix: geometryNodeNumber(params.wallOverallTextureMix, fallback.params.wallOverallTextureMix, 0, 1),
+      wallAddInnerPanel: params.wallAddInnerPanel !== false,
+      joinAddInnerPanel: params.joinAddInnerPanel !== false,
+      joinPanelInset: geometryNodeNumber(params.joinPanelInset, fallback.params.joinPanelInset, 0, 1.5),
+      joinPanelAxis: ["auto", "x", "y", "z"].includes(params.joinPanelAxis) ? params.joinPanelAxis : fallback.params.joinPanelAxis,
+      joinPanelColor: /^#[0-9a-f]{6}$/i.test(params.joinPanelColor) ? params.joinPanelColor : fallback.params.joinPanelColor,
       grassCount: Math.round(geometryNodeNumber(params.grassCount, fallback.params.grassCount, 1, 160)),
       grassHeight: geometryNodeNumber(params.grassHeight, fallback.params.grassHeight, .05, 3),
       grassWidth: geometryNodeNumber(params.grassWidth, fallback.params.grassWidth, .01, .8),
@@ -315,8 +367,14 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
       mossMoisture: geometryNodeNumber(params.mossMoisture, fallback.params.mossMoisture, 0, 1),
       mossSunlight: geometryNodeNumber(params.mossSunlight, fallback.params.mossSunlight, 0, 1),
       mossCrackBias: geometryNodeNumber(params.mossCrackBias, fallback.params.mossCrackBias, 0, 1),
-      mossColor: /^#[0-9a-f]{6}$/i.test(params.mossColor) ? params.mossColor : fallback.params.mossColor
+      mossColor: /^#[0-9a-f]{6}$/i.test(params.mossColor) ? params.mossColor : fallback.params.mossColor,
+      paletteCount:Math.round(geometryNodeNumber(params.paletteCount,4,1,4)),
+      paletteColor1:geometryNodePaletteColor(params,1),paletteColor2:geometryNodePaletteColor(params,2),paletteColor3:geometryNodePaletteColor(params,3),paletteColor4:geometryNodePaletteColor(params,4),
+      natureOutputMode: ["both", "stone", "grass"].includes(params.natureOutputMode) ? params.natureOutputMode : fallback.params.natureOutputMode
     },
+    nodeParams: source.nodeParams && typeof source.nodeParams === "object"
+      ? Object.fromEntries(Object.entries(source.nodeParams).filter(([id, value]) => typeof id === "string" && value && typeof value === "object").slice(0, 80).map(([id, value]) => [id, { ...fallback.params, ...value }]))
+      : {},
     nodeOrder: [],
     nodePositions: {},
     smoothNodes: [],
@@ -327,21 +385,22 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
       scale: geometryNodeNumber(source.view?.scale, 1, .25, 2.5)
     },
     generatedIds: Array.isArray(source.generatedIds) ? source.generatedIds.filter(id => typeof id === "string") : [],
+    centerOutput: source.centerOutput === true,
     buildVersion: Math.max(0, Math.round(Number(source.buildVersion) || 0))
   };
   const savedOrder = Array.isArray(source.nodeOrder) ? source.nodeOrder : GEOMETRY_NODE_DEFAULT_ORDER;
   graph.nodeOrder = savedOrder.filter((type, index) => typeof type === "string" && type !== "smoothGeometry" && savedOrder.indexOf(type) === index).slice(0, 80);
-  if (!graph.nodeOrder.length) graph.nodeOrder = [...GEOMETRY_NODE_DEFAULT_ORDER];
+  if (!graph.nodeOrder.length && !Array.isArray(source.nodeOrder)) graph.nodeOrder = [...GEOMETRY_NODE_DEFAULT_ORDER];
   for (const type of GEOMETRY_NODE_TYPES) {
     const point = positions[type];
     graph.nodePositions[type] = Array.isArray(point) && point.length >= 2
-      ? [geometryNodeNumber(point[0], fallback.nodePositions[type][0], 0, 2200), geometryNodeNumber(point[1], fallback.nodePositions[type][1], 0, 800)]
+      ? [geometryNodeNumber(point[0], fallback.nodePositions[type][0], 0, Number.MAX_SAFE_INTEGER), geometryNodeNumber(point[1], fallback.nodePositions[type][1], 0, Number.MAX_SAFE_INTEGER)]
       : [...fallback.nodePositions[type]];
   }
   for (const type of graph.nodeOrder.filter(type => !GEOMETRY_NODE_TYPES.includes(type))) {
     const point = positions[type];
     graph.nodePositions[type] = Array.isArray(point) && point.length >= 2
-      ? [geometryNodeNumber(point[0], 40, 0, 2200), geometryNodeNumber(point[1], 80, 0, 800)]
+      ? [geometryNodeNumber(point[0], 40, 0, Number.MAX_SAFE_INTEGER), geometryNodeNumber(point[1], 80, 0, Number.MAX_SAFE_INTEGER)]
       : [40, 80];
   }
   if (Array.isArray(source.smoothNodes)) graph.smoothNodes = source.smoothNodes.slice(0, 48).map((node, index) => ({
@@ -372,17 +431,27 @@ function sanitizeGeometryNodeGraph(value, fallbackName = "Procedural Geometry") 
       const outgoing = rawConnections.filter(connection => connection?.fromNodeId === "bark");
       for (const before of incoming) for (const after of outgoing) rawConnections.push({ id: geometryNodeId("link"), fromNodeId: before.fromNodeId, toNodeId: after.toNodeId });
     }
-    const seenDestinations = new Set();
-    graph.connections = rawConnections.slice(0, 160).map(connection => ({
-      id: String(connection?.id || geometryNodeId("link")),
-      fromNodeId: String(connection?.fromNodeId || ""),
-      toNodeId: String(connection?.toNodeId || "")
-    })).filter(connection => {
+    const legacyInputCounts = new Map();
+    const seenInputs = new Set();
+    graph.connections = rawConnections.slice(0, 160).map(connection => {
+      const fromNodeId = String(connection?.fromNodeId || "");
+      const toNodeId = String(connection?.toNodeId || "");
+      let toInputIndex = Number(connection?.toInputIndex);
+      if (!Number.isInteger(toInputIndex)) {
+        const legacyIndex = legacyInputCounts.get(toNodeId) || 0;
+        toInputIndex = geometryNodeTypeForId(graph, fromNodeId) === "textureInput" && geometryNodeTypeForId(graph, toNodeId) === "stoneWall" ? 4 : legacyIndex;
+        legacyInputCounts.set(toNodeId, legacyIndex + 1);
+      }
+      return { id: String(connection?.id || geometryNodeId("link")), fromNodeId, toNodeId, toInputIndex };
+    }).filter(connection => {
       if (!nodeIds.has(connection.fromNodeId) || !nodeIds.has(connection.toNodeId) || connection.fromNodeId === connection.toNodeId) return false;
-      const destinationType = graph.nodeOrder.includes(connection.toNodeId) ? connection.toNodeId : "smoothGeometry";
-      const allowsMultipleInputs = connection.toNodeId === "output" || GEOMETRY_NODE_DEFINITIONS[destinationType]?.multiInput === true;
-      if (!allowsMultipleInputs && seenDestinations.has(connection.toNodeId)) return false;
-      if (!allowsMultipleInputs) seenDestinations.add(connection.toNodeId);
+      const destinationType = geometryNodeTypeForId(graph, connection.toNodeId) || "smoothGeometry";
+      const destinationDefinition = GEOMETRY_NODE_DEFINITIONS[destinationType] || { input: "Geometry" };
+      const inputCount = Math.max(1, destinationDefinition.inputSockets?.length || 1);
+      connection.toInputIndex = Math.max(0, Math.min(inputCount - 1, Number(connection.toInputIndex) || 0));
+      const inputKey = `${connection.toNodeId}:${connection.toInputIndex}`;
+      if (seenInputs.has(inputKey)) return false;
+      seenInputs.add(inputKey);
       return true;
     });
   } else {
@@ -397,7 +466,7 @@ function sanitizeGeometryNodeProjectState(value, { allowEmpty = false } = {}) {
   const graphs = Array.isArray(source.graphs)
     ? source.graphs.slice(0, 24).map((graph, index) => sanitizeGeometryNodeGraph(graph, `Procedural Geometry ${index + 1}`))
     : [];
-  if (!graphs.length && !allowEmpty) graphs.push(defaultGeometryNodeGraph());
+  if (!graphs.length && !allowEmpty && !Array.isArray(source.graphs)) graphs.push(defaultEmptyGeometryNodeProjectState().graphs[0]);
   const activeGraphId = graphs.some(graph => graph.id === source.activeGraphId) ? source.activeGraphId : (graphs[0]?.id || null);
   return { version: 1, activeGraphId, graphs };
 }
@@ -412,8 +481,25 @@ function loadGeometryNodeDraft() {
 
 let geometryNodeProjectState = loadGeometryNodeDraft();
 
+function geometryNodeDraftState() {
+  const draft = JSON.parse(JSON.stringify(geometryNodeProjectState));
+  for (const graph of draft.graphs || []) {
+    if (graph.params) graph.params.textureData = "";
+    for (const params of Object.values(graph.nodeParams || {})) {
+      if (params) params.textureData = "";
+    }
+  }
+  return draft;
+}
+
 function saveGeometryNodeDraft() {
-  localStorage.setItem(GEOMETRY_NODES_STORAGE_KEY, JSON.stringify(geometryNodeProjectState));
+  try {
+    localStorage.setItem(GEOMETRY_NODES_STORAGE_KEY, JSON.stringify(geometryNodeDraftState()));
+    return true;
+  } catch (error) {
+    console.warn("Geometry Nodes draft could not be saved.", error);
+    return false;
+  }
 }
 
 function activeGeometryNodeGraph() {
@@ -570,8 +656,30 @@ function geometryNodeSelectField(label, key, value, options, instanceId = "") {
   return `<label><span>${geometryNodeEscape(label)}</span><select data-geometry-param="${key}"${instance}>${options.map(([optionValue, optionLabel]) => `<option value="${optionValue}" ${value === optionValue ? "selected" : ""}>${geometryNodeEscape(optionLabel)}</option>`).join("")}</select></label>`;
 }
 
+function geometryNodeTextureOptions(selected) {
+  const options = [["", "None"]];
+  if (typeof textureLibrary !== "undefined") {
+    for (const entry of textureLibrary.values()) options.push([entry.name, entry.name]);
+  }
+  if (selected && !options.some(([value]) => value === selected)) options.push([selected, selected]);
+  return options;
+}
+
+function geometryNodeTextureConnectionNote(graph, instanceId) {
+  const connected = graph?.connections?.some(connection => (
+    connection.toNodeId === instanceId && geometryNodeTypeForId(graph, connection.fromNodeId) === "textureInput"
+  ));
+  return `<p class="geometry-node-card-note">Texture: ${connected ? "connected input" : "connect a Texture Input node"}</p>`;
+}
+
+function geometryNodeShortTextureName(name) {
+  const value = String(name || "");
+  return value.length > 10 ? `${value.slice(0, 10)}...` : value;
+}
+
 function geometryNodeFields(graph, type, instanceId = type) {
-  const p = graph.params;
+  const p = graph.nodeParams?.[instanceId] || graph.params;
+  if (BWS_ASSET_NODES[type]) return assetNodeFields(type, p, instanceId);
   if (!GEOMETRY_NODE_DEFINITIONS[type]) return '<p class="geometry-node-card-note">This node comes from a newer BWS build. Its saved data and connections are being preserved. Refresh or update BWS to edit and build it.</p>';
   if (type === "smoothGeometry") {
     const node = graph.smoothNodes.find(item => item.id === instanceId);
@@ -582,16 +690,27 @@ function geometryNodeFields(graph, type, instanceId = type) {
       + geometryNodeField("Keep size", "preserveSize", settings.preserveSize, { type: "checkbox", instanceId });
   }
   if (type === "seed") return geometryNodeField("Value", "seed", graph.seed, { min: 0, max: 999999 });
+  if(type==="colorPalette")return geometryNodeField("Active colors","paletteCount",geometryNodeNumber(p.paletteCount,4,1,4),{min:1,max:4,instanceId})+[1,2,3,4].map((n)=>geometryNodeField("Color "+n,"paletteColor"+n,geometryNodePaletteColor(p,n),{type:"color",instanceId})).join("")+'<p class="geometry-node-card-note">Connect an optional texture to tint it, or use colors alone. Connect to a generator Texture socket or a Texture / Color Randomizer. Active colors are selected per part using the graph seed.</p>';
+  if (type === "textureRandomizer") return geometryNodeField("Seed offset", "texturePoolSeed", geometryNodeNumber(p.texturePoolSeed, 0, 0, 999999), { min:0, max:999999, instanceId })
+    + geometryNodeField("Vary UVs", "texturePoolUvs", p.texturePoolUvs !== false, {type:"checkbox", instanceId})
+    + geometryNodeField("UV variation", "texturePoolVariation", geometryNodeNumber(p.texturePoolVariation, .75, 0, 1), {min:0,max:1,step:.05,instanceId})
+    + '<p class="geometry-node-card-note">Connect up to four Texture Inputs or Color Palettes here, then connect this output to a generator texture socket. One color/texture choice is selected per part, not blended. Graph seed + offset repeat the result.</p>';
+  if (type === "textureInput") {
+    const textureName = p.textureName || "No texture imported";
+    return `<label class="geometry-node-texture-picker"><span>Image file</span><span class="geometry-node-file-button">Choose image</span><input class="geometry-node-file-input" type="file" accept="image/*" data-geometry-texture-input data-geometry-texture-instance="${geometryNodeEscape(instanceId)}"></label><p class="geometry-node-card-note geometry-node-texture-name" data-geometry-texture-name title="${geometryNodeEscape(textureName)}">${geometryNodeEscape(geometryNodeShortTextureName(textureName))}</p>`
+      + geometryNodeField("Randomize", "textureRandomize", p.textureRandomize, { type: "checkbox", instanceId })
+      + geometryNodeField("Variation", "textureVariation", p.textureVariation, { min: 0, max: 1, step: .05, instanceId });
+  }
   if (type === "variant") return geometryNodeSelectField("Shape", "variantStyle", p.variantStyle, [["classic", "Classic"], ["broad", "Broad oak"], ["round", "Round crown"], ["tall", "Tall pine"], ["sparse", "Sparse"], ["bare", "Bare / dead"]]) + geometryNodeSelectField("Season", "variantSeason", p.variantSeason, [["spring", "Spring"], ["summer", "Summer"], ["autumn", "Autumn"], ["winter", "Winter"], ["snowy", "Snowy"]]) + geometryNodeSelectField("Age", "variantMaturity", p.variantMaturity, [["sapling", "Sapling"], ["young", "Young"], ["mature", "Mature"], ["ancient", "Ancient"]]) + geometryNodeField("Variation", "variantAmount", p.variantAmount, { min: 0, max: 1, step: .05 });
-  if (type === "primitive") return geometryNodeSelectField("Shape", "primitiveShape", p.primitiveShape, [["box", "Cube"], ["cylinder", "Cylinder"], ["cone", "Cone"], ["facetedBallLow", "Low-poly cluster"], ["facetedBallMedium", "Detailed cluster"]]) + geometryNodeField("Size X", "primitiveSizeX", p.primitiveSizeX, { min: .05, max: 30, step: .05 }) + geometryNodeField("Size Y", "primitiveSizeY", p.primitiveSizeY, { min: .05, max: 30, step: .05 }) + geometryNodeField("Size Z", "primitiveSizeZ", p.primitiveSizeZ, { min: .05, max: 30, step: .05 }) + geometryNodeField("Color", "primitiveColor", p.primitiveColor, { type: "color" });
+  if (type === "primitive") return geometryNodeSelectField("Shape", "primitiveShape", p.primitiveShape, [["box", "Cube"], ["sphere", "Sphere"], ["cylinder", "Cylinder"], ["cone", "Cone"], ["torus", "Torus"], ["panel", "Panel"], ["wedge", "Wedge"], ["hollowBox", "Hollow box"], ["tube", "Tube"], ["curvedPanel", "Curved panel"], ["ring", "Ring"], ["arch", "Arch"], ["hemisphere", "Hemisphere"], ["dome", "Dome"], ["capsule", "Capsule"], ["pyramid", "Pyramid"], ["prism", "Prism"], ["tetrahedron", "Tetrahedron"], ["pyramidFrustum", "Pyramid frustum"], ["facetedBallLow", "Low-poly cluster"], ["facetedBallMedium", "Detailed cluster"], ["facetedBallHigh", "High-detail cluster"], ["heart", "Heart"], ["stair", "Stair"]]) + geometryNodeField("Size X", "primitiveSizeX", p.primitiveSizeX, { min: .05, max: 30, step: .05 }) + geometryNodeField("Size Y", "primitiveSizeY", p.primitiveSizeY, { min: .05, max: 30, step: .05 }) + geometryNodeField("Size Z", "primitiveSizeZ", p.primitiveSizeZ, { min: .05, max: 30, step: .05 }) + geometryNodeField("Color", "primitiveColor", p.primitiveColor, { type: "color" });
   if (type === "stem") return geometryNodeField("Height", "stemHeight", p.stemHeight, { min: .2, max: 40, step: .1 }) + geometryNodeField("Base radius", "stemBaseRadius", p.stemBaseRadius, { min: .03, max: 6, step: .02 }) + geometryNodeField("Top radius", "stemTopRadius", p.stemTopRadius, { min: .01, max: 6, step: .02 }) + geometryNodeField("Segments", "stemSegments", p.stemSegments, { min: 2, max: 32 }) + geometryNodeField("Sides", "stemSides", p.stemSides, { min: 5, max: 32 }) + geometryNodeField("Lean", "stemLean", p.stemLean, { min: 0, max: 3, step: .02 }) + geometryNodeField("Root flare", "stemFlare", p.stemFlare, { min: 0, max: 2, step: .02 }) + geometryNodeField("Color", "stemColor", p.stemColor, { type: "color" });
   if (type === "branchArray") return geometryNodeField("Count", "branchArrayCount", p.branchArrayCount, { min: 0, max: 40 }) + geometryNodeField("Length", "branchArrayLength", p.branchArrayLength, { min: .1, max: 15, step: .05 }) + geometryNodeField("Rise", "branchArrayRise", p.branchArrayRise, { min: -.5, max: 2, step: .02 }) + geometryNodeField("Base radius", "branchArrayRadius", p.branchArrayRadius, { min: .02, max: 3, step: .02 }) + geometryNodeField("Tip ratio", "branchArrayTaper", p.branchArrayTaper, { min: .03, max: 1, step: .02 }) + geometryNodeField("Twist", "branchArrayTwist", p.branchArrayTwist, { min: -180, max: 180, step: 1 }) + geometryNodeField("Color", "branchColor", p.branchColor, { type: "color" });
   if (type === "clusterScatter") return geometryNodeField("Count", "clusterScatterCount", p.clusterScatterCount, { min: 0, max: 64 }) + geometryNodeField("Size", "clusterScatterSize", p.clusterScatterSize, { min: .05, max: 8, step: .05 }) + geometryNodeField("Spread", "clusterScatterSpread", p.clusterScatterSpread, { min: 0, max: 4, step: .05 }) + geometryNodeField("Color", "clusterScatterColor", p.clusterScatterColor, { type: "color" });
-  if (type === "rocks") return geometryNodeSelectField("Profile", "rockProfile", p.rockProfile, [["rounded", "Rounded"], ["jagged", "Jagged"], ["flat", "Flat fieldstone"], ["boulder", "Boulder"]]) + geometryNodeSelectField("Arrangement", "rockArrangement", p.rockArrangement, [["single", "Single"], ["cluster", "Cluster"], ["line", "Line"], ["stack", "Stacked"]]) + geometryNodeField("Count", "rockCount", p.rockCount, { min: 1, max: 48 }) + geometryNodeField("Size", "rockSize", p.rockSize, { min: .1, max: 8, step: .05 }) + geometryNodeField("Variation", "rockVariation", p.rockVariation, { min: 0, max: 1, step: .05 }) + geometryNodeField("Spacing", "rockSpacing", p.rockSpacing, { min: .2, max: 4, step: .05 }) + geometryNodeField("Color", "rockColor", p.rockColor, { type: "color" });
-  if (type === "stoneWall") return geometryNodeField("Length", "wallLength", p.wallLength, { min: 1, max: 500, step: .5 }) + geometryNodeField("Height", "wallHeight", p.wallHeight, { min: .5, max: 12, step: .1 }) + geometryNodeField("Depth", "wallDepth", p.wallDepth, { min: .3, max: 6, step: .05 }) + geometryNodeField("Rows", "wallRows", p.wallRows, { min: 1, max: 12 }) + geometryNodeField("Stones / 7 units", "wallColumns", p.wallColumns, { min: 2, max: 30 }) + geometryNodeField("Depth layers", "wallDepthLayers", p.wallDepthLayers, { min: 1, max: 4 }) + geometryNodeField("Shape variation", "wallIrregularity", p.wallIrregularity, { min: 0, max: 1, step: .05 }) + geometryNodeField("Color variation", "wallColorVariation", p.wallColorVariation, { min: 0, max: 1, step: .05 }) + geometryNodeField("Base color", "wallColor", p.wallColor, { type: "color" });
+  if (type === "rocks") return geometryNodeSelectField("Profile", "rockProfile", p.rockProfile, [["rounded", "Rounded"], ["jagged", "Jagged"], ["flat", "Flat fieldstone"], ["boulder", "Boulder"]]) + geometryNodeSelectField("Arrangement", "rockArrangement", p.rockArrangement, [["single", "Single"], ["cluster", "Cluster"], ["line", "Line"], ["stack", "Stacked"]]) + geometryNodeField("Count", "rockCount", p.rockCount, { min: 1, max: 48 }) + geometryNodeField("Size", "rockSize", p.rockSize, { min: .1, max: 8, step: .05 }) + geometryNodeField("Variation", "rockVariation", p.rockVariation, { min: 0, max: 1, step: .05 }) + geometryNodeField("Spacing", "rockSpacing", p.rockSpacing, { min: .2, max: 4, step: .05 }) + geometryNodeField("Color", "rockColor", p.rockColor, { type: "color" }) + geometryNodeField("Color 2", "rockColorSecondary", p.rockColorSecondary, { type: "color" }) + geometryNodeField("Color 3", "rockColorTertiary", p.rockColorTertiary, { type: "color" }) + geometryNodeTextureConnectionNote(graph, instanceId) + geometryNodeSelectField("Nature output", "natureOutputMode", p.natureOutputMode, [["both", "Stone + grass surface"], ["stone", "Stone only"], ["grass", "Grass surface only"]]);
+  if (type === "stoneWall") return geometryNodeField("Length", "wallLength", p.wallLength, { min: 1, max: 500, step: .5 }) + geometryNodeField("Height", "wallHeight", p.wallHeight, { min: .5, max: 12, step: .1 }) + geometryNodeField("Depth", "wallDepth", p.wallDepth, { min: .3, max: 6, step: .05 }) + geometryNodeField("Rows", "wallRows", p.wallRows, { min: 1, max: 12 }) + geometryNodeField("Stones / 7 units", "wallColumns", p.wallColumns, { min: 2, max: 30 }) + geometryNodeField("Depth layers", "wallDepthLayers", p.wallDepthLayers, { min: 1, max: 4 }) + geometryNodeField("Shape variation", "wallIrregularity", p.wallIrregularity, { min: 0, max: 1, step: .05 }) + geometryNodeField("Color variation", "wallColorVariation", p.wallColorVariation, { min: 0, max: 1, step: .05 }) + geometryNodeField("Base color", "wallColor", p.wallColor, { type: "color" }) + geometryNodeField("Color 2", "wallColorSecondary", p.wallColorSecondary, { type: "color" }) + geometryNodeField("Color 3", "wallColorTertiary", p.wallColorTertiary, { type: "color" }) + geometryNodeField("Overall mix", "wallOverallTextureMix", p.wallOverallTextureMix, { min: 0, max: 1, step: .05 }) + '<p class="geometry-node-card-note">Upper, Middle, and Bottom texture their wall zones. Overall randomly replaces them using Overall mix.</p>' + geometryNodeSelectField("Nature output", "natureOutputMode", p.natureOutputMode, [["both", "Stone + grass surface"], ["stone", "Stone only"], ["grass", "Grass surface only"]]);
   if (type === "grass") return geometryNodeField("Clump count", "grassCount", p.grassCount, { min: 1, max: 160 }) + geometryNodeField("Height", "grassHeight", p.grassHeight, { min: .05, max: 3, step: .02 }) + geometryNodeField("Width", "grassWidth", p.grassWidth, { min: .01, max: .8, step: .01 }) + geometryNodeField("Edge spread", "grassSpread", p.grassSpread, { min: 0, max: 3, step: .05 }) + geometryNodeField("Avoid source geometry", "grassAvoidGeometry", p.grassAvoidGeometry, { type: "checkbox" }) + geometryNodeField("Mask clearance", "grassClearance", p.grassClearance, { min: 0, max: 2, step: .02 }) + geometryNodeField("Grow on −X side", "grassGrowNegativeX", p.grassGrowNegativeX, { type: "checkbox" }) + geometryNodeField("Grow on +X side", "grassGrowPositiveX", p.grassGrowPositiveX, { type: "checkbox" }) + geometryNodeField("Grow on −Z side", "grassGrowNegativeZ", p.grassGrowNegativeZ, { type: "checkbox" }) + geometryNodeField("Grow on +Z side", "grassGrowPositiveZ", p.grassGrowPositiveZ, { type: "checkbox" }) + geometryNodeField("Color", "grassColor", p.grassColor, { type: "color" });
   if (type === "moss") return geometryNodeSelectField("Height zone", "mossPlacement", p.mossPlacement, [["bottom", "Bottom"], ["middle", "Middle"], ["top", "Top"], ["all", "All heights"]]) + geometryNodeField("Coverage", "mossCoverage", p.mossCoverage, { min: 0, max: 1, step: .05 }) + geometryNodeField("Cushion height", "mossThickness", p.mossThickness, { min: .02, max: .6, step: .01 }) + geometryNodeField("Moisture", "mossMoisture", p.mossMoisture, { min: 0, max: 1, step: .05 }) + geometryNodeField("Sun exposure", "mossSunlight", p.mossSunlight, { min: 0, max: 1, step: .05 }) + geometryNodeField("Crack preference", "mossCrackBias", p.mossCrackBias, { min: 0, max: 1, step: .05 }) + geometryNodeField("Color", "mossColor", p.mossColor, { type: "color" });
-  if (type === "join") return '<p class="geometry-node-card-note">Combines every connected geometry stream.</p>';
+  if (type === "join") return geometryNodeField("Add inner panel", "joinAddInnerPanel", p.joinAddInnerPanel, { type: "checkbox" }) + geometryNodeSelectField("Panel direction", "joinPanelAxis", p.joinPanelAxis, [["auto", "Auto / thinnest side"], ["x", "X direction"], ["y", "Y direction"], ["z", "Z direction"]]) + geometryNodeField("Panel inset", "joinPanelInset", p.joinPanelInset, { min: 0, max: 1.5, step: .02 }) + geometryNodeField("Panel color", "joinPanelColor", p.joinPanelColor, { type: "color" }) + '<p class="geometry-node-card-note">Combines all connected geometry streams before CiS.</p>';
   if (type === "primitiveTest") return '<p class="geometry-node-card-note">Builds cube, pentagon, and low-cone before/after pairs.</p>';
   if (type === "roots") return geometryNodeField("Count", "rootCount", p.rootCount, { min: 1, max: 16 }) + geometryNodeField("Length", "rootLength", p.rootLength, { min: .2, max: 6, step: .05 }) + geometryNodeField("Thickness", "rootThickness", p.rootThickness, { min: .05, max: 2, step: .05 });
   if (type === "trunk") return geometryNodeField("Height", "height", p.height, { min: 1, max: 30, step: .25 }) + geometryNodeField("Width", "trunkWidth", p.trunkWidth, { min: .1, max: 5, step: .05 }) + geometryNodeField("Segments", "trunkSegments", p.trunkSegments, { min: 2, max: 16 });
@@ -603,13 +722,18 @@ function geometryNodeFields(graph, type, instanceId = type) {
   if (type === "canopy") return geometryNodeField("Enabled", "canopyEnabled", p.canopyEnabled, { type: "checkbox" }) + geometryNodeField("Cluster size", "canopySize", p.canopySize, { min: .2, max: 5, step: .05 }) + geometryNodeField("Density", "canopyDensity", p.canopyDensity, { min: 1, max: 4 });
   if (type === "knot") return geometryNodeField("Count", "knotCount", p.knotCount, { min: 1, max: 12 }) + geometryNodeField("Size", "knotSize", p.knotSize, { min: .08, max: 1.2, step: .02 }) + geometryNodeField("Inset", "knotInset", p.knotInset, { min: -.2, max: .3, step: .01 }) + geometryNodeField("Rings", "knotRings", p.knotRings, { min: 2, max: 9 });
   if (type === "cutSurface") return geometryNodeField("Rings", "cutRingCount", p.cutRingCount, { min: 2, max: 14 }) + geometryNodeField("Depth", "cutRingDepth", p.cutRingDepth, { min: .01, max: .15, step: .005 }) + geometryNodeField("Contrast", "cutRingContrast", p.cutRingContrast, { min: 0, max: 1, step: .05 });
-  if (type === "transform") return geometryNodeField("X", "transformX", p.transformX, { min: -50, max: 50, step: .1 }) + geometryNodeField("Y", "transformY", p.transformY, { min: -50, max: 50, step: .1 }) + geometryNodeField("Z", "transformZ", p.transformZ, { min: -50, max: 50, step: .1 }) + geometryNodeField("Scale", "transformScale", p.transformScale, { min: .05, max: 10, step: .05 });
+  if (type === "transform") return geometryNodeField("X", "transformX", p.transformX, { min: -50, max: 50, step: .1 }) + geometryNodeField("Y", "transformY", p.transformY, { min: -50, max: 50, step: .1 }) + geometryNodeField("Z", "transformZ", p.transformZ, { min: -50, max: 50, step: .1 }) + geometryNodeField("Rotate X", "transformRotX", p.transformRotX, { min: -180, max: 180, step: 1 }) + geometryNodeField("Rotate Y", "transformRotY", p.transformRotY, { min: -180, max: 180, step: 1 }) + geometryNodeField("Rotate Z", "transformRotZ", p.transformRotZ, { min: -180, max: 180, step: 1 }) + geometryNodeField("Scale", "transformScale", p.transformScale, { min: .05, max: 10, step: .05 });
   if (type === "output") return geometryNodeField("Name", "outputName", p.outputName, { type: "text" });
   return "";
 }
 
 function geometryNodeTypeForId(graph, nodeId) {
-  return graph.nodeOrder.includes(nodeId) ? nodeId : (graph.smoothNodes.some(node => node.id === nodeId) ? "smoothGeometry" : null);
+  if (graph.nodeOrder.includes(nodeId)) {
+    if (GEOMETRY_NODE_DEFINITIONS[nodeId]) return nodeId;
+    const baseType = String(nodeId).split("::")[0];
+    return GEOMETRY_NODE_DEFINITIONS[baseType] ? baseType : null;
+  }
+  return graph.smoothNodes.some(node => node.id === nodeId) ? "smoothGeometry" : null;
 }
 
 function geometryNodeResolvedSourceId(graph, nodeId, visited = new Set()) {
@@ -624,23 +748,29 @@ function geometryNodeResolvedSourceId(graph, nodeId, visited = new Set()) {
 function geometryNodeCard(graph, type, instanceId = type) {
   const definition = GEOMETRY_NODE_DEFINITIONS[type] || { title: `Unsupported: ${type}`, category: "Compatibility", input: "Geometry", output: "Geometry" };
   const smoothNode = type === "smoothGeometry" ? graph.smoothNodes.find(node => node.id === instanceId) : null;
-  const position = smoothNode?.position || graph.nodePositions[type] || [18, 42];
+  const position = smoothNode?.position || graph.nodePositions[instanceId] || graph.nodePositions[type] || [18, 42];
   const sourceId = smoothNode ? geometryNodeResolvedSourceId(graph, instanceId) : null;
   const targetTitle = sourceId ? GEOMETRY_NODE_DEFINITIONS[geometryNodeTypeForId(graph, sourceId)]?.title : "";
-  const title = smoothNode && targetTitle ? `${definition.title}: ${targetTitle}` : definition.title;
-  const inputConnected = graph.connections.some(connection => connection.toNodeId === instanceId);
+  const instanceLabel = !smoothNode && instanceId !== type ? ` ${instanceId.split("::").pop()}` : "";
+  const title = smoothNode && targetTitle ? `${definition.title}: ${targetTitle}` : `${definition.title}${instanceLabel}`;
   const outputConnected = graph.connections.some(connection => connection.fromNodeId === instanceId);
   const active = geometryNodeActiveNodeIds(graph).has(instanceId);
-  const inputSocket = definition.input ? `<div class="geometry-node-socket input-socket"><button type="button" class="geometry-node-port input ${inputConnected ? "connected" : ""}" data-geometry-connect-to="${geometryNodeEscape(instanceId)}" title="Connect into ${geometryNodeEscape(title)}" aria-label="Connect into ${geometryNodeEscape(title)}"></button><span>${geometryNodeEscape(definition.input)}</span></div>` : "";
+  const inputLabels = definition.inputSockets || (definition.input ? [definition.input] : []);
+  const inputSocket = inputLabels.map((label, index) => {
+    const connected = graph.connections.some(connection => connection.toNodeId === instanceId && (Number(connection.toInputIndex) || 0) === index);
+    return `<div class="geometry-node-socket input-socket"><button type="button" class="geometry-node-port input ${connected ? "connected" : ""}" data-geometry-input-index="${index}" data-geometry-connect-to="${geometryNodeEscape(instanceId)}" title="Connect ${geometryNodeEscape(label)} into ${geometryNodeEscape(title)}" aria-label="Connect ${geometryNodeEscape(label)} into ${geometryNodeEscape(title)}"></button><span>${geometryNodeEscape(label)}</span></div>`;
+  }).join("");
   const outputSocket = definition.output ? `<div class="geometry-node-socket output-socket"><span>${geometryNodeEscape(definition.output)}</span><button type="button" class="geometry-node-port output ${outputConnected ? "connected" : ""}" data-geometry-connect-from="${geometryNodeEscape(instanceId)}" title="Start connection from ${geometryNodeEscape(title)}" aria-label="Start connection from ${geometryNodeEscape(title)}">+</button></div>` : "";
-  return `<article class="geometry-node-card ${type === "output" ? "output" : ""} ${active ? "" : "inactive"}" data-geometry-node="${geometryNodeEscape(instanceId)}" data-geometry-node-type="${type}" style="left:${position[0]}px;top:${position[1]}px"><div class="geometry-node-title" data-geometry-drag="${geometryNodeEscape(instanceId)}"><span>${geometryNodeEscape(title)}</span><button type="button" data-geometry-remove-node="${geometryNodeEscape(instanceId)}" title="Remove ${geometryNodeEscape(definition.title)} node" aria-label="Remove ${geometryNodeEscape(definition.title)} node">×</button></div>${inputSocket}<div class="geometry-node-fields">${geometryNodeFields(graph, type, instanceId)}</div>${outputSocket}</article>`;
+  const rawFields = geometryNodeFields(graph, type, instanceId);
+  const fields = instanceId !== type ? rawFields.replaceAll('data-geometry-param="', `data-geometry-instance-param="${geometryNodeEscape(instanceId)}" data-geometry-param="`) : rawFields;
+  return `<article class="geometry-node-card ${type === "output" ? "output" : ""} ${active ? "" : "inactive"}" data-geometry-node="${geometryNodeEscape(instanceId)}" data-geometry-node-type="${type}" style="left:${position[0]}px;top:${position[1]}px"><div class="geometry-node-title" data-geometry-drag="${geometryNodeEscape(instanceId)}"><span>${geometryNodeEscape(title)}</span><button type="button" data-geometry-remove-node="${geometryNodeEscape(instanceId)}" title="Remove ${geometryNodeEscape(definition.title)} node" aria-label="Remove ${geometryNodeEscape(definition.title)} node">×</button></div>${inputSocket}<div class="geometry-node-fields">${fields}</div>${outputSocket}</article>`;
 }
 
 function geometryNodePaletteMarkup(graph) {
   const categories = [...new Set(GEOMETRY_NODE_TYPES.map(type => GEOMETRY_NODE_DEFINITIONS[type].category))];
   return categories.map(category => `<section><strong>${category}</strong>${GEOMETRY_NODE_TYPES.filter(type => GEOMETRY_NODE_DEFINITIONS[type].category === category).map(type => {
-    const added = type !== "smoothGeometry" && graph.nodeOrder.includes(type);
-    return `<button type="button" data-geometry-add-node="${type}" ${added ? "disabled" : ""}>${added ? "✓ " : "+ "}${geometryNodeEscape(GEOMETRY_NODE_DEFINITIONS[type].title)}</button>`;
+    const count = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === type).length;
+    return `<button type="button" data-geometry-add-node="${type}">+ ${geometryNodeEscape(GEOMETRY_NODE_DEFINITIONS[type].title)}${count ? ` (${count})` : ""}</button>`;
   }).join("")}</section>`).join("");
 }
 
@@ -650,6 +780,12 @@ function geometryNodeCanvasSize(graph) {
     width: Math.max(2200, ...points.map(point => point[0] + 260)),
     height: Math.max(1100, ...points.map(point => point[1] + 300))
   };
+}
+
+function geometryNodeRulersMarkup({ width, height }) {
+  const xTicks = Array.from({ length: Math.ceil(width / 100) + 1 }, (_, index) => `<span style="left:${index * 100}px">${index * 100}</span>`).join("");
+  const yTicks = Array.from({ length: Math.ceil(height / 100) + 1 }, (_, index) => `<span style="top:${index * 100}px">${index * 100}</span>`).join("");
+  return `<div class="geometry-node-ruler-x" aria-hidden="true">${xTicks}</div><div class="geometry-node-ruler-y" aria-hidden="true">${yTicks}</div>`;
 }
 
 function geometryNodeSurface(doc, kind = "sidebar") {
@@ -670,12 +806,14 @@ function geometryNodeLinkPath(from, to) {
   return `M ${from[0]} ${from[1]} C ${from[0] + handle} ${from[1]}, ${to[0] - handle} ${to[1]}, ${to[0]} ${to[1]}`;
 }
 
-function geometryNodePortPoint(canvas, nodeId, direction) {
+function geometryNodePortPoint(canvas, nodeId, direction, portIndex = 0) {
   const canvasBounds = canvas.getBoundingClientRect();
   const scaleX = canvasBounds.width / Math.max(1, canvas.offsetWidth);
   const scaleY = canvasBounds.height / Math.max(1, canvas.offsetHeight);
-  const port = canvas.querySelector(`[data-geometry-node="${nodeId}"] .geometry-node-port.${direction}`)?.getBoundingClientRect();
-  return port ? [(port.left + port.width / 2 - canvasBounds.left) / scaleX, (port.top + port.height / 2 - canvasBounds.top) / scaleY] : null;
+  const ports = canvas.querySelectorAll(`[data-geometry-node="${nodeId}"] .geometry-node-port.${direction}`);
+  const port = ports[portIndex] || ports[0];
+  const portBounds = port?.getBoundingClientRect();
+  return portBounds ? [(portBounds.left + portBounds.width / 2 - canvasBounds.left) / scaleX, (portBounds.top + portBounds.height / 2 - canvasBounds.top) / scaleY] : null;
 }
 
 function renderGeometryNodeLinks(canvas, graph, doc = canvas?.ownerDocument) {
@@ -683,7 +821,7 @@ function renderGeometryNodeLinks(canvas, graph, doc = canvas?.ownerDocument) {
   if (!canvas || !svg || !graph) return;
   const links = graph.connections.map(connection => {
     const from = geometryNodePortPoint(canvas, connection.fromNodeId, "output");
-    const to = geometryNodePortPoint(canvas, connection.toNodeId, "input");
+    const to = geometryNodePortPoint(canvas, connection.toNodeId, "input", Math.max(0, Number(connection.toInputIndex) || 0));
     if (!from || !to) return "";
     const path = geometryNodeLinkPath(from, to);
     return `<path class="geometry-node-link-hit" data-geometry-link="${geometryNodeEscape(connection.id)}" d="${path}"></path><path class="geometry-node-link" d="${path}"></path>`;
@@ -699,13 +837,14 @@ function renderGeometryNodeLinks(canvas, graph, doc = canvas?.ownerDocument) {
 function fitGeometryNodeSidebarOverview() {
   const viewport = document.getElementById("geometryNodeViewport");
   const canvas = document.getElementById("geometryNodeCanvas");
-  if (!viewport || !canvas) return;
+  if (!viewport || !canvas || viewport.hidden) return;
   const scale = Math.min(1, Math.max(.12, (viewport.clientWidth - 2) / Math.max(1, canvas.offsetWidth)));
   canvas.style.transform = `scale(${scale})`;
   canvas.style.transformOrigin = "top left";
   const fittedHeight = Math.ceil(canvas.offsetHeight * scale);
   viewport.style.height = `${fittedHeight}px`;
   viewport.style.minHeight = `${fittedHeight}px`;
+  geometryNodeRefreshRulers(canvas);
   viewport.dataset.fitLabel = scale < .95 ? "Overview — open the detached editor for full-size controls" : "";
 }
 
@@ -713,6 +852,7 @@ function renderGeometryNodeSurface(doc, kind = "sidebar") {
   const surface = geometryNodeSurface(doc, kind);
   if (!surface?.canvas || !surface.select) return;
   const { canvas, select, status } = surface;
+  if(kind==="sidebar"&&canvas.parentElement){canvas.parentElement.hidden=true;canvas.parentElement.style.display="none";}
   if (!geometryNodesRuntimeEnabled) {
     canvas.replaceChildren();
     select.replaceChildren();
@@ -721,7 +861,8 @@ function renderGeometryNodeSurface(doc, kind = "sidebar") {
   }
   select.innerHTML = geometryNodeProjectState.graphs.map(graph => `<option value="${geometryNodeEscape(graph.id)}" ${graph.id === geometryNodeProjectState.activeGraphId ? "selected" : ""}>${geometryNodeEscape(graph.name)}</option>`).join("");
   const graph = activeGeometryNodeGraph();
-  for (const button of [surface.buildButton, surface.bakeButton, surface.deleteButton, surface.copyButton, surface.saveClusterButton]) {
+  if (surface.deleteButton) surface.deleteButton.textContent = graph && geometryNodePendingDeleteId === graph.id ? "Confirm delete graph" : "Delete graph";
+  for (const button of [surface.buildButton, surface.root?.querySelector("[data-geometry-center-output]"), surface.bakeButton, surface.deleteButton, surface.copyButton, surface.saveClusterButton]) {
     if (button) button.disabled = !graph;
   }
   if (!graph) {
@@ -729,24 +870,25 @@ function renderGeometryNodeSurface(doc, kind = "sidebar") {
     if (status) status.textContent = "No saved graph.";
     return;
   }
+  geometryNodeInstallLayoutTools(surface,doc);
   const palette = surface.root?.querySelector("[data-geometry-node-palette]");
   if (palette) palette.innerHTML = geometryNodePaletteMarkup(graph);
   const canvasSize = geometryNodeCanvasSize(graph);
   canvas.style.width = `${canvasSize.width}px`;
   canvas.style.height = `${canvasSize.height}px`;
-  canvas.innerHTML = `<svg class="geometry-node-links" aria-hidden="true"></svg>${graph.nodeOrder.map(type => geometryNodeCard(graph, type)).join("")}${graph.smoothNodes.map(node => geometryNodeCard(graph, "smoothGeometry", node.id)).join("")}`;
+  canvas.innerHTML = `${geometryNodeRulersMarkup(canvasSize)}<svg class="geometry-node-links" aria-hidden="true"></svg>${graph.nodeOrder.map(nodeId => geometryNodeCard(graph, geometryNodeTypeForId(graph, nodeId), nodeId)).join("")}${graph.smoothNodes.map(node => geometryNodeCard(graph, "smoothGeometry", node.id)).join("")}`;
   if (kind === "detached") {
     canvas.style.transform = `translate(${graph.view.x}px, ${graph.view.y}px) scale(${graph.view.scale})`;
     canvas.style.transformOrigin = "top left";
     const zoomLabel = surface.root?.querySelector("[data-geometry-zoom-label]");
     if (zoomLabel) zoomLabel.textContent = `${Math.round(graph.view.scale * 100)}%`;
   }
-  doc.defaultView?.requestAnimationFrame(() => renderGeometryNodeLinks(canvas, graph, doc));
+  doc.defaultView?.requestAnimationFrame(() => {geometryNodeExpandCanvas(canvas);renderGeometryNodeLinks(canvas, graph, doc);geometryNodeRefreshRulers(canvas);geometryNodeRepairOverlap(surface,graph);});
   if (kind === "sidebar") doc.defaultView?.requestAnimationFrame(fitGeometryNodeSidebarOverview);
   if (kind === "detached") doc.title = `BoltWorks Geometry Nodes — ${graph.name}`;
-  const hasGeometrySource = GEOMETRY_NODE_SOURCE_TYPES.some(type => graph.nodeOrder.includes(type));
-  const unsupportedTypes = graph.nodeOrder.filter(type => !GEOMETRY_NODE_DEFINITIONS[type]);
-  const missingRequired = [hasGeometrySource ? null : "geometry", graph.nodeOrder.includes("output") ? null : "output"].filter(Boolean);
+  const hasGeometrySource = GEOMETRY_NODE_SOURCE_TYPES.some(type => graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === type));
+  const unsupportedTypes = graph.nodeOrder.filter(nodeId => !geometryNodeTypeForId(graph, nodeId));
+  const missingRequired = [hasGeometrySource ? null : "geometry", graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === "output") ? null : "output"].filter(Boolean);
   if (surface.buildButton) surface.buildButton.disabled = missingRequired.length > 0 || unsupportedTypes.length > 0;
   if (status) status.textContent = unsupportedTypes.length
     ? `Update or refresh BWS to build this graph. Preserved unsupported node${unsupportedTypes.length === 1 ? "" : "s"}: ${unsupportedTypes.join(", ")}.`
@@ -764,7 +906,7 @@ function renderGeometryNodeEditor() {
 }
 
 function geometryNodeDetachedMarkup(styleUrl) {
-  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BoltWorks Geometry Nodes</title><link rel="stylesheet" href="${geometryNodeEscape(styleUrl)}"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden}.geometry-node-popout-body{display:block!important;background:#0b1012;color:#f2f6f5}.geometry-node-popout-shell{box-sizing:border-box;display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto;gap:10px;width:100%;height:100%;padding:14px}.geometry-node-popout-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.geometry-node-popout-header h1{margin:0;font-size:18px}.geometry-node-popout-shell .geometry-node-toolbar{display:grid;grid-template-columns:minmax(180px,1fr) auto}.geometry-node-popout-shell .geometry-node-actions{display:flex;flex-wrap:wrap;margin:0}.geometry-node-popout-shell .geometry-node-actions .danger{margin-left:auto}.geometry-node-popout-shell .geometry-node-viewport{min-height:0;height:100%;overflow:hidden}.geometry-node-popout-shell .geometry-node-canvas{position:relative;width:2200px;height:1100px}.geometry-node-popout-shell .geometry-node-links{position:absolute;inset:0;width:100%;height:100%}.geometry-node-popout-shell .geometry-node-card{position:absolute;width:154px}.geometry-node-popout-shell .geometry-node-title{display:flex;align-items:center;justify-content:space-between;padding:7px 9px}.geometry-node-popout-shell .geometry-node-fields{display:grid;gap:6px;padding:8px}.geometry-node-popout-shell .geometry-node-socket{position:relative;display:flex;padding:4px 8px}.geometry-node-popout-shell .output-socket{justify-content:flex-end}.geometry-node-popout-shell .geometry-node-port{position:absolute;top:50%;transform:translateY(-50%)}.geometry-node-popout-shell .geometry-node-port.input{left:-8px}.geometry-node-popout-shell .geometry-node-port.output{right:-8px}.geometry-node-popout-shell>.api-note{margin:0}</style></head><body class="geometry-node-popout-body"><main id="geometryNodeDetachedRoot" class="geometry-node-popout-shell"><header class="geometry-node-popout-header"><h1>Geometry Nodes</h1><span class="plugin-ready">Wheel: zoom · Middle drag or Space + drag: pan</span></header><div class="geometry-node-toolbar"><select id="geometryNodeDetachedGraphSelect" aria-label="Geometry node graph"></select><button id="geometryNodeDetachedNewBtn" type="button">New graph</button><details class="geometry-node-palette"><summary>+ Add node</summary><div class="geometry-node-palette-list" data-geometry-node-palette></div></details></div><div class="geometry-node-actions"><button id="geometryNodeDetachedBuildBtn" class="primary" type="button">Build / Update Geometry</button><button id="geometryNodeDetachedBakeBtn" type="button">Bake &amp; Detach</button><div class="geometry-node-view-tools"><button type="button" data-geometry-view="zoom-out" title="Zoom out">−</button><span data-geometry-zoom-label>100%</span><button type="button" data-geometry-view="zoom-in" title="Zoom in">+</button><button type="button" data-geometry-view="fit">Fit graph</button></div><button id="geometryNodeDetachedDeleteBtn" class="danger" type="button">Delete graph</button></div><div class="geometry-node-viewport"><div id="geometryNodeDetachedCanvas" class="geometry-node-canvas" aria-label="Procedural geometry node graph"></div></div><p id="geometryNodeDetachedStatus" class="api-note">Ready.</p></main></body></html>`;
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BoltWorks Geometry Nodes</title><link rel="stylesheet" href="${geometryNodeEscape(styleUrl)}"><style>html,body{width:100%;height:100%;margin:0;overflow:hidden}.geometry-node-popout-body{display:block!important;background:#0b1012;color:#f2f6f5}.geometry-node-popout-shell{box-sizing:border-box;display:grid;grid-template-rows:auto auto auto minmax(0,1fr) auto;gap:10px;width:100%;height:100%;padding:14px}.geometry-node-popout-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.geometry-node-popout-header h1{margin:0;font-size:18px}.geometry-node-popout-shell .geometry-node-toolbar{display:grid;grid-template-columns:minmax(180px,1fr) auto}.geometry-node-popout-shell .geometry-node-actions{display:flex;flex-wrap:wrap;margin:0}.geometry-node-popout-shell .geometry-node-actions .danger{margin-left:auto}.geometry-node-popout-shell .geometry-node-viewport{min-height:0;height:100%;overflow:hidden}.geometry-node-popout-shell .geometry-node-canvas{position:relative;width:2200px;height:1100px}.geometry-node-popout-shell .geometry-node-links{position:absolute;inset:0;width:100%;height:100%}.geometry-node-popout-shell .geometry-node-card{position:absolute;width:154px}.geometry-node-popout-shell .geometry-node-title{display:flex;align-items:center;justify-content:space-between;padding:7px 9px}.geometry-node-popout-shell .geometry-node-fields{display:grid;gap:6px;padding:8px}.geometry-node-popout-shell .geometry-node-socket{position:relative;display:flex;padding:4px 8px}.geometry-node-popout-shell .output-socket{justify-content:flex-end}.geometry-node-popout-shell .geometry-node-port{position:absolute;top:50%;transform:translateY(-50%)}.geometry-node-popout-shell .geometry-node-port.input{left:-8px}.geometry-node-popout-shell .geometry-node-port.output{right:-8px}.geometry-node-popout-shell>.api-note{margin:0}</style></head><body class="geometry-node-popout-body"><main id="geometryNodeDetachedRoot" class="geometry-node-popout-shell"><header class="geometry-node-popout-header"><h1>Geometry Nodes</h1><span class="plugin-ready">Wheel: zoom · Middle drag or Space + drag: pan</span></header><div class="geometry-node-toolbar"><select id="geometryNodeDetachedGraphSelect" aria-label="Geometry node graph"></select><button id="geometryNodeDetachedNewBtn" type="button">New graph</button><button type="button" data-geometry-tree-template>Tree template</button><button type="button" data-geometry-house-template>House template</button><details class="geometry-node-palette"><summary>+ Add node</summary><div class="geometry-node-palette-list" data-geometry-node-palette></div></details></div><div class="geometry-node-actions"><button id="geometryNodeDetachedBuildBtn" class="primary" type="button">Build / Update Geometry</button><button type="button" data-geometry-center-output title="Rebuild active graph; center X/Z and rest its base on Y=0. Future builds stay centered.">Regenerate centered</button><button id="geometryNodeDetachedBakeBtn" type="button">Bake &amp; Detach</button><div class="geometry-node-view-tools"><button type="button" data-geometry-view="zoom-out" title="Zoom out">−</button><span data-geometry-zoom-label>100%</span><button type="button" data-geometry-view="zoom-in" title="Zoom in">+</button><button type="button" data-geometry-view="fit">Fit graph</button></div><button id="geometryNodeDetachedDeleteBtn" class="danger" type="button">Delete graph</button></div><div class="geometry-node-viewport"><div id="geometryNodeDetachedCanvas" class="geometry-node-canvas" aria-label="Procedural geometry node graph"></div></div><p id="geometryNodeDetachedStatus" class="api-note">Ready.</p></main></body></html>`;
 }
 
 function geometryNodeDetachedMarkupWithSharing(styleUrl) {
@@ -976,7 +1118,8 @@ function geometryNodeSmoothGeometry(sourceGeometry, { iterations = 2, strength =
 
 function geometryNodeActiveNodeIds(graph) {
   const active = new Set();
-  const stack = graph.nodeOrder.includes("output") ? ["output"] : [];
+  const outputId = graph.nodeOrder.find(nodeId => geometryNodeTypeForId(graph, nodeId) === "output");
+  const stack = outputId ? [outputId] : [];
   while (stack.length) {
     const nodeId = stack.pop();
     if (active.has(nodeId)) continue;
@@ -1034,10 +1177,111 @@ function geometryNodeGeneratedTarget(name) {
   return null;
 }
 
-function geometryNodeCustomSpec(geometry, { name, position, color, group, rotation = [0, 0, 0], roughness = .78 }) {
+function geometryNodeTextureSourceParams(graph, nodeId, visited = new Set()) {
+  if (!graph || visited.has(nodeId) || visited.size >= 8) return null;
+  const next = new Set(visited); next.add(nodeId);
+  const type = geometryNodeTypeForId(graph, nodeId);
+  const p = graph.nodeParams?.[nodeId] || graph.params;
+  if(type==="colorPalette"){
+   const link=graph.connections.find(c=>c.toNodeId===nodeId&&(Number(c.toInputIndex)||0)===0),input=link?geometryNodeTextureSourceParams(graph,link.fromNodeId,next):null;
+   const textures=input?.textureChoices?.length?input.textureChoices:[input||{}],count=Math.round(geometryNodeNumber(p.paletteCount,4,1,4)),choices=[];
+   for(let i=1;i<=count;i++)for(const texture of textures)choices.push({...texture,materialColor:geometryNodePaletteColor(p,i),textureChoices:undefined});
+   return {...choices[0],textureChoices:choices.slice(0,128),texturePoolSeed:input?.texturePoolSeed||0,texturePoolUvs:input?.texturePoolUvs??input?.textureRandomize??false,texturePoolVariation:input?.texturePoolVariation??input?.textureVariation??0};
+  }
+  if (type === "textureInput") return p?.textureData ? p : null;
+  if (type !== "textureRandomizer") return null;
+  const choices = [];
+  const links = (graph.connections || []).filter(c => c.toNodeId === nodeId).sort((a,b)=>(Number(a.toInputIndex)||0)-(Number(b.toInputIndex)||0));
+  for (const link of links) {
+    const input = geometryNodeTextureSourceParams(graph, link.fromNodeId, next);
+    if (input?.textureChoices) choices.push(...input.textureChoices);
+    else if (input?.textureData||input?.materialColor) choices.push(input);
+    if (choices.length >= 32) break;
+  }
+  if (!choices.length) return null;
+  // First image keeps legacy texture-presence guards compatible. Selection is per mesh below.
+  return {...choices[0], textureChoices:choices.slice(0,32), textureRandomize:false,
+    texturePoolSeed:Math.round(geometryNodeNumber(p.texturePoolSeed,0,0,999999)),
+    texturePoolUvs:p.texturePoolUvs !== false,
+    texturePoolVariation:geometryNodeNumber(p.texturePoolVariation,.75,0,1)};
+}
+function geometryNodeTextureInputParams(graph, targetId, inputIndex = 1) {
+  const connection = graph?.connections?.find(c => c.toNodeId === targetId && (Number(c.toInputIndex)||0) === inputIndex);
+  return connection ? geometryNodeTextureSourceParams(graph, connection.fromNodeId) : null;
+}
+function geometryNodeTexturePartSeed(graph, targetId, name, offset = 0) {
+  let hash = ((Number(graph?.seed)||0) + offset) >>> 0;
+  for (const c of String(targetId) + ":" + String(name)) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619) >>> 0;
+  return hash;
+}
+function geometryNodePickPartTexture(params, graph, targetId, name) {
+  if (!params?.textureChoices?.length) return params;
+  const random = geometryNodePrng(geometryNodeTexturePartSeed(graph,targetId,name,params.texturePoolSeed));
+  const choice = params.textureChoices[Math.floor(random()*params.textureChoices.length)];
+  return {...choice, textureRandomize:params.texturePoolUvs, textureVariation:params.texturePoolVariation};
+}
+
+function geometryNodeRandomizeTextureUvs(geometry, random, amount = 1) {
+  const uv = geometry?.getAttribute?.("uv");
+  const strength = THREE.MathUtils.clamp(Number(amount) || 0, 0, 1);
+  if (!uv || strength <= 0) return;
+  const turn = Math.floor(random() * 4);
+  const cosine = [1, 0, -1, 0][turn];
+  const sine = [0, 1, 0, -1][turn];
+  const scale = 1 + (random() - .5) * strength * .9;
+  const offsetU = (random() - .5) * strength * 1.8;
+  const offsetV = (random() - .5) * strength * 1.8;
+  const mirrorU = random() < strength * .5 ? -1 : 1;
+  const mirrorV = random() < strength * .5 ? -1 : 1;
+  for (let index = 0; index < uv.count; index++) {
+    const u = (uv.getX(index) - .5) * scale * mirrorU;
+    const v = (uv.getY(index) - .5) * scale * mirrorV;
+    uv.setXY(index, u * cosine - v * sine + .5 + offsetU, u * sine + v * cosine + .5 + offsetV);
+  }
+  uv.needsUpdate = true;
+}
+
+function geometryNodeTextureSpec(textureName, graph = null, targetId = null, textureParamsOverride = undefined) {
+  const textureParams = textureParamsOverride === undefined ? geometryNodeTextureInputParams(graph, targetId) : textureParamsOverride;
+  if (textureParams?.textureData) {
+    return { textureUrl: textureParams.textureData, textureName: textureParams.textureName || "Embedded texture" };
+  }
+  const name = String(textureName || "").trim();
+  const entry = name && typeof textureLibrary !== "undefined" ? textureLibrary.get(name) : null;
+  return { textureUrl: entry?.dataUrl || null, textureName: entry?.name || (name || null) };
+}
+
+function geometryNodeCustomSpec(geometry, { name, position, color, group, rotation = [0, 0, 0], roughness = .78, textureName = "", graph = null, targetId = null, textureParams = undefined, textureKey = name }) {
+  const sourceTexture = textureParams === undefined ? geometryNodeTextureInputParams(graph,targetId) : textureParams;
+  const selectedTexture = geometryNodePickPartTexture(sourceTexture,graph,targetId,textureKey);
+  if(selectedTexture?.materialColor)color=selectedTexture.materialColor;
+  const assetType = graph ? geometryNodeTypeForId(graph,targetId) : null;
+  if ((sourceTexture?.textureChoices || BWS_ASSET_NODES[assetType]) && selectedTexture?.textureData && selectedTexture.textureRandomize !== false) {
+    geometryNodeRandomizeTextureUvs(geometry, geometryNodePrng(geometryNodeTexturePartSeed(graph,targetId,textureKey,sourceTexture?.texturePoolSeed || 0)), selectedTexture.textureVariation ?? 1);
+  }
   const data = geometryToData(geometry);
   geometry.dispose();
-  return { shape: "custom", geometry: data, name, position, rotation, scale: [1, 1, 1], color, roughness, groupId: group.id, groupName: group.name };
+  return { shape: "custom", geometry: data, name, position, rotation, scale: [1, 1, 1], color, roughness, ...geometryNodeTextureSpec(textureName, graph, targetId, selectedTexture), groupId: group.id, groupName: group.name };
+}
+
+function geometryNodeInnerPanelSpec(bounds, { name, group, color, roughness = .78, inset = 0.16, axis = "auto" }) {
+  if (!bounds || bounds.isEmpty?.()) return null;
+  const size = bounds.getSize(new THREE.Vector3());
+  if (!Number.isFinite(size.x) || !Number.isFinite(size.y) || !Number.isFinite(size.z)) return null;
+  const padding = Math.max(0, Number(inset) || 0);
+  const spanX = Math.max(0.1, size.x - padding * 2);
+  const spanY = Math.max(0.1, size.y - padding * 2);
+  const spanZ = Math.max(0.1, size.z - padding * 2);
+  const spans = [spanX, spanY, spanZ];
+  const minSpan = Math.min(...spans);
+  const thinAxis = axis === "x" ? 0 : axis === "y" ? 1 : axis === "z" ? 2 : spans.indexOf(minSpan);
+  const thickness = Math.max(0.02, minSpan * 0.2);
+  const sizeX = thinAxis === 0 ? thickness : spanX;
+  const sizeY = thinAxis === 1 ? thickness : spanY;
+  const sizeZ = thinAxis === 2 ? thickness : spanZ;
+  const geometry = new THREE.BoxGeometry(sizeX, sizeY, sizeZ);
+  const position = bounds.getCenter(new THREE.Vector3());
+  return geometryNodeCustomSpec(geometry, { name, position: position.toArray(), color, roughness, group });
 }
 
 function geometryNodeRockGeometry(profile, size, variation, random, wallStone = false) {
@@ -1305,17 +1549,30 @@ function geometryNodeGrassPointBlocked(x, z, surfaces, clearance) {
   });
 }
 
-function buildGeometryNodeTree() {
+function buildGeometryNodeTree({ centerOutput = false } = {}) {
   const graph = activeGeometryNodeGraph();
-  if (!graph || !GEOMETRY_NODE_SOURCE_TYPES.some(type => graph.nodeOrder.includes(type)) || !graph.nodeOrder.includes("output")) return;
+  if (!graph || !GEOMETRY_NODE_SOURCE_TYPES.some(type => graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === type)) || !graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === "output")) return;
+  // Reject oversized asset graphs before replacing an existing generated result.
+  const requestedAssetNodes = geometryNodeActiveNodeIds(graph);
+  if ([...requestedAssetNodes].some(id => geometryNodeTypeForId(graph, id) === "houseBatch")) return buildHouseBatch(graph);
+  let assetPartBudget = 0;
+  for (const nodeId of requestedAssetNodes) {
+    const type = geometryNodeTypeForId(graph, nodeId);
+    if (!BWS_ASSET_NODES[type] || BWS_ASSET_NODES[type].attachment) continue;
+    const values = assetNodeSanitize(graph.nodeParams?.[nodeId] || graph.params);
+    assetPartBudget += type === "houseLayout" ? 2500 : type === "brickWall" ? ((values.brickColumns + 1) * values.brickRows + 1) * values.brickCopies
+      : type === "groundTiles" ? values.tileColumns * values.tileRows + 1 : 64;
+  }
+  if (assetPartBudget > 3000) { setGeometryNodeStatus("Too many asset parts. Reduce counts or build smaller graphs (limit 3000 parts)."); return; }
   recordHistory("build geometry node tree");
+  if (centerOutput) graph.centerOutput = true;
   for (const id of graph.generatedIds) {
     const mesh = findObject(id);
     if (mesh) removeObject(mesh, { record: false, update: false });
   }
   const p = graph.params;
   const activeNodeIds = geometryNodeActiveNodeIds(graph);
-  const activeNodes = new Set(graph.nodeOrder.filter(nodeId => activeNodeIds.has(nodeId)));
+  const activeNodes = new Set([...activeNodeIds, ...[...activeNodeIds].map(nodeId => geometryNodeTypeForId(graph, nodeId)).filter(Boolean)]);
   const useVariant = activeNodes.has("variant");
   const style = useVariant ? p.variantStyle : "classic";
   const season = useVariant ? p.variantSeason : "summer";
@@ -1367,6 +1624,14 @@ function buildGeometryNodeTree() {
     generated.push(mesh.userData.id);
     return mesh;
   };
+  for (const nodeId of graph.nodeOrder) {
+    const type = geometryNodeTypeForId(graph, nodeId);
+    if (!activeNodeIds.has(nodeId) || !BWS_ASSET_NODES[type] || BWS_ASSET_NODES[type].attachment) continue;
+    assetNodeBuild(type, graph.nodeParams?.[nodeId] || graph.params, {
+      graph, nodeId, group, outputName, attachments:buildingAttachments(graph,nodeId,activeNodeIds),
+      emit: spec => { const mesh = addGenerated(spec); mesh.userData.geometryNodeSourceId = nodeId; }
+    });
+  }
   if (activeNodes.has("primitive")) addGenerated({
     shape: p.primitiveShape, name: `${outputName} Mesh primitive 1`, position: [0, p.primitiveSizeY * .5, 0], rotation: [0, 0, 0],
     scale: [p.primitiveSizeX, p.primitiveSizeY, p.primitiveSizeZ], color: p.primitiveColor, roughness: .82,
@@ -1378,6 +1643,8 @@ function buildGeometryNodeTree() {
     const clusterSlots = [];
     const stackPlaced = [];
     const rockMeshes = [];
+    const rockPalette = [p.rockColor, p.rockColorSecondary, p.rockColorTertiary].map(color => new THREE.Color(color));
+    const rockTextureParams = geometryNodeTextureInputParams(graph, "rocks");
     if (p.rockArrangement === "stack") {
       let remaining = count;
       const baseCount = Math.max(1, Math.ceil((Math.sqrt(8 * count + 1) - 1) / 2));
@@ -1396,6 +1663,7 @@ function buildGeometryNodeTree() {
         scale *= Math.max(.58, 1.16 - layer * .16);
       }
       const geometry = geometryNodeRockGeometry(p.rockProfile, scale, p.rockVariation, random);
+      if (rockTextureParams?.textureData && rockTextureParams.textureRandomize !== false) geometryNodeRandomizeTextureUvs(geometry, random, rockTextureParams.textureVariation);
       const bounds = geometry.boundingBox.getSize(new THREE.Vector3());
       if (p.rockArrangement === "line") x = (index - (count - 1) / 2) * p.rockSpacing * p.rockSize;
       else if (p.rockArrangement === "cluster" && index) {
@@ -1425,8 +1693,8 @@ function buildGeometryNodeTree() {
       const position = new THREE.Vector3(x, y, z);
       const rotationY = random() * Math.PI * 2;
       natureSurfaces.push({ kind: "rock", position, size: bounds.clone(), rotationY, geometry: geometry.clone() });
-      const shade = new THREE.Color(p.rockColor).offsetHSL((random() - .5) * .018, 0, (random() - .5) * .1);
-      rockMeshes.push(addGenerated(geometryNodeCustomSpec(geometry, { name: `${outputName} Rock ${index + 1}`, position: position.toArray(), rotation: [0, THREE.MathUtils.radToDeg(rotationY), 0], color: `#${shade.getHexString()}`, roughness: .94, group })));
+      const shade = rockPalette[Math.floor(random() * rockPalette.length)].clone().offsetHSL((random() - .5) * .018, 0, (random() - .5) * .1);
+      rockMeshes.push(addGenerated(geometryNodeCustomSpec(geometry, { name: `${outputName} Rock ${index + 1}`, position: position.toArray(), rotation: [0, THREE.MathUtils.radToDeg(rotationY), 0], color: `#${shade.getHexString()}`, roughness: .94, textureName: p.rockTextureName, graph, targetId: "rocks", group })));
     }
     if (rockMeshes.length) {
       const clusterBounds = new THREE.Box3().makeEmpty();
@@ -1452,9 +1720,22 @@ function buildGeometryNodeTree() {
         mesh.position.x -= centerX;
         mesh.position.z -= centerZ;
       }
+      clusterBounds.translate(new THREE.Vector3(-centerX, 0, -centerZ));
     }
   }
   if (activeNodes.has("stoneWall")) {
+    const wallNodeIds = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === "stoneWall");
+    const sharedWallParams = {};
+    const wallParamKeys = ["wallLength", "wallHeight", "wallDepth", "wallRows", "wallColumns", "wallDepthLayers", "wallIrregularity", "wallColorVariation", "wallColor", "wallColorSecondary", "wallColorTertiary", "wallTextureName", "wallOverallTextureMix", "natureOutputMode"];
+    for (const key of wallParamKeys) sharedWallParams[key] = p[key];
+    for (const wallNodeId of wallNodeIds) {
+      if (graph.nodeParams?.[wallNodeId]) Object.assign(p, graph.nodeParams[wallNodeId]);
+    const wallPalette = [p.wallColor, p.wallColorSecondary, p.wallColorTertiary].map(color => new THREE.Color(color));
+    const wallUpperTexture = geometryNodeTextureInputParams(graph, wallNodeId, 1);
+    const wallMiddleTexture = geometryNodeTextureInputParams(graph, wallNodeId, 2);
+    const wallBottomTexture = geometryNodeTextureInputParams(graph, wallNodeId, 3);
+    const wallOverallTexture = geometryNodeTextureInputParams(graph, wallNodeId, 4);
+    const wallBounds = new THREE.Box3().makeEmpty();
     const rowHeight = p.wallHeight / p.wallRows;
     const referenceColumns = Math.max(2, Math.round(p.wallColumns * p.wallLength / 7));
     const depthLayers = Math.max(1, p.wallDepthLayers);
@@ -1462,6 +1743,7 @@ function buildGeometryNodeTree() {
       const layerOffset = depthLayers === 1 ? 0 : THREE.MathUtils.lerp(-p.wallDepth * .24, p.wallDepth * .24, layer / (depthLayers - 1));
       for (let row = 0; row < p.wallRows; row++) {
         const rowRatio = p.wallRows <= 1 ? 0 : row / (p.wallRows - 1);
+        const wallZoneTexture = rowRatio >= .67 ? wallUpperTexture : rowRatio >= .34 ? wallMiddleTexture : wallBottomTexture;
         const courseCount = Math.max(3, Math.round(referenceColumns * (.78 + rowRatio * .24) + (random() - .5) * 2));
         const nominalWidth = p.wallLength / courseCount;
         const overlap = nominalWidth * (.035 + p.wallIrregularity * .025);
@@ -1482,10 +1764,19 @@ function buildGeometryNodeTree() {
           const stoneProfile = profileRoll < .62 ? "flat" : profileRoll < .86 ? "rounded" : "boulder";
           const geometry = geometryNodeRockGeometry(stoneProfile, 1, Math.min(1, p.wallIrregularity * 1.08), random);
           geometryNodeFitGeometry(geometry, stoneWidth, stoneHeight, stoneDepth);
+          const useOverallTexture = wallOverallTexture?.textureData && (!wallZoneTexture?.textureData || random() < p.wallOverallTextureMix);
+          const wallTextureParams = useOverallTexture ? wallOverallTexture : wallZoneTexture;
+          if (wallTextureParams?.textureData && wallTextureParams.textureRandomize !== false) geometryNodeRandomizeTextureUvs(geometry, random, wallTextureParams.textureVariation);
           const position = new THREE.Vector3(x, y, z);
           const rotationY = THREE.MathUtils.degToRad((random() - .5) * (4 + p.wallIrregularity * 5));
+          wallBounds.expandByPoint(position);
+          wallBounds.expandByPoint(new THREE.Vector3(
+            position.x + stoneWidth,
+            position.y + stoneHeight,
+            position.z + stoneDepth
+          ));
           natureSurfaces.push({ kind: "wall", position, size: new THREE.Vector3(stoneWidth, stoneHeight, stoneDepth), rotationY, geometry: geometry.clone(), outerLayer: layer === 0 || layer === depthLayers - 1 });
-          const shade = new THREE.Color(p.wallColor).offsetHSL(
+          const shade = wallPalette[Math.floor(random() * wallPalette.length)].clone().offsetHSL(
             (random() - .5) * .12 * p.wallColorVariation,
             (random() - .5) * .32 * p.wallColorVariation,
             (random() - .5) * .34 * p.wallColorVariation
@@ -1493,10 +1784,12 @@ function buildGeometryNodeTree() {
           const shadeHsl = {};
           shade.getHSL(shadeHsl);
           shade.setHSL(shadeHsl.h, THREE.MathUtils.clamp(shadeHsl.s, .025, .32), THREE.MathUtils.clamp(shadeHsl.l, .27, .68));
-          addGenerated(geometryNodeCustomSpec(geometry, { name: `${outputName} Wall stone ${layer + 1}.${row + 1}.${column + 1}`, position: position.toArray(), rotation: [0, THREE.MathUtils.radToDeg(rotationY), 0], color: `#${shade.getHexString()}`, roughness: .9 + random() * .09, group }));
+          if (p.natureOutputMode !== "grass") addGenerated(geometryNodeCustomSpec(geometry, { name: `${outputName} Wall stone ${layer + 1}.${row + 1}.${column + 1}`, position: position.toArray(), rotation: [0, THREE.MathUtils.radToDeg(rotationY), 0], color: `#${shade.getHexString()}`, roughness: .9 + random() * .09, textureName: p.wallTextureName, graph, targetId: wallNodeId, textureParams: wallTextureParams, group }));
         }
       }
     }
+    }
+    Object.assign(p, sharedWallParams);
   }
   if (activeNodes.has("moss") && natureSurfaces.length) {
     const mossSurfaces = natureSurfaces.filter(surface => surface.kind !== "wall" || surface.outerLayer !== false);
@@ -1516,6 +1809,12 @@ function buildGeometryNodeTree() {
   }
   natureSurfaces.forEach(surface => surface.geometry?.dispose());
   if (activeNodes.has("grass") && natureSurfaces.length) {
+    const grassNodeIds = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === "grass");
+    const sharedGrassParams = {};
+    const grassParamKeys = ["grassCount", "grassHeight", "grassWidth", "grassSpread", "grassAvoidGeometry", "grassClearance", "grassGrowNegativeX", "grassGrowPositiveX", "grassGrowNegativeZ", "grassGrowPositiveZ", "grassColor"];
+    for (const key of grassParamKeys) sharedGrassParams[key] = p[key];
+    for (const grassNodeId of grassNodeIds) {
+      if (graph.nodeParams?.[grassNodeId]) Object.assign(p, graph.nodeParams[grassNodeId]);
     const blades = [];
     const grassSides = [
       p.grassGrowNegativeZ && { axis: "z", sign: -1 },
@@ -1547,7 +1846,9 @@ function buildGeometryNodeTree() {
       if (p.grassAvoidGeometry && geometryNodeGrassPointBlocked(x, z, natureSurfaces, clearance)) continue;
       blades.push(new THREE.Vector3(x, .015, z));
     }
-    if (blades.length) addGenerated(geometryNodeCustomSpec(geometryNodeGrassGeometry(blades, p.grassHeight, p.grassWidth, random), { name: `${outputName} Grass sheets`, position: [0, 0, 0], color: p.grassColor, group }));
+    if (blades.length) addGenerated(geometryNodeCustomSpec(geometryNodeGrassGeometry(blades, p.grassHeight, p.grassWidth, random), { name: `${outputName} Grass sheets ${grassNodeId}`, position: [0, 0, 0], color: p.grassColor, group }));
+    }
+    Object.assign(p, sharedGrassParams);
   }
   if (activeNodes.has("primitiveTest")) {
     const smoothModifiers = geometryNodeSmoothModifiers(graph, "primitiveTest", activeNodeIds);
@@ -1718,10 +2019,35 @@ function buildGeometryNodeTree() {
       });
     }
   }
+  if (activeNodes.has("join") && p.joinAddInnerPanel) {
+    const joinedBounds = new THREE.Box3().makeEmpty();
+    const wallIds = generated.filter(id => {
+      const mesh = findObject(id);
+      return mesh && geometryNodeGeneratedTarget(mesh.name) === "stoneWall";
+    });
+    const boundsIds = wallIds.length ? wallIds : generated.filter(id => {
+      const mesh = findObject(id);
+      const target = mesh ? geometryNodeGeneratedTarget(mesh.name) : null;
+      return target !== "grass" && target !== "moss" && !mesh?.name.includes(" QA ");
+    });
+    for (const id of boundsIds) {
+      const mesh = findObject(id);
+      if (mesh) joinedBounds.expandByObject(mesh);
+    }
+    const panel = geometryNodeInnerPanelSpec(joinedBounds, {
+      name: `${outputName} Join inner panel`,
+      color: p.joinPanelColor,
+      group,
+      roughness: .95,
+      inset: p.joinPanelInset,
+      axis: p.joinPanelAxis
+    });
+    if (panel) addGenerated(panel);
+  }
   for (const id of generated) {
     const mesh = findObject(id);
     if (!mesh || mesh.name.includes(" QA ")) continue;
-    const targetId = geometryNodeGeneratedTarget(mesh.name);
+    const targetId = mesh.userData.geometryNodeSourceId || geometryNodeGeneratedTarget(mesh.name);
     const modifiers = targetId ? geometryNodeSmoothModifiers(graph, targetId, activeNodeIds) : [];
     if (!modifiers.length) continue;
     mesh.geometry = geometryNodeApplySmoothModifiers(mesh.geometry, modifiers);
@@ -1735,6 +2061,23 @@ function buildGeometryNodeTree() {
       if (!mesh) continue;
       mesh.position.multiplyScalar(p.transformScale).add(offset);
       mesh.scale.multiplyScalar(p.transformScale);
+      mesh.rotation.x += THREE.MathUtils.degToRad(p.transformRotX);
+      mesh.rotation.y += THREE.MathUtils.degToRad(p.transformRotY);
+      mesh.rotation.z += THREE.MathUtils.degToRad(p.transformRotZ);
+    }
+  }
+  if (graph.centerOutput && generated.length) {
+    const bounds = new THREE.Box3().makeEmpty();
+    const meshes = generated.map(id => findObject(id)).filter(Boolean);
+    for (const mesh of meshes) { mesh.updateWorldMatrix(true, false); bounds.expandByObject(mesh); }
+    if (!bounds.isEmpty() && [bounds.min.x,bounds.min.y,bounds.min.z,bounds.max.x,bounds.max.y,bounds.max.z].every(Number.isFinite)) {
+      const middle = bounds.getCenter(new THREE.Vector3());
+      const shift = new THREE.Vector3(middle.x, bounds.min.y, middle.z);
+      for (const mesh of meshes) {
+        const position = mesh.getWorldPosition(new THREE.Vector3()).sub(shift);
+        if (mesh.parent) mesh.parent.worldToLocal(position);
+        mesh.position.copy(position); mesh.updateMatrixWorld(true);
+      }
     }
   }
   graph.generatedIds = generated;
@@ -1756,20 +2099,48 @@ function bakeGeometryNodeTree() {
 
 function deleteGeometryNodeGraph() {
   const graph = activeGeometryNodeGraph();
-  if (!graph || !window.confirm(`Delete the saved node graph “${graph.name}”? Its generated or baked model parts will remain in the scene.`)) return;
+  if (!graph) return;
+  if (geometryNodePendingDeleteId !== graph.id) {
+    geometryNodePendingDeleteId = graph.id;
+    renderGeometryNodeEditor();
+    setGeometryNodeStatus('Click Confirm delete graph to remove "' + graph.name + '". Scene models are kept. Switch graphs to cancel.');
+    return;
+  }
+  recordHistory("delete geometry node graph");
   geometryNodeProjectState.graphs = geometryNodeProjectState.graphs.filter(item => item.id !== graph.id);
   geometryNodeProjectState.activeGraphId = geometryNodeProjectState.graphs[0]?.id || null;
+  geometryNodePendingDeleteId = null;
   saveGeometryNodeDraft();
   renderGeometryNodeEditor();
-  log(`Deleted Geometry Nodes graph ${graph.name}. Scene objects were kept.`);
+  log('Deleted Geometry Nodes graph ' + graph.name + '. Scene objects were kept.');
 }
 
-function createGeometryNodeGraph() {
-    const graph = defaultGeometryNodeGraph(`Procedural Geometry ${geometryNodeProjectState.graphs.length + 1}`);
-    geometryNodeProjectState.graphs.push(graph);
-    geometryNodeProjectState.activeGraphId = graph.id;
-    saveGeometryNodeDraft();
-    renderGeometryNodeEditor();
+function createGeometryNodeGraph() { createGeometryNodeBoard(false); }
+function createGeometryTreeTemplate() { createGeometryNodeBoard(true); }
+function createGeometryHouseTemplate() {
+  if(geometryNodeProjectState.graphs.length>=24){setGeometryNodeStatus("Graph limit reached. Save/delete an unused graph first.");return;}
+  recordHistory("new house template graph");
+  const graph=defaultGeometryNodeGraph("Timber house");
+  graph.nodeOrder=["seed","houseLayout","floor","window","window::2","door","diagonalBracing","foundation","facadeDetails","balcony","staircase","roof","chimney","output"];
+  graph.nodeParams["window::2"]={...graph.params,windowLevel:1,windowWidth:.8};
+  graph.connections=graph.nodeOrder.slice(0,-1).map((fromNodeId,i)=>({id:geometryNodeId("link"),fromNodeId,toNodeId:graph.nodeOrder[i+1],toInputIndex:0}));
+  graph.nodeOrder.forEach((id,i)=>{graph.nodePositions[id]=[40+i*190,60];});
+  graph.centerOutput=true;
+  geometryNodePendingDeleteId=null;
+  geometryNodeProjectState.graphs.push(graph);geometryNodeProjectState.activeGraphId=graph.id;
+  saveGeometryNodeDraft();renderGeometryNodeEditor();
+}
+function createGeometryNodeBoard(useTree) {
+  if (geometryNodeProjectState.graphs.length >= 24) { setGeometryNodeStatus("Graph limit reached. Save and delete an unused graph first."); return; }
+  recordHistory(useTree ? "new tree template graph" : "new empty geometry graph");
+  const name = (useTree ? "Tree template " : "Untitled Geometry ") + (geometryNodeProjectState.graphs.length + 1);
+  const graph = useTree ? defaultGeometryNodeGraph(name) : defaultEmptyGeometryNodeProjectState().graphs[0];
+  graph.name = name; graph.params.outputName = name;
+  geometryNodePendingDeleteId = null;
+  geometryNodeProjectState.graphs.push(graph);
+  geometryNodeProjectState.activeGraphId = graph.id;
+  saveGeometryNodeDraft();
+  renderGeometryNodeEditor();
 }
 
 function geometryNodePosition(graph, nodeId) {
@@ -1789,17 +2160,24 @@ function geometryNodeHasPath(graph, fromNodeId, toNodeId) {
   return false;
 }
 
-function connectGeometryNodes(fromNodeId, toNodeId) {
+function connectGeometryNodes(fromNodeId, toNodeId, requestedInputIndex = 0) {
   const graph = activeGeometryNodeGraph();
   const fromType = graph && geometryNodeTypeForId(graph, fromNodeId);
   const toType = graph && geometryNodeTypeForId(graph, toNodeId);
   const fromDefinition = GEOMETRY_NODE_DEFINITIONS[fromType] || { output: "Geometry" };
   const toDefinition = GEOMETRY_NODE_DEFINITIONS[toType] || { input: "Geometry" };
   if (!graph || !fromType || !toType || fromNodeId === toNodeId || !fromDefinition.output || !toDefinition.input) return false;
+  const inputLabels = toDefinition.inputSockets || [toDefinition.input];
+  const toInputIndex = Math.max(0, Math.min(inputLabels.length - 1, Number(requestedInputIndex) || 0));
+  const expectedInput = inputLabels[toInputIndex];
+  const expectsTexture = /^Texture(?: [2-4])?$/.test(expectedInput) || ["Upper", "Middle", "Bottom", "Overall"].includes(expectedInput);
+  if ((fromDefinition.output === "Texture" || expectsTexture) && (fromDefinition.output !== "Texture" || !expectsTexture)) return false;
+  if (["Upper", "Middle", "Bottom", "Overall"].includes(expectedInput) && fromDefinition.output !== "Texture") return false;
+  if ((fromDefinition.output === "Seed" || expectedInput === "Seed") && fromDefinition.output !== expectedInput) return false;
   if (geometryNodeHasPath(graph, toNodeId, fromNodeId)) return false;
-  if (graph.connections.some(connection => connection.fromNodeId === fromNodeId && connection.toNodeId === toNodeId)) return true;
-  if (toNodeId !== "output" && GEOMETRY_NODE_DEFINITIONS[toType]?.multiInput !== true) graph.connections = graph.connections.filter(connection => connection.toNodeId !== toNodeId);
-  graph.connections.push({ id: geometryNodeId("link"), fromNodeId, toNodeId });
+  if (graph.connections.some(connection => connection.fromNodeId === fromNodeId && connection.toNodeId === toNodeId && (Number(connection.toInputIndex) || 0) === toInputIndex)) return true;
+  graph.connections = graph.connections.filter(connection => connection.toNodeId !== toNodeId || (Number(connection.toInputIndex) || 0) !== toInputIndex);
+  graph.connections.push({ id: geometryNodeId("link"), fromNodeId, toNodeId, toInputIndex });
   const smoothNode = graph.smoothNodes.find(node => node.id === toNodeId);
   if (smoothNode) smoothNode.targetId = geometryNodeResolvedSourceId(graph, fromNodeId);
   saveGeometryNodeDraft();
@@ -1840,13 +2218,20 @@ function addGeometryNodeType(type, position = null) {
     addGeometryNodeModifier(null, type, position, false);
     return;
   }
-  if (graph.nodeOrder.includes(type)) return;
+  const instanceCount = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === type).length;
+  const nodeId = instanceCount ? `${type}::${instanceCount + 1}` : type;
+  if (instanceCount) {
+    graph.nodeParams ||= {};
+    graph.nodeParams[nodeId] = { ...graph.params };
+    if (type === "textureInput") Object.assign(graph.nodeParams[nodeId], { textureName: "", textureData: "", textureRandomize: true, textureVariation: 1 });
+  }
   const canonicalIndex = GEOMETRY_NODE_TYPES.indexOf(type);
-  const insertIndex = graph.nodeOrder.findIndex(nodeType => GEOMETRY_NODE_TYPES.indexOf(nodeType) > canonicalIndex);
-  graph.nodeOrder.splice(insertIndex >= 0 ? insertIndex : graph.nodeOrder.length, 0, type);
-  graph.nodePositions[type] = geometryNodeFindOpenPosition(graph, position);
+  const insertIndex = graph.nodeOrder.findIndex(existingId => GEOMETRY_NODE_TYPES.indexOf(geometryNodeTypeForId(graph, existingId)) > canonicalIndex);
+  graph.nodeOrder.splice(insertIndex >= 0 ? insertIndex : graph.nodeOrder.length, 0, nodeId);
+  graph.nodePositions[nodeId] = geometryNodeFindOpenPosition(graph, position);
   saveGeometryNodeDraft();
   renderGeometryNodeEditor();
+  return nodeId;
 }
 
 function addGeometryNodeModifier(targetId = null, type = "smoothGeometry", position = null, insertIntoFlow = true) {
@@ -1895,6 +2280,7 @@ function mountGeometryNodeContextMenu(doc, html, clientX, clientY) {
   menu.className = "geometry-node-context-menu";
   menu.setAttribute("role", "menu");
   menu.innerHTML = html;
+  if (menu.querySelector(".geometry-node-context-library")) menu.classList.add("geometry-node-library-menu");
   doc.body.append(menu);
   const fitMenu = () => {
     const viewportWidth = doc.defaultView?.innerWidth || 1024;
@@ -1918,7 +2304,6 @@ function openGeometryNodeContextMenu(doc, card, clientX, clientY) {
   const compatibleTypes = definition.output ? GEOMETRY_NODE_TYPES.filter(type => {
     const candidate = GEOMETRY_NODE_DEFINITIONS[type];
     if (!candidate.input || type === targetType || type === "output") return false;
-    if (type !== "smoothGeometry" && graph.nodeOrder.includes(type)) return false;
     return type === "smoothGeometry" || candidate.input === definition.output || candidate.input === "Geometry" || definition.output === "Geometry";
   }) : [];
   const compatibleButtons = compatibleTypes.map(type => `<button type="button" role="menuitem" data-geometry-attach-type="${type}" data-geometry-target-node="${geometryNodeEscape(targetId)}">+ ${geometryNodeEscape(GEOMETRY_NODE_DEFINITIONS[type].title)}</button>`).join("");
@@ -1933,8 +2318,8 @@ function openGeometryNodeBoardMenu(doc, canvasPoint, clientX, clientY) {
   if (!graph) return;
   const categories = [...new Set(GEOMETRY_NODE_TYPES.map(type => GEOMETRY_NODE_DEFINITIONS[type].category))];
   const list = categories.map(category => `<section><span class="geometry-node-context-label">${category}</span>${GEOMETRY_NODE_TYPES.filter(type => GEOMETRY_NODE_DEFINITIONS[type].category === category).map(type => {
-    const exists = type !== "smoothGeometry" && graph.nodeOrder.includes(type);
-    return `<button type="button" data-geometry-add-node="${type}" data-geometry-add-x="${Math.round(canvasPoint[0])}" data-geometry-add-y="${Math.round(canvasPoint[1])}" ${exists ? "disabled" : ""}>${exists ? "✓ " : "+ "}${geometryNodeEscape(GEOMETRY_NODE_DEFINITIONS[type].title)}</button>`;
+    const count = graph.nodeOrder.filter(nodeId => geometryNodeTypeForId(graph, nodeId) === type).length;
+    return `<button type="button" data-geometry-add-node="${type}" data-geometry-add-x="${Math.round(canvasPoint[0])}" data-geometry-add-y="${Math.round(canvasPoint[1])}">+ ${geometryNodeEscape(GEOMETRY_NODE_DEFINITIONS[type].title)}${count ? ` (${count})` : ""}</button>`;
   }).join("")}</section>`).join("");
   mountGeometryNodeContextMenu(doc, `<strong>Add node here</strong><div class="geometry-node-context-library">${list}</div>`, clientX, clientY);
 }
@@ -1944,6 +2329,15 @@ function openGeometryNodeLinkMenu(doc, linkId, clientX, clientY) {
 }
 
 function geometryNodeCanvasPoint(canvas, clientX, clientY) {
+  const graph = activeGeometryNodeGraph();
+  if (canvas?.id === GEOMETRY_NODE_SURFACE_IDS.detached.canvas && graph) {
+    const viewportBounds = canvas.parentElement.getBoundingClientRect();
+    const scale = Math.max(.01, Number(graph.view?.scale) || 1);
+    return [
+      Math.max(0, (clientX - viewportBounds.left - (Number(graph.view?.x) || 0)) / scale),
+      Math.max(0, (clientY - viewportBounds.top - (Number(graph.view?.y) || 0)) / scale)
+    ];
+  }
   const bounds = canvas.getBoundingClientRect();
   return [
     (clientX - bounds.left) * canvas.offsetWidth / Math.max(1, bounds.width),
@@ -1988,7 +2382,7 @@ function updateGeometryNodeDetachedView(surface, graph, doc) {
   surface.canvas.style.transformOrigin = "top left";
   const label = surface.root?.querySelector("[data-geometry-zoom-label]");
   if (label) label.textContent = `${Math.round(graph.view.scale * 100)}%`;
-  doc.defaultView?.requestAnimationFrame(() => renderGeometryNodeLinks(surface.canvas, graph, doc));
+  doc.defaultView?.requestAnimationFrame(() => {renderGeometryNodeLinks(surface.canvas, graph, doc);geometryNodeRefreshRulers(surface.canvas);});
 }
 
 function renderGeometryNodeMirror(sourceKind) {
@@ -2006,7 +2400,10 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
   const interaction = { pendingFrom: null, pointer: null, spaceKey: false };
   geometryNodeInteractionByDocument.set(doc, interaction);
   surface.newButton?.addEventListener("click", createGeometryNodeGraph);
+  surface.root.querySelector("[data-geometry-tree-template]")?.addEventListener("click", createGeometryTreeTemplate);
+  surface.root.querySelector("[data-geometry-house-template]")?.addEventListener("click", createGeometryHouseTemplate);
   surface.buildButton?.addEventListener("click", buildGeometryNodeTree);
+  surface.root.querySelector("[data-geometry-center-output]")?.addEventListener("click", () => buildGeometryNodeTree({centerOutput:true}));
   surface.bakeButton?.addEventListener("click", bakeGeometryNodeTree);
   surface.deleteButton?.addEventListener("click", deleteGeometryNodeGraph);
   surface.copyButton?.addEventListener("click", () => copyGeometryNodeClusterString(doc));
@@ -2019,6 +2416,19 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
   });
   surface.root.addEventListener("click", event => {
     const graph = activeGeometryNodeGraph();
+    const wallCopy = event.target.closest("[data-geometry-wall-copy]");
+    if (wallCopy && graph) {
+      const nodeId=wallCopy.dataset.geometryWallCopy;
+      const values=graph.nodeParams?.[nodeId] || graph.params;
+      const count=assetNodeSanitize(values).brickCopies;
+      if(count>=12){setGeometryNodeStatus("Maximum 12 wall copies per node. Use fewer bricks for larger repeats.");return;}
+      values.brickCopies=count+1;
+      values.brickRepeat=true;
+      saveGeometryNodeDraft();
+      renderGeometryNodeEditor();
+      buildGeometryNodeTree();
+      return;
+    }
     const outputPort = event.target.closest("[data-geometry-connect-from]");
     if (outputPort) {
       startGeometryNodeConnection(doc, surface.canvas, outputPort.dataset.geometryConnectFrom);
@@ -2028,7 +2438,7 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
     if (inputPort && interaction.pendingFrom) {
       const fromNodeId = interaction.pendingFrom;
       cancelGeometryNodeConnection(doc, surface.canvas);
-      connectGeometryNodes(fromNodeId, inputPort.dataset.geometryConnectTo);
+      connectGeometryNodes(fromNodeId, inputPort.dataset.geometryConnectTo, Number(inputPort.dataset.geometryInputIndex) || 0);
       return;
     }
     const viewButton = event.target.closest("[data-geometry-view]");
@@ -2065,8 +2475,8 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
       if (type === "smoothGeometry") addGeometryNodeModifier(targetId, type);
       else {
         const targetPosition = geometryNodePosition(activeGeometryNodeGraph(), targetId);
-        addGeometryNodeType(type, [targetPosition[0] + 190, targetPosition[1] + 245]);
-        connectGeometryNodes(targetId, type);
+        const addedId = addGeometryNodeType(type, [targetPosition[0] + 190, targetPosition[1] + 245]);
+        connectGeometryNodes(targetId, addedId || type);
       }
     }
     else if (startButton) startGeometryNodeConnection(doc, surface.canvas, startButton.dataset.geometryStartLink);
@@ -2075,6 +2485,7 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
     if (attachButton || startButton || addButton || disconnectButton) closeGeometryNodeContextMenu(doc);
   });
   surface.select?.addEventListener("change", event => {
+    geometryNodePendingDeleteId = null;
     geometryNodeProjectState.activeGraphId = event.target.value;
     saveGeometryNodeDraft();
     renderGeometryNodeEditor();
@@ -2160,11 +2571,39 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
     if (instanceId) {
       const modifier = graph.smoothNodes.find(node => node.id === instanceId);
       if (modifier) modifier.params[key] = value;
+      else if (graph.nodeParams?.[instanceId]) graph.nodeParams[instanceId][key] = value;
+      else graph.params[key] = value;
     } else if (key === "seed") graph.seed = Math.round(geometryNodeNumber(value, graph.seed, 0, 999999));
     else graph.params[key] = value;
     if (key === "outputName" && String(value).trim()) graph.name = String(value).trim().slice(0, 80);
     saveGeometryNodeDraft();
     renderGeometryNodeMirror(kind);
+  });
+  canvas?.addEventListener("change", event => {
+    const input = event.target.closest("[data-geometry-param]");
+    if (input && (input.type !== "checkbox" || !event.defaultPrevented)) input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  canvas?.addEventListener("change", event => {
+    const textureInput = event.target.closest("[data-geometry-texture-input]");
+    const graph = activeGeometryNodeGraph();
+    if (!textureInput || !graph) return;
+    const file = textureInput.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const instanceId = textureInput.dataset.geometryTextureInstance;
+      const target = instanceId && instanceId !== "textureInput" ? graph.nodeParams?.[instanceId] : graph.params;
+      if (!target || typeof reader.result !== "string" || !reader.result.startsWith("data:image/")) return;
+      target.textureName = file.name.slice(0, 160);
+      target.textureData = reader.result;
+      saveGeometryNodeDraft();
+      renderGeometryNodeEditor();
+    };
+    reader.onerror = () => {
+      const status = document.querySelector("[data-geometry-texture-name]");
+      if (status) status.textContent = "Texture import failed";
+    };
+    reader.readAsDataURL(file);
   });
   canvas?.addEventListener("pointerdown", event => {
     if (event.target.closest("[data-geometry-remove-node]")) return;
@@ -2178,16 +2617,19 @@ function bindGeometryNodeSurface(doc, kind = "sidebar") {
     const start = [event.clientX, event.clientY];
     handle.setPointerCapture(event.pointerId);
     const move = moveEvent => {
-      const scale = kind === "detached" ? graph.view.scale : 1;
-      const x = geometryNodeNumber(origin[0] + (moveEvent.clientX - start[0]) / scale, origin[0], 0, 4200);
-      const y = geometryNodeNumber(origin[1] + (moveEvent.clientY - start[1]) / scale, origin[1], 0, 2200);
+      const scale = canvas.getBoundingClientRect().width / Math.max(1,canvas.offsetWidth);
+      const x = geometryNodeNumber(origin[0] + (moveEvent.clientX - start[0]) / scale, origin[0], 0, Number.MAX_SAFE_INTEGER);
+      const y = geometryNodeNumber(origin[1] + (moveEvent.clientY - start[1]) / scale, origin[1], 0, Number.MAX_SAFE_INTEGER);
       if (modifier) modifier.position = [x, y];
       else graph.nodePositions[nodeId] = [x, y];
       card.style.left = `${x}px`;
       card.style.top = `${y}px`;
+      geometryNodeExpandCanvas(canvas);
       renderGeometryNodeLinks(canvas, graph, doc);
+      geometryNodeRefreshRulers(canvas,[x,y]);
     };
     const finish = () => {
+      geometryNodeRefreshRulers(canvas);
       handle.removeEventListener("pointermove", move);
       handle.removeEventListener("pointerup", finish);
       handle.removeEventListener("pointercancel", finish);
@@ -2218,3 +2660,28 @@ function setGeometryNodesPluginEnabled(enabled) {
 }
 
 setGeometryNodesPluginEnabled(pluginManifestById("geometry-nodes")?.enabled === true);
+
+const geometryNodeLayoutSeen=new WeakSet();
+function geometryNodeLayoutPrefs(){try{const p=JSON.parse(localStorage.getItem("bws-node-layout")||"{}");return {x:Math.max(20,Math.min(400,Number(p.x)||70)),y:Math.max(20,Math.min(400,Number(p.y)||70))};}catch{return {x:70,y:70};}}
+function geometryNodeInstallLayoutTools(surface,doc){
+if(surface.root.querySelector("[data-node-layout-tools]"))return;const p=geometryNodeLayoutPrefs(),bar=doc.createElement("div");bar.dataset.nodeLayoutTools="true";bar.style.cssText="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 0";
+const button=doc.createElement("button");button.type="button";button.textContent="Arrange nodes";bar.appendChild(button);
+for(const key of ["x","y"]){const label=doc.createElement("label");label.textContent=(key==="x"?"Horizontal":"Vertical")+" padding ";const input=doc.createElement("input");input.type="number";input.min="20";input.max="400";input.step="10";input.value=p[key];input.dataset.layoutAxis=key;input.style.width="65px";label.appendChild(input);bar.appendChild(label);}
+const arrange=()=>{const graph=activeGeometryNodeGraph();if(graph)geometryNodeArrangeMeasured(surface,graph);};button.addEventListener("click",arrange);bar.addEventListener("change",()=>{const values={};for(const input of bar.querySelectorAll("input")){const value=Math.max(20,Math.min(400,Number(input.value)||70));input.value=value;values[input.dataset.layoutAxis]=value;}try{localStorage.setItem("bws-node-layout",JSON.stringify(values));}catch{}arrange();});
+(surface.root.querySelector(".geometry-node-actions")||surface.root.querySelector(".geometry-node-toolbar")||surface.root).appendChild(bar);
+}
+function geometryNodeMeasuredCards(canvas){return [...canvas.querySelectorAll(".geometry-node-card")].map(el=>({el,id:el.dataset.geometryNode,x:parseFloat(el.style.left)||0,y:parseFloat(el.style.top)||0,w:el.offsetWidth||154,h:el.offsetHeight||300}));}
+function geometryNodeExpandCanvas(canvas){const cards=geometryNodeMeasuredCards(canvas);if(!cards.length)return;canvas.style.width=Math.max(2200,...cards.map(c=>c.x+c.w+500))+"px";canvas.style.height=Math.max(1100,...cards.map(c=>c.y+c.h+500))+"px";}
+function geometryNodeRepairOverlap(surface,graph){if(geometryNodeLayoutSeen.has(graph))return;const cards=geometryNodeMeasuredCards(surface.canvas);if(!cards.length||!cards[0].el.offsetHeight)return;geometryNodeLayoutSeen.add(graph);if(cards.some((a,i)=>cards.slice(i+1).some(b=>a.x<b.x+b.w&&a.x+a.w>b.x&&a.y<b.y+b.h&&a.y+a.h>b.y)))geometryNodeArrangeMeasured(surface,graph);}
+function geometryNodeArrangeMeasured(surface,graph){const cards=geometryNodeMeasuredCards(surface.canvas);if(!cards.length)return;recordHistory("arrange geometry nodes");const p=geometryNodeLayoutPrefs(),columns=cards.length;let y=50;for(let i=0;i<cards.length;i+=columns){let x=50,height=0;for(const c of cards.slice(i,i+columns)){const smooth=graph.smoothNodes.find(n=>n.id===c.id);if(smooth)smooth.position=[x,y];else graph.nodePositions[c.id]=[x,y];height=Math.max(height,c.h);x+=c.w+p.x;}y+=height+p.y;}geometryNodeLayoutSeen.add(graph);saveGeometryNodeDraft();renderGeometryNodeEditor();}
+function geometryNodeRefreshRulers(canvas,point=null){
+const viewport=canvas?.parentElement,doc=canvas?.ownerDocument;if(!viewport||!doc||!canvas.offsetWidth)return;let overlay=viewport.querySelector(":scope > [data-node-rulers]");
+if(!overlay){overlay=doc.createElement("div");overlay.dataset.nodeRulers="true";overlay.style.cssText="position:absolute;inset:0;pointer-events:none;z-index:20;overflow:hidden";viewport.style.position="relative";viewport.appendChild(overlay);}
+canvas.querySelectorAll(".geometry-node-ruler-x,.geometry-node-ruler-y").forEach(el=>el.style.display="none");const c=canvas.getBoundingClientRect(),v=viewport.getBoundingClientRect(),scale=c.width/canvas.offsetWidth;if(!scale)return;const ox=c.left-v.left,oy=c.top-v.top,w=viewport.clientWidth,h=viewport.clientHeight,step=Math.pow(10,Math.ceil(Math.log10(60/scale)));overlay.replaceChildren();
+function item(css,text){const el=doc.createElement("div");el.style.cssText="position:absolute;"+css;if(text!==undefined)el.textContent=text;overlay.appendChild(el);}
+item("left:0;top:0;right:0;height:22px;background:#18262a;border-bottom:1px solid #61747b");item("left:0;top:22px;bottom:0;width:30px;background:#18262a;border-right:1px solid #61747b");
+for(let n=Math.ceil(-ox/(step*scale));n*step*scale+ox<w;n++){const x=n*step*scale+ox;if(x>=30)item("top:0;left:"+x+"px;height:22px;border-left:1px solid #82999f;padding-left:3px;font:10px monospace;color:#d7e7e9",Math.round(n*step));}
+for(let n=Math.ceil(-oy/(step*scale));n*step*scale+oy<h;n++){const y=n*step*scale+oy;if(y>=22)item("left:0;top:"+y+"px;width:30px;border-top:1px solid #82999f;font:9px monospace;color:#d7e7e9",Math.round(n*step));}
+if(point){item("left:"+(ox+point[0]*scale)+"px;top:22px;bottom:0;border-left:1px dashed #63d8bd");item("left:30px;right:0;top:"+(oy+point[1]*scale)+"px;border-top:1px dashed #63d8bd");}
+}
+function geometryNodePaletteColor(p,n){const defaults=["#908676","#a39780","#786f62","#b1a58b"],value=p?.["paletteColor"+n];return /^#[0-9a-f]{6}$/i.test(value)?value:defaults[n-1];}

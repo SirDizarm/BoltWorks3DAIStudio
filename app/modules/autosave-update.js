@@ -10,6 +10,7 @@ const bwsUpdateAvailableBtn = document.querySelector("#updateAvailableBtn");
 const bwsCurrentVersion = (document.querySelector('meta[name="application-version"]')?.content.match(/v?(\d+(?:\.\d+)+)/)?.[1]) || "0";
 let bwsAutoSaveTimer = null;
 let bwsStartingNewWorkspace = false;
+let bwsWorkspaceGeneration = 0;
 let bwsAutoSavePromise = Promise.resolve(false);
 let bwsRecoveryDatabasePromise = null;
 let bwsUpdateVersion = null;
@@ -35,7 +36,8 @@ function openBwsRecoveryDatabase() {
   return bwsRecoveryDatabasePromise;
 }
 
-async function writeBwsRecoveryRecord(project) {
+async function writeBwsRecoveryRecord(project, generation = bwsWorkspaceGeneration) {
+  if (generation !== bwsWorkspaceGeneration) return false;
   const record = {
     id: BWS_RECOVERY_KEY,
     appVersion: bwsCurrentVersion,
@@ -46,6 +48,7 @@ async function writeBwsRecoveryRecord(project) {
   let fallbackSaved = false;
   try {
     const database = await openBwsRecoveryDatabase();
+    if (generation !== bwsWorkspaceGeneration) return false;
     indexedDbSaved = await new Promise((resolve, reject) => {
       const transaction = database.transaction(BWS_RECOVERY_STORE, "readwrite");
       transaction.objectStore(BWS_RECOVERY_STORE).put(record);
@@ -56,13 +59,14 @@ async function writeBwsRecoveryRecord(project) {
   } catch (error) {
     console.warn("BoltWorks IndexedDB recovery write failed", error);
   }
-  try {
+  // Avoid serializing a second, potentially enormous copy when IndexedDB worked.
+  if (!indexedDbSaved && generation === bwsWorkspaceGeneration) try {
     localStorage.setItem(BWS_RECOVERY_FALLBACK_KEY, JSON.stringify(record));
     fallbackSaved = true;
   } catch (error) {
     console.warn("BoltWorks local recovery fallback unavailable", error);
   }
-  if (indexedDbSaved || fallbackSaved) localStorage.removeItem(BWS_RECOVERY_MANUAL_KEY);
+  if (generation === bwsWorkspaceGeneration && (indexedDbSaved || fallbackSaved)) localStorage.removeItem(BWS_RECOVERY_MANUAL_KEY);
   return indexedDbSaved || fallbackSaved;
 }
 
@@ -112,19 +116,22 @@ function saveProjectAutoRecoveryNow() {
     bwsAutoSaveTimer = null;
   }
   if (bwsStartingNewWorkspace || isProjectLoading || isRestoring || !objects.length) return Promise.resolve(false);
+  const generation = bwsWorkspaceGeneration;
   const project = projectState();
   setBwsAutoSaveStatus("Saving recovery…");
   bwsAutoSavePromise = bwsAutoSavePromise
     .catch(() => false)
-    .then(() => writeBwsRecoveryRecord(project))
-    .then(() => {
+    .then(() => writeBwsRecoveryRecord(project, generation))
+    .then(saved => {
+      if (generation !== bwsWorkspaceGeneration) return saved;
+      if (!saved) { setBwsAutoSaveStatus("Recovery save unavailable", "problem"); return false; }
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       setBwsAutoSaveStatus(`Auto-saved ${time}`, "saved");
       return true;
     })
     .catch(error => {
       console.warn("BoltWorks recovery save failed", error);
-      setBwsAutoSaveStatus("Recovery save unavailable", "problem");
+      if (generation === bwsWorkspaceGeneration) setBwsAutoSaveStatus("Recovery save unavailable", "problem");
       return false;
     });
   return bwsAutoSavePromise;

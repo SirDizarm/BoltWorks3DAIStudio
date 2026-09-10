@@ -1,6 +1,6 @@
 /* Generated from app/modules. Do not edit this bundle directly. */
 (() => {
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/build/three.module.js
+  // node_modules/three/build/three.module.js
   var REVISION = "165";
   var MOUSE = { LEFT: 0, MIDDLE: 1, RIGHT: 2, ROTATE: 0, DOLLY: 1, PAN: 2 };
   var TOUCH = { ROTATE: 0, PAN: 1, DOLLY_PAN: 2, DOLLY_ROTATE: 3 };
@@ -24035,7 +24035,7 @@ void main() {
     }
   }
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/controls/OrbitControls.js
+  // node_modules/three/examples/jsm/controls/OrbitControls.js
   var _changeEvent = { type: "change" };
   var _startEvent = { type: "start" };
   var _endEvent = { type: "end" };
@@ -24809,7 +24809,7 @@ void main() {
     }
   };
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/controls/TransformControls.js
+  // node_modules/three/examples/jsm/controls/TransformControls.js
   var _raycaster = new Raycaster();
   var _tempVector = new Vector3();
   var _tempVector2 = new Vector3();
@@ -25771,7 +25771,7 @@ void main() {
     }
   };
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/loaders/TGALoader.js
+  // node_modules/three/examples/jsm/loaders/TGALoader.js
   var TGALoader = class extends DataTextureLoader {
     constructor(manager) {
       super(manager);
@@ -26063,7 +26063,7 @@ void main() {
     }
   };
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/loaders/ColladaLoader.js
+  // node_modules/three/examples/jsm/loaders/ColladaLoader.js
   var ColladaLoader = class extends Loader {
     load(url, onLoad, onProgress, onError) {
       const scope = this;
@@ -28397,7 +28397,7 @@ void main() {
     }
   };
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/loaders/MTLLoader.js
+  // node_modules/three/examples/jsm/loaders/MTLLoader.js
   var MTLLoader = class extends Loader {
     constructor(manager) {
       super(manager);
@@ -28691,7 +28691,7 @@ void main() {
     }
   };
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/loaders/OBJLoader.js
+  // node_modules/three/examples/jsm/loaders/OBJLoader.js
   var _object_pattern = /^[og]\s*(.+)?/;
   var _material_library_pattern = /^mtllib /;
   var _material_use_pattern = /^usemtl /;
@@ -29182,7 +29182,7 @@ void main() {
     }
   };
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/exporters/OBJExporter.js
+  // node_modules/three/examples/jsm/exporters/OBJExporter.js
   var OBJExporter = class {
     parse(object) {
       let output = "";
@@ -29317,7 +29317,7 @@ void main() {
     }
   };
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/utils/TextureUtils.js
+  // node_modules/three/examples/jsm/utils/TextureUtils.js
   var _renderer;
   var fullscreenQuadGeometry;
   var fullscreenQuadMaterial;
@@ -29383,7 +29383,7 @@ void main() {
     return readableTexture;
   }
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/exporters/GLTFExporter.js
+  // node_modules/three/examples/jsm/exporters/GLTFExporter.js
   var KHR_mesh_quantization_ExtraAttrTypes = {
     POSITION: [
       "byte",
@@ -31250,7 +31250,7 @@ void main() {
     }
   };
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/utils/SkeletonUtils.js
+  // node_modules/three/examples/jsm/utils/SkeletonUtils.js
   function clone(source) {
     const sourceLookup = /* @__PURE__ */ new Map();
     const cloneLookup = /* @__PURE__ */ new Map();
@@ -31280,7 +31280,7 @@ void main() {
     }
   }
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
+  // node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
   function mergeGeometries(geometries, useGroups = false) {
     const isIndexed = geometries[0].index !== null;
     const attributesUsed = new Set(Object.keys(geometries[0].attributes));
@@ -31522,7 +31522,7 @@ void main() {
     return result;
   }
 
-  // ../copilot-worktrees/BoltWorks3DAIStudio/sirdizarm-fuzzy-invention/node_modules/three/examples/jsm/modifiers/SimplifyModifier.js
+  // node_modules/three/examples/jsm/modifiers/SimplifyModifier.js
   var _cb2 = new Vector3();
   var _ab2 = new Vector3();
   var SimplifyModifier = class {

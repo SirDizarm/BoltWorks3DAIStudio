@@ -1,0 +1,265 @@
+{
+  "kind": "boltworks-node-cluster",
+  "version": 1,
+  "name": "Hybrid Smooth Stem Tree",
+  "savedAt": "2026-09-05T23:24:20.198Z",
+  "graph": {
+    "id": "tree-mtp0f3er-o2p8sj",
+    "name": "Hybrid Smooth Stem Tree",
+    "type": "tree",
+    "seed": 73,
+    "params": {
+      "height": 8,
+      "variantStyle": "classic",
+      "variantSeason": "summer",
+      "variantMaturity": "mature",
+      "variantAmount": 0.55,
+      "smoothAxis": "xyz",
+      "smoothIterations": 2,
+      "smoothStrength": 0.72,
+      "smoothPreserveSize": true,
+      "smoothRoots": true,
+      "smoothTrunk": true,
+      "smoothBranches": true,
+      "smoothTwigs": true,
+      "smoothCanopy": false,
+      "smoothJoints": true,
+      "smoothCutRings": false,
+      "trunkWidth": 0.82,
+      "trunkSegments": 6,
+      "rootCount": 6,
+      "rootLength": 1.35,
+      "rootThickness": 0.34,
+      "trunkBend": 0.22,
+      "branchCount": 9,
+      "branchSpread": 66,
+      "branchLength": 2.6,
+      "jointSize": 0.85,
+      "jointTrunkSeams": false,
+      "twigLength": 0.45,
+      "twigRise": 0.72,
+      "canopyEnabled": true,
+      "canopySize": 1.25,
+      "canopyDensity": 2,
+      "knotCount": 3,
+      "knotSize": 0.3,
+      "knotInset": 0.04,
+      "knotRings": 4,
+      "cutRingCount": 7,
+      "cutRingDepth": 0.035,
+      "cutRingContrast": 0.55,
+      "transformX": 0,
+      "transformY": 0,
+      "transformZ": 0,
+      "transformScale": 1,
+      "outputName": "Hybrid Smooth Stem Tree",
+      "primitiveShape": "facetedBallLow",
+      "primitiveSizeX": 1,
+      "primitiveSizeY": 1,
+      "primitiveSizeZ": 1,
+      "primitiveColor": "#4f8f54",
+      "stemHeight": 9.5,
+      "stemBaseRadius": 0.52,
+      "stemTopRadius": 0.13,
+      "stemSegments": 12,
+      "stemSides": 14,
+      "stemLean": 0.12,
+      "stemFlare": 0.28,
+      "stemColor": "#754c35",
+      "branchArrayCount": 7,
+      "branchArrayLength": 2.45,
+      "branchArrayRise": 0.72,
+      "branchArrayRadius": 0.19,
+      "branchArrayTaper": 0.22,
+      "branchArrayTwist": 24,
+      "branchColor": "#754c35",
+      "junctionBlendSize": 1.32,
+      "junctionBlendLength": 1.55,
+      "clusterScatterCount": 13,
+      "clusterScatterSize": 0.92,
+      "clusterScatterSpread": 0.5,
+      "clusterScatterColor": "#4f8246",
+      "rockProfile": "rounded",
+      "rockArrangement": "cluster",
+      "rockCount": 6,
+      "rockSize": 1.25,
+      "rockVariation": 0.42,
+      "rockSpacing": 1.05,
+      "rockColor": "#59635f",
+      "wallLength": 12,
+      "wallHeight": 2.8,
+      "wallDepth": 1.15,
+      "wallRows": 4,
+      "wallColumns": 8,
+      "wallDepthLayers": 3,
+      "wallIrregularity": 0.32,
+      "wallColorVariation": 0.58,
+      "wallColor": "#5e6662",
+      "grassCount": 18,
+      "grassHeight": 0.48,
+      "grassWidth": 0.045,
+      "grassSpread": 0.35,
+      "grassAvoidGeometry": true,
+      "grassClearance": 0.12,
+      "grassColor": "#376f2d",
+      "mossPlacement": "bottom",
+      "mossCoverage": 0.55,
+      "mossThickness": 0.12,
+      "mossMoisture": 0.72,
+      "mossSunlight": 0.3,
+      "mossCrackBias": 0.68,
+      "mossColor": "#315f2a"
+    },
+    "nodeOrder": [
+      "seed",
+      "stem",
+      "branchArray",
+      "clusterScatter",
+      "join",
+      "junctionBlend",
+      "output"
+    ],
+    "nodePositions": {
+      "seed": [
+        18,
+        42
+      ],
+      "variant": [
+        196,
+        26
+      ],
+      "primitive": [
+        374,
+        42
+      ],
+      "stem": [
+        260,
+        70
+      ],
+      "branchArray": [
+        450,
+        70
+      ],
+      "clusterScatter": [
+        830,
+        55
+      ],
+      "rocks": [
+        1086,
+        42
+      ],
+      "stoneWall": [
+        1264,
+        26
+      ],
+      "grass": [
+        1442,
+        42
+      ],
+      "moss": [
+        1620,
+        26
+      ],
+      "join": [
+        1030,
+        130
+      ],
+      "primitiveTest": [
+        1976,
+        26
+      ],
+      "roots": [
+        2154,
+        42
+      ],
+      "trunk": [
+        374,
+        42
+      ],
+      "bend": [
+        2510,
+        42
+      ],
+      "branches": [
+        552,
+        26
+      ],
+      "smoothJoints": [
+        730,
+        42
+      ],
+      "junctionBlend": [
+        630,
+        105
+      ],
+      "twigs": [
+        908,
+        26
+      ],
+      "canopy": [
+        1086,
+        42
+      ],
+      "knot": [
+        3578,
+        42
+      ],
+      "cutSurface": [
+        1264,
+        26
+      ],
+      "smoothGeometry": [
+        3934,
+        42
+      ],
+      "transform": [
+        4112,
+        26
+      ],
+      "output": [
+        1442,
+        42
+      ]
+    },
+    "smoothNodes": [],
+    "connections": [
+      {
+        "id": "link-mtp0f4dg-epoz42",
+        "fromNodeId": "seed",
+        "toNodeId": "stem"
+      },
+      {
+        "id": "link-mtp0f4fr-81xkb3",
+        "fromNodeId": "stem",
+        "toNodeId": "branchArray"
+      },
+      {
+        "id": "link-mtp0f4i2-sgnhzw",
+        "fromNodeId": "branchArray",
+        "toNodeId": "junctionBlend"
+      },
+      {
+        "id": "link-mtp0f4kf-3izo8u",
+        "fromNodeId": "junctionBlend",
+        "toNodeId": "clusterScatter"
+      },
+      {
+        "id": "link-mtp0f4mo-7dxb17",
+        "fromNodeId": "clusterScatter",
+        "toNodeId": "join"
+      },
+      {
+        "id": "link-mtp0f4p0-7ffdop",
+        "fromNodeId": "join",
+        "toNodeId": "output"
+      }
+    ],
+    "view": {
+      "x": 29.193548387096772,
+      "y": 111.0436081242533,
+      "scale": 0.6367980884109916
+    },
+    "generatedIds": [],
+    "buildVersion": 0
+  }
+}

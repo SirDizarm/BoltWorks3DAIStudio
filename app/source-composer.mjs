@@ -4,6 +4,9 @@ export const studioModuleOrder = Object.freeze([
   "viewport",
   "toolbar",
   "meshes",
+  "geometry-building-details",
+  "geometry-building",
+  "geometry-assets",
   "geometry-nodes",
   "import-export",
   "autosave-update",
@@ -14,7 +17,8 @@ export const studioModuleOrder = Object.freeze([
   "animator-workspace",
   "pose-straightener",
   "dice-demo",
-  "panels"
+  "panels",
+  "house-batch"
 ]);
 
 export async function composeStudioSource(readModule) {

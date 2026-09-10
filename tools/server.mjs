@@ -20,13 +20,18 @@ const mcpSessionFile = process.env.BWS_MCP_SESSION_FILE
 // headroom above the relay's previous 4 MB default, while staying under its
 // 16 MB hard cap.
 const mcpRelay = createMcpRelay({ token: process.env.BWS_MCP_TOKEN, maxBodyBytes: 12 * 1024 * 1024 });
-const studioSource = await buildStudioBundle({ outfile: join(root, "app", "studio-v49.64.7.js") });
+// Use the bundle actually referenced by the editor, not a retired version.
+const studioScript = readFileSync(join(root, "index.html"), "utf8")
+  .match(/<script\b[^>]*\bsrc=["']\.\/(studio-v[\d.]+\.js)["']/i)?.[1];
+if (!studioScript) throw new Error("Cannot locate the editor studio bundle in index.html.");
+const studioPath = `/${studioScript}`;
+const studioSource = await buildStudioBundle({ outfile: join(root, studioScript) });
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
   if (await handleVideoExport({ pathname: url.pathname, request, response })) return;
   if (handleHostApi({ pathname: url.pathname, request, response, server, pendingProjectFile, mcpRelay, url })) return;
-  if (url.pathname === "/app/studio-v49.64.7.js") {
+  if (url.pathname === studioPath || url.pathname === "/app/studio-v49.64.7.js") {
     response.writeHead(200, {
       "content-type": "text/javascript; charset=utf-8",
       "cache-control": "no-store"

@@ -3592,7 +3592,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#40c7a5", roughness = .6, opacity = 1, tintColor = "#ffffff", tintStrength = 0, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, normalTextureUrl = null, normalTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, generatedShell = false, shellResolution = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [], manualTopologyEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#8d8d8d", roughness = .6, opacity = 1, tintColor = "#ffffff", tintStrength = 0, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, normalTextureUrl = null, normalTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, generatedShell = false, shellResolution = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [], manualTopologyEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3603,7 +3603,9 @@ function createMesh(spec = {}) {
   const meshGeometry = applyGeometryCuts(baseGeometry, spec);
   const cuts = cutSpecFromObject(spec);
   const normalizedMaterialRule = normalizeMaterialRule(materialRule);
-  const mesh = new THREE.Mesh(meshGeometry, makeMaterial(color, roughness));
+  const normalizedColor = normalizeHexColor(color, "#8d8d8d");
+  const normalizedRoughness = Math.max(.05, Math.min(1, Number.isFinite(Number(roughness)) ? Number(roughness) : .6));
+  const mesh = new THREE.Mesh(meshGeometry, makeMaterial(normalizedColor, normalizedRoughness));
   mesh.material.vertexColors = !!meshGeometry.getAttribute("color");
   mesh.material.metalness = normalizedMaterialRule === "metal" ? .52 : .05;
   const materialOpacity = Math.max(.05, Math.min(1, Number(opacity) || 1));
@@ -3616,8 +3618,8 @@ function createMesh(spec = {}) {
     id: objectId,
     shape,
     geometry: geometry || null,
-    color,
-    roughness,
+    color: normalizedColor,
+    roughness: normalizedRoughness,
     opacity: materialOpacity,
     tintColor: normalizeHexColor(tintColor, "#ffffff"),
     tintStrength: Math.max(0, Math.min(1, Number(tintStrength) || 0)),
@@ -20454,6 +20456,388 @@ async function surfaceShellUnionCompoundSpec(mesh, options = {}) {
   }
 }
 
+async function surfaceCompoundOuterCullSpec(meshes, { name = "Combined Shell", groupId = null, groupName = null, progress = null } = {}) {
+  if (!Array.isArray(meshes) || meshes.length < 1) return null;
+  const sourceTriangles = meshes.reduce((total, mesh) => (
+    total + Math.floor((mesh.geometry.index?.count || mesh.geometry.getAttribute("position")?.count || 0) / 3)
+  ), 0);
+  const probes = [];
+  for (const mesh of meshes) {
+    if (!mesh?.isMesh) continue;
+    const baseGeometry = geometryInWorldSpace(mesh);
+    if (!baseGeometry?.getAttribute?.("position")) {
+      baseGeometry?.dispose?.();
+      continue;
+    }
+    const parts = shellConnectedGeometryParts(baseGeometry);
+    baseGeometry.dispose();
+    if (!parts.length) continue;
+    for (const geometry of parts) {
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox.clone();
+      const interiorBox = box.clone();
+      const margin = Math.max(1e-5, box.getSize(new THREE.Vector3()).length() * 1e-5);
+      interiorBox.expandByScalar(-margin);
+      const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+      const probe = new THREE.Mesh(geometry, material);
+      probe.updateMatrixWorld(true);
+      probes.push({ geometry, material, probe, box, interiorBox });
+    }
+  }
+  if (probes.length < 1) {
+    probes.forEach((entry) => {
+      entry.geometry.dispose();
+      entry.material.dispose();
+    });
+    throw new Error("The selected meshes could not be prepared for surface-preserving cleanup.");
+  }
+  const attributeNames = Object.keys(probes[0]?.geometry?.attributes || {});
+  if (!attributeNames.length) {
+    probes.forEach((entry) => {
+      entry.geometry.dispose();
+      entry.material.dispose();
+    });
+    throw new Error("The selected meshes did not provide usable geometry attributes.");
+  }
+  const kept = Object.fromEntries(attributeNames.map((attributeName) => [attributeName, []]));
+  const raycaster = new THREE.Raycaster();
+  const direction = new THREE.Vector3(1, .371, .173).normalize();
+  raycaster.ray.direction.copy(direction);
+  raycaster.near = 1e-6;
+  raycaster.far = 1e7;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  const pointInsideProbe = (point, candidate) => {
+    if (!candidate.interiorBox.containsPoint(point)) return false;
+    raycaster.ray.origin.copy(point);
+    const hits = raycaster.intersectObject(candidate.probe, false);
+    let crossings = 0;
+    let previousDistance = -Infinity;
+    for (const hit of hits) {
+      if (hit.distance <= raycaster.near || Math.abs(hit.distance - previousDistance) <= 1e-5) continue;
+      previousDistance = hit.distance;
+      crossings++;
+    }
+    return crossings % 2 === 1;
+  };
+  let processed = 0;
+  try {
+    for (let componentIndex = 0; componentIndex < probes.length; componentIndex++) {
+      const entry = probes[componentIndex];
+      const position = entry.geometry.getAttribute("position");
+      const triangleCount = Math.floor(position.count / 3);
+      for (let triangle = 0; triangle < triangleCount; triangle++) {
+        a.fromBufferAttribute(position, triangle * 3);
+        b.fromBufferAttribute(position, triangle * 3 + 1);
+        c.fromBufferAttribute(position, triangle * 3 + 2);
+        center.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+        let covered = false;
+        for (let candidateIndex = 0; candidateIndex < probes.length; candidateIndex++) {
+          if (candidateIndex === componentIndex) continue;
+          const candidate = probes[candidateIndex];
+          if (
+            pointInsideProbe(center, candidate)
+            && pointInsideProbe(a, candidate)
+            && pointInsideProbe(b, candidate)
+            && pointInsideProbe(c, candidate)
+          ) {
+            covered = true;
+            break;
+          }
+        }
+        if (!covered) {
+          for (const attributeName of attributeNames) {
+            const attribute = entry.geometry.getAttribute(attributeName);
+            for (let corner = 0; corner < 3; corner++) {
+              const sourceOffset = (triangle * 3 + corner) * attribute.itemSize;
+              for (let item = 0; item < attribute.itemSize; item++) kept[attributeName].push(attribute.array[sourceOffset + item]);
+            }
+          }
+        }
+        processed++;
+        if (processed % 250 === 0) {
+          progress?.(.08 + .87 * processed / Math.max(1, sourceTriangles));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    for (const attributeName of attributeNames) {
+      const sourceAttribute = probes[0].geometry.getAttribute(attributeName);
+      const values = new sourceAttribute.array.constructor(kept[attributeName]);
+      geometry.setAttribute(attributeName, new THREE.BufferAttribute(values, sourceAttribute.itemSize, sourceAttribute.normalized));
+    }
+    if (!geometry.getAttribute("position")?.count) throw new Error("The selected wall cluster had no exterior faces left after cleanup.");
+    if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+    if (!geometry.getAttribute("uv")) shellProjectedUvs(geometry);
+    geometry.computeBoundingBox();
+    const outputCenter = geometry.boundingBox.getCenter(new THREE.Vector3());
+    geometry.translate(-outputCenter.x, -outputCenter.y, -outputCenter.z);
+    geometry.computeBoundingSphere();
+    const geometryData = geometryToData(geometry);
+    const outputTriangles = Math.floor(geometry.getAttribute("position").count / 3);
+    geometry.dispose();
+    const first = meshes[0];
+    const textureState = sharedMergeTextureState(meshes);
+    const sameRule = meshes.every((mesh) => normalizeMaterialRule(mesh.userData.materialRule || "auto") === normalizeMaterialRule(first.userData.materialRule || "auto"))
+      ? normalizeMaterialRule(first.userData.materialRule || "auto")
+      : "auto";
+    const countGeometry = geometryFromPositions(geometryData.positions);
+    const shellCount = shellGeometryComponentCount(countGeometry);
+    countGeometry.dispose();
+    return {
+      spec: {
+        shape: "custom",
+        geometry: geometryData,
+        name,
+        position: outputCenter.toArray().map(round),
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        color: textureState?.color || mergeSourceMaterialColor(first),
+        opacity: textureState?.opacity ?? Math.max(.05, Math.min(1, Number(first.userData.opacity ?? primaryMeshMaterial(first)?.opacity ?? 1) || 1)),
+        roughness: round(meshes.reduce((sum, mesh) => sum + Number(primaryMeshMaterial(mesh)?.roughness || 0), 0) / meshes.length),
+        textureUrl: textureState?.textureUrl || null,
+        textureName: textureState?.textureName || null,
+        textureFlipY: textureState?.textureFlipY ?? true,
+        textureRotation: textureState?.textureRotation ?? 0,
+        textureRobloxAssetId: textureState?.textureRobloxAssetId || "",
+        materialRule: sameRule,
+        groupId,
+        groupName,
+        hidden: false,
+        linkId: null,
+        linkColor: null,
+        generatedShell: true,
+        shellResolution: null
+      },
+      sourceTriangles,
+      outputTriangles,
+      filledCells: 0,
+      sealedCells: 0,
+      shellCount,
+      resolution: null,
+      dimensions: null,
+      method: "surface-cull"
+    };
+  } finally {
+    probes.forEach((entry) => {
+      entry.geometry.dispose();
+      entry.material.dispose();
+    });
+  }
+}
+
+async function surfaceBoundaryCullSpec(meshes, { name = "Combined Shell", groupId = null, groupName = null, progress = null } = {}) {
+  if (!Array.isArray(meshes) || meshes.length < 1) return null;
+  const sourceTriangles = meshes.reduce((total, mesh) => (
+    total + Math.floor((mesh.geometry.index?.count || mesh.geometry.getAttribute("position")?.count || 0) / 3)
+  ), 0);
+  const components = [];
+  const tempVector = new THREE.Vector3();
+  for (const mesh of meshes) {
+    if (!mesh?.isMesh) continue;
+    const baseGeometry = geometryInWorldSpace(mesh);
+    if (!baseGeometry?.getAttribute?.("position")) {
+      baseGeometry?.dispose?.();
+      continue;
+    }
+    const parts = shellConnectedGeometryParts(baseGeometry);
+    baseGeometry.dispose();
+    if (!parts.length) continue;
+    for (const geometry of parts) {
+      geometry.computeBoundingBox();
+      const box = geometry.boundingBox.clone();
+      const interiorBox = box.clone();
+      const span = Math.max(1e-4, box.getSize(tempVector).length());
+      const margin = span * 1e-5;
+      interiorBox.expandByScalar(-margin);
+      const material = new THREE.MeshBasicMaterial({ side: THREE.DoubleSide });
+      const probe = new THREE.Mesh(geometry, material);
+      probe.updateMatrixWorld(true);
+      components.push({ geometry, material, probe, box, interiorBox, span });
+    }
+  }
+  if (components.length < 1) {
+    components.forEach((entry) => {
+      entry.geometry.dispose();
+      entry.material.dispose();
+    });
+    throw new Error("The selected meshes could not be prepared for boundary-preserving cleanup.");
+  }
+  const attributeNames = Object.keys(components[0]?.geometry?.attributes || {});
+  if (!attributeNames.length) {
+    components.forEach((entry) => {
+      entry.geometry.dispose();
+      entry.material.dispose();
+    });
+    throw new Error("The selected meshes did not provide usable geometry attributes.");
+  }
+  const kept = Object.fromEntries(attributeNames.map((attributeName) => [attributeName, []]));
+  const raycaster = new THREE.Raycaster();
+  const direction = new THREE.Vector3(1, .371, .173).normalize();
+  raycaster.ray.direction.copy(direction);
+  raycaster.near = 1e-6;
+  raycaster.far = 1e7;
+  const a = new THREE.Vector3();
+  const b = new THREE.Vector3();
+  const c = new THREE.Vector3();
+  const center = new THREE.Vector3();
+  const faceNormal = new THREE.Vector3();
+  const vertexNormalSum = new THREE.Vector3();
+  const plus = new THREE.Vector3();
+  const minus = new THREE.Vector3();
+  const plusA = new THREE.Vector3();
+  const plusB = new THREE.Vector3();
+  const plusC = new THREE.Vector3();
+  const minusA = new THREE.Vector3();
+  const minusB = new THREE.Vector3();
+  const minusC = new THREE.Vector3();
+  const pointInsideProbe = (point, candidate) => {
+    if (!candidate.interiorBox.containsPoint(point)) return false;
+    raycaster.ray.origin.copy(point);
+    const hits = raycaster.intersectObject(candidate.probe, false);
+    let crossings = 0;
+    let previousDistance = -Infinity;
+    for (const hit of hits) {
+      if (hit.distance <= raycaster.near || Math.abs(hit.distance - previousDistance) <= 1e-5) continue;
+      previousDistance = hit.distance;
+      crossings++;
+    }
+    return crossings % 2 === 1;
+  };
+  const pointInsideAny = (point, sourceIndex) => {
+    for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
+      if (componentIndex === sourceIndex) continue;
+      if (pointInsideProbe(point, components[componentIndex])) return true;
+    }
+    return false;
+  };
+  let processed = 0;
+  try {
+    for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
+      const entry = components[componentIndex];
+      const position = entry.geometry.getAttribute("position");
+      const normal = entry.geometry.getAttribute("normal");
+      const triangleCount = Math.floor(position.count / 3);
+      for (let triangle = 0; triangle < triangleCount; triangle++) {
+        a.fromBufferAttribute(position, triangle * 3);
+        b.fromBufferAttribute(position, triangle * 3 + 1);
+        c.fromBufferAttribute(position, triangle * 3 + 2);
+        center.copy(a).add(b).add(c).multiplyScalar(1 / 3);
+        if (normal?.itemSize === 3) {
+          vertexNormalSum.fromBufferAttribute(normal, triangle * 3);
+          vertexNormalSum.add(new THREE.Vector3().fromBufferAttribute(normal, triangle * 3 + 1));
+          vertexNormalSum.add(new THREE.Vector3().fromBufferAttribute(normal, triangle * 3 + 2));
+          faceNormal.copy(vertexNormalSum);
+        } else {
+          faceNormal.subVectors(b, a).cross(new THREE.Vector3().subVectors(c, a));
+        }
+        if (!faceNormal.lengthSq()) {
+          faceNormal.set(0, 1, 0);
+        }
+        faceNormal.normalize();
+        const offset = Math.max(1e-5, entry.span * 1e-4);
+        plus.copy(center).addScaledVector(faceNormal, offset);
+        minus.copy(center).addScaledVector(faceNormal, -offset);
+        plusA.copy(a).addScaledVector(faceNormal, offset);
+        plusB.copy(b).addScaledVector(faceNormal, offset);
+        plusC.copy(c).addScaledVector(faceNormal, offset);
+        minusA.copy(a).addScaledVector(faceNormal, -offset);
+        minusB.copy(b).addScaledVector(faceNormal, -offset);
+        minusC.copy(c).addScaledVector(faceNormal, -offset);
+        const insidePlus = pointInsideAny(plus, componentIndex)
+          && pointInsideAny(plusA, componentIndex)
+          && pointInsideAny(plusB, componentIndex)
+          && pointInsideAny(plusC, componentIndex);
+        const insideMinus = pointInsideAny(minus, componentIndex)
+          && pointInsideAny(minusA, componentIndex)
+          && pointInsideAny(minusB, componentIndex)
+          && pointInsideAny(minusC, componentIndex);
+        const shouldKeep = !(insidePlus && insideMinus);
+        if (shouldKeep) {
+          for (const attributeName of attributeNames) {
+            const attribute = entry.geometry.getAttribute(attributeName);
+            for (let corner = 0; corner < 3; corner++) {
+              const sourceOffset = (triangle * 3 + corner) * attribute.itemSize;
+              for (let item = 0; item < attribute.itemSize; item++) kept[attributeName].push(attribute.array[sourceOffset + item]);
+            }
+          }
+        }
+        processed++;
+        if (processed % 250 === 0) {
+          progress?.(.08 + .87 * processed / Math.max(1, sourceTriangles));
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+        }
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    for (const attributeName of attributeNames) {
+      const sourceAttribute = components[0].geometry.getAttribute(attributeName);
+      const values = new sourceAttribute.array.constructor(kept[attributeName]);
+      geometry.setAttribute(attributeName, new THREE.BufferAttribute(values, sourceAttribute.itemSize, sourceAttribute.normalized));
+    }
+    if (!geometry.getAttribute("position")?.count) throw new Error("The selected wall cluster had no boundary faces left after cleanup.");
+    if (!geometry.getAttribute("normal")) geometry.computeVertexNormals();
+    if (!geometry.getAttribute("uv")) shellProjectedUvs(geometry);
+    geometry.computeBoundingBox();
+    const outputCenter = geometry.boundingBox.getCenter(new THREE.Vector3());
+    geometry.translate(-outputCenter.x, -outputCenter.y, -outputCenter.z);
+    geometry.computeBoundingSphere();
+    const geometryData = geometryToData(geometry);
+    const outputTriangles = Math.floor(geometry.getAttribute("position").count / 3);
+    geometry.dispose();
+    const first = meshes[0];
+    const textureState = sharedMergeTextureState(meshes);
+    const sameRule = meshes.every((mesh) => normalizeMaterialRule(mesh.userData.materialRule || "auto") === normalizeMaterialRule(first.userData.materialRule || "auto"))
+      ? normalizeMaterialRule(first.userData.materialRule || "auto")
+      : "auto";
+    const countGeometry = geometryFromPositions(geometryData.positions);
+    const shellCount = shellGeometryComponentCount(countGeometry);
+    countGeometry.dispose();
+    return {
+      spec: {
+        shape: "custom",
+        geometry: geometryData,
+        name,
+        position: outputCenter.toArray().map(round),
+        rotation: [0, 0, 0],
+        scale: [1, 1, 1],
+        color: textureState?.color || mergeSourceMaterialColor(first),
+        opacity: textureState?.opacity ?? Math.max(.05, Math.min(1, Number(first.userData.opacity ?? primaryMeshMaterial(first)?.opacity ?? 1) || 1)),
+        roughness: round(meshes.reduce((sum, mesh) => sum + Number(primaryMeshMaterial(mesh)?.roughness || 0), 0) / meshes.length),
+        textureUrl: textureState?.textureUrl || null,
+        textureName: textureState?.textureName || null,
+        textureFlipY: textureState?.textureFlipY ?? true,
+        textureRotation: textureState?.textureRotation ?? 0,
+        textureRobloxAssetId: textureState?.textureRobloxAssetId || "",
+        materialRule: sameRule,
+        groupId,
+        groupName,
+        hidden: false,
+        linkId: null,
+        linkColor: null,
+        generatedShell: true,
+        shellResolution: null
+      },
+      sourceTriangles,
+      outputTriangles,
+      filledCells: 0,
+      sealedCells: 0,
+      shellCount,
+      resolution: null,
+      dimensions: null,
+      method: "surface-boundary"
+    };
+  } finally {
+    components.forEach((entry) => {
+      entry.geometry.dispose();
+      entry.material.dispose();
+    });
+  }
+}
+
 function surfaceShellCopySpec(mesh, { name = "Combined Shell", groupId = null, groupName = null } = {}) {
   mesh.updateMatrixWorld(true);
   const geometry = mesh.geometry.clone().applyMatrix4(mesh.matrixWorld);
@@ -20726,12 +21110,36 @@ async function shellUnionSpec(meshes, options = {}) {
       options.progress?.(1);
       return result;
     } catch (surfaceError) {
-      if (options.voxelFallback !== false) {
+      const allowVoxelFallback = options.voxelFallback !== false && !options.forceSurfaceOnly;
+      if (allowVoxelFallback) {
         const fallback = await voxelShellUnionSpec(meshes, options);
         if (fallback) fallback.fallbackReason = surfaceError?.message || "Compound surface boolean union failed.";
         return fallback;
       }
-      throw surfaceError;
+      const surfaceFailureMessage = options.forceSurfaceOnly
+        ? "Surface-only shelling could not produce a clean shell for this wall-like cluster. Try reducing containment tolerance or selecting fewer disconnected regions before combining."
+        : `Could not create a smooth shell without voxelizing the model. Check that each selected mesh is a closed solid. ${surfaceError?.message || "Compound surface boolean union failed."}`;
+      throw new Error(surfaceFailureMessage);
+    }
+  }
+  if (options.surfaceMethod === "boundary-only") {
+    try {
+      options.progress?.(.08);
+      const result = await surfaceBoundaryCullSpec(meshes, options);
+      options.progress?.(1);
+      return result;
+    } catch (surfaceError) {
+      throw new Error(`Boundary-only shelling could not produce a clean shell. ${surfaceError?.message || "Boundary cull failed."}`);
+    }
+  }
+  if (options.forceSurfaceOnly) {
+    try {
+      options.progress?.(.08);
+      const result = await surfaceCompoundOuterCullSpec(meshes, options);
+      options.progress?.(1);
+      return result;
+    } catch (surfaceError) {
+      throw new Error(`Surface-only wall-like cleanup could not produce a clean outer shell. ${surfaceError?.message || "Surface cull failed."}`);
     }
   }
   try {
@@ -20745,18 +21153,224 @@ async function shellUnionSpec(meshes, options = {}) {
       if (fallback) fallback.fallbackReason = surfaceError?.message || "Surface boolean union failed.";
       return fallback;
     }
-    throw new Error(`Could not create a smooth shell without voxelizing the model. Check that each selected mesh is a closed solid. ${surfaceError?.message || "Surface boolean union failed."}`);
+    const surfaceFailureMessage = options.forceSurfaceOnly
+      ? "Surface-only shelling could not produce a clean shell for this wall-like cluster. Try reducing containment tolerance or selecting fewer disconnected regions before combining."
+      : `Could not create a smooth shell without voxelizing the model. Check that each selected mesh is a closed solid. ${surfaceError?.message || "Surface boolean union failed."}`;
+    throw new Error(surfaceFailureMessage);
   }
+}
+
+function boundsContainsBounds(outerBounds, innerBounds, epsilon = 1e-6) {
+  if (!outerBounds || !innerBounds) return false;
+  return outerBounds.min.x <= innerBounds.min.x + epsilon && outerBounds.max.x >= innerBounds.max.x - epsilon && outerBounds.min.y <= innerBounds.min.y + epsilon && outerBounds.max.y >= innerBounds.max.y - epsilon && outerBounds.min.z <= innerBounds.min.z + epsilon && outerBounds.max.z >= innerBounds.max.z - epsilon;
+}
+
+function pointInsideWorldGeometryWithTolerance(point, worldGeometry, tolerance = 0) {
+  if (!pointInsideWorldGeometry(point, worldGeometry)) return false;
+  if (!tolerance) return true;
+  const bounds = worldGeometry?.boundingBox;
+  if (!bounds) return true;
+  const inward = bounds.getCenter(new THREE.Vector3()).sub(point);
+  const distance = inward.length();
+  if (!distance) return true;
+  const nudge = Math.min(distance * 0.45, tolerance);
+  return pointInsideWorldGeometry(point.clone().addScaledVector(inward.normalize(), nudge), worldGeometry);
+}
+
+function containmentSamplesFromGeometry(worldGeometry, maxSamples = 24) {
+  if (!worldGeometry?.getAttribute?.("position")) return [];
+  const position = worldGeometry.getAttribute("position");
+  const bounds = worldGeometry.boundingBox || null;
+  const points = [];
+  const stride = Math.max(1, Math.floor(position.count / Math.min(maxSamples, 24)));
+  const maxCount = Math.max(6, Math.min(24, position.count));
+  for (let i = 0; i < position.count && points.length < maxCount; i += stride) {
+    points.push(new THREE.Vector3(position.getX(i), position.getY(i), position.getZ(i)));
+  }
+  if (bounds) {
+    const center = bounds.getCenter(new THREE.Vector3());
+    const { min, max } = bounds;
+    points.push(min.clone());
+    points.push(max.clone());
+    points.push(new THREE.Vector3(min.x, min.y, max.z));
+    points.push(new THREE.Vector3(min.x, max.y, min.z));
+    points.push(new THREE.Vector3(max.x, min.y, min.z));
+    points.push(new THREE.Vector3(min.x, max.y, max.z));
+    points.push(new THREE.Vector3(max.x, min.y, max.z));
+    points.push(new THREE.Vector3(max.x, max.y, min.z));
+    points.push(center.clone());
+    for (const point of [...points]) {
+      points.push(point.clone().lerp(center, 0.12));
+    }
+  }
+  const unique = [];
+  const seen = new Set();
+  for (const point of points) {
+    const key = `${point.x.toFixed(4)}|${point.y.toFixed(4)}|${point.z.toFixed(4)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(point);
+  }
+  return unique;
+}
+
+function analyzeContainedMeshes(targetMeshes, { announce = true, tolerance = 0.03 } = {}) {
+  if (targetMeshes.length < 2) return {
+    keptMeshes: targetMeshes.slice(),
+    removedMeshes: [],
+    removedCount: 0
+  };
+  const infos = [];
+  for (const mesh of targetMeshes) {
+    const worldGeometry = geometryInWorldSpace(mesh);
+    const bounds = worldGeometry?.boundingBox || null;
+    if (!bounds) {
+      worldGeometry?.dispose();
+      continue;
+    }
+    infos.push({
+      mesh,
+      worldGeometry,
+      bounds,
+      volume: (bounds.max.x - bounds.min.x) * (bounds.max.y - bounds.min.y) * (bounds.max.z - bounds.min.z),
+      samples: containmentSamplesFromGeometry(worldGeometry, 28)
+    });
+  }
+  if (infos.length < 2) {
+    for (const info of infos) info.worldGeometry.dispose();
+    return {
+      keptMeshes: targetMeshes.slice(),
+      removedMeshes: [],
+      removedCount: 0
+    };
+  }
+  infos.sort((a, b) => a.volume - b.volume);
+  const sampleTolerance = Math.max(0, tolerance);
+  const removed = new Set();
+  for (let i = 0; i < infos.length; i++) {
+    const inner = infos[i];
+    if (!inner || removed.has(inner.mesh) || !inner.samples.length) continue;
+    let allInside = true;
+    for (const point of inner.samples) {
+      let containedByAny = false;
+      for (let j = 0; j < infos.length; j++) {
+        if (j === i) continue;
+        const outer = infos[j];
+        if (!outer || removed.has(outer.mesh) || outer.volume <= inner.volume) continue;
+        if (point.x < outer.bounds.min.x - sampleTolerance || point.x > outer.bounds.max.x + sampleTolerance) continue;
+        if (point.y < outer.bounds.min.y - sampleTolerance || point.y > outer.bounds.max.y + sampleTolerance) continue;
+        if (point.z < outer.bounds.min.z - sampleTolerance || point.z > outer.bounds.max.z + sampleTolerance) continue;
+        if (pointInsideWorldGeometryWithTolerance(point, outer.worldGeometry, tolerance)) {
+          containedByAny = true;
+          break;
+        }
+      }
+      if (!containedByAny) {
+        allInside = false;
+        break;
+      }
+    }
+    if (allInside) {
+      removed.add(inner.mesh);
+    }
+  }
+  const keptMeshes = targetMeshes.filter(mesh => !removed.has(mesh));
+  const removedMeshes = [...removed].map(mesh => mesh);
+  const keptInfo = keptMeshes.map(mesh => mesh.name || `Mesh ${mesh.userData?.id || "unknown"}`);
+  const removedInfo = removedMeshes.map(mesh => mesh.name || `Mesh ${mesh.userData?.id || "unknown"}`);
+  if (announce) {
+    log(`Detected ${removed.size} enclosed mesh${removed.size === 1 ? "" : "es"} for tolerance ${round(tolerance, 3)}.`);
+    if (removedInfo.length) log(`Contained meshes: ${removedInfo.join(", ")}.`, { mode: "detail" });
+    if (keptInfo.length <= 20) log(`Outer meshes: ${keptInfo.join(", ")}.`, { mode: "detail" });
+  }
+  for (const info of infos) info.worldGeometry.dispose();
+  return {
+    keptMeshes,
+    removedMeshes,
+    removedCount: removed.size
+  };
+}
+
+function looksLikeWallLikeSelection(targetMeshes) {
+  if (!Array.isArray(targetMeshes) || targetMeshes.length < 3) return false;
+  const sceneBounds = new THREE.Box3();
+  const sceneSize = new THREE.Vector3();
+  const entries = [];
+  let wallNameSignals = 0;
+  for (const mesh of targetMeshes) {
+    if (!mesh?.isMesh) continue;
+    const worldGeometry = geometryInWorldSpace(mesh);
+    const bounds = worldGeometry?.boundingBox || null;
+    if (!bounds) {
+      worldGeometry?.dispose();
+      continue;
+    }
+    const span = new THREE.Vector3(
+      bounds.max.x - bounds.min.x,
+      bounds.max.y - bounds.min.y,
+      bounds.max.z - bounds.min.z
+    );
+    const maxSpan = Math.max(span.x, span.y, span.z);
+    if (!maxSpan) {
+      worldGeometry.dispose();
+      continue;
+    }
+    const flatness = span.y / maxSpan;
+    const lateralToTall = Math.max(span.x, span.z) / Math.max(1e-6, span.y);
+    const name = (mesh.name || "").toLowerCase();
+    const isWallNamed = /rock|stone|wall|boulder|cobble|rubble|chunk|moss|brick|wallsegment|mossy|dry|rockwall|brickwall/.test(name);
+    if (isWallNamed) wallNameSignals++;
+    entries.push({ flatness, lateralToTall });
+    sceneBounds.union(bounds);
+    worldGeometry.dispose();
+  }
+  if (entries.length < 3) return false;
+  const avgFlatness = entries.reduce((sum, entry) => sum + entry.flatness, 0) / entries.length;
+  const avgLateral = entries.reduce((sum, entry) => sum + entry.lateralToTall, 0) / entries.length;
+  const slenderRatio = entries.reduce((sum, entry) => sum + (entry.flatness < 0.55 ? 1 : 0), 0) / entries.length;
+  sceneBounds.getSize(sceneSize);
+  const sceneFlatness = sceneSize.y / Math.max(1e-6, Math.max(sceneSize.x, sceneSize.z));
+  const sceneSpread = Math.max(sceneSize.x, sceneSize.z) / Math.max(1e-6, sceneSize.y);
+  return (avgFlatness < 0.72 && sceneFlatness < 0.82) || (sceneSpread > 2.2 && avgFlatness < 0.65) ? (slenderRatio > 0.4 || avgLateral > 2.1 || wallNameSignals >= Math.max(1, Math.floor(entries.length * 0.15))) : false;
 }
 
 async function combineMeshesIntoShell(targetMeshes, {
   name = "Combined Shell",
   resolution = null,
   announce = true,
-  voxelFallback = true
+  previewContainment = false,
+  containmentTolerance = 0.03,
+  voxelFallback = true,
+  strategy = "auto"
 } = {}) {
   const meshes = [...new Set((targetMeshes || []).filter(mesh => mesh?.isMesh))];
   if (!meshes.length) throw new Error("Combine into Shell needs a selected mesh or group.");
+  const containment = analyzeContainedMeshes(meshes, { announce: false, tolerance: containmentTolerance });
+  const filteredMeshes = (containment.keptMeshes || meshes);
+  if (!filteredMeshes.length) throw new Error("Combine into Shell found no valid outer mesh after removing enclosed meshes.");
+  if (containment.removedCount) {
+    const removedCount = containment.removedCount || 0;
+    if (previewContainment) {
+      const removedNames = (containment.removedMeshes || []).map(mesh => mesh.name || `Mesh ${mesh.userData?.id || "unknown"}`).slice(0, 20);
+      const nextAction = removedCount
+        ? `Preview: ${removedCount} mesh${removedCount === 1 ? "" : "es"} would be removed at tolerance ${round(containmentTolerance, 3)}.`
+        : `Preview: no enclosed meshes detected at tolerance ${round(containmentTolerance, 3)}.`;
+      log(nextAction);
+      if (removedNames.length) log(`Contained: ${removedNames.join(", ")}.`);
+      return {
+        preview: true,
+        filteredMeshes,
+        removedMeshes: containment.removedMeshes || [],
+        sourceMeshes: meshes
+      };
+    }
+    if (announce) {
+      log(`Removed ${removedCount} enclosed mesh${removedCount === 1 ? "" : "es"} before shelling using tolerance ${round(containmentTolerance, 3)}.`);
+      if (meshes.length - filteredMeshes.length) {
+        log(`Continue with ${filteredMeshes.length} meshes for shelling after removing ${meshes.length - filteredMeshes.length} enclosed mesh${meshes.length - filteredMeshes.length === 1 ? "" : "es"}.`);
+      }
+    }
+  }
   const selectedGroupIds = selectedHierarchyGroupIds(meshes);
   const groupedMeshIds = new Set(selectedGroupIds.flatMap(groupId => descendantMeshesForGroup(groupId).map(mesh => mesh.userData.id)));
   const looseMeshes = meshes.filter(mesh => !groupedMeshIds.has(mesh.userData.id));
@@ -20765,14 +21379,34 @@ async function combineMeshesIntoShell(targetMeshes, {
     ...looseMeshes.map(mesh => mesh.userData.groupId || null)
   ]);
   const parentRecord = groupRecord(parentId);
-  const result = await shellUnionSpec(meshes, {
+  const wallNamePattern = /rock|stone|wall|boulder|cobble|rubble|chunk|moss|brick|wallsegment|mossy|dry|rockwall|brickwall/;
+  const selectedGroupNames = selectedGroupIds
+    .map((groupId) => groupRecord(groupId)?.name || "")
+    .concat(parentRecord?.name || "")
+    .map((name) => name.toLowerCase());
+  const hasWallNamedMesh = filteredMeshes.some(mesh => wallNamePattern.test((mesh?.name || "").toLowerCase()));
+  const hasWallNamedGroup = selectedGroupNames.some(name => wallNamePattern.test(name));
+  const forceSurfaceOnly = looksLikeWallLikeSelection(filteredMeshes) || hasWallNamedMesh || hasWallNamedGroup;
+  const useBoundaryMode = strategy === "boundary-only";
+  if (announce && forceSurfaceOnly && !useBoundaryMode) {
+    log("Detected wall-like dense selection; combining with surface-preserving shell only.");
+  }
+  if (announce && useBoundaryMode) {
+    log("Using boundary-only shell mode to preserve outer face detail and avoid stitched interiors.");
+  }
+  const progressButton = useBoundaryMode
+    ? (els.combineBoundaryShellBtn || els.combineShellBtn)
+    : els.combineShellBtn;
+  const result = await shellUnionSpec(filteredMeshes, {
     name,
     resolution,
-    voxelFallback,
+    voxelFallback: useBoundaryMode ? false : voxelFallback && !forceSurfaceOnly,
+    forceSurfaceOnly: useBoundaryMode ? false : forceSurfaceOnly,
+    surfaceMethod: useBoundaryMode ? "boundary-only" : null,
     groupId: parentId,
     groupName: parentRecord?.name || null,
     progress: announce ? ratio => {
-      if (els.combineShellBtn) els.combineShellBtn.textContent = `Shell ${Math.round(ratio * 100)}%`;
+      if (progressButton) progressButton.textContent = `Shell ${Math.round(ratio * 100)}%`;
     } : null
   });
   if (!result?.spec) throw new Error("The selected meshes could not be converted into a shell.");
@@ -20783,7 +21417,7 @@ async function combineMeshesIntoShell(targetMeshes, {
   currentTransformTargetKey = "";
   clearSelectedTriangles();
   clearLineSketch({ silent: true, keepMode: false });
-  for (const mesh of meshes) removeObject(mesh, { record: false });
+  for (const mesh of filteredMeshes) removeObject(mesh, { record: false });
   cleanupEmptySceneGroups();
   ensureSceneGroups();
   ensureModelGroups();
@@ -20800,6 +21434,8 @@ async function combineMeshesIntoShell(targetMeshes, {
         ? "existing watertight surface"
       : result.method === "surface-cull"
         ? "surface-preserving internal-face cleanup"
+        : result.method === "surface-boundary"
+          ? "boundary-only cull cleanup"
         : result.method === "voxel-surface"
           ? "high-resolution volumetric union"
           : "voxel fallback";
@@ -20807,13 +21443,15 @@ async function combineMeshesIntoShell(targetMeshes, {
       ? "This mesh was already one outer shell, so its geometry was preserved unchanged."
       : result.method === "surface-cull"
       ? "Covered internal faces were removed without voxelizing or flattening the original stone surfaces."
+      : result.method === "surface-boundary"
+      ? "Faces were removed by boundary culling where both inward and outward offsets were contained in neighbors."
       : result.method === "voxel-surface" && result.shellCount === 1
         ? "A new watertight outer surface was reconstructed around the complete combined volume."
       : result.shellCount === 1
         ? "Internal faces were removed and original slopes, curves, normals, and UVs were preserved."
         : `The result contains ${result.shellCount} disconnected islands because some selected parts did not touch.`;
-    log(`Combined ${meshes.length} meshes into one outer shell.`, {
-      sourceMeshes: meshes.map(mesh => mesh.name),
+    log(`Combined ${filteredMeshes.length} meshes into one outer shell.`, {
+      sourceMeshes: filteredMeshes.map(mesh => mesh.name),
       sourceTriangles: result.sourceTriangles,
       outputTriangles: result.outputTriangles,
       shellMethod,
@@ -20828,7 +21466,7 @@ async function combineMeshesIntoShell(targetMeshes, {
   return { mesh: combined, ...result };
 }
 
-async function combineCheckedMeshesIntoShell() {
+async function combineCheckedMeshesIntoShell(options = {}) {
   const targetMeshes = [...new Set([
     ...mergeSelectionTargets(),
     ...selectedFaceMeshes()
@@ -20837,16 +21475,23 @@ async function combineCheckedMeshesIntoShell() {
     log("Select a mesh or group, or check the meshes you want to combine into a shell.");
     return null;
   }
+  const isBoundaryMode = options?.strategy === "boundary-only" || !!els.combineShellBoundaryModeInput?.checked;
   const originalLabel = els.combineShellBtn?.textContent || "Combine into Shell";
   if (els.combineShellBtn) {
     els.combineShellBtn.disabled = true;
-    els.combineShellBtn.textContent = "Building shell...";
+    els.combineShellBtn.textContent = isBoundaryMode ? "Building boundary shell..." : "Building shell...";
     els.combineShellBtn.setAttribute("aria-busy", "true");
   }
-  log(`Building one outer shell from ${targetMeshes.length} selected meshes...`);
+  log(isBoundaryMode ? `Building boundary-preserving shell from ${targetMeshes.length} selected meshes...` : `Building one outer shell from ${targetMeshes.length} selected meshes...`);
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
   try {
-    return await combineMeshesIntoShell(targetMeshes);
+    const previewContainment = !!els.combineShellPreviewInput?.checked;
+    const containmentTolerance = Number(els.combineShellToleranceInput?.value || 0.03);
+    return await combineMeshesIntoShell(targetMeshes, {
+      strategy: isBoundaryMode ? "boundary-only" : undefined,
+      previewContainment,
+      containmentTolerance
+    });
   } catch (error) {
     log(error?.message || "Could not combine those meshes into a shell.");
     return null;
@@ -20857,6 +21502,10 @@ async function combineCheckedMeshesIntoShell() {
       els.combineShellBtn.removeAttribute("aria-busy");
     }
   }
+}
+
+async function combineCheckedMeshesIntoBoundaryShell() {
+  return combineCheckedMeshesIntoShell({ strategy: "boundary-only" });
 }
 
 async function mergeCheckedMeshes() {
@@ -21103,7 +21752,40 @@ function clearObjects({ record = true } = {}) {
   clearKnifeCutGuide({ keepMode: false });
   clearPlaneCutPreview();
   setKeyholeCutterSession(false);
-  [...objects].forEach(mesh => removeObject(mesh, { record: false }));
+  // Clear the model collection once, rather than rebuilding the editor per part.
+  const removed = objects.splice(0);
+  const removedSet = new Set(removed);
+  const parents = new Set();
+  const anchors = new Set();
+  const geometries = new Set();
+  const materials = new Set();
+  for (const mesh of removed) {
+    if (mesh.parent) parents.add(mesh.parent);
+    let anchor = mesh.parent;
+    while (anchor && anchor !== scene && !anchor.userData?.bwsImportAnchor) anchor = anchor.parent;
+    if (anchor?.userData?.bwsImportAnchor) anchors.add(anchor);
+    if (mesh.geometry) geometries.add(mesh.geometry);
+    for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) {
+      if (material) materials.add(material);
+    }
+  }
+  for (const parent of parents) {
+    const detached = parent.children.filter(child => removedSet.has(child));
+    parent.children = parent.children.filter(child => !removedSet.has(child));
+    for (const child of detached) {
+      child.parent = null;
+      child.dispatchEvent({ type: "removed" });
+      parent.dispatchEvent({ type: "childremoved", child });
+    }
+  }
+  for (const anchor of anchors) {
+    let hasMeshes = false;
+    anchor.traverse(node => { if (node.isMesh) hasMeshes = true; });
+    if (!hasMeshes) anchor.parent?.remove(anchor);
+  }
+  geometries.forEach(geometry => geometry.dispose?.());
+  materials.forEach(material => material.dispose?.());
+  if (typeof pruneBonesForRemovedObjects === "function") pruneBonesForRemovedObjects();
   sceneGroupRegistry.clear();
   checkedIds.clear();
   activeGroupIds = [];
@@ -21596,3 +22278,9 @@ function exportCharacterPackage() {
   download(`${assetId}.boltcharacter.json`, JSON.stringify(packageData, null, 2), "application/json");
   if (els.gameAssetStatus) els.gameAssetStatus.textContent = `Exported ${assetId}.boltcharacter.json with ${packageData.parts.length} part${packageData.parts.length === 1 ? "" : "s"}, ${rig.bones.length} bone${rig.bones.length === 1 ? "" : "s"}, and shared animation keys.`;
 }
+
+
+
+
+
+

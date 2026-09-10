@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import {createDicePhysics} from '../app/demos/dice-physics.js';
+import {resultText} from '../app/demos/dice-hand-ui.js';
+const s={state:'settled',total:13,dice:[{type:6,result:2},{type:6,result:5},{type:'dice',result:6},{type:'coin',result:1}]};
+assert.equal(resultText(s),'2× D6: 2 + 5 = 7 · 1× Dice (dots): 6 · 1× BW coin: Heads — Total 13');
+s.dice[0].result=null;s.total=null;assert.match(resultText(s),/Total pending/);
+const demo=createDicePhysics({types:[4,8,10,12,20]});
+const before=demo.snapshot().dice.map(d=>d.position);
+demo.setTopView(true);assert.equal(demo.camera.position.x,0);assert.equal(demo.camera.position.z,0);
+assert.deepEqual(demo.snapshot().dice.map(d=>d.position),before);
+demo.setCleanBox(true);assert.deepEqual(demo.snapshot().dice.map(d=>d.position),before);
+demo.reset();demo.roll();for(let f=0;f<3100&&demo.snapshot().state==='rolling';f++)demo.step(1/120);
+assert.ok(demo.snapshot().props.every(p=>p.hits===0),'Clean box still has prop collisions');
+demo.setCleanBox(false);demo.setTopView(false);assert.ok(demo.camera.position.x>0);
+demo.dispose();console.log('Grouped results, top view, clean-box collisions and restore passed');

@@ -67125,6 +67125,10 @@ void main() {
         grassSpread: 0.35,
         grassAvoidGeometry: true,
         grassClearance: 0.12,
+        grassGrowNegativeX: true,
+        grassGrowPositiveX: true,
+        grassGrowNegativeZ: true,
+        grassGrowPositiveZ: true,
         grassColor: "#376f2d",
         mossPlacement: "bottom",
         mossCoverage: 0.55,
@@ -67263,6 +67267,10 @@ void main() {
         grassSpread: geometryNodeNumber(params.grassSpread, fallback.params.grassSpread, 0, 3),
         grassAvoidGeometry: params.grassAvoidGeometry !== false,
         grassClearance: geometryNodeNumber(params.grassClearance, fallback.params.grassClearance, 0, 2),
+        grassGrowNegativeX: params.grassGrowNegativeX !== false,
+        grassGrowPositiveX: params.grassGrowPositiveX !== false,
+        grassGrowNegativeZ: params.grassGrowNegativeZ !== false,
+        grassGrowPositiveZ: params.grassGrowPositiveZ !== false,
         grassColor: /^#[0-9a-f]{6}$/i.test(params.grassColor) ? params.grassColor : fallback.params.grassColor,
         mossPlacement: ["bottom", "middle", "top", "all"].includes(params.mossPlacement) ? params.mossPlacement : fallback.params.mossPlacement,
         mossCoverage: geometryNodeNumber(params.mossCoverage, fallback.params.mossCoverage, 0, 1),
@@ -67518,7 +67526,7 @@ void main() {
     if (type === "clusterScatter") return geometryNodeField("Count", "clusterScatterCount", p.clusterScatterCount, { min: 0, max: 64 }) + geometryNodeField("Size", "clusterScatterSize", p.clusterScatterSize, { min: 0.05, max: 8, step: 0.05 }) + geometryNodeField("Spread", "clusterScatterSpread", p.clusterScatterSpread, { min: 0, max: 4, step: 0.05 }) + geometryNodeField("Color", "clusterScatterColor", p.clusterScatterColor, { type: "color" });
     if (type === "rocks") return geometryNodeSelectField("Profile", "rockProfile", p.rockProfile, [["rounded", "Rounded"], ["jagged", "Jagged"], ["flat", "Flat fieldstone"], ["boulder", "Boulder"]]) + geometryNodeSelectField("Arrangement", "rockArrangement", p.rockArrangement, [["single", "Single"], ["cluster", "Cluster"], ["line", "Line"], ["stack", "Stacked"]]) + geometryNodeField("Count", "rockCount", p.rockCount, { min: 1, max: 48 }) + geometryNodeField("Size", "rockSize", p.rockSize, { min: 0.1, max: 8, step: 0.05 }) + geometryNodeField("Variation", "rockVariation", p.rockVariation, { min: 0, max: 1, step: 0.05 }) + geometryNodeField("Spacing", "rockSpacing", p.rockSpacing, { min: 0.2, max: 4, step: 0.05 }) + geometryNodeField("Color", "rockColor", p.rockColor, { type: "color" });
     if (type === "stoneWall") return geometryNodeField("Length", "wallLength", p.wallLength, { min: 1, max: 500, step: 0.5 }) + geometryNodeField("Height", "wallHeight", p.wallHeight, { min: 0.5, max: 12, step: 0.1 }) + geometryNodeField("Depth", "wallDepth", p.wallDepth, { min: 0.3, max: 6, step: 0.05 }) + geometryNodeField("Rows", "wallRows", p.wallRows, { min: 1, max: 12 }) + geometryNodeField("Stones / 7 units", "wallColumns", p.wallColumns, { min: 2, max: 30 }) + geometryNodeField("Depth layers", "wallDepthLayers", p.wallDepthLayers, { min: 1, max: 4 }) + geometryNodeField("Shape variation", "wallIrregularity", p.wallIrregularity, { min: 0, max: 1, step: 0.05 }) + geometryNodeField("Color variation", "wallColorVariation", p.wallColorVariation, { min: 0, max: 1, step: 0.05 }) + geometryNodeField("Base color", "wallColor", p.wallColor, { type: "color" });
-    if (type === "grass") return geometryNodeField("Clump count", "grassCount", p.grassCount, { min: 1, max: 160 }) + geometryNodeField("Height", "grassHeight", p.grassHeight, { min: 0.05, max: 3, step: 0.02 }) + geometryNodeField("Width", "grassWidth", p.grassWidth, { min: 0.01, max: 0.8, step: 0.01 }) + geometryNodeField("Edge spread", "grassSpread", p.grassSpread, { min: 0, max: 3, step: 0.05 }) + geometryNodeField("Avoid source geometry", "grassAvoidGeometry", p.grassAvoidGeometry, { type: "checkbox" }) + geometryNodeField("Mask clearance", "grassClearance", p.grassClearance, { min: 0, max: 2, step: 0.02 }) + geometryNodeField("Color", "grassColor", p.grassColor, { type: "color" });
+    if (type === "grass") return geometryNodeField("Clump count", "grassCount", p.grassCount, { min: 1, max: 160 }) + geometryNodeField("Height", "grassHeight", p.grassHeight, { min: 0.05, max: 3, step: 0.02 }) + geometryNodeField("Width", "grassWidth", p.grassWidth, { min: 0.01, max: 0.8, step: 0.01 }) + geometryNodeField("Edge spread", "grassSpread", p.grassSpread, { min: 0, max: 3, step: 0.05 }) + geometryNodeField("Avoid source geometry", "grassAvoidGeometry", p.grassAvoidGeometry, { type: "checkbox" }) + geometryNodeField("Mask clearance", "grassClearance", p.grassClearance, { min: 0, max: 2, step: 0.02 }) + geometryNodeField("Grow on \u2212X side", "grassGrowNegativeX", p.grassGrowNegativeX, { type: "checkbox" }) + geometryNodeField("Grow on +X side", "grassGrowPositiveX", p.grassGrowPositiveX, { type: "checkbox" }) + geometryNodeField("Grow on \u2212Z side", "grassGrowNegativeZ", p.grassGrowNegativeZ, { type: "checkbox" }) + geometryNodeField("Grow on +Z side", "grassGrowPositiveZ", p.grassGrowPositiveZ, { type: "checkbox" }) + geometryNodeField("Color", "grassColor", p.grassColor, { type: "color" });
     if (type === "moss") return geometryNodeSelectField("Height zone", "mossPlacement", p.mossPlacement, [["bottom", "Bottom"], ["middle", "Middle"], ["top", "Top"], ["all", "All heights"]]) + geometryNodeField("Coverage", "mossCoverage", p.mossCoverage, { min: 0, max: 1, step: 0.05 }) + geometryNodeField("Cushion height", "mossThickness", p.mossThickness, { min: 0.02, max: 0.6, step: 0.01 }) + geometryNodeField("Moisture", "mossMoisture", p.mossMoisture, { min: 0, max: 1, step: 0.05 }) + geometryNodeField("Sun exposure", "mossSunlight", p.mossSunlight, { min: 0, max: 1, step: 0.05 }) + geometryNodeField("Crack preference", "mossCrackBias", p.mossCrackBias, { min: 0, max: 1, step: 0.05 }) + geometryNodeField("Color", "mossColor", p.mossColor, { type: "color" });
     if (type === "join") return '<p class="geometry-node-card-note">Combines every connected geometry stream.</p>';
     if (type === "primitiveTest") return '<p class="geometry-node-card-note">Builds cube, pentagon, and low-cone before/after pairs.</p>';
@@ -68401,29 +68409,29 @@ void main() {
     natureSurfaces.forEach((surface) => surface.geometry?.dispose());
     if (activeNodes.has("grass") && natureSurfaces.length) {
       const blades = [];
+      const grassSides = [
+        p.grassGrowNegativeZ && { axis: "z", sign: -1 },
+        p.grassGrowPositiveZ && { axis: "z", sign: 1 },
+        p.grassGrowNegativeX && { axis: "x", sign: -1 },
+        p.grassGrowPositiveX && { axis: "x", sign: 1 }
+      ].filter(Boolean);
+      const natureBounds = natureSurfaces.reduce((bounds, surface) => {
+        const halfX = surface.size.x * 0.5;
+        const halfZ = surface.size.z * 0.5;
+        bounds.minX = Math.min(bounds.minX, surface.position.x - halfX);
+        bounds.maxX = Math.max(bounds.maxX, surface.position.x + halfX);
+        bounds.minZ = Math.min(bounds.minZ, surface.position.z - halfZ);
+        bounds.maxZ = Math.max(bounds.maxZ, surface.position.z + halfZ);
+        return bounds;
+      }, { minX: Infinity, maxX: -Infinity, minZ: Infinity, maxZ: -Infinity });
       const bladeReach = p.grassWidth * 2 + p.grassHeight * 0.12;
       const clearance = p.grassClearance + bladeReach;
       const maxAttempts = Math.max(40, p.grassCount * 36);
-      for (let attempt = 0; blades.length < p.grassCount && attempt < maxAttempts; attempt++) {
-        const surface = natureSurfaces[Math.floor(random() * natureSurfaces.length)];
-        let x;
-        let z;
-        if (surface.kind === "wall") {
-          const side = attempt % 4;
-          const halfX = surface.size.x * 0.5 + clearance;
-          const halfZ = surface.size.z * 0.5 + clearance;
-          const localX = side < 2 ? (random() - 0.5) * surface.size.x : side === 2 ? -halfX - random() * p.grassSpread : halfX + random() * p.grassSpread;
-          const localZ = side >= 2 ? (random() - 0.5) * surface.size.z : side === 0 ? -halfZ - random() * p.grassSpread : halfZ + random() * p.grassSpread;
-          x = surface.position.x + localX * Math.cos(surface.rotationY) - localZ * Math.sin(surface.rotationY);
-          z = surface.position.z + localX * Math.sin(surface.rotationY) + localZ * Math.cos(surface.rotationY);
-        } else {
-          const angle = random() * Math.PI * 2;
-          const radialSpread = random() * p.grassSpread;
-          const localX = Math.cos(angle) * (surface.size.x * 0.5 + clearance + radialSpread);
-          const localZ = Math.sin(angle) * (surface.size.z * 0.5 + clearance + radialSpread);
-          x = surface.position.x + localX * Math.cos(surface.rotationY) - localZ * Math.sin(surface.rotationY);
-          z = surface.position.z + localX * Math.sin(surface.rotationY) + localZ * Math.cos(surface.rotationY);
-        }
+      for (let attempt = 0; grassSides.length && blades.length < p.grassCount && attempt < maxAttempts; attempt++) {
+        const growthSide = grassSides[attempt % grassSides.length];
+        const outside = clearance + random() * p.grassSpread;
+        const x = growthSide.axis === "x" ? growthSide.sign < 0 ? natureBounds.minX - outside : natureBounds.maxX + outside : MathUtils.lerp(natureBounds.minX, natureBounds.maxX, random());
+        const z = growthSide.axis === "z" ? growthSide.sign < 0 ? natureBounds.minZ - outside : natureBounds.maxZ + outside : MathUtils.lerp(natureBounds.minZ, natureBounds.maxZ, random());
         if (p.grassAvoidGeometry && geometryNodeGrassPointBlocked(x, z, natureSurfaces, clearance)) continue;
         blades.push(new Vector3(x, 0.015, z));
       }
@@ -84325,14 +84333,115 @@ Source model: ${minecraftProject.sourceName || "BWS scene"}
     const shots = await captureViews({ download: true, prefix });
     log(`Saved ${shots.length} reference screenshots for AI review.`, shots.map((shot) => shot.fileName));
   });
-  els.saveProjectBtn.addEventListener("click", () => {
-    const projectName = currentProjectBaseName();
-    download(`${projectName}.modelerproj`, JSON.stringify(projectState(), null, 2), "application/json");
-    log("Saved full project file.", {
-      project: projectName,
-      objects: objects.length,
-      checked: checkedIds.size
-    });
+  var saveProjectModal = document.querySelector("#saveProjectModal");
+  var saveProjectCloseBtn = document.querySelector("#saveProjectCloseBtn");
+  var saveProjectCancelBtn = document.querySelector("#saveProjectCancelBtn");
+  var saveProjectConfirmBtn = document.querySelector("#saveProjectConfirmBtn");
+  var saveProjectNameInput = document.querySelector("#saveProjectNameInput");
+  var saveProjectWarning = document.querySelector("#saveProjectWarning");
+  function formatEstimatedFileSize(bytes) {
+    if (bytes < 1024) return `${Math.max(0, Math.round(bytes))} B`;
+    const units = ["KB", "MB", "GB"];
+    let value = bytes / 1024;
+    let unit = units[0];
+    for (let index = 1; index < units.length && value >= 1024; index++) {
+      value /= 1024;
+      unit = units[index];
+    }
+    return `${value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${unit}`;
+  }
+  function estimateEditableProjectSave() {
+    let vertices = 0;
+    let triangles = 0;
+    let numericValues = 0;
+    const textureUrls = /* @__PURE__ */ new Set();
+    for (const mesh of objects) {
+      const geometry = mesh.geometry;
+      const position = geometry?.getAttribute?.("position");
+      const vertexCount = position?.count || 0;
+      vertices += vertexCount;
+      triangles += Math.floor((geometry?.index?.count || vertexCount) / 3);
+      const stored = mesh.userData?.geometry;
+      if (stored) {
+        for (const key2 of ["positions", "normals", "colors", "uvs", "indices"]) numericValues += Array.isArray(stored[key2]) || ArrayBuffer.isView(stored[key2]) ? stored[key2].length : 0;
+      } else if (mesh.userData?.shape === "glb") {
+        numericValues += vertexCount * (6 + (geometry?.getAttribute?.("uv") ? 2 : 0) + (geometry?.getAttribute?.("color") ? 3 : 0));
+      }
+      for (const key2 of ["textureUrl", "roughnessTextureUrl", "metalnessTextureUrl", "normalTextureUrl", "emissiveTextureUrl"]) {
+        const url = mesh.userData?.[key2];
+        if (typeof url === "string" && url.startsWith("data:")) textureUrls.add(url);
+      }
+    }
+    const textureBytes = [...textureUrls].reduce((sum, value) => sum + value.length, 0);
+    const estimatedBytes = 24e3 + objects.length * 1400 + numericValues * 12 + textureBytes;
+    return { objects: objects.length, vertices, triangles, estimatedBytes };
+  }
+  function setSaveProjectModalOpen(open) {
+    if (!saveProjectModal) return;
+    document.body.classList.toggle("save-project-open", open);
+    saveProjectModal.classList.toggle("open", open);
+    saveProjectModal.setAttribute("aria-hidden", String(!open));
+    if (!open) return void els.saveProjectBtn?.focus();
+    const estimate = estimateEditableProjectSave();
+    saveProjectNameInput.value = `${currentProjectBaseName()}.modelerproj`;
+    document.querySelector("#saveProjectObjectCount").textContent = estimate.objects.toLocaleString();
+    document.querySelector("#saveProjectVertexCount").textContent = estimate.vertices.toLocaleString();
+    document.querySelector("#saveProjectTriangleCount").textContent = estimate.triangles.toLocaleString();
+    document.querySelector("#saveProjectEstimatedSize").textContent = `About ${formatEstimatedFileSize(estimate.estimatedBytes)}`;
+    const heavy = estimate.triangles >= 1e6 || estimate.estimatedBytes >= 200 * 1024 * 1024;
+    saveProjectWarning.hidden = !heavy;
+    saveProjectWarning.textContent = heavy ? "Large project warning: preparing this editable file may require substantial memory and could overwhelm the browser. Consider reducing geometry or saving smaller sections first." : "";
+    saveProjectModal.dataset.estimatedBytes = String(estimate.estimatedBytes);
+    saveProjectNameInput.focus();
+    saveProjectNameInput.select();
+  }
+  function safeProjectFileName(value) {
+    const base = String(value || currentProjectBaseName()).trim().replace(/[<>:\"/\\|?*\u0000-\u001f]/g, "-") || "modeler-project";
+    return base.toLowerCase().endsWith(".modelerproj") ? base : `${base}.modelerproj`;
+  }
+  async function saveEditableProjectFromDialog() {
+    const fileName = safeProjectFileName(saveProjectNameInput.value);
+    const estimatedBytes = Number(saveProjectModal.dataset.estimatedBytes) || 0;
+    if (estimatedBytes >= 750 * 1024 * 1024 && !window.confirm("This project is estimated above 750 MB and may crash this browser while being prepared. Try saving anyway?")) return;
+    let fileHandle = null;
+    try {
+      if (typeof window.showSaveFilePicker === "function") {
+        fileHandle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [{ description: "BoltWorks editable project", accept: { "application/json": [".modelerproj"] } }]
+        });
+      }
+    } catch (error) {
+      if (error?.name === "AbortError") return;
+    }
+    saveProjectConfirmBtn.disabled = true;
+    saveProjectConfirmBtn.textContent = "Preparing project\u2026";
+    try {
+      const text = JSON.stringify(projectState(), null, 2);
+      if (fileHandle) {
+        const writable = await fileHandle.createWritable();
+        await writable.write(text);
+        await writable.close();
+      } else download(fileName, text, "application/json");
+      setSaveProjectModalOpen(false);
+      log("Saved full project file.", { project: fileName, size: formatEstimatedFileSize(text.length), objects: objects.length, checked: checkedIds.size });
+    } catch (error) {
+      saveProjectWarning.hidden = false;
+      saveProjectWarning.textContent = `The project could not be saved: ${error?.message || "the browser ran out of available resources"}`;
+    } finally {
+      saveProjectConfirmBtn.disabled = false;
+      saveProjectConfirmBtn.textContent = "Choose Save Location";
+    }
+  }
+  els.saveProjectBtn.addEventListener("click", () => setSaveProjectModalOpen(true));
+  saveProjectCloseBtn?.addEventListener("click", () => setSaveProjectModalOpen(false));
+  saveProjectCancelBtn?.addEventListener("click", () => setSaveProjectModalOpen(false));
+  saveProjectConfirmBtn?.addEventListener("click", saveEditableProjectFromDialog);
+  saveProjectModal?.addEventListener("click", (event) => {
+    if (event.target === saveProjectModal) setSaveProjectModalOpen(false);
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && saveProjectModal?.classList.contains("open")) setSaveProjectModalOpen(false);
   });
   els.newWorkspaceBtn?.addEventListener("click", async () => {
     const hasWork = objects.length > 0;

@@ -1071,6 +1071,105 @@ function finishTrianglePainting(pointerId = null) {
   log(`Finished paint selection.`, { selected: selectedFaces.length });
 }
 
+// Render primitive thumbnails in a separate scene; never add preview meshes to the project.
+function initializeMeshButtonPreviews() {
+  const buttons = [...document.querySelectorAll("button[data-add]")];
+  const queue = [];
+  const descriptions = {
+    curvedPanel: "A thick curved wall segment",
+    hollowBox: "An open box with thick walls",
+    tube: "A hollow cylinder with an open center",
+    ring: "A flat circular ring with a hole",
+    torus: "A rounded doughnut-shaped ring",
+    hemisphere: "Half of a sphere with a flat base",
+    dome: "A shallow rounded dome",
+    wedge: "A sloping triangular block",
+    pyramidFrustum: "A pyramid with its pointed top cut off",
+    prism: "A triangular prism",
+    facetedBallLow: "A low-poly ball with 20 triangular faces",
+    facetedBallMedium: "A faceted ball with 80 triangular faces",
+    facetedBallHigh: "A faceted ball with 320 triangular faces",
+    stair: "A solid stepped staircase"
+  };
+  for (const button of buttons) {
+    const shape = button.dataset.add, name = button.textContent.trim();
+    button.classList.add("mesh-preview-button");
+    button.setAttribute("aria-label", name);
+    button.title = name + (descriptions[shape] ? ": " + descriptions[shape] : " - add this shape to the scene");
+    const label = document.createElement("span");
+    label.className = "mesh-preview-label";
+    label.textContent = name;
+    const image = document.createElement("img");
+    image.className = "mesh-preview-image";
+    image.alt = "";
+    image.setAttribute("aria-hidden", "true");
+    image.width = 112; image.height = 80;
+    image.hidden = true;
+    button.replaceChildren(image, label);
+    queue.push({shape, image});
+  }
+  if (!queue.length) return;
+  let previewRenderer, previewScene, previewCamera, material, edgeMaterial;
+  function release() {
+    material?.dispose(); edgeMaterial?.dispose();
+    previewRenderer?.dispose(); previewRenderer?.forceContextLoss();
+  }
+  function schedule(callback) {
+    if (typeof requestIdleCallback === "function") requestIdleCallback(callback, {timeout: 1000});
+    else setTimeout(callback, 16);
+  }
+  function next() {
+    const item = queue.shift();
+    if (!item) { release(); return; }
+    let geometry, edges, model;
+    try {
+      geometry = shapeFactories[item.shape]?.();
+      if (geometry) {
+        geometry.computeBoundingBox();
+        const size = geometry.boundingBox.getSize(new THREE.Vector3());
+        geometry.center();
+        const scale = 1.3 / Math.max(size.x, size.y, size.z, .001);
+        geometry.scale(scale, scale, scale);
+        model = new THREE.Mesh(geometry, material);
+        edges = new THREE.EdgesGeometry(geometry, item.shape.startsWith("facetedBall") ? 1 : 25);
+        model.add(new THREE.LineSegments(edges, edgeMaterial));
+        previewScene.add(model);
+        previewRenderer.render(previewScene, previewCamera);
+        item.image.src = previewRenderer.domElement.toDataURL("image/png");
+        item.image.hidden = false;
+      }
+    } catch (error) {
+      console.warn("Mesh thumbnail unavailable: " + item.shape, error);
+    } finally {
+      if (model) previewScene.remove(model);
+      geometry?.dispose(); edges?.dispose();
+    }
+    schedule(next);
+  }
+  schedule(() => {
+    try {
+      previewRenderer = new THREE.WebGLRenderer({alpha: true, antialias: true, preserveDrawingBuffer: true});
+      previewRenderer.setPixelRatio(1);
+      previewRenderer.setSize(224, 160, false);
+      previewRenderer.setClearColor(0x000000, 0);
+      previewScene = new THREE.Scene();
+      previewCamera = new THREE.OrthographicCamera(-1.3, 1.3, .93, -.93, .1, 20);
+      previewCamera.position.set(2.6, 1.9, 3.2);
+      previewCamera.lookAt(0, 0, 0);
+      previewScene.add(new THREE.HemisphereLight(0xe2fff6, 0x34404a, 2));
+      const key = new THREE.DirectionalLight(0xffffff, 3);
+      key.position.set(-3, 5, 4); previewScene.add(key);
+      material = new THREE.MeshStandardMaterial({color: 0x6ebdac, roughness: .7, metalness: .05, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: 1, polygonOffsetUnits: 1});
+      edgeMaterial = new THREE.LineBasicMaterial({color: 0x173c39, transparent: true, opacity: .65});
+      next();
+    } catch (error) {
+      release();
+      console.warn("Mesh previews unavailable; text buttons remain usable.", error);
+    }
+  });
+}
+initializeMeshButtonPreviews();
+
 document.querySelectorAll("[data-add]").forEach(btn => {
   btn.addEventListener("click", () => addObject({ shape: btn.dataset.add }, { select: true }));
 });
@@ -2004,10 +2103,13 @@ els.newWorkspaceBtn?.addEventListener("click", async () => {
   try {
     if (bwsAutoSaveTimer) clearTimeout(bwsAutoSaveTimer);
     bwsAutoSaveTimer = null;
-    await bwsAutoSavePromise.catch(() => false);
     localStorage.setItem(BWS_RECOVERY_MANUAL_KEY, "1");
+    bwsWorkspaceGeneration += 1;
+    setBwsAutoSaveStatus("Clearing workspace...");
+    await new Promise(resolve => setTimeout(resolve, 0));
     if (gameplayPreviewVisible()) closeGameplayPreview();
     clearObjects({ record: false });
+    setCurrentSceneAsHistoryBaseline();
     resetRigForNewWorkspace();
     if (typeof resetGeometryNodeProjectState === "function") resetGeometryNodeProjectState();
     if (els.projectNameInput) els.projectNameInput.value = "modeler-project";
@@ -2016,7 +2118,7 @@ els.newWorkspaceBtn?.addEventListener("click", async () => {
   } catch (error) {
     console.warn("Could not start a fresh workspace", error);
     setBwsAutoSaveStatus("Could not start fresh workspace", "problem");
-    log("Could not start a new workspace because the recovery preference could not be saved.");
+    log(`Could not start a new workspace: ${error?.message || "cleanup failed"}.`);
   } finally {
     bwsStartingNewWorkspace = false;
     els.newWorkspaceBtn.disabled = false;
@@ -2851,6 +2953,53 @@ canvas.addEventListener("dblclick", event => {
   }
 });
 
+// Session-local mesh clipboard: copying is a snapshot, not a reference to the original.
+let bwsMeshClipboard = [];
+let bwsClipboardKind = "triangles";
+function copySelectedMeshes() {
+  const targets = transformTargetObjects();
+  const meshes = targets.length ? targets : selected ? [selected] : checkedObjects();
+  if (!meshes.length) { log("Select a mesh to copy."); return; }
+  try {
+    const snapshot = meshes.map(mesh => {
+      const spec = serializeObject(mesh);
+      mesh.updateWorldMatrix(true, false);
+      const position = new THREE.Vector3(), quaternion = new THREE.Quaternion(), scale = new THREE.Vector3();
+      mesh.matrixWorld.decompose(position, quaternion, scale);
+      const rotation = new THREE.Euler().setFromQuaternion(quaternion, "XYZ");
+      spec.position = position.toArray();
+      spec.rotation = [rotation.x, rotation.y, rotation.z].map(THREE.MathUtils.radToDeg);
+      spec.scale = scale.toArray();
+      delete spec.id;
+      spec.name = mesh.name + " copy";
+      spec.linkId = null; spec.linkColor = null;
+      spec.groupId = null; spec.groupName = null;
+      return spec;
+    });
+    bwsMeshClipboard = structuredClone(snapshot);
+    bwsClipboardKind = "meshes";
+    log("Copied " + snapshot.length + " mesh(es). Ctrl+V pastes in the original position.");
+  } catch (error) { log("Could not copy meshes: " + error.message); }
+}
+function pasteCopiedMeshes() {
+  if (!bwsMeshClipboard.length) { log("Copy a mesh first with Ctrl+C."); return; }
+  const specs = structuredClone(bwsMeshClipboard);
+  recordHistory("paste meshes");
+  const copies = [];
+  try {
+    for (const spec of specs) copies.push(addObject(spec, {record: false, select: false, update: false}));
+  } catch (error) { log("Paste interrupted: " + error.message + ". Undo removes any pasted parts."); }
+  if (!copies.length) return;
+  checkedIds.clear();
+  activeGroupIds = copies.map(copy => copy.userData.id);
+  selectedGroupRecordId = null;
+  selected = copies.at(-1);
+  currentTransformTargetKey = "";
+  clearSelectedTriangles();
+  updateAll();
+  log("Pasted " + copies.length + " independent mesh(es) in place. Move to separate them; Ctrl+Z undoes the paste.");
+}
+
 window.addEventListener("keydown", event => {
   const editingText = event.target?.matches?.("input, textarea, select, [contenteditable='true']");
   if (gameplayPreviewVisible() && dicePhysicsPreview) {
@@ -2963,16 +3112,17 @@ window.addEventListener("keydown", event => {
     undo();
     return;
   }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "c") {
-    if (event.target.matches("input, textarea")) return;
+  if ((event.ctrlKey || event.metaKey) && !event.altKey && ["c", "v"].includes(event.key.toLowerCase())) {
+    if (event.defaultPrevented || event.target?.closest?.("input, textarea, select, [contenteditable], [role='textbox']") || textureEditorState.open || document.body.classList.contains("animator-workspace-active")) return;
     event.preventDefault();
-    copySelectedTriangles();
-    return;
-  }
-  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "v") {
-    if (event.target.matches("input, textarea")) return;
-    event.preventDefault();
-    pasteCopiedTriangles();
+    if (event.repeat) return;
+    if (event.key.toLowerCase() === "c") {
+      // Stale face selections must not override whole-mesh or group copying.
+      if (facePickMode && selectedFaces.length && transformTargetObjects().length <= 1) {
+        if (copySelectedTriangles()) bwsClipboardKind = "triangles";
+      } else copySelectedMeshes();
+    } else if (bwsClipboardKind === "meshes") pasteCopiedMeshes();
+    else pasteCopiedTriangles();
     return;
   }
   if (event.target.matches("input, textarea")) return;
@@ -3044,6 +3194,12 @@ function syncGameplayStrideControls() {
     ? `Ground speed matched to feet · Stride ${gameplayStrideScale().toFixed(2)}x`
     : "Manual preview movement speed");
 }
+function syncCombineShellToleranceOutput() {
+  if (!els.combineShellToleranceInput || !els.combineShellToleranceOutput) return;
+  els.combineShellToleranceOutput.value = Number(els.combineShellToleranceInput.value).toFixed(3);
+}
+syncCombineShellToleranceOutput();
+els.combineShellToleranceInput?.addEventListener("input", syncCombineShellToleranceOutput);
 els.gameplayStrideSyncInput?.addEventListener("change", syncGameplayStrideControls);
 els.gameplayStrideScaleInput?.addEventListener("input", syncGameplayStrideControls);
 syncGameplayStrideControls();

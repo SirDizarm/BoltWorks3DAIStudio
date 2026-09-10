@@ -1,0 +1,15 @@
+const {chromium}=require(process.env.BWS_PLAYWRIGHT || 'playwright');
+const assert=require('node:assert/strict');
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:'C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe'});try{
+const page=await browser.newPage({viewport:{width:1600,height:1000}});await page.goto('http://127.0.0.1:4181/');await page.waitForFunction(()=>!!window.ModelerStudio);
+const prior=await page.locator('.reference-viewports').isVisible();await page.getByText('🎲 Die demo',{exact:true}).click();await page.locator('#dicePhysicsBtn').click();await page.locator('#gameplayPreviewPauseBtn').click();
+assert.equal(await page.locator('.reference-viewports').isVisible(),false);assert.equal(await page.locator('.gameplay-tools-menu').isVisible(),false);
+const p=await page.locator('.gameplay-preview').boundingBox(),dock=await page.locator('.gameplay-preview>.dice-tray-controls').boundingBox();assert.ok(Math.abs(p.y+p.height-dock.y-dock.height-14)<2);assert.ok(Math.abs(p.x+p.width-dock.x-dock.width-14)<2);
+assert.equal(await page.locator('#gameplayPreviewPlayBtn').evaluate(el=>getComputedStyle(el).fontSize),'0px');
+const space=await page.evaluate(()=>{const before=ModelerStudio.diceDemoState().physics;document.body.dispatchEvent(new KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true,cancelable:true}));return {before,after:ModelerStudio.diceDemoState().physics};});assert.deepEqual(space.after.position,space.before.position,'Space respawned die');assert.equal(space.after.state,'rolling');
+await page.locator('#gameplayPreviewPauseBtn').click();
+const enter=await page.evaluate(()=>{const before=ModelerStudio.diceDemoState().physics;document.body.dispatchEvent(new KeyboardEvent('keydown',{code:'Enter',key:'Enter',bubbles:true,cancelable:true}));return {before,after:ModelerStudio.diceDemoState().physics};});assert.notDeepEqual(enter.after.position,enter.before.position,'Enter did not reroll');
+await page.locator('#gameplayPreviewPauseBtn').click();await page.locator('.gameplay-preview .dice-hand-controls summary').click();const before=await page.evaluate(()=>ModelerStudio.diceDemoState().physics);await page.getByLabel('Number of dice',{exact:true}).evaluate(el=>el.dispatchEvent(new KeyboardEvent('keydown',{code:'Space',key:' ',bubbles:true,cancelable:true})));assert.deepEqual(await page.evaluate(()=>ModelerStudio.diceDemoState().physics),before);
+await page.locator('.gameplay-preview .dice-hand-controls summary').click();await page.locator('#gameplayMinimizeBtn').click();assert.ok(await page.locator('.gameplay-preview>.dice-tray-controls').isVisible());await page.screenshot({path:'demos/dice-controls-redesign.png'});
+await page.locator('#gameplayMinimizeBtn').click();await page.locator('#gameplayPreviewCloseBtn').click();assert.equal(await page.locator('.reference-viewports').isVisible(),prior);console.log('PASS: full-width gameplay, restored side views, bottom-right dock, icons, Space hit, Enter roll, safe form input.');
+}finally{await browser.close();}})().catch(e=>{console.error(e);process.exitCode=1;});

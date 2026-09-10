@@ -406,6 +406,9 @@ scene.add(hemi);
 const key = new THREE.DirectionalLight(0xffffff, 3.2);
 key.position.set(4, 8, 5);
 key.castShadow = true;
+// Bias receiver depth to reduce fine self-shadow stripes on flat house floors.
+key.shadow.normalBias = .035;
+key.shadow.bias = -.0001;
 scene.add(key);
 
 const fill = new THREE.PointLight(0xffffff, 1.2, 50);
@@ -1056,6 +1059,10 @@ const els = {
   ungroupBtn: document.querySelector("#ungroupBtn"),
   mergeMeshBtn: document.querySelector("#mergeMeshBtn"),
   combineShellBtn: document.querySelector("#combineShellBtn"),
+  combineShellBoundaryModeInput: document.querySelector("#combineShellBoundaryModeInput"),
+  combineShellPreviewInput: document.querySelector("#combineShellPreviewInput"),
+  combineShellToleranceInput: document.querySelector("#combineShellToleranceInput"),
+  combineShellToleranceOutput: document.querySelector("#combineShellToleranceOutput"),
   pivotBtn: document.querySelector("#pivotBtn"),
   centerPivotBtn: document.querySelector("#centerPivotBtn"),
   rotationSnapSelect: document.querySelector("#rotationSnapSelect"),

@@ -3517,6 +3517,11 @@ body[data-workspace="minecraft"] #addMeshSection button[data-add]:not([data-add=
 #geometryNodeViewport { overflow:hidden; }
 #geometryNodeViewport[data-fit-label]:not([data-fit-label=""])::after { content:attr(data-fit-label); position:absolute; left:6px; right:6px; bottom:5px; padding:4px 6px; border-radius:4px; background:rgba(7,17,20,.82); color:#e1b14b; font-size:9px; text-align:center; pointer-events:none; }
 .geometry-node-canvas { position:relative; width:920px; height:430px; background-image:linear-gradient(rgba(64,199,165,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(64,199,165,.07) 1px,transparent 1px); background-size:20px 20px; }
+.geometry-node-ruler-x, .geometry-node-ruler-y { position:absolute; z-index:2; pointer-events:none; color:#7d989b; font:9px ui-monospace,SFMono-Regular,Consolas,monospace; opacity:.82; }
+.geometry-node-ruler-x { top:0; left:0; right:0; height:18px; border-bottom:1px solid rgba(104,185,212,.38); background:repeating-linear-gradient(90deg,rgba(104,185,212,.45) 0 1px,transparent 1px 20px); }
+.geometry-node-ruler-y { top:0; left:0; bottom:0; width:28px; border-right:1px solid rgba(104,185,212,.38); background:repeating-linear-gradient(0deg,rgba(104,185,212,.45) 0 1px,transparent 1px 20px); }
+.geometry-node-ruler-x span { position:absolute; top:2px; transform:translateX(3px); }
+.geometry-node-ruler-y span { position:absolute; left:3px; transform:translateY(2px); writing-mode:vertical-rl; }
 .geometry-node-links { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; overflow:visible; }
 .geometry-node-link { fill:none; stroke:#e1b14b; stroke-width:3; opacity:.85; }
 .geometry-node-link.pending { stroke:#68b9d4; stroke-dasharray:8 6; }
@@ -3532,6 +3537,10 @@ body[data-workspace="minecraft"] #addMeshSection button[data-add]:not([data-add=
 .geometry-node-fields label { display:grid; grid-template-columns:minmax(0,1fr) 64px; align-items:center; gap:6px; color:var(--muted); font-size:10px; }
 .geometry-node-fields input[type="number"], .geometry-node-fields input[type="text"], .geometry-node-fields select { width:100%; min-width:0; padding:5px; }
 .geometry-node-fields input[type="checkbox"] { justify-self:end; }
+.geometry-node-texture-picker { position:relative; grid-template-columns:52px minmax(0,1fr)!important; }
+.geometry-node-file-input { position:absolute; width:1px; height:1px; overflow:hidden; opacity:0; pointer-events:none; }
+.geometry-node-file-button { box-sizing:border-box; width:100%; min-width:0; padding:5px 4px; overflow:hidden; border:1px solid #4d666b; border-radius:4px; background:#10191d; color:#f2f6f5; text-align:center; text-overflow:ellipsis; white-space:nowrap; cursor:pointer; }
+.geometry-node-texture-name { max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .geometry-node-card-note { margin:0; color:var(--muted); font-size:10px; line-height:1.35; }
 .geometry-node-field-group { margin-top:3px; padding-top:6px; border-top:1px solid #33464b; color:#e1b14b; font-size:9px; letter-spacing:.06em; text-transform:uppercase; }
 .geometry-node-socket { position:relative; display:flex; align-items:center; min-height:18px; padding:3px 8px; color:#aababc; font-size:9px; }
@@ -3873,3 +3882,42 @@ html.mobile-layout .animation-export-actions button { min-height: 40px; }
   html.mobile-layout .right { width: min(54vw, 430px); }
   html.mobile-layout .app.animator-mode { grid-template-rows: 56px minmax(120px, 1fr) minmax(250px, 56vh) 62px; }
 }
+
+/* v49.64.25: readable node library, bounded to sidebar/popout viewport. */
+.geometry-node-context-menu.geometry-node-library-menu { width: min(560px, calc(100vw - 16px)); }
+.geometry-node-library-menu .geometry-node-context-library { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.geometry-node-library-menu .geometry-node-context-library button { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; min-height: 34px; padding: 7px 9px; }
+@media (max-width: 420px) { .geometry-node-library-menu .geometry-node-context-library { grid-template-columns: 1fr; } }
+
+/* Primitive palette: real geometry thumbnails, with readable names at any width. */
+button.mesh-preview-button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 102px;
+  padding: 6px 5px 9px;
+  white-space: normal;
+  background-image: radial-gradient(ellipse at 50% 30%, rgba(75, 151, 135, .17), transparent 75%);
+}
+.mesh-preview-image {
+  display: block;
+  width: 112px;
+  max-width: 100%;
+  height: 72px;
+  object-fit: contain;
+  pointer-events: none;
+}
+.mesh-preview-image[hidden] { display: none; }
+.mesh-preview-label {
+  display: block;
+  max-width: 100%;
+  font-size: 12px;
+  line-height: 1.25;
+  text-align: center;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+}
+button.mesh-preview-button:focus-visible { outline: 2px solid #73d8bf; outline-offset: 2px; }

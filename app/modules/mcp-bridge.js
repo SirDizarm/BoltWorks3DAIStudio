@@ -383,7 +383,30 @@ function mcpBridgeSceneResult(params) {
     groupCount: project.scene.groups?.length || 0,
     selectedId: selected?.userData?.id || null,
     selectedIds: activeGroupIds.length ? [...activeGroupIds] : (selected?.userData?.id ? [selected.userData.id] : []),
-    checkedIds: [...checkedIds]
+    checkedIds: [...checkedIds],
+    rig: (() => {
+      const runtime = typeof activeSkinRuntime !== "undefined" ? activeSkinRuntime : null;
+      const avatar = runtime?.avatar;
+      const positions = avatar?.geometry?.getAttribute("position");
+      let maxSampleDisplacement = 0;
+      if (avatar?.isSkinnedMesh && positions) {
+        const rest = new THREE.Vector3(), posed = new THREE.Vector3();
+        for (let i = 0; i < positions.count; i += Math.max(1, Math.floor(positions.count / 128))) {
+          rest.fromBufferAttribute(positions, i);
+          avatar.applyBoneTransform(i, posed.copy(rest));
+          maxSampleDisplacement = Math.max(maxSampleDisplacement, posed.distanceTo(rest));
+        }
+      }
+      return {
+        skinId: avatar?.userData?.id || null,
+        isSkinnedMesh: !!avatar?.isSkinnedMesh,
+        skinInScene: !!avatar?.parent,
+        boneCount: runtime?.bones?.length || 0,
+        frame: typeof animationState !== "undefined" ? animationState.frame : null,
+        maxSampleDisplacement,
+        duplicateSkinIds: avatar ? objects.filter(o => o.userData?.id === avatar.userData?.id).length : 0
+      };
+    })()
   };
 }
 
@@ -534,7 +557,7 @@ function mcpBridgeDeleteObjects(params) {
 }
 
 async function mcpBridgeCombineShell(params) {
-  mcpBridgeAssertAllowedKeys(params, new Set(["ids", "name", "resolution", "expectedRevision"]), "params");
+  mcpBridgeAssertAllowedKeys(params, new Set(["ids", "name", "resolution", "containmentTolerance", "expectedRevision"]), "params");
   const ids = mcpBridgeUniqueIds(params.ids);
   mcpBridgeAssert(ids.length >= 1, "INVALID_PARAMS", "objects.combineShell needs at least one object ID.");
   const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
@@ -544,7 +567,10 @@ async function mcpBridgeCombineShell(params) {
   const resolution = params.resolution === undefined
     ? null
     : mcpBridgeInteger(params.resolution, "params.resolution", { min: 18, max: 64 });
-  const result = await combineMeshesIntoShell(meshes, { name, resolution, announce: false });
+  const containmentTolerance = params.containmentTolerance === undefined
+    ? 0.03
+    : mcpBridgeFiniteNumber(params.containmentTolerance, "params.containmentTolerance", { min: 0, max: 0.2 });
+  const result = await combineMeshesIntoShell(meshes, { name, resolution, announce: false, containmentTolerance });
   mcpBridgeRevision++;
   return {
     revision: mcpBridgeRevision,

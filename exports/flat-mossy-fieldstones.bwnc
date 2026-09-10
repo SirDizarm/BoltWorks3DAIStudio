@@ -1,0 +1,259 @@
+{
+  "kind": "boltworks-node-cluster",
+  "version": 1,
+  "name": "Flat Mossy Fieldstones",
+  "savedAt": "2026-09-05T23:23:47.581Z",
+  "graph": {
+    "id": "cluster-mtp0egq8-z1567e",
+    "name": "Flat Mossy Fieldstones",
+    "type": "tree",
+    "seed": 509,
+    "params": {
+      "rockProfile": "flat",
+      "rockArrangement": "cluster",
+      "rockCount": 5,
+      "rockSize": 1.08,
+      "rockVariation": 0.7,
+      "rockSpacing": 1.12,
+      "rockColor": "#606963",
+      "mossPlacement": "top",
+      "mossCoverage": 0.66,
+      "mossThickness": 0.055,
+      "mossMoisture": 0.82,
+      "mossSunlight": 0.2,
+      "mossCrackBias": 0.3,
+      "mossColor": "#315f2a",
+      "grassCount": 9,
+      "grassHeight": 0.3,
+      "grassWidth": 0.03,
+      "grassSpread": 0.14,
+      "grassAvoidGeometry": true,
+      "grassClearance": 0.12,
+      "transformX": 0,
+      "transformY": 0,
+      "transformZ": 0,
+      "outputName": "Flat Mossy Fieldstones",
+      "height": 8,
+      "variantStyle": "classic",
+      "variantSeason": "summer",
+      "variantMaturity": "mature",
+      "variantAmount": 0.55,
+      "smoothAxis": "xyz",
+      "smoothIterations": 2,
+      "smoothStrength": 0.72,
+      "smoothPreserveSize": true,
+      "smoothRoots": true,
+      "smoothTrunk": true,
+      "smoothBranches": true,
+      "smoothTwigs": true,
+      "smoothCanopy": false,
+      "smoothJoints": true,
+      "smoothCutRings": false,
+      "trunkWidth": 0.82,
+      "trunkSegments": 6,
+      "rootCount": 6,
+      "rootLength": 1.35,
+      "rootThickness": 0.34,
+      "trunkBend": 0.22,
+      "branchCount": 9,
+      "branchSpread": 66,
+      "branchLength": 2.6,
+      "jointSize": 0.85,
+      "jointTrunkSeams": false,
+      "twigLength": 0.45,
+      "twigRise": 0.72,
+      "canopyEnabled": true,
+      "canopySize": 1.25,
+      "canopyDensity": 2,
+      "knotCount": 3,
+      "knotSize": 0.3,
+      "knotInset": 0.04,
+      "knotRings": 4,
+      "cutRingCount": 7,
+      "cutRingDepth": 0.035,
+      "cutRingContrast": 0.55,
+      "transformScale": 1,
+      "primitiveShape": "facetedBallLow",
+      "primitiveSizeX": 1,
+      "primitiveSizeY": 1,
+      "primitiveSizeZ": 1,
+      "primitiveColor": "#4f8f54",
+      "stemHeight": 8.5,
+      "stemBaseRadius": 0.48,
+      "stemTopRadius": 0.16,
+      "stemSegments": 9,
+      "stemSides": 12,
+      "stemLean": 0.18,
+      "stemFlare": 0.2,
+      "stemColor": "#754c35",
+      "branchArrayCount": 7,
+      "branchArrayLength": 2.35,
+      "branchArrayRise": 0.56,
+      "branchArrayRadius": 0.2,
+      "branchArrayTaper": 0.28,
+      "branchArrayTwist": 42,
+      "branchColor": "#754c35",
+      "junctionBlendSize": 1.18,
+      "junctionBlendLength": 1.45,
+      "clusterScatterCount": 11,
+      "clusterScatterSize": 1.05,
+      "clusterScatterSpread": 0.72,
+      "clusterScatterColor": "#4f8246",
+      "wallLength": 12,
+      "wallHeight": 2.8,
+      "wallDepth": 1.15,
+      "wallRows": 4,
+      "wallColumns": 8,
+      "wallDepthLayers": 3,
+      "wallIrregularity": 0.32,
+      "wallColorVariation": 0.58,
+      "wallColor": "#5e6662",
+      "grassColor": "#376f2d"
+    },
+    "nodeOrder": [
+      "seed",
+      "rocks",
+      "moss",
+      "grass",
+      "transform",
+      "output"
+    ],
+    "nodePositions": {
+      "seed": [
+        30,
+        130
+      ],
+      "variant": [
+        196,
+        26
+      ],
+      "primitive": [
+        374,
+        42
+      ],
+      "stem": [
+        552,
+        26
+      ],
+      "branchArray": [
+        730,
+        42
+      ],
+      "clusterScatter": [
+        908,
+        26
+      ],
+      "rocks": [
+        240,
+        70
+      ],
+      "stoneWall": [
+        1264,
+        26
+      ],
+      "grass": [
+        660,
+        70
+      ],
+      "moss": [
+        450,
+        130
+      ],
+      "join": [
+        1798,
+        42
+      ],
+      "primitiveTest": [
+        1976,
+        26
+      ],
+      "roots": [
+        2154,
+        42
+      ],
+      "trunk": [
+        374,
+        42
+      ],
+      "bend": [
+        2510,
+        42
+      ],
+      "branches": [
+        552,
+        26
+      ],
+      "smoothJoints": [
+        730,
+        42
+      ],
+      "junctionBlend": [
+        3044,
+        26
+      ],
+      "twigs": [
+        908,
+        26
+      ],
+      "canopy": [
+        1086,
+        42
+      ],
+      "knot": [
+        3578,
+        42
+      ],
+      "cutSurface": [
+        1264,
+        26
+      ],
+      "smoothGeometry": [
+        3934,
+        42
+      ],
+      "transform": [
+        870,
+        130
+      ],
+      "output": [
+        1080,
+        70
+      ]
+    },
+    "smoothNodes": [],
+    "connections": [
+      {
+        "id": "qa-link-Flat Mossy Fieldstones-0",
+        "fromNodeId": "seed",
+        "toNodeId": "rocks"
+      },
+      {
+        "id": "qa-link-Flat Mossy Fieldstones-1",
+        "fromNodeId": "rocks",
+        "toNodeId": "moss"
+      },
+      {
+        "id": "qa-link-Flat Mossy Fieldstones-2",
+        "fromNodeId": "moss",
+        "toNodeId": "grass"
+      },
+      {
+        "id": "qa-link-Flat Mossy Fieldstones-3",
+        "fromNodeId": "grass",
+        "toNodeId": "transform"
+      },
+      {
+        "id": "qa-link-Flat Mossy Fieldstones-4",
+        "fromNodeId": "transform",
+        "toNodeId": "output"
+      }
+    ],
+    "view": {
+      "x": 24.299999999999997,
+      "y": 60.45000000000002,
+      "scale": 0.82
+    },
+    "generatedIds": [],
+    "buildVersion": 0
+  }
+}

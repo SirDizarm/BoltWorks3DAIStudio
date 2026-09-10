@@ -1,0 +1,257 @@
+{
+  "kind": "boltworks-node-cluster",
+  "version": 1,
+  "name": "Rock Variation Zero",
+  "savedAt": "2026-09-06T12:37:34.639Z",
+  "graph": {
+    "id": "cluster-mtpsr9ug-ej3fu8",
+    "name": "Rock Variation Zero",
+    "type": "tree",
+    "seed": 83,
+    "params": {
+      "rockProfile": "rounded",
+      "rockArrangement": "single",
+      "rockCount": 1,
+      "rockSize": 1.3,
+      "rockVariation": 0,
+      "rockSpacing": 0.9,
+      "rockColor": "#59615e",
+      "grassCount": 3,
+      "grassHeight": 0.3,
+      "grassWidth": 0.03,
+      "grassSpread": 0.12,
+      "grassAvoidGeometry": true,
+      "grassClearance": 0.12,
+      "transformX": 0,
+      "transformY": 0,
+      "transformZ": 0,
+      "outputName": "Rock Variation Zero",
+      "height": 8,
+      "variantStyle": "classic",
+      "variantSeason": "summer",
+      "variantMaturity": "mature",
+      "variantAmount": 0.55,
+      "smoothAxis": "xyz",
+      "smoothIterations": 2,
+      "smoothStrength": 0.72,
+      "smoothPreserveSize": true,
+      "smoothRoots": true,
+      "smoothTrunk": true,
+      "smoothBranches": true,
+      "smoothTwigs": true,
+      "smoothCanopy": false,
+      "smoothJoints": true,
+      "smoothCutRings": false,
+      "trunkWidth": 0.82,
+      "trunkSegments": 6,
+      "rootCount": 6,
+      "rootLength": 1.35,
+      "rootThickness": 0.34,
+      "trunkBend": 0.22,
+      "branchCount": 9,
+      "branchSpread": 66,
+      "branchLength": 2.6,
+      "jointSize": 0.85,
+      "jointTrunkSeams": false,
+      "twigLength": 0.45,
+      "twigRise": 0.72,
+      "canopyEnabled": true,
+      "canopySize": 1.25,
+      "canopyDensity": 2,
+      "knotCount": 3,
+      "knotSize": 0.3,
+      "knotInset": 0.04,
+      "knotRings": 4,
+      "cutRingCount": 7,
+      "cutRingDepth": 0.035,
+      "cutRingContrast": 0.55,
+      "transformScale": 1,
+      "primitiveShape": "facetedBallLow",
+      "primitiveSizeX": 1,
+      "primitiveSizeY": 1,
+      "primitiveSizeZ": 1,
+      "primitiveColor": "#4f8f54",
+      "stemHeight": 8.5,
+      "stemBaseRadius": 0.48,
+      "stemTopRadius": 0.16,
+      "stemSegments": 9,
+      "stemSides": 12,
+      "stemLean": 0.18,
+      "stemFlare": 0.2,
+      "stemColor": "#754c35",
+      "branchArrayCount": 7,
+      "branchArrayLength": 2.35,
+      "branchArrayRise": 0.56,
+      "branchArrayRadius": 0.2,
+      "branchArrayTaper": 0.28,
+      "branchArrayTwist": 42,
+      "branchColor": "#754c35",
+      "junctionBlendSize": 1.18,
+      "junctionBlendLength": 1.45,
+      "clusterScatterCount": 11,
+      "clusterScatterSize": 1.05,
+      "clusterScatterSpread": 0.72,
+      "clusterScatterColor": "#4f8246",
+      "wallLength": 12,
+      "wallHeight": 2.8,
+      "wallDepth": 1.15,
+      "wallRows": 4,
+      "wallColumns": 8,
+      "wallDepthLayers": 3,
+      "wallIrregularity": 0.32,
+      "wallColorVariation": 0.58,
+      "wallColor": "#5e6662",
+      "grassGrowNegativeX": true,
+      "grassGrowPositiveX": true,
+      "grassGrowNegativeZ": true,
+      "grassGrowPositiveZ": true,
+      "grassColor": "#376f2d",
+      "mossPlacement": "bottom",
+      "mossCoverage": 0.55,
+      "mossThickness": 0.12,
+      "mossMoisture": 0.72,
+      "mossSunlight": 0.3,
+      "mossCrackBias": 0.68,
+      "mossColor": "#315f2a"
+    },
+    "nodeOrder": [
+      "seed",
+      "rocks",
+      "grass",
+      "transform",
+      "output"
+    ],
+    "nodePositions": {
+      "seed": [
+        30,
+        130
+      ],
+      "variant": [
+        196,
+        26
+      ],
+      "primitive": [
+        374,
+        42
+      ],
+      "stem": [
+        552,
+        26
+      ],
+      "branchArray": [
+        730,
+        42
+      ],
+      "clusterScatter": [
+        908,
+        26
+      ],
+      "rocks": [
+        240,
+        70
+      ],
+      "stoneWall": [
+        1264,
+        26
+      ],
+      "grass": [
+        450,
+        130
+      ],
+      "moss": [
+        1620,
+        26
+      ],
+      "join": [
+        1798,
+        42
+      ],
+      "primitiveTest": [
+        1976,
+        26
+      ],
+      "roots": [
+        2154,
+        42
+      ],
+      "trunk": [
+        374,
+        42
+      ],
+      "bend": [
+        2510,
+        42
+      ],
+      "branches": [
+        552,
+        26
+      ],
+      "smoothJoints": [
+        730,
+        42
+      ],
+      "junctionBlend": [
+        3044,
+        26
+      ],
+      "twigs": [
+        908,
+        26
+      ],
+      "canopy": [
+        1086,
+        42
+      ],
+      "knot": [
+        3578,
+        42
+      ],
+      "cutSurface": [
+        1264,
+        26
+      ],
+      "smoothGeometry": [
+        3934,
+        42
+      ],
+      "transform": [
+        660,
+        70
+      ],
+      "output": [
+        870,
+        130
+      ]
+    },
+    "smoothNodes": [],
+    "connections": [
+      {
+        "id": "qa-link-Rock Variation Zero-0",
+        "fromNodeId": "seed",
+        "toNodeId": "rocks"
+      },
+      {
+        "id": "qa-link-Rock Variation Zero-1",
+        "fromNodeId": "rocks",
+        "toNodeId": "grass"
+      },
+      {
+        "id": "qa-link-Rock Variation Zero-2",
+        "fromNodeId": "grass",
+        "toNodeId": "transform"
+      },
+      {
+        "id": "qa-link-Rock Variation Zero-3",
+        "fromNodeId": "transform",
+        "toNodeId": "output"
+      }
+    ],
+    "view": {
+      "x": 26.6697247706422,
+      "y": 24.50917431192661,
+      "scale": 0.9779816513761468
+    },
+    "generatedIds": [],
+    "buildVersion": 0
+  }
+}

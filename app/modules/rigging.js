@@ -1353,6 +1353,51 @@ function pointSegmentDistanceSquared(point, start, end) {
 }
 
 function skinCandidatesForVertex(point, bones) {
+  // Use stable semantic IDs for fitted human rigs. Keep the legacy name path
+  // below for imported skeletons without these IDs.
+  const human = bones.some(bone => bone.id === "left_hand") && bones.some(bone => bone.id === "pelvis");
+  if (human) {
+    const index = id => bones.findIndex(bone => bone.id === id);
+    const ids = names => names.map(index).filter(i => i >= 0);
+    const get = id => bones[index(id)];
+    const start = bone => bone.bindPosition || bone.position;
+    const end = bone => bone.bindTail || bone.tail || start(bone);
+    const distance = bone => pointSegmentDistanceSquared(point, start(bone), end(bone));
+    const left = get("left_hand"), right = get("right_hand");
+    const side = Math.abs(point.x - start(left).x) <= Math.abs(point.x - start(right).x) ? "left" : "right";
+    const hand = get(`${side}_hand`), arm = get(`${side}_forearm`);
+    const pelvis = get("pelvis"), chest = get("chest");
+    const scale = Math.max(.1, Math.abs(start(chest).y - start(pelvis).y) / .48);
+    if (point.y <= start(pelvis).y + .12 * scale) {
+      return ids([`${side}_foot`, `${side}_shin`, `${side}_thigh`, "pelvis"]);
+    }
+    const shoulder = get(`${side}_upper_arm`);
+    const armStart = shoulder ? Math.abs(start(shoulder).x) : .24 * scale;
+    if (Math.abs(point.x) > armStart && point.y > start(chest).y - .2 * scale) {
+      const wristStart = arm ? Math.abs(start(arm).x) + Math.abs(start(hand).x - start(arm).x) * .72 : Math.abs(start(hand).x);
+      if (Math.abs(point.x) >= wristStart) {
+        const digits = ["thumb", "index", "middle", "ring", "pinky"].map(digit => {
+          const chain = ids([`${side}_${digit}`, `${side}_${digit}_middle`, `${side}_${digit}_tip`]);
+          return { chain, distance: Math.min(...chain.map(i => distance(bones[i]))) };
+        }).filter(digit => digit.chain.length).sort((a, b) => a.distance - b.distance);
+        const nearest = digits[0];
+        if (nearest) {
+          const proximal = bones[nearest.chain[0]];
+          const axis = end(proximal).clone().sub(start(proximal)).normalize();
+          const pastKnuckle = point.clone().sub(start(proximal)).dot(axis) > .005 * scale;
+          if (pastKnuckle || nearest.distance < distance(hand)) {
+            // Adjacent fingers must not drag each other. Blend only within the
+            // winning digit, adding the palm at its root transition.
+            return pastKnuckle ? nearest.chain : [...nearest.chain, ...ids([`${side}_hand`])];
+          }
+        }
+        return ids([`${side}_hand`, `${side}_forearm`]);
+      }
+      return ids([`${side}_forearm`, `${side}_upper_arm`, "chest"]);
+    }
+    if (point.y > start(chest).y + .15 * scale) return ids(["head", "neck", "chest"]);
+    return ids(["pelvis", "spine", "chest", "neck"]);
+  }
   const byName = name => bones.findIndex(bone => bone.name === name);
   const named = names => names.map(byName).filter(index => index >= 0);
   const leftReference = bones.find(bone => bone.name === "Hand L")
@@ -1410,7 +1455,10 @@ function addSkinAttributes(geometry, bones) {
   for (let vertex = 0; vertex < position.count; vertex += 1) {
     point.fromBufferAttribute(position, vertex);
     let candidates = skinCandidatesForVertex(point, bones);
-    if (!candidates.length) candidates = bones.map((_, index) => index);
+    if (!candidates.length) candidates = bones.map((bone, index) => ({ bone, index }))
+      .filter(({ bone }) => !/socket|camera|mount/i.test(`${bone.id} ${bone.role || ""}`))
+      .map(({ index }) => index);
+    if (!candidates.length) candidates = [0];
     const influences = candidates.map(index => {
       const bone = bones[index];
       const distanceSquared = pointSegmentDistanceSquared(point, bone.bindPosition, bone.bindTail);
@@ -1478,6 +1526,7 @@ function setupSkinnedRig() {
   // to be visible at the time.
   bones.forEach(bone => initializeBoneRestState(bone));
   if (!avatar.isSkinnedMesh) avatar = replaceObjectWithSkinnedMesh(avatar, bones);
+  else addSkinAttributes(avatar.geometry, bones);
   const threeBones = new Map(bones.map(bone => {
     const threeBone = new THREE.Bone();
     threeBone.name = bone.name;
@@ -3465,11 +3514,41 @@ function finishArmorFittingTransform(controlObject) {
 
 function glueBonesToSelected() {
   if (!rigBones.length) { log("Add or import bones first."); return; }
+  // Mixed anatomical characters keep a deforming skin and independently rigid
+  // bone/armor meshes. Existing part bindings must not bypass skin setup.
+  const markedSkins = objects.filter(object => object.userData?.rigRole === "skin"
+    && object.geometry?.getAttribute?.("position"));
+  if (markedSkins.length > 1) {
+    log("This rig currently supports one deforming skin mesh. Keep solid skeleton/armor parts assigned to bones, and mark only the body as Skin & Bone.");
+    return;
+  }
   // Glue always describes the fitted/rest pose. If a real clip is active, move
   // back to the authoritative T-pose first so an Idle/Walk arm bend cannot be
   // captured as the new bind orientation.
   if (!tPoseFittingMode) setTPoseFittingMode(true);
   captureRigBindPose();
+  if (markedSkins.length === 1) {
+    const skin = markedSkins[0];
+    const skinId = skin.userData?.id || skin.name;
+    rigBones.filter(bone => bone.role !== "camera").forEach(bone => {
+      bone.avatarObjectId = skinId;
+    });
+    setupSkinnedRig();
+    if (!activeSkinRuntime) {
+      log("Could not bind the marked skin to this rig.");
+      return;
+    }
+    // Capture rigid parts at the same fitted pose used to bind the skin.
+    // Do not infer new owners from proximity or overwrite rigBoneId.
+    captureAnimationBindingRest();
+    bonesGlued = true;
+    applyCurrentRigPose();
+    rebuildBoneVisuals();
+    syncBonePanel();
+    updateGlueButton();
+    log(`Glued skin "${skin.name || skinId}" and its assigned solid parts to the shared rig. Bone-part assignments were preserved.`);
+    return;
+  }
   const groupTargets = selectedGroupRecordId && typeof descendantMeshesForGroup === "function"
     ? descendantMeshesForGroup(selectedGroupRecordId)
     : (typeof activeGroupObjects === "function" ? activeGroupObjects() : []);

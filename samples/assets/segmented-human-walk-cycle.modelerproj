@@ -1,0 +1,1601 @@
+{
+  "kind": "modeler-project",
+  "version": 1,
+  "name": "segmented-human-walk-cycle",
+  "savedAt": "2026-08-10T21:20:42.457Z",
+  "textureLibrary": [],
+  "scene": {
+    "version": 1,
+    "coordinateSystem": "Y-up right-handed; front faces -Z",
+    "groups": [
+      {
+        "id": "human",
+        "name": "Segmented Human Player",
+        "parentId": null
+      }
+    ],
+    "objects": [
+      {
+        "id": "human-torso",
+        "name": "Torso",
+        "shape": "capsule",
+        "position": [
+          0,
+          1.15,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.42,
+          0.62,
+          0.25
+        ],
+        "color": "#3266a8",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-chest"
+      },
+      {
+        "id": "human-head",
+        "name": "Head",
+        "shape": "sphere",
+        "position": [
+          0,
+          1.72,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.24,
+          0.28,
+          0.24
+        ],
+        "color": "#c88d72",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-head"
+      },
+      {
+        "id": "human-hair",
+        "name": "Hair",
+        "shape": "sphere",
+        "position": [
+          0,
+          1.84,
+          0.01
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.25,
+          0.14,
+          0.25
+        ],
+        "color": "#38291f",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-head"
+      },
+      {
+        "id": "human-upper-arm-l",
+        "name": "Upper Arm L",
+        "shape": "cylinder",
+        "position": [
+          -0.32,
+          1.28,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          90
+        ],
+        "scale": [
+          0.11,
+          0.32,
+          0.11
+        ],
+        "color": "#3266a8",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-upper-arm-l"
+      },
+      {
+        "id": "human-forearm-l",
+        "name": "Forearm L",
+        "shape": "cylinder",
+        "position": [
+          -0.6,
+          1.24,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          90
+        ],
+        "scale": [
+          0.09,
+          0.29,
+          0.09
+        ],
+        "color": "#c88d72",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-forearm-l"
+      },
+      {
+        "id": "human-upper-arm-r",
+        "name": "Upper Arm R",
+        "shape": "cylinder",
+        "position": [
+          0.32,
+          1.28,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          90
+        ],
+        "scale": [
+          0.11,
+          0.32,
+          0.11
+        ],
+        "color": "#3266a8",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-upper-arm-r"
+      },
+      {
+        "id": "human-forearm-r",
+        "name": "Forearm R",
+        "shape": "cylinder",
+        "position": [
+          0.6,
+          1.24,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          90
+        ],
+        "scale": [
+          0.09,
+          0.29,
+          0.09
+        ],
+        "color": "#c88d72",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-forearm-r"
+      },
+      {
+        "id": "human-thigh-l",
+        "name": "Thigh L",
+        "shape": "cylinder",
+        "position": [
+          -0.13,
+          0.82,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.14,
+          0.38,
+          0.14
+        ],
+        "color": "#26364d",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-thigh-l"
+      },
+      {
+        "id": "human-shin-l",
+        "name": "Shin L",
+        "shape": "cylinder",
+        "position": [
+          -0.13,
+          0.42,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.11,
+          0.38,
+          0.11
+        ],
+        "color": "#c88d72",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-shin-l"
+      },
+      {
+        "id": "human-foot-l",
+        "name": "Foot L",
+        "shape": "box",
+        "position": [
+          -0.13,
+          0.1,
+          -0.06
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.2,
+          0.1,
+          0.34
+        ],
+        "color": "#171b22",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-foot-l"
+      },
+      {
+        "id": "human-thigh-r",
+        "name": "Thigh R",
+        "shape": "cylinder",
+        "position": [
+          0.13,
+          0.82,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.14,
+          0.38,
+          0.14
+        ],
+        "color": "#26364d",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-thigh-r"
+      },
+      {
+        "id": "human-shin-r",
+        "name": "Shin R",
+        "shape": "cylinder",
+        "position": [
+          0.13,
+          0.42,
+          0
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.11,
+          0.38,
+          0.11
+        ],
+        "color": "#c88d72",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-shin-r"
+      },
+      {
+        "id": "human-foot-r",
+        "name": "Foot R",
+        "shape": "box",
+        "position": [
+          0.13,
+          0.1,
+          -0.06
+        ],
+        "rotation": [
+          0,
+          0,
+          0
+        ],
+        "scale": [
+          0.2,
+          0.1,
+          0.34
+        ],
+        "color": "#171b22",
+        "roughness": 0.72,
+        "groupId": "human",
+        "groupName": "Segmented Human Player",
+        "boneId": "walk-foot-r"
+      }
+    ]
+  },
+  "editor": {
+    "projectName": "segmented-human-walk-cycle",
+    "selectedId": null,
+    "selectedGroupId": "human",
+    "checkedIds": [],
+    "activeGroupIds": [
+      "human"
+    ],
+    "activeTransformMode": "move",
+    "facePickMode": false,
+    "referenceImage": {
+      "name": "",
+      "dataUrl": null,
+      "mode": "panel",
+      "opacity": 0.48,
+      "scale": 1,
+      "offsetX": 0,
+      "offsetY": 0
+    },
+    "cameraViews": {
+      "selectedId": null,
+      "showMarkers": false,
+      "views": []
+    },
+    "view": {
+      "cameraPosition": [
+        2.4,
+        1.3,
+        3.2
+      ],
+      "orbitTarget": [
+        0,
+        0.95,
+        0
+      ],
+      "cameraUp": [
+        0,
+        1,
+        0
+      ],
+      "viewSpace": 0.45,
+      "shotZoom": 0.9,
+      "environment": "studio",
+      "background": "dark",
+      "showGrid": true
+    },
+    "panels": {},
+    "toolbars": {},
+    "tools": {},
+    "lighting": {
+      "showGuides": false,
+      "enablePrimary": true,
+      "enableMirror": true,
+      "lampPosition": [
+        -3,
+        4,
+        -4
+      ],
+      "lampTarget": [
+        0,
+        1,
+        0
+      ],
+      "intensity": 12,
+      "angle": 32
+    },
+    "rigging": {
+      "selectedBoneId": "walk-root",
+      "showGuides": true,
+      "bones": [
+        {
+          "id": "walk-root",
+          "name": "Root",
+          "parentId": null,
+          "role": null,
+          "avatarObjectId": null,
+          "position": [
+            0,
+            0.08,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-spine",
+          "name": "Spine",
+          "parentId": "walk-root",
+          "role": null,
+          "avatarObjectId": null,
+          "position": [
+            0,
+            0.82,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-chest",
+          "name": "Chest",
+          "parentId": "walk-spine",
+          "role": null,
+          "avatarObjectId": "human-torso",
+          "position": [
+            0,
+            1.18,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-head",
+          "name": "Head",
+          "parentId": "walk-chest",
+          "role": null,
+          "avatarObjectId": "human-head",
+          "position": [
+            0,
+            1.68,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-upper-arm-l",
+          "name": "Upper Arm L",
+          "parentId": "walk-chest",
+          "role": null,
+          "avatarObjectId": "human-upper-arm-l",
+          "position": [
+            -0.23,
+            1.28,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-forearm-l",
+          "name": "Forearm L",
+          "parentId": "walk-upper-arm-l",
+          "role": null,
+          "avatarObjectId": "human-forearm-l",
+          "position": [
+            -0.55,
+            1.25,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-upper-arm-r",
+          "name": "Upper Arm R",
+          "parentId": "walk-chest",
+          "role": null,
+          "avatarObjectId": "human-upper-arm-r",
+          "position": [
+            0.23,
+            1.28,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-forearm-r",
+          "name": "Forearm R",
+          "parentId": "walk-upper-arm-r",
+          "role": null,
+          "avatarObjectId": "human-forearm-r",
+          "position": [
+            0.55,
+            1.25,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-thigh-l",
+          "name": "Thigh L",
+          "parentId": "walk-root",
+          "role": null,
+          "avatarObjectId": "human-thigh-l",
+          "position": [
+            -0.13,
+            0.82,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-shin-l",
+          "name": "Shin L",
+          "parentId": "walk-thigh-l",
+          "role": null,
+          "avatarObjectId": "human-shin-l",
+          "position": [
+            -0.13,
+            0.42,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-foot-l",
+          "name": "Foot L",
+          "parentId": "walk-shin-l",
+          "role": null,
+          "avatarObjectId": "human-foot-l",
+          "position": [
+            -0.13,
+            0.1,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-thigh-r",
+          "name": "Thigh R",
+          "parentId": "walk-root",
+          "role": null,
+          "avatarObjectId": "human-thigh-r",
+          "position": [
+            0.13,
+            0.82,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-shin-r",
+          "name": "Shin R",
+          "parentId": "walk-thigh-r",
+          "role": null,
+          "avatarObjectId": "human-shin-r",
+          "position": [
+            0.13,
+            0.42,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        },
+        {
+          "id": "walk-foot-r",
+          "name": "Foot R",
+          "parentId": "walk-shin-r",
+          "role": null,
+          "avatarObjectId": "human-foot-r",
+          "position": [
+            0.13,
+            0.1,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ]
+        }
+      ],
+      "animation": {
+        "fps": 24,
+        "end": 24,
+        "frame": 0,
+        "keys": {
+          "walk-root": [
+            {
+              "frame": 0,
+              "position": [
+                0,
+                0.08,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0,
+                0.08,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0,
+                0.08,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0,
+                0.08,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0,
+                0.08,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-spine": [
+            {
+              "frame": 0,
+              "position": [
+                0,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-chest": [
+            {
+              "frame": 0,
+              "position": [
+                0,
+                1.18,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0,
+                1.18,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0,
+                1.18,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0,
+                1.18,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0,
+                1.18,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-head": [
+            {
+              "frame": 0,
+              "position": [
+                0,
+                1.68,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0,
+                1.68,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0,
+                1.68,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0,
+                1.68,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0,
+                1.68,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-upper-arm-l": [
+            {
+              "frame": 0,
+              "position": [
+                -0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                0.3141592653589793,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                -0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                -0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                -0.3141592653589793,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                -0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                -0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                0.3141592653589793,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-forearm-l": [
+            {
+              "frame": 0,
+              "position": [
+                -0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                -0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                -0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                -0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                -0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-upper-arm-r": [
+            {
+              "frame": 0,
+              "position": [
+                0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                -0.3141592653589793,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                0.3141592653589793,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0.23,
+                1.28,
+                0
+              ],
+              "rotation": [
+                -0.3141592653589793,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-forearm-r": [
+            {
+              "frame": 0,
+              "position": [
+                0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0.55,
+                1.25,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-thigh-l": [
+            {
+              "frame": 0,
+              "position": [
+                -0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                -0.3839724354387525,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                -0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                -0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0.3839724354387525,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                -0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                -0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                -0.3839724354387525,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-shin-l": [
+            {
+              "frame": 0,
+              "position": [
+                -0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                0.3141592653589793,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                -0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                -0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                -0.3141592653589793,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                -0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                -0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                0.3141592653589793,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-foot-l": [
+            {
+              "frame": 0,
+              "position": [
+                -0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                -0.13962634015954636,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                -0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                -0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                0.13962634015954636,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                -0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                -0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                -0.13962634015954636,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-thigh-r": [
+            {
+              "frame": 0,
+              "position": [
+                0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0.3839724354387525,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                -0.3839724354387525,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0.13,
+                0.82,
+                0
+              ],
+              "rotation": [
+                0.3839724354387525,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-shin-r": [
+            {
+              "frame": 0,
+              "position": [
+                0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                -0.3141592653589793,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                0.3141592653589793,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0.13,
+                0.42,
+                0
+              ],
+              "rotation": [
+                -0.3141592653589793,
+                0,
+                0
+              ]
+            }
+          ],
+          "walk-foot-r": [
+            {
+              "frame": 0,
+              "position": [
+                0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                0.13962634015954636,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 6,
+              "position": [
+                0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 12,
+              "position": [
+                0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                -0.13962634015954636,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 18,
+              "position": [
+                0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                0,
+                0,
+                0
+              ]
+            },
+            {
+              "frame": 24,
+              "position": [
+                0.13,
+                0.1,
+                0
+              ],
+              "rotation": [
+                0.13962634015954636,
+                0,
+                0
+              ]
+            }
+          ]
+        }
+      }
+    }
+  }
+}
