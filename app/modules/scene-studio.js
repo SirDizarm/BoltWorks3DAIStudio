@@ -48,7 +48,14 @@ function openBwsSceneStudio(){
   if(role!=="house"){next.userData.nodeSource={id:sourceGraph.id,name:sourceGraph.name,seed:sourceGraph.seed,buildVersion:sourceGraph.buildVersion,graph:JSON.parse(JSON.stringify(sourceGraph))};disposeGroup(nature[role]);nature[role]=next;natureStatus();status("Loaded "+role+" geometry from node graph: "+sourceGraph.name);return;}
   if(variants.length>=8){disposeGroup(next);throw Error("House library limit: 8 variants. Clear it before adding more.");}variants.push(next);asset=next;libraryStatus();status("House captured: "+vertices.toLocaleString()+" vertices, "+next.children.length+" material batches. Generate town when ready.");
  }
- function refreshSources(){for(const role of ["tree","rock"]){const select=host.querySelector('[data-nature="'+role+'"]'),old=select.value;select.replaceChildren();const hint=document.createElement("option");hint.value="";hint.textContent="Automatic "+role+" node graph";select.appendChild(hint);
+ function refreshSources(){
+  // A fresh browser already has a generic graph, so an empty-list check
+  // cannot be used to decide whether the built-in species should be added.
+  const expected={tree:["Oak","Birch","Pine","Spruce","Tall Pine","Dead Tree"],rock:["Boulder","Fieldstone","Slate","Crag"]};
+  for(const role of ["tree","rock"]){
+    const missing=expected[role].some(label=>!geometryNodeProjectState.graphs.some(g=>g.name==="Scene "+label+" nodes"));
+    if(missing&&geometryNodeProjectState.graphs.length<24)bwsEnsureDetailedNaturePresets(role,settings.seed);
+  }for(const role of ["tree","rock"]){const select=host.querySelector('[data-nature="'+role+'"]'),old=select.value;select.replaceChildren();const hint=document.createElement("option");hint.value="";hint.textContent="Automatic "+role+" node graph";select.appendChild(hint);
  const mixed=document.createElement("option");mixed.value="__mix__";mixed.textContent="Random mix - all listed types";select.appendChild(mixed);for(const graph of geometryNodeProjectState.graphs){const types=graph.nodeOrder.map(id=>geometryNodeTypeForId(graph,id)),eligible=role==="rock"?(types.includes("rocks")||types.includes("detailedRock")):types.some(t=>["trunk","stem","canopy","branchArray","detailedTree"].includes(t))&&!types.includes("houseLayout");if(!eligible)continue;const option=document.createElement("option");option.value=graph.id;option.textContent=graph.name+((graph.generatedIds||[]).some(id=>findObject(id))?"":" (generate from recipe)");select.appendChild(option);}if([...select.options].some(o=>o.value===old))select.value=old;}}
  function natureStatus(){host.querySelector("[data-nature-status]").textContent=["tree","rock"].map(role=>role+": "+(nature[role]?.userData.nodeSource?.name||"not loaded")).join(" / ");}
  async function loadNature(role){const id=host.querySelector('[data-nature="'+role+'"]').value;await generateNodeNature(role,id);}
