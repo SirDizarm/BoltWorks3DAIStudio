@@ -39,13 +39,19 @@ function minecraftEscapeHtml(value) {
 }
 
 function setWorkspace(name, { quiet = false } = {}) {
-  const workspace = name === "minecraft" ? "minecraft" : "general";
+  const workspace = name === "scene" ? "scene" : name === "minecraft" ? "minecraft" : "general";
   document.body.dataset.workspace = workspace;
   if (els.workspaceSelect) els.workspaceSelect.value = workspace;
   localStorage.setItem("boltworks.workspace", workspace);
+  requestAnimationFrame(()=>{
+    if(document.body.dataset.workspace!==workspace)return;
+    if(workspace==="scene"){
+      try{setAnimatorWorkspace(false);openBwsSceneStudio();}catch(error){console.error(error);setWorkspace("general",{quiet:true});alert("Scene Studio could not start: "+error.message);}
+    }else if(bwsSceneStudio){bwsSceneStudio.host.hidden=true;window.dispatchEvent(new Event("resize"));}
+  });
   if (!quiet) log(workspace === "minecraft"
     ? "Minecraft workspace enabled. Only cuboid modeling, texture, hierarchy, rigging, animation, and Minecraft export tools are shown."
-    : "General 3D workspace enabled.");
+    : workspace === "scene" ? "Scene Studio workspace enabled." : "General 3D workspace enabled.");
 }
 
 function renderPluginManager() {

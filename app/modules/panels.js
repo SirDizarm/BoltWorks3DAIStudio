@@ -1073,6 +1073,14 @@ function finishTrianglePainting(pointerId = null) {
 
 // Render primitive thumbnails in a separate scene; never add preview meshes to the project.
 function initializeMeshButtonPreviews() {
+  // Bundled static images: no WebGL context or idle-time rendering at startup.
+  for(const button of document.querySelectorAll("button[data-add]")){
+    const shape=button.dataset.add,name=button.textContent.trim();button.classList.add("mesh-preview-button");button.setAttribute("aria-label",name);button.title=name+" - add this shape to the scene";
+    const image=document.createElement("img");image.className="mesh-preview-image";image.alt="";image.setAttribute("aria-hidden","true");image.width=112;image.height=80;image.loading="eager";image.src="app/assets/mesh-previews/"+encodeURIComponent(shape)+".png";
+    const label=document.createElement("span");label.className="mesh-preview-label";label.textContent=name;button.replaceChildren(image,label);
+  }
+  return;
+
   const buttons = [...document.querySelectorAll("button[data-add]")];
   const queue = [];
   const descriptions = {

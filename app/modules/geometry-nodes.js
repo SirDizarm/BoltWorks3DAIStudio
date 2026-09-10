@@ -1549,12 +1549,14 @@ function geometryNodeGrassPointBlocked(x, z, surfaces, clearance) {
   });
 }
 
-function buildGeometryNodeTree({ centerOutput = false } = {}) {
-  const graph = activeGeometryNodeGraph();
+function buildGeometryNodeTree({ centerOutput = false, graphOverride = null, previewOnly = false } = {}) {
+  const graph = graphOverride || activeGeometryNodeGraph();
+  const previewMeshes=new Map();
+  const lookupMesh=id=>previewOnly?previewMeshes.get(id):findObject(id);
   if (!graph || !GEOMETRY_NODE_SOURCE_TYPES.some(type => graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === type)) || !graph.nodeOrder.some(nodeId => geometryNodeTypeForId(graph, nodeId) === "output")) return;
   // Reject oversized asset graphs before replacing an existing generated result.
   const requestedAssetNodes = geometryNodeActiveNodeIds(graph);
-  if ([...requestedAssetNodes].some(id => geometryNodeTypeForId(graph, id) === "houseBatch")) return buildHouseBatch(graph);
+  if ([...requestedAssetNodes].some(id => geometryNodeTypeForId(graph, id) === "houseBatch")) {if(previewOnly)throw Error("House Batch is not supported as a nature source.");return buildHouseBatch(graph);}
   let assetPartBudget = 0;
   for (const nodeId of requestedAssetNodes) {
     const type = geometryNodeTypeForId(graph, nodeId);
@@ -1564,10 +1566,10 @@ function buildGeometryNodeTree({ centerOutput = false } = {}) {
       : type === "groundTiles" ? values.tileColumns * values.tileRows + 1 : 64;
   }
   if (assetPartBudget > 3000) { setGeometryNodeStatus("Too many asset parts. Reduce counts or build smaller graphs (limit 3000 parts)."); return; }
-  recordHistory("build geometry node tree");
+  if(!previewOnly)recordHistory("build geometry node tree");
   if (centerOutput) graph.centerOutput = true;
-  for (const id of graph.generatedIds) {
-    const mesh = findObject(id);
+  for (const id of previewOnly?[]:graph.generatedIds) {
+    const mesh = lookupMesh(id);
     if (mesh) removeObject(mesh, { record: false, update: false });
   }
   const p = graph.params;
@@ -1613,14 +1615,14 @@ function buildGeometryNodeTree({ centerOutput = false } = {}) {
   const outputName = String(p.outputName || graph.name || "Procedural Geometry").trim() || "Procedural Geometry";
   graph.name = outputName;
   const groupId = `geometry-nodes-${graph.id}`;
-  const existingGroup = groupRecord(groupId);
-  const group = existingGroup || createSceneGroupRecord({ id: groupId, name: outputName });
+  const existingGroup = previewOnly?null:groupRecord(groupId);
+  const group = existingGroup || (previewOnly?{id:groupId,name:outputName}:createSceneGroupRecord({ id: groupId, name: outputName }));
   group.name = outputName;
   const random = geometryNodePrng(graph.seed);
   const generated = [];
   const natureSurfaces = [];
   const addGenerated = spec => {
-    const mesh = addObject(spec, { record: false, select: false, update: false });
+    const mesh = previewOnly?geometryNodePreviewMesh(spec,previewMeshes):addObject(spec, { record: false, select: false, update: false });
     generated.push(mesh.userData.id);
     return mesh;
   };
@@ -2022,16 +2024,16 @@ function buildGeometryNodeTree({ centerOutput = false } = {}) {
   if (activeNodes.has("join") && p.joinAddInnerPanel) {
     const joinedBounds = new THREE.Box3().makeEmpty();
     const wallIds = generated.filter(id => {
-      const mesh = findObject(id);
+      const mesh = lookupMesh(id);
       return mesh && geometryNodeGeneratedTarget(mesh.name) === "stoneWall";
     });
     const boundsIds = wallIds.length ? wallIds : generated.filter(id => {
-      const mesh = findObject(id);
+      const mesh = lookupMesh(id);
       const target = mesh ? geometryNodeGeneratedTarget(mesh.name) : null;
       return target !== "grass" && target !== "moss" && !mesh?.name.includes(" QA ");
     });
     for (const id of boundsIds) {
-      const mesh = findObject(id);
+      const mesh = lookupMesh(id);
       if (mesh) joinedBounds.expandByObject(mesh);
     }
     const panel = geometryNodeInnerPanelSpec(joinedBounds, {
@@ -2045,7 +2047,7 @@ function buildGeometryNodeTree({ centerOutput = false } = {}) {
     if (panel) addGenerated(panel);
   }
   for (const id of generated) {
-    const mesh = findObject(id);
+    const mesh = lookupMesh(id);
     if (!mesh || mesh.name.includes(" QA ")) continue;
     const targetId = mesh.userData.geometryNodeSourceId || geometryNodeGeneratedTarget(mesh.name);
     const modifiers = targetId ? geometryNodeSmoothModifiers(graph, targetId, activeNodeIds) : [];
@@ -2057,7 +2059,7 @@ function buildGeometryNodeTree({ centerOutput = false } = {}) {
   if (activeNodes.has("transform")) {
     const offset = new THREE.Vector3(p.transformX, p.transformY, p.transformZ);
     for (const id of generated) {
-      const mesh = findObject(id);
+      const mesh = lookupMesh(id);
       if (!mesh) continue;
       mesh.position.multiplyScalar(p.transformScale).add(offset);
       mesh.scale.multiplyScalar(p.transformScale);
@@ -2068,7 +2070,7 @@ function buildGeometryNodeTree({ centerOutput = false } = {}) {
   }
   if (graph.centerOutput && generated.length) {
     const bounds = new THREE.Box3().makeEmpty();
-    const meshes = generated.map(id => findObject(id)).filter(Boolean);
+    const meshes = generated.map(id => lookupMesh(id)).filter(Boolean);
     for (const mesh of meshes) { mesh.updateWorldMatrix(true, false); bounds.expandByObject(mesh); }
     if (!bounds.isEmpty() && [bounds.min.x,bounds.min.y,bounds.min.z,bounds.max.x,bounds.max.y,bounds.max.z].every(Number.isFinite)) {
       const middle = bounds.getCenter(new THREE.Vector3());
@@ -2080,6 +2082,7 @@ function buildGeometryNodeTree({ centerOutput = false } = {}) {
       }
     }
   }
+  if(previewOnly){for(const surface of natureSurfaces)surface.geometry?.dispose();return [...previewMeshes.values()];}
   graph.generatedIds = generated;
   saveGeometryNodeDraft();
   updateAll();
@@ -2685,3 +2688,5 @@ for(let n=Math.ceil(-oy/(step*scale));n*step*scale+oy<h;n++){const y=n*step*scal
 if(point){item("left:"+(ox+point[0]*scale)+"px;top:22px;bottom:0;border-left:1px dashed #63d8bd");item("left:30px;right:0;top:"+(oy+point[1]*scale)+"px;border-top:1px dashed #63d8bd");}
 }
 function geometryNodePaletteColor(p,n){const defaults=["#908676","#a39780","#786f62","#b1a58b"],value=p?.["paletteColor"+n];return /^#[0-9a-f]{6}$/i.test(value)?value:defaults[n-1];}
+
+function geometryNodePreviewMesh(spec,collection){const g=spec.geometry?geometryFromData(spec.geometry):shapeFactories[spec.shape]?.();if(!g)throw Error("Unsupported preview geometry: "+spec.shape);const m=new THREE.Mesh(g,new THREE.MeshStandardMaterial({color:spec.color||"#ffffff",roughness:spec.roughness??.85,side:spec.doubleSided?THREE.DoubleSide:THREE.FrontSide}));m.name=spec.name||"Node output";m.position.fromArray(spec.position||[0,0,0]);m.rotation.set(...(spec.rotation||[0,0,0]).map(v=>THREE.MathUtils.degToRad(v)));m.scale.fromArray(spec.scale||[1,1,1]);m.userData={id:"scene-preview-"+collection.size,shape:spec.shape,_sceneTextureUrl:spec.textureUrl||null};m.updateMatrixWorld(true);collection.set(m.userData.id,m);return m;}
