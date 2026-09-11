@@ -1,4 +1,4 @@
-import { copyFile, cp, mkdir, readdir, rm } from "node:fs/promises";
+import { copyFile, cp, mkdir, readFile, readdir, rm } from "node:fs/promises";
 import { dirname, extname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildStudioBundle } from "./studio-bundler.mjs";
@@ -38,7 +38,10 @@ for (const directory of ["assets", "styles", "panels", "selection", "meshes"]) {
 }
 await copyFile(join(root, "CNAME"), join(output, "CNAME"));
 
-await buildStudioBundle({ outfile: join(output, "app", "studio-v49.64.9.js") });
+const studioScript = (await readFile(join(root, "index.html"), "utf8"))
+  .match(/<script\b[^>]*\bsrc=["']\.\/(studio-v[\d.]+\.js)["']/i)?.[1];
+if (!studioScript) throw new Error("Cannot locate the editor studio bundle in index.html.");
+await buildStudioBundle({ outfile: join(output, studioScript) });
 await mkdir(join(output, "demos"), { recursive: true });
 for (const file of ["BWS-dice-randomizer.html", "BWS-die-demo.modelerproj"]) {
   await copyFile(join(root, "demos", file), join(output, "demos", file));

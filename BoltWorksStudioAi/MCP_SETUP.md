@@ -10,8 +10,8 @@ The editor remains the source of truth. Writes can include `expectedRevision`, w
 
 ## Start BoltWorks first
 
-1. Install dependencies once with `npm install`.
-2. Start the normal local BoltWorks server and open the editor in the browser.
+1. Download and extract the whole repository. Install Node.js 22 with npm, then run `npm ci` in the folder containing `package.json`.
+2. Run `npm start` and open `http://127.0.0.1:4173/`. The hosted website and a directly opened `index.html` do not start this relay.
 3. Keep that browser tab open. The local host writes a short-lived connection token to `.runtime/mcp-session.json`.
 4. Start or reconnect the MCP client.
 
@@ -19,7 +19,7 @@ The MCP server reads the local session file automatically. You can override disc
 
 ## MCP client configuration
 
-Use an absolute path. A Windows-style client configuration looks like this:
+Replace `C:/path/to/BoltWorks3DAIStudio` with your own extracted folder's absolute path. Clients accepting `mcpServers` JSON can use this example; others may expose equivalent command/argument fields:
 
 ```json
 {
@@ -27,13 +27,17 @@ Use an absolute path. A Windows-style client configuration looks like this:
     "boltworks-studio": {
       "command": "node",
       "args": [
-        "D:\\Game\\BoltWorks3DAIStudio\\tools\\mcp\\server.mjs"
+        "C:/path/to/BoltWorks3DAIStudio/tools/mcp/server.mjs"
       ],
-      "cwd": "D:\\Game\\BoltWorks3DAIStudio"
+      "cwd": "C:/path/to/BoltWorks3DAIStudio"
     }
   }
 }
 ```
+
+If the client cannot find `node`, use the absolute path to the Node.js executable as its command. Reconnect the client after configuring it. BWS does not include an AI model or subscription; the chosen client's privacy and billing policies apply.
+
+The `.runtime/` directory is ignored by Git. Never share its session file or commit tokens. Do not expose the local server through port forwarding. Only connect trusted clients: MCP can modify the open scene.
 
 If automatic session discovery is not appropriate for your client, provide explicit local settings:
 

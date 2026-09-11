@@ -2,7 +2,9 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.64.1**, including the dice demo: six editable authored toss clips, a separate physical Gameplay Preview tray, and an offline HTML randomizer. See [the dice workflow](docs/DICE-DEMO.md). GitHub Pages and the local adapter consume the same module sources.
+Current preview version: **v49.64.77**. This release adds a GitHub star link, portable local/MCP setup instructions, and a website build aligned with the current editor bundle.
+
+Enjoy BWS? [Star the project on GitHub](https://github.com/SirDizarm/BoltWorks3DAIStudio). Stars show support rather than a scored review.
 
 ## AI authorship note
 
@@ -10,7 +12,7 @@ Built with help from OpenAI Codex.
 
 ## Local development source
 
-`D:\Game\BoltWorks3DAIStudio` is the canonical local development repository. Make 3D Studio and bone/rig changes here, then commit and push this repository to publish the GitHub Pages version.
+The downloaded repository is the local development source. Application changes belong in `app/modules/`; rebuild the browser bundle after editing them.
 
 BoltWorks 3D AI Studio is the 3D modeling, AI-assisted model generation, bone placement, rigging, animation, scene-rendering, and export application in the BoltWorks tool family.
 
@@ -18,16 +20,25 @@ The 2D scene, sprite, asset, and Character Animator workflows live in the separa
 
 ## Run locally
 
+1. Download the whole repository using GitHub's **Code > Download ZIP**, then extract it, or clone it with Git.
+2. Install Node.js 22 with npm, matching the website build's Node version.
+3. Open a terminal in the extracted folder containing `package.json` and run:
+
 ```text
+npm ci
 npm start
 ```
+
+4. Open **http://127.0.0.1:4173/** in your browser. Keep the terminal running; press Ctrl+C there to stop BWS.
+
+The first installation needs internet access for dependencies, including the video-export binary. `node_modules` is intentionally not included in GitHub. If the port is in use, stop the other BWS server first. After downloading an update, run `npm ci` again and restart. Keep saved projects outside the application folder before replacing it.
 
 The primary document is `index.html`; canonical application logic lives under
 `app/modules/`. The local adapter composes those files in memory, while
 `npm run build:web` creates the static GitHub Pages artifact in `dist/`.
 
 `index.html` can also be opened directly. It loads the generated classic bundle
-`app/studio-v49.49.5.js`, so direct file opening does not depend on module CORS or a
+versioned `studio-v*.js` file at the repository root, so direct file opening does not depend on module CORS or a
 running server. After editing files under `app/modules/`, run
 `npm run build:studio` to refresh that bundle; `npm start` and `npm run check`
 also refresh it automatically.
@@ -38,9 +49,11 @@ Use **Load Project URL** beside **Load Project** to open an HTTPS link to a vali
 
 ## Local MCP for AI clients
 
-BoltWorks can expose the open local editor to an MCP-compatible AI client without a BoltWorks login or cloud relay. Start BoltWorks with `npm start`, open the local editor in a browser, keep that tab open, and configure the AI client to run `node D:\Game\BoltWorks3DAIStudio\tools\mcp\server.mjs`. The short-lived local token is discovered automatically.
+Complete the local setup above, keep the local editor tab open, then configure your AI client's stdio MCP connection to launch `node` with the absolute path to `tools/mcp/server.mjs` in your extracted folder. See [MCP setup and example configuration](BoltWorksStudioAi/MCP_SETUP.md). The short-lived local token is discovered automatically; never publish it.
 
-This release contains **MCP v1**, an experimental but working foundation. It provides 14 handbook/schema/example resources plus live tools for capabilities, scene inspection, selection, object creation/update/deletion, undo, an MCP audit log, and bounded AI work sessions. Exact object IDs and optional scene revisions protect collaborative changes. Full setup and the recommended AI workflow are documented in `BoltWorksStudioAi/MCP_SETUP.md`; `npm run check:mcp` verifies the stdio server and authenticated relay contract.
+The hosted website and directly opened `file://` editor do not start the local MCP relay. Use the `npm start` address for MCP. BWS requires no BoltWorks login or cloud relay, but your chosen AI client may require its own account or subscription. Its privacy policies apply to scene data it reads; local BWS does not mean the connected AI runs offline.
+
+This release contains **MCP v1**, an experimental foundation with handbook/schema/example resources and tools for capabilities, scene inspection, selection, object creation/update/deletion, undo, an audit log, and bounded AI work sessions. Exact object IDs and optional scene revisions protect collaborative changes. `npm run check:mcp` verifies the stdio server and authenticated relay contract using a mock editor relay.
 
 Timed AI sessions use a server-owned deadline, so a stated limit such as 15 minutes is enforced even if the client stalls. The Human AI Viewer can show the session's incremental, user-visible actions while it runs. A durable `.bws-session.json` sidecar may preserve compact forward/inverse deltas and factual workflow notes, but it must not contain hidden reasoning, private chain-of-thought, credentials, or a complete scene snapshot for every event. Deterministic replay and MP4 tutorial export remain future work rather than guarantees of the current session log.
 
