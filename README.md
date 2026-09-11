@@ -81,7 +81,7 @@ Open `samples/showcases/uv-topology-test.modelerproj` before testing topology-ch
 
 Manual mesh tests use the permanent shorthand documented in `docs/MESH_TEST_CODES.md`. For example, `M01#D` means that Extrude Region test 01 was completed through step D, while `M01#D FEL UV` reports a texture failure at that step.
 
-**Surface Edit > UV Unwrap / Texture Atlas** analyzes sharp and material boundaries into packed, non-overlapping UV islands before changing the mesh. It can apply UVs only, bake the current single-material appearance into a new 512â€“2048 px atlas, or export a transparent PNG layout for painting. Analysis and layout export are read-only; Apply and Bake each support Undo.
+**Surface Edit > UV Unwrap / Texture Atlas** analyzes sharp and material boundaries into packed, non-overlapping UV islands before changing the mesh. It can apply UVs only, bake the current single-material appearance into a new 512-2048 px atlas, or export a transparent PNG layout for painting. Analysis and layout export are read-only; Apply and Bake each support Undo.
 
 ## Shape building
 
