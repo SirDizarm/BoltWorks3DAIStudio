@@ -9,6 +9,7 @@ export const studioModuleOrder = Object.freeze([
   "scene-environment-nodes",
   "geometry-nature-details",
   "village-props",
+  "scene-damage-effects",
   "geometry-assets",
   "geometry-nodes",
   "import-export",

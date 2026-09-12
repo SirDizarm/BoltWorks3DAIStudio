@@ -783,7 +783,7 @@ function updateGridLabels() {
       mesh.rotation.z = -Math.PI / 2;
     }
   }
-  gridLabelGroup.visible = grid.visible;
+  gridLabelGroup.visible = grid.visible && !activeWorkView;
 }
 
 function makeGuideCircle(radius = 1, color = 0x55ff99, segments = 40) {
@@ -3705,6 +3705,9 @@ function createMesh(spec = {}) {
   applyMeshTint(mesh, mesh.userData.tintColor, mesh.userData.tintStrength);
   syncMinecraftTextureRendering(mesh);
   syncMeshRenderCulling(mesh);
+  if (mesh.userData.gameAsset?.bwsEffect?.type === "gasFire") {
+    bwsAttachCharacterGasFire(mesh, mesh.userData.gameAsset.bwsEffect);
+  }
   return mesh;
 }
 
@@ -5113,9 +5116,9 @@ function configureSurfaceTransformAxis() {
   const axisMode = surfaceAxisMode();
   for (const control of surfaceTransforms) {
     const allowed = { x: true, y: true, z: true };
-    if (control === surfaceTransform && activeWorkView === "front") allowed.z = false;
-    if (control === surfaceTransform && activeWorkView === "side") allowed.x = false;
-    if (control === surfaceTransform && activeWorkView === "top") allowed.y = false;
+    if (control === surfaceTransform && ["front", "back"].includes(activeWorkView)) allowed.z = false;
+    if (control === surfaceTransform && ["side", "opposite"].includes(activeWorkView)) allowed.x = false;
+    if (control === surfaceTransform && ["top", "bottom"].includes(activeWorkView)) allowed.y = false;
     control.showX = allowed.x && (axisMode === "free" || axisMode === "x");
     control.showY = allowed.y && (axisMode === "free" || axisMode === "y");
     control.showZ = allowed.z && (axisMode === "free" || axisMode === "z");

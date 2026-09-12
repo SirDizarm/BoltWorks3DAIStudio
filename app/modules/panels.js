@@ -952,6 +952,7 @@ function animate() {
   // a held movement key into a one-frame step.
   if (gameplayPreviewVisible()) updateGameplayPreview(gameplayDelta);
   else updateAnimation(gameplayDelta);
+  bwsUpdateCharacterEyeVisibility();
   resize();
   syncFlat2dLook();
   syncLiveMirrorPreview();
@@ -3176,9 +3177,9 @@ window.addEventListener("resize", () => {
   if (textureEditorState.open) renderTextureEditor();
 });
 
-els.workViewFrontBtn?.addEventListener("click", () => setOrthographicWorkView("front"));
-els.workViewSideBtn?.addEventListener("click", () => setOrthographicWorkView("side"));
-els.workViewTopBtn?.addEventListener("click", () => setOrthographicWorkView("top"));
+els.workViewFrontBtn?.addEventListener("click", () => toggleOrthographicWorkView("front"));
+els.workViewSideBtn?.addEventListener("click", () => toggleOrthographicWorkView("side"));
+els.workViewTopBtn?.addEventListener("click", () => toggleOrthographicWorkView("top"));
 els.frontReferenceWorkBtn?.addEventListener("click", () => setOrthographicWorkView("front"));
 els.sideReferenceWorkBtn?.addEventListener("click", () => setOrthographicWorkView("side"));
 els.workViewRestoreBtn?.addEventListener("click", restoreOrthographicWorkView);

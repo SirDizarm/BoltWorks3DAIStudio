@@ -6157,6 +6157,8 @@ const screenshotViewDirections = {
   right: new THREE.Vector3(-1, 0, 0),
   side: new THREE.Vector3(1, 0, 0),
   top: new THREE.Vector3(0, 1, 0),
+  bottom: new THREE.Vector3(0, -1, 0),
+  opposite: new THREE.Vector3(-1, 0, 0),
   iso: new THREE.Vector3(.78, .52, .92),
   "front-left": new THREE.Vector3(.78, .35, .92),
   "front-right": new THREE.Vector3(-.78, .35, .92),
@@ -6189,6 +6191,7 @@ function setCameraToView(viewName, { useCurrentZoom = false, currentDistance = n
   camera.far = Math.max(1000000, distance * 60);
   camera.up.set(0, 1, 0);
   if (viewName === "top") camera.up.set(0, 0, -1);
+  if (viewName === "bottom") camera.up.set(0, 0, 1);
   orbit.target.copy(center);
   camera.lookAt(center);
   camera.updateProjectionMatrix();
@@ -6228,17 +6231,29 @@ function syncOrthographicWorkViewUi() {
     side: els.workViewSideBtn,
     top: els.workViewTopBtn
   };
-  for (const [name, button] of Object.entries(map)) button?.classList.toggle("active", activeWorkView === name);
+  const reverse = { front: "back", side: "opposite", top: "bottom" };
+  const titles = { front: "Front Work", back: "Back Work", side: "Side Work", opposite: "Opposite Side", top: "Top Work", bottom: "Bottom Work" };
+  for (const [name, button] of Object.entries(map)) {
+    if (!button) continue;
+    button.classList.toggle("active", activeWorkView === name || activeWorkView === reverse[name]);
+    button.textContent = titles[activeWorkView === name ? reverse[name] : name];
+  }
   if (els.workViewRestoreBtn) els.workViewRestoreBtn.hidden = !activeWorkView;
   if (els.workViewAxisLabel) {
     els.workViewAxisLabel.hidden = !activeWorkView;
-    els.workViewAxisLabel.textContent = activeWorkView ? workViewAxisLabels[activeWorkView] || "" : "";
+    const oppositeLabels = { back: "Back view: X / Y (Z hidden)", opposite: "Opposite side: Z / Y (X hidden)", bottom: "Bottom view: X / Z (Y hidden)" };
+    els.workViewAxisLabel.textContent = activeWorkView ? workViewAxisLabels[activeWorkView] || oppositeLabels[activeWorkView] || "" : "";
   }
   els.viewportRoot?.classList.toggle("work-view-active", !!activeWorkView);
 }
 
+function toggleOrthographicWorkView(viewName) {
+  const opposite = { front: "back", side: "opposite", top: "bottom" };
+  return setOrthographicWorkView(activeWorkView === viewName ? opposite[viewName] : viewName);
+}
+
 function setOrthographicWorkView(viewName) {
-  if (!["front", "side", "top"].includes(viewName)) return false;
+  if (!["front", "back", "side", "opposite", "top", "bottom"].includes(viewName)) return false;
   if (!savedWorkViewCamera) {
     savedWorkViewCamera = {
       position: camera.position.clone(),
@@ -6246,11 +6261,21 @@ function setOrthographicWorkView(viewName) {
       target: orbit.target.clone(),
       near: camera.near,
       far: camera.far,
-      enableRotate: orbit.enableRotate
+      enableRotate: orbit.enableRotate,
+      gridPosition: grid.position.clone(),
+      gridQuaternion: grid.quaternion.clone(),
+      gridScale: grid.scale.clone(),
+      gridLabelsVisible: gridLabelGroup.visible
     };
   }
   activeWorkView = viewName;
   setCameraToView(viewName);
+  const bounds = sceneBounds();
+  const center = bounds.getCenter(new THREE.Vector3());
+  const direction = screenshotViewDirections[viewName].clone().normalize();
+  grid.position.copy(center).addScaledVector(direction, -bounds.getSize(new THREE.Vector3()).length() * .55);
+  grid.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), direction);
+  gridLabelGroup.visible = false;
   orbit.enableRotate = false;
   syncOrthographicWorkViewUi();
   configureSurfaceTransformAxis();
@@ -6267,6 +6292,10 @@ function restoreOrthographicWorkView() {
   camera.near = savedWorkViewCamera.near;
   camera.far = savedWorkViewCamera.far;
   orbit.enableRotate = savedWorkViewCamera.enableRotate;
+  grid.position.copy(savedWorkViewCamera.gridPosition);
+  grid.quaternion.copy(savedWorkViewCamera.gridQuaternion);
+  grid.scale.copy(savedWorkViewCamera.gridScale);
+  gridLabelGroup.visible = savedWorkViewCamera.gridLabelsVisible;
   camera.lookAt(orbit.target);
   camera.updateProjectionMatrix();
   orbit.update();
@@ -6279,7 +6308,17 @@ function restoreOrthographicWorkView() {
   return true;
 }
 
-function captureView(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false, includeBones = false, restoreRigOpacity = false, cameraPoseOverride = null, outputWidth = null, outputHeight = null } = {}) {
+function captureView(...args) {
+  bwsCharacterEffectCaptureDepth++;
+  try {
+    bwsUpdateCharacterEyeVisibility();
+    return captureViewInternal(...args);
+  } finally {
+    bwsCharacterEffectCaptureDepth--;
+  }
+}
+
+function captureViewInternal(viewName = "iso", { download = false, prefix = currentProjectBaseName(), transparent = false, useCurrentZoom = null, bounds = null, qualityScale = 1, directionOverride = null, centerOverride = null, orthographic = false, includeBones = false, restoreRigOpacity = false, cameraPoseOverride = null, outputWidth = null, outputHeight = null } = {}) {
   const oldPosition = camera.position.clone();
   const oldUp = camera.up.clone();
   const oldTarget = orbit.target.clone();

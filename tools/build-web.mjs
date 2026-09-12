@@ -10,7 +10,7 @@ const browserExtensions = new Set([
   ".webp", ".gif", ".svg", ".wasm", ".ico"
 ]);
 const excludedRootFiles = new Set([
-  "package.json", "package-lock.json"
+  "package.json", "package-lock.json", "fire-comparison.html"
 ]);
 const runtimeSamples = [
   "3d_ai_modeler.json",

@@ -857,7 +857,7 @@ async function exportNeoForgeJava() {
 function initializeMinecraftTools() {
   // Always start on the General 3D tab on a fresh page load (still persists the
   // user's choice afterwards via localStorage within the session).
-  setWorkspace("general", { quiet: true });
+  setWorkspace(localStorage.getItem("boltworks.workspace") || "general", { quiet: true });
   renderPluginManager();
   els.workspaceSelect?.addEventListener("change", event => setWorkspace(event.target.value));
   const pickBlockbench = () => els.importBbmodelFile?.click();

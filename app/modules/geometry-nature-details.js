@@ -1,3 +1,4 @@
+import { ConvexGeometry as BwsNaturalRockHull } from "three/addons/geometries/ConvexGeometry.js";
 const BWS_DETAILED_NATURE_NODES=Object.freeze({
  detailedTree:{label:"Detailed Tree",source:true,fields:{treeSpecies:["Species","oak",["oak","birch","pine","spruce","tallPine","deadTree"]],treeHeight:["Height",5,1,18,.1],treeCrownWidth:["Crown width",3.6,.5,12,.1],treeFullness:["Foliage fullness",1,.4,1.8,.1],treeBarkColor:["Bark","#66503b"],treeLeafColor:["Leaves","#496b35"]}},
  detailedRock:{label:"Natural Stone",source:true,fields:{stoneStyle:["Stone type","boulder",["boulder","fieldstone","slate","crag"]],stoneSize:["Size",1.2,.2,8,.1],stoneWeathering:["Irregularity",.65,0,1,.05],stoneColor:["Stone","#747a70"]}}
@@ -91,9 +92,20 @@ function bwsBuildDetailedNature(type,p,{graph,nodeId,group,outputName,emit}){
   }
 
  }else{
-  const s=p.stoneSize,style=p.stoneStyle,rough=p.stoneWeathering,phase=random()*20,g=new THREE.IcosahedronGeometry(1,style==="crag"?0:1),v=g.attributes.position,sx=s*(1+random()*.35),sy=s*(style==="crag"?1.5:style==="slate"?.22:style==="fieldstone"?.38:.62),sz=s*(.68+random()*.25);let min=Infinity;
-  for(let i=0;i<v.count;i++){const x=v.getX(i),y=v.getY(i),z=v.getZ(i),noise=Math.sin(x*3.8+phase)*Math.cos(z*4.1-phase)+.35*Math.sin(y*8+x*3+phase),f=1+rough*.19*noise,yy=Math.max(-.62,y)*sy*(1+rough*.12*Math.sin(x*5+z*4));v.setXYZ(i,(x*f+y*.09)*sx,yy,(z*f-x*.08)*sz);min=Math.min(min,yy);}
-  g.translate(0,-min,0);
+  const s=p.stoneSize,style=p.stoneStyle,rough=p.stoneWeathering;
+  const sx=s*(.85+random()*.45),sy=s*(style==="crag"?.7+random()*.3:style==="slate"?.16+random()*.1:style==="fieldstone"?.3+random()*.16:.45+random()*.24),sz=s*(.65+random()*.4);
+  const points=[],lobes=Array.from({length:5},()=>({direction:new THREE.Vector3(random()-.5,random()-.5,random()-.5).normalize(),strength:(random()-.45)*.35})),phase=random()*6.28;
+  const number=style==="slate"?36:style==="crag"?42:58,lean=(random()-.5)*.28;
+  for(let i=0;i<number;i++){
+   const y=1-2*(i+.5)/number,angle=i*2.399963+phase+(random()-.5)*.3,r=Math.sqrt(1-y*y),direction=new THREE.Vector3(Math.cos(angle)*r,y,Math.sin(angle)*r);
+   let shape=1;for(const lobe of lobes)shape+=rough*lobe.strength*Math.pow(Math.max(0,direction.dot(lobe.direction)),2);
+   shape+=rough*(random()-.5)*.13;
+   const x=direction.x*shape,z=direction.z*shape,yy=Math.max(-.48,direction.y*shape);
+   points.push(new THREE.Vector3((x+yy*lean)*sx,yy*sy,(z+x*.07*rough)*sz));
+  }
+  // A hull over irregular support points gives closed weathered faces, not
+  // latitude bands, stretched pyramids or separately stacked rock layers.
+  const g=new BwsNaturalRockHull(points);g.rotateY(random()*Math.PI*2);g.computeBoundingBox();g.translate(0,-g.boundingBox.min.y,0);const v=g.attributes.position;
   const c=new THREE.Color(p.stoneColor),buckets=Array.from({length:5},()=>[]);
   for(let i=0;i<v.count;i+=3){const band=Math.min(4,Math.floor(random()*5));for(let k=0;k<3;k++)buckets[band].push(v.getX(i+k),v.getY(i+k),v.getZ(i+k));}
   buckets.forEach((positions,i)=>{if(!positions.length)return;const part=new THREE.BufferGeometry();part.setAttribute("position",new THREE.Float32BufferAttribute(positions,3));part.computeVertexNormals();add(part,c.clone().offsetHSL(0,0,(i-2)*.012));});g.dispose();

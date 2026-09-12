@@ -4,6 +4,7 @@ const BWS_ASSET_NODES = Object.freeze({
  ...BWS_SCENE_ENVIRONMENT_NODES,
  ...BWS_DETAILED_NATURE_NODES,
  ...BWS_VILLAGE_PROP_NODES,
+ ...BWS_DAMAGE_EFFECT_NODES,
  barrel:{title:"Barrel",fields:{barrelHeight:["Height",2,.3,8,.1],barrelRadius:["Radius",.7,.15,3,.05],barrelBulge:["Belly",.16,0,.8,.02],barrelThickness:["Wood thickness",.07,.02,.25,.01],barrelStaves:["Staves",16,8,32,1],barrelHoops:["Iron hoops",2,1,4,1],barrelMode:["Ends","closed",["closed","open","broken"]],barrelWood:["Wood","#936937"],barrelIron:["Iron","#414944"]}},
  brickWall:{title:"Brick Wall",fields:{brickCopies:["Wall copies",1,1,12,1],brickRepeat:["Seamless horizontal repeat",false],brickLength:["Length",6,.5,20,.25],brickHeight:["Height",3,.3,10,.1],brickDepth:["Depth",.4,.1,2,.05],brickColumns:["Columns",8,1,24,1],brickRows:["Courses",8,1,20,1],brickGap:["Joint fraction",.06,0,.2,.01],brickVariation:["Color variation",.12,0,.35,.01],brickColor:["Brick","#846c58"],brickMortar:["Mortar","#494943"]}},
  houseWall:{title:"House Wall",fields:{houseWidth:["Width",6,1,20,.25],houseHeight:["Height",3,1,10,.1],houseDepth:["Thickness",.24,.1,1,.02],houseBays:["Frame bays",3,1,12,1],houseBeam:["Beam width",.16,.05,.4,.01],houseOpening:["Opening","door",["none","door","window"]],houseOpeningWidth:["Opening width",1.2,.3,5,.1],houseOpeningHeight:["Opening height",2,.3,4,.1],houseSill:["Window sill",.9,.1,3,.1],housePanel:["Plaster","#b1a58b"],houseTimber:["Timber","#65462e"]}},
@@ -22,6 +23,7 @@ function assetNodeSector(profile,a0,a1,steps){const vertices=[],uv=[];
 }
 function assetNodeBuild(type,source,{graph,nodeId,group,outputName,emit,attachments=[]}){
  const p=assetNodeSanitize(source);
+ if(BWS_DAMAGE_EFFECT_NODES[type])return bwsBuildDamageNode(type,p,{graph,nodeId,group,outputName,emit});
  if(BWS_ASSET_NODES[type]?.attachment)return 0;
  if(BWS_VILLAGE_PROP_NODES[type])return bwsBuildVillageProp(type,p,{graph,nodeId,group,outputName,emit});
  if(BWS_DETAILED_NATURE_NODES[type])return bwsBuildDetailedNature(type,p,{graph,nodeId,group,outputName,emit});
