@@ -206,7 +206,7 @@ function bwsCreateDetachedPoseControls(doc,canvas,camera,getRoot,send){
  const select=doc.createElement('select');select.setAttribute('aria-label','Preview joint');bar.append(select);
  const input=(label,type)=>{const el=doc.createElement('input');el.type=type;el.setAttribute('aria-label',label);el.style.width=type==='range'?'140px':'60px';el.step='1';const wrap=doc.createElement('label');wrap.append(doc.createTextNode(label+' '),el);bar.append(wrap);return el;};
  const angle=input('Angle','number'),slider=input('Bend','range'),min=input('Min','number'),max=input('Max','number');
- let joints=[],selected='',markers=[],signature='',liveFrame=null,queued=null,localEdit=null,dragging=false,dragAngle=0,dragValue=0;
+ let joints=[],selected='',markers=[],signature='',liveFrame=null,queued=null,localEdit=null,dragging=false,dragAngle=0,dragValue=0,limitDraft=null,limitError='';
  const win=doc.defaultView,current=()=>joints.find(j=>j.key===selected);
  const cancelEdits=()=>{if(liveFrame!==null)win.cancelAnimationFrame(liveFrame);liveFrame=null;queued=null;localEdit=null;dragging=false;};
  const command=(action,extra={})=>{const j=current();if(action!=='live-angle')cancelEdits();if(j)send({nodeId:j.nodeId,jointId:j.id,action,...extra});};
@@ -220,14 +220,23 @@ function bwsCreateDetachedPoseControls(doc,canvas,camera,getRoot,send){
  };
  const button=(title,action)=>{const b=doc.createElement('button');b.textContent=title;b.type='button';b.onclick=action;bar.append(b);};
  button('Play motion',()=>command('play'));button('Stop / restore',()=>command('stop'));button('Apply angle',()=>apply(angle.value));button('-5 degrees',()=>apply(Number(angle.value)-5));button('+5 degrees',()=>apply(Number(angle.value)+5));
- button('Apply limits',()=>{if(min.value!==''&&max.value!==''&&Number(min.value)<=Number(max.value))command('limits',{minimum:Number(min.value),maximum:Number(max.value)});});button('Reset joint',()=>apply(0));button('Keep pose',()=>command('keep'));
+ button('Apply limits',()=>{
+  const j=current();if(!j)return;
+  const loText=limitDraft?.key===j.key?limitDraft.minimum:min.value,hiText=limitDraft?.key===j.key?limitDraft.maximum:max.value;
+  const lo=Number(loText),hi=Number(hiText);
+  if(!loText.trim()||!hiText.trim()||!Number.isFinite(lo)||!Number.isFinite(hi)||lo>hi){limitError='Enter finite limits with Min <= Max.';sync();return;}
+  if((Number.isFinite(j.pose.hardMin)&&lo<j.pose.hardMin)||(Number.isFinite(j.pose.hardMax)&&hi>j.pose.hardMax)){limitError='Limits must stay inside '+j.pose.hardMin+' to '+j.pose.hardMax+' degrees.';sync();return;}
+  limitError='';limitDraft={key:j.key,minimum:loText,maximum:hiText,submitted:true,lo,hi};
+  command('limits',{minimum:lo,maximum:hi});sync();
+ });button('Reset joint',()=>{limitDraft=null;limitError='';apply(0);});button('Keep pose',()=>command('keep'));
+ for(const el of [min,max])el.addEventListener('input',()=>{const j=current();if(!j)return;limitDraft={key:j.key,minimum:min.value,maximum:max.value,submitted:false};limitError='';});
  const note=doc.createElement('span');note.textContent='Local joint angles. Limits are not collision detection.';note.style.fontSize='11px';bar.append(note);doc.body.append(bar);
  for(const el of bar.querySelectorAll('button,input,select'))el.style.cssText+=';background:#213338;color:#e2e8df;border:1px solid #52665e;border-radius:4px;padding:4px;font:12px Verdana,sans-serif;';
  const layer=doc.createElement('div');layer.style.cssText='position:absolute;inset:44px 0 0;overflow:hidden;pointer-events:none';doc.body.append(layer);
  const gauge=doc.createElementNS('http://www.w3.org/2000/svg','svg');gauge.setAttribute('viewBox','-70 -70 140 165');gauge.setAttribute('role','slider');gauge.setAttribute('aria-label','Selected joint angle dial');gauge.setAttribute('tabindex','0');gauge.style.cssText='position:absolute;width:140px;height:165px;pointer-events:auto;touch-action:none;cursor:crosshair;z-index:26';
  gauge.innerHTML='<circle r="50" fill="#102321" fill-opacity=".7" stroke="#9aae9d"/><line x1="0" y1="0" x2="50" y2="0" stroke="#aabbac" stroke-dasharray="3 3"/><line data-needle x1="0" y1="0" stroke="#efcb6d" stroke-width="3"/><g fill="#e4eada" font-size="11" text-anchor="middle"><text x="60" y="4">0</text><text x="0" y="-56">90</text><text x="-59" y="4">180</text><text x="0" y="64">-90</text><text data-value x="0" y="85"/></g>';layer.append(gauge);
  const labels={slew:'Rotate vehicle body',boom:'Raise main arm',stick:'Bend outer arm',bucket:'Curl excavator bucket','tractor-loader':'Raise loader arms','tractor-loader-bucket':'Tilt loader bucket'};
- function sync(){const j=current();if(!j)return;const value=valueOf(j);select.value=j.key;caption.textContent=(labels[j.id]||j.pose.label)+' / '+value+' degrees';for(const [el,v] of [[angle,value],[slider,value],[min,j.pose.minimum],[max,j.pose.maximum]])if(doc.activeElement!==el||dragging)el.value=v;slider.min=angle.min=j.pose.minimum;slider.max=angle.max=j.pose.maximum;}
+ function sync(){const j=current();if(!j)return;if(limitDraft&&limitDraft.key!==j.key){limitDraft=null;limitError='';}const value=valueOf(j);select.value=j.key;caption.textContent=(labels[j.id]||j.pose.label)+' / '+value+' degrees'+(limitError?' / '+limitError:'');for(const [el,v] of [[angle,value],[slider,value]])if(doc.activeElement!==el||dragging)el.value=v;min.value=limitDraft?.minimum??j.pose.minimum;max.value=limitDraft?.maximum??j.pose.maximum;slider.min=angle.min=j.pose.minimum;slider.max=angle.max=j.pose.maximum;}
  function drawGauge(){const j=current();if(!j)return;const value=valueOf(j),a=THREE.MathUtils.degToRad(value);gauge.querySelector('[data-needle]').setAttribute('x2',String(44*Math.cos(a)));gauge.querySelector('[data-needle]').setAttribute('y2',String(-44*Math.sin(a)));gauge.querySelector('[data-value]').textContent=value+' degrees';gauge.setAttribute('aria-valuenow',String(value));gauge.setAttribute('aria-valuemin',String(j.pose.minimum));gauge.setAttribute('aria-valuemax',String(j.pose.maximum));}
  const dialAngle=e=>{const b=gauge.getBoundingClientRect();return THREE.MathUtils.radToDeg(Math.atan2(-(e.clientY-b.top-b.height*70/165),e.clientX-b.left-b.width/2));};
  gauge.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();const j=current();if(!j||e.button!==0)return;command('stop');dragging=true;dragAngle=dialAngle(e);dragValue=j.pose.value;gauge.setPointerCapture(e.pointerId);});
@@ -247,7 +256,8 @@ function bwsCreateDetachedPoseControls(doc,canvas,camera,getRoot,send){
   refresh(){
    const next=[],seen=new Set();for(const mesh of getRoot()?.children||[]){const m=mesh.userData.gameAsset?.machinery;if(!m)continue;for(const j of m.joints||[]){if(!j.pose)continue;const key=m.nodeId+':'+j.id;if(seen.has(key))continue;seen.add(key);next.push({...j,nodeId:m.nodeId,key,position:new THREE.Vector3(...j.pivot).add(new THREE.Vector3(...(m.offset||[0,0,0])))});}}
    joints=next;bar.hidden=!getRoot();
-   if(!joints.length||!joints.some(j=>j.key===selected))cancelEdits();
+   if(!joints.length||!joints.some(j=>j.key===selected)){cancelEdits();limitDraft=null;limitError='';}
+   if(limitDraft?.submitted&&joints.some(j=>j.key===limitDraft.key&&j.pose.minimum===limitDraft.lo&&j.pose.maximum===limitDraft.hi)){limitDraft=null;limitError='';}
    if(localEdit&&!dragging&&liveFrame===null&&joints.some(j=>j.key===localEdit.key&&j.pose.value===localEdit.value))localEdit=null;
    for(const el of bar.querySelectorAll('button,input,select'))el.disabled=!joints.length;
    if(!joints.length)caption.textContent='No editable joints received. Update GN and build a machinery preview.';

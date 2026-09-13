@@ -48729,7 +48729,7 @@ void main() {
       return el;
     };
     const angle = input("Angle", "number"), slider = input("Bend", "range"), min = input("Min", "number"), max = input("Max", "number");
-    let joints = [], selected2 = "", markers = [], signature = "", liveFrame = null, queued = null, localEdit = null, dragging = false, dragAngle = 0, dragValue = 0;
+    let joints = [], selected2 = "", markers = [], signature = "", liveFrame = null, queued = null, localEdit = null, dragging = false, dragAngle = 0, dragValue = 0, limitDraft = null, limitError = "";
     const win = doc.defaultView, current = () => joints.find((j) => j.key === selected2);
     const cancelEdits = () => {
       if (liveFrame !== null) win.cancelAnimationFrame(liveFrame);
@@ -48781,10 +48781,37 @@ void main() {
     button("-5 degrees", () => apply(Number(angle.value) - 5));
     button("+5 degrees", () => apply(Number(angle.value) + 5));
     button("Apply limits", () => {
-      if (min.value !== "" && max.value !== "" && Number(min.value) <= Number(max.value)) command("limits", { minimum: Number(min.value), maximum: Number(max.value) });
+      const j = current();
+      if (!j) return;
+      const loText = limitDraft?.key === j.key ? limitDraft.minimum : min.value, hiText = limitDraft?.key === j.key ? limitDraft.maximum : max.value;
+      const lo = Number(loText), hi = Number(hiText);
+      if (!loText.trim() || !hiText.trim() || !Number.isFinite(lo) || !Number.isFinite(hi) || lo > hi) {
+        limitError = "Enter finite limits with Min <= Max.";
+        sync();
+        return;
+      }
+      if (Number.isFinite(j.pose.hardMin) && lo < j.pose.hardMin || Number.isFinite(j.pose.hardMax) && hi > j.pose.hardMax) {
+        limitError = "Limits must stay inside " + j.pose.hardMin + " to " + j.pose.hardMax + " degrees.";
+        sync();
+        return;
+      }
+      limitError = "";
+      limitDraft = { key: j.key, minimum: loText, maximum: hiText, submitted: true, lo, hi };
+      command("limits", { minimum: lo, maximum: hi });
+      sync();
     });
-    button("Reset joint", () => apply(0));
+    button("Reset joint", () => {
+      limitDraft = null;
+      limitError = "";
+      apply(0);
+    });
     button("Keep pose", () => command("keep"));
+    for (const el of [min, max]) el.addEventListener("input", () => {
+      const j = current();
+      if (!j) return;
+      limitDraft = { key: j.key, minimum: min.value, maximum: max.value, submitted: false };
+      limitError = "";
+    });
     const note = doc.createElement("span");
     note.textContent = "Local joint angles. Limits are not collision detection.";
     note.style.fontSize = "11px";
@@ -48806,10 +48833,16 @@ void main() {
     function sync() {
       const j = current();
       if (!j) return;
+      if (limitDraft && limitDraft.key !== j.key) {
+        limitDraft = null;
+        limitError = "";
+      }
       const value = valueOf(j);
       select.value = j.key;
-      caption.textContent = (labels[j.id] || j.pose.label) + " / " + value + " degrees";
-      for (const [el, v] of [[angle, value], [slider, value], [min, j.pose.minimum], [max, j.pose.maximum]]) if (doc.activeElement !== el || dragging) el.value = v;
+      caption.textContent = (labels[j.id] || j.pose.label) + " / " + value + " degrees" + (limitError ? " / " + limitError : "");
+      for (const [el, v] of [[angle, value], [slider, value]]) if (doc.activeElement !== el || dragging) el.value = v;
+      min.value = limitDraft?.minimum ?? j.pose.minimum;
+      max.value = limitDraft?.maximum ?? j.pose.maximum;
       slider.min = angle.min = j.pose.minimum;
       slider.max = angle.max = j.pose.maximum;
     }
@@ -48934,7 +48967,15 @@ void main() {
         }
         joints = next;
         bar.hidden = !getRoot();
-        if (!joints.length || !joints.some((j) => j.key === selected2)) cancelEdits();
+        if (!joints.length || !joints.some((j) => j.key === selected2)) {
+          cancelEdits();
+          limitDraft = null;
+          limitError = "";
+        }
+        if (limitDraft?.submitted && joints.some((j) => j.key === limitDraft.key && j.pose.minimum === limitDraft.lo && j.pose.maximum === limitDraft.hi)) {
+          limitDraft = null;
+          limitError = "";
+        }
         if (localEdit && !dragging && liveFrame === null && joints.some((j) => j.key === localEdit.key && j.pose.value === localEdit.value)) localEdit = null;
         for (const el of bar.querySelectorAll("button,input,select")) el.disabled = !joints.length;
         if (!joints.length) caption.textContent = "No editable joints received. Update GN and build a machinery preview.";
