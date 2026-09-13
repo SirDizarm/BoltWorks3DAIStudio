@@ -206,20 +206,39 @@ function bwsCreateDetachedPoseControls(doc,canvas,camera,getRoot,send){
  const select=doc.createElement('select');select.setAttribute('aria-label','Preview joint');bar.append(select);
  const input=(label,type)=>{const el=doc.createElement('input');el.type=type;el.setAttribute('aria-label',label);el.style.width=type==='range'?'140px':'60px';el.step='1';const wrap=doc.createElement('label');wrap.append(doc.createTextNode(label+' '),el);bar.append(wrap);return el;};
  const angle=input('Angle','number'),slider=input('Bend','range'),min=input('Min','number'),max=input('Max','number');
- let joints=[],selected='',markers=[],signature='';const current=()=>joints.find(j=>j.key===selected);
- const command=(action,extra={})=>{const j=current();if(j)send({nodeId:j.nodeId,jointId:j.id,action,...extra});};
- const apply=value=>{const j=current();if(j&&Number.isFinite(Number(value)))command('angle',{value:Math.max(j.pose.minimum,Math.min(j.pose.maximum,Number(value)))});};
+ let joints=[],selected='',markers=[],signature='',liveFrame=null,queued=null,localEdit=null,dragging=false,dragAngle=0,dragValue=0;
+ const win=doc.defaultView,current=()=>joints.find(j=>j.key===selected);
+ const cancelEdits=()=>{if(liveFrame!==null)win.cancelAnimationFrame(liveFrame);liveFrame=null;queued=null;localEdit=null;dragging=false;};
+ const command=(action,extra={})=>{const j=current();if(action!=='live-angle')cancelEdits();if(j)send({nodeId:j.nodeId,jointId:j.id,action,...extra});};
+ const valueOf=j=>localEdit?.key===j.key?localEdit.value:j.pose.value;
+ const apply=value=>{const j=current();if(!j||!Number.isFinite(Number(value)))return;const next=Math.max(j.pose.minimum,Math.min(j.pose.maximum,Number(value)));command('angle',{value:next});localEdit={key:j.key,value:next};sync();drawGauge();};
+ const live=value=>{
+  const j=current();if(!j||!Number.isFinite(Number(value)))return;
+  const next=Math.max(j.pose.minimum,Math.min(j.pose.maximum,Math.round(Number(value))));
+  localEdit={key:j.key,value:next};queued={nodeId:j.nodeId,jointId:j.id,action:'live-angle',value:next};sync();drawGauge();
+  if(liveFrame===null)liveFrame=win.requestAnimationFrame(()=>{liveFrame=null;const packet=queued;queued=null;if(packet)send(packet);});
+ };
  const button=(title,action)=>{const b=doc.createElement('button');b.textContent=title;b.type='button';b.onclick=action;bar.append(b);};
  button('Play motion',()=>command('play'));button('Stop / restore',()=>command('stop'));button('Apply angle',()=>apply(angle.value));button('-5 degrees',()=>apply(Number(angle.value)-5));button('+5 degrees',()=>apply(Number(angle.value)+5));
  button('Apply limits',()=>{if(min.value!==''&&max.value!==''&&Number(min.value)<=Number(max.value))command('limits',{minimum:Number(min.value),maximum:Number(max.value)});});button('Reset joint',()=>apply(0));button('Keep pose',()=>command('keep'));
  const note=doc.createElement('span');note.textContent='Local joint angles. Limits are not collision detection.';note.style.fontSize='11px';bar.append(note);doc.body.append(bar);
  for(const el of bar.querySelectorAll('button,input,select'))el.style.cssText+=';background:#213338;color:#e2e8df;border:1px solid #52665e;border-radius:4px;padding:4px;font:12px Verdana,sans-serif;';
  const layer=doc.createElement('div');layer.style.cssText='position:absolute;inset:44px 0 0;overflow:hidden;pointer-events:none';doc.body.append(layer);
- const gauge=doc.createElementNS('http://www.w3.org/2000/svg','svg');gauge.setAttribute('viewBox','-70 -70 140 165');gauge.style.cssText='position:absolute;width:140px;height:165px;pointer-events:none;z-index:26';
+ const gauge=doc.createElementNS('http://www.w3.org/2000/svg','svg');gauge.setAttribute('viewBox','-70 -70 140 165');gauge.setAttribute('role','slider');gauge.setAttribute('aria-label','Selected joint angle dial');gauge.setAttribute('tabindex','0');gauge.style.cssText='position:absolute;width:140px;height:165px;pointer-events:auto;touch-action:none;cursor:crosshair;z-index:26';
  gauge.innerHTML='<circle r="50" fill="#102321" fill-opacity=".7" stroke="#9aae9d"/><line x1="0" y1="0" x2="50" y2="0" stroke="#aabbac" stroke-dasharray="3 3"/><line data-needle x1="0" y1="0" stroke="#efcb6d" stroke-width="3"/><g fill="#e4eada" font-size="11" text-anchor="middle"><text x="60" y="4">0</text><text x="0" y="-56">90</text><text x="-59" y="4">180</text><text x="0" y="64">-90</text><text data-value x="0" y="85"/></g>';layer.append(gauge);
  const labels={slew:'Rotate vehicle body',boom:'Raise main arm',stick:'Bend outer arm',bucket:'Curl excavator bucket','tractor-loader':'Raise loader arms','tractor-loader-bucket':'Tilt loader bucket'};
- function sync(){const j=current();if(!j)return;select.value=j.key;caption.textContent=(labels[j.id]||j.pose.label)+' / '+j.pose.value+' degrees';for(const [el,value] of [[angle,j.pose.value],[slider,j.pose.value],[min,j.pose.minimum],[max,j.pose.maximum]])if(doc.activeElement!==el)el.value=value;slider.min=angle.min=j.pose.minimum;slider.max=angle.max=j.pose.maximum;}
- select.onchange=()=>{command('stop');selected=select.value;sync();};angle.onkeydown=e=>{if(e.key==='Enter')apply(angle.value);};slider.oninput=()=>{angle.value=slider.value;};slider.onchange=()=>apply(slider.value);
+ function sync(){const j=current();if(!j)return;const value=valueOf(j);select.value=j.key;caption.textContent=(labels[j.id]||j.pose.label)+' / '+value+' degrees';for(const [el,v] of [[angle,value],[slider,value],[min,j.pose.minimum],[max,j.pose.maximum]])if(doc.activeElement!==el||dragging)el.value=v;slider.min=angle.min=j.pose.minimum;slider.max=angle.max=j.pose.maximum;}
+ function drawGauge(){const j=current();if(!j)return;const value=valueOf(j),a=THREE.MathUtils.degToRad(value);gauge.querySelector('[data-needle]').setAttribute('x2',String(44*Math.cos(a)));gauge.querySelector('[data-needle]').setAttribute('y2',String(-44*Math.sin(a)));gauge.querySelector('[data-value]').textContent=value+' degrees';gauge.setAttribute('aria-valuenow',String(value));gauge.setAttribute('aria-valuemin',String(j.pose.minimum));gauge.setAttribute('aria-valuemax',String(j.pose.maximum));}
+ const dialAngle=e=>{const b=gauge.getBoundingClientRect();return THREE.MathUtils.radToDeg(Math.atan2(-(e.clientY-b.top-b.height*70/165),e.clientX-b.left-b.width/2));};
+ gauge.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();const j=current();if(!j||e.button!==0)return;command('stop');dragging=true;dragAngle=dialAngle(e);dragValue=j.pose.value;gauge.setPointerCapture(e.pointerId);});
+ gauge.addEventListener('pointermove',e=>{if(!dragging)return;e.preventDefault();e.stopPropagation();const j=current();if(!j)return;const next=dialAngle(e),delta=((next-dragAngle+540)%360)-180;dragAngle=next;dragValue=Math.max(j.pose.minimum,Math.min(j.pose.maximum,dragValue+delta));live(dragValue);});
+ const finishDial=e=>{e.preventDefault();e.stopPropagation();if(!dragging)return;const j=current(),value=j?valueOf(j):null;dragging=false;if(gauge.hasPointerCapture(e.pointerId))gauge.releasePointerCapture(e.pointerId);if(value!==null)apply(value);};
+ gauge.addEventListener('pointerup',finishDial);gauge.addEventListener('pointercancel',finishDial);
+ gauge.addEventListener('lostpointercapture',()=>{if(dragging){const j=current();dragging=false;if(j)apply(valueOf(j));}});
+ gauge.addEventListener('wheel',e=>{e.preventDefault();e.stopPropagation();},{passive:false});
+ gauge.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowDown','ArrowRight','ArrowUp'].includes(e.key)){e.preventDefault();e.stopPropagation();const j=current();if(j)apply(valueOf(j)+(['ArrowLeft','ArrowDown'].includes(e.key)?-1:1));}});
+ for(const type of ['pointerdown','pointermove','pointerup','wheel'])bar.addEventListener(type,e=>e.stopPropagation());
+ select.onchange=()=>{const key=select.value;command('stop');selected=key;sync();};angle.onkeydown=e=>{if(e.key==='Enter')apply(angle.value);};slider.oninput=()=>{angle.value=slider.value;live(slider.value);};slider.onchange=()=>apply(slider.value);
  const escape=e=>{if(e.key==='Escape')command('stop');};doc.addEventListener('keydown',escape);
  let down;const pointerDown=e=>{down=[e.clientX,e.clientY];};canvas.addEventListener('pointerdown',pointerDown);
  const pick=e=>{if(!show.checked||e.button!==0||!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>4)return;const b=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((e.clientX-b.left)/b.width*2-1,1-(e.clientY-b.top)/b.height*2),camera);const m=ray.intersectObjects(getRoot()?.children||[],false)[0]?.object.userData.gameAsset?.machinery,j=m?.joints?.filter(j=>j.pose).at(-1);const match=joints.find(v=>v.nodeId===m?.nodeId&&v.id===j?.id);if(match){command('stop');selected=match.key;sync();}};canvas.addEventListener('pointerup',pick);
@@ -228,14 +247,16 @@ function bwsCreateDetachedPoseControls(doc,canvas,camera,getRoot,send){
   refresh(){
    const next=[],seen=new Set();for(const mesh of getRoot()?.children||[]){const m=mesh.userData.gameAsset?.machinery;if(!m)continue;for(const j of m.joints||[]){if(!j.pose)continue;const key=m.nodeId+':'+j.id;if(seen.has(key))continue;seen.add(key);next.push({...j,nodeId:m.nodeId,key,position:new THREE.Vector3(...j.pivot).add(new THREE.Vector3(...(m.offset||[0,0,0])))});}}
    joints=next;bar.hidden=!getRoot();
+   if(!joints.length||!joints.some(j=>j.key===selected))cancelEdits();
+   if(localEdit&&!dragging&&liveFrame===null&&joints.some(j=>j.key===localEdit.key&&j.pose.value===localEdit.value))localEdit=null;
    for(const el of bar.querySelectorAll('button,input,select'))el.disabled=!joints.length;
    if(!joints.length)caption.textContent='No editable joints received. Update GN and build a machinery preview.';
    if(!joints.some(j=>j.key===selected))selected=joints[0]?.key||'';
    const sig=joints.map(j=>j.key).join('|');if(sig!==signature){signature=sig;select.replaceChildren();for(const m of markers)m.remove();markers=[];for(const j of joints){const option=doc.createElement('option');option.value=j.key;option.textContent=(labels[j.id]||j.pose.label)+' ('+j.nodeId+')';select.append(option);const marker=doc.createElement('button');marker.textContent='+';marker.title=option.textContent;marker.style.cssText='position:absolute;width:24px;height:24px;border:2px solid #dfc56c;border-radius:50%;background:#173b32;color:white;pointer-events:auto;transform:translate(-50%,-50%)';marker.onclick=()=>{command('stop');selected=j.key;sync();};layer.append(marker);markers.push(marker);}}
    sync();
   },
-  update(){layer.hidden=!show.checked||!joints.length;const b=canvas.getBoundingClientRect();joints.forEach((j,i)=>{const p=j.position.clone().project(camera),m=markers[i];m.hidden=p.z< -1||p.z>1;m.style.left=((p.x+1)*b.width/2)+'px';m.style.top=((1-p.y)*b.height/2)+'px';m.style.background=j.key===selected?'#947322':'#173b32';});const j=current();if(j){const p=j.position.clone().project(camera),a=THREE.MathUtils.degToRad(j.pose.value);gauge.style.left=((p.x+1)*b.width/2-70)+'px';gauge.style.top=((1-p.y)*b.height/2-70)+'px';gauge.querySelector('[data-needle]').setAttribute('x2',String(44*Math.cos(a)));gauge.querySelector('[data-needle]').setAttribute('y2',String(-44*Math.sin(a)));gauge.querySelector('[data-value]').textContent=j.pose.value+' degrees';}},
-  dispose(){doc.removeEventListener('keydown',escape);canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pick);bar.remove();layer.remove();}
+  update(){layer.hidden=!show.checked||!joints.length;const b=canvas.getBoundingClientRect();joints.forEach((j,i)=>{const p=j.position.clone().project(camera),m=markers[i];m.hidden=p.z< -1||p.z>1;m.style.left=((p.x+1)*b.width/2)+'px';m.style.top=((1-p.y)*b.height/2)+'px';m.style.background=j.key===selected?'#947322':'#173b32';});const j=current();if(j){const p=j.position.clone().project(camera);gauge.style.left=((p.x+1)*b.width/2-70)+'px';gauge.style.top=((1-p.y)*b.height/2-70)+'px';drawGauge();}},
+  dispose(){command('stop');cancelEdits();doc.removeEventListener('keydown',escape);canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pick);bar.remove();layer.remove();}
  };
 }
 function bwsCreatePreviewAxisGuide(container,camera,onView,top=8){

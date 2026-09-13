@@ -48729,15 +48729,44 @@ void main() {
       return el;
     };
     const angle = input("Angle", "number"), slider = input("Bend", "range"), min = input("Min", "number"), max = input("Max", "number");
-    let joints = [], selected2 = "", markers = [], signature = "";
-    const current = () => joints.find((j) => j.key === selected2);
+    let joints = [], selected2 = "", markers = [], signature = "", liveFrame = null, queued = null, localEdit = null, dragging = false, dragAngle = 0, dragValue = 0;
+    const win = doc.defaultView, current = () => joints.find((j) => j.key === selected2);
+    const cancelEdits = () => {
+      if (liveFrame !== null) win.cancelAnimationFrame(liveFrame);
+      liveFrame = null;
+      queued = null;
+      localEdit = null;
+      dragging = false;
+    };
     const command = (action, extra = {}) => {
       const j = current();
+      if (action !== "live-angle") cancelEdits();
       if (j) send({ nodeId: j.nodeId, jointId: j.id, action, ...extra });
     };
+    const valueOf = (j) => localEdit?.key === j.key ? localEdit.value : j.pose.value;
     const apply = (value) => {
       const j = current();
-      if (j && Number.isFinite(Number(value))) command("angle", { value: Math.max(j.pose.minimum, Math.min(j.pose.maximum, Number(value))) });
+      if (!j || !Number.isFinite(Number(value))) return;
+      const next = Math.max(j.pose.minimum, Math.min(j.pose.maximum, Number(value)));
+      command("angle", { value: next });
+      localEdit = { key: j.key, value: next };
+      sync();
+      drawGauge();
+    };
+    const live = (value) => {
+      const j = current();
+      if (!j || !Number.isFinite(Number(value))) return;
+      const next = Math.max(j.pose.minimum, Math.min(j.pose.maximum, Math.round(Number(value))));
+      localEdit = { key: j.key, value: next };
+      queued = { nodeId: j.nodeId, jointId: j.id, action: "live-angle", value: next };
+      sync();
+      drawGauge();
+      if (liveFrame === null) liveFrame = win.requestAnimationFrame(() => {
+        liveFrame = null;
+        const packet = queued;
+        queued = null;
+        if (packet) send(packet);
+      });
     };
     const button = (title, action) => {
       const b2 = doc.createElement("button");
@@ -48767,22 +48796,95 @@ void main() {
     doc.body.append(layer);
     const gauge = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
     gauge.setAttribute("viewBox", "-70 -70 140 165");
-    gauge.style.cssText = "position:absolute;width:140px;height:165px;pointer-events:none;z-index:26";
+    gauge.setAttribute("role", "slider");
+    gauge.setAttribute("aria-label", "Selected joint angle dial");
+    gauge.setAttribute("tabindex", "0");
+    gauge.style.cssText = "position:absolute;width:140px;height:165px;pointer-events:auto;touch-action:none;cursor:crosshair;z-index:26";
     gauge.innerHTML = '<circle r="50" fill="#102321" fill-opacity=".7" stroke="#9aae9d"/><line x1="0" y1="0" x2="50" y2="0" stroke="#aabbac" stroke-dasharray="3 3"/><line data-needle x1="0" y1="0" stroke="#efcb6d" stroke-width="3"/><g fill="#e4eada" font-size="11" text-anchor="middle"><text x="60" y="4">0</text><text x="0" y="-56">90</text><text x="-59" y="4">180</text><text x="0" y="64">-90</text><text data-value x="0" y="85"/></g>';
     layer.append(gauge);
     const labels = { slew: "Rotate vehicle body", boom: "Raise main arm", stick: "Bend outer arm", bucket: "Curl excavator bucket", "tractor-loader": "Raise loader arms", "tractor-loader-bucket": "Tilt loader bucket" };
     function sync() {
       const j = current();
       if (!j) return;
+      const value = valueOf(j);
       select.value = j.key;
-      caption.textContent = (labels[j.id] || j.pose.label) + " / " + j.pose.value + " degrees";
-      for (const [el, value] of [[angle, j.pose.value], [slider, j.pose.value], [min, j.pose.minimum], [max, j.pose.maximum]]) if (doc.activeElement !== el) el.value = value;
+      caption.textContent = (labels[j.id] || j.pose.label) + " / " + value + " degrees";
+      for (const [el, v] of [[angle, value], [slider, value], [min, j.pose.minimum], [max, j.pose.maximum]]) if (doc.activeElement !== el || dragging) el.value = v;
       slider.min = angle.min = j.pose.minimum;
       slider.max = angle.max = j.pose.maximum;
     }
-    select.onchange = () => {
+    function drawGauge() {
+      const j = current();
+      if (!j) return;
+      const value = valueOf(j), a2 = MathUtils.degToRad(value);
+      gauge.querySelector("[data-needle]").setAttribute("x2", String(44 * Math.cos(a2)));
+      gauge.querySelector("[data-needle]").setAttribute("y2", String(-44 * Math.sin(a2)));
+      gauge.querySelector("[data-value]").textContent = value + " degrees";
+      gauge.setAttribute("aria-valuenow", String(value));
+      gauge.setAttribute("aria-valuemin", String(j.pose.minimum));
+      gauge.setAttribute("aria-valuemax", String(j.pose.maximum));
+    }
+    const dialAngle = (e) => {
+      const b2 = gauge.getBoundingClientRect();
+      return MathUtils.radToDeg(Math.atan2(-(e.clientY - b2.top - b2.height * 70 / 165), e.clientX - b2.left - b2.width / 2));
+    };
+    gauge.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const j = current();
+      if (!j || e.button !== 0) return;
       command("stop");
-      selected2 = select.value;
+      dragging = true;
+      dragAngle = dialAngle(e);
+      dragValue = j.pose.value;
+      gauge.setPointerCapture(e.pointerId);
+    });
+    gauge.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const j = current();
+      if (!j) return;
+      const next = dialAngle(e), delta = (next - dragAngle + 540) % 360 - 180;
+      dragAngle = next;
+      dragValue = Math.max(j.pose.minimum, Math.min(j.pose.maximum, dragValue + delta));
+      live(dragValue);
+    });
+    const finishDial = (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      if (!dragging) return;
+      const j = current(), value = j ? valueOf(j) : null;
+      dragging = false;
+      if (gauge.hasPointerCapture(e.pointerId)) gauge.releasePointerCapture(e.pointerId);
+      if (value !== null) apply(value);
+    };
+    gauge.addEventListener("pointerup", finishDial);
+    gauge.addEventListener("pointercancel", finishDial);
+    gauge.addEventListener("lostpointercapture", () => {
+      if (dragging) {
+        const j = current();
+        dragging = false;
+        if (j) apply(valueOf(j));
+      }
+    });
+    gauge.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+    }, { passive: false });
+    gauge.addEventListener("keydown", (e) => {
+      if (["ArrowLeft", "ArrowDown", "ArrowRight", "ArrowUp"].includes(e.key)) {
+        e.preventDefault();
+        e.stopPropagation();
+        const j = current();
+        if (j) apply(valueOf(j) + (["ArrowLeft", "ArrowDown"].includes(e.key) ? -1 : 1));
+      }
+    });
+    for (const type of ["pointerdown", "pointermove", "pointerup", "wheel"]) bar.addEventListener(type, (e) => e.stopPropagation());
+    select.onchange = () => {
+      const key2 = select.value;
+      command("stop");
+      selected2 = key2;
       sync();
     };
     angle.onkeydown = (e) => {
@@ -48790,6 +48892,7 @@ void main() {
     };
     slider.oninput = () => {
       angle.value = slider.value;
+      live(slider.value);
     };
     slider.onchange = () => apply(slider.value);
     const escape2 = (e) => {
@@ -48831,6 +48934,8 @@ void main() {
         }
         joints = next;
         bar.hidden = !getRoot();
+        if (!joints.length || !joints.some((j) => j.key === selected2)) cancelEdits();
+        if (localEdit && !dragging && liveFrame === null && joints.some((j) => j.key === localEdit.key && j.pose.value === localEdit.value)) localEdit = null;
         for (const el of bar.querySelectorAll("button,input,select")) el.disabled = !joints.length;
         if (!joints.length) caption.textContent = "No editable joints received. Update GN and build a machinery preview.";
         if (!joints.some((j) => j.key === selected2)) selected2 = joints[0]?.key || "";
@@ -48872,15 +48977,15 @@ void main() {
         });
         const j = current();
         if (j) {
-          const p = j.position.clone().project(camera2), a2 = MathUtils.degToRad(j.pose.value);
+          const p = j.position.clone().project(camera2);
           gauge.style.left = (p.x + 1) * b2.width / 2 - 70 + "px";
           gauge.style.top = (1 - p.y) * b2.height / 2 - 70 + "px";
-          gauge.querySelector("[data-needle]").setAttribute("x2", String(44 * Math.cos(a2)));
-          gauge.querySelector("[data-needle]").setAttribute("y2", String(-44 * Math.sin(a2)));
-          gauge.querySelector("[data-value]").textContent = j.pose.value + " degrees";
+          drawGauge();
         }
       },
       dispose() {
+        command("stop");
+        cancelEdits();
         doc.removeEventListener("keydown", escape2);
         canvas2.removeEventListener("pointerdown", pointerDown);
         canvas2.removeEventListener("pointerup", pick);
