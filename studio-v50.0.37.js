@@ -1,6 +1,6 @@
 /* Generated from app/modules. Do not edit this bundle directly. */
 (() => {
-  // BoltWorks3DAIStudio/node_modules/three/build/three.module.js
+  // node_modules/three/build/three.module.js
   var REVISION = "165";
   var MOUSE = { LEFT: 0, MIDDLE: 1, RIGHT: 2, ROTATE: 0, DOLLY: 1, PAN: 2 };
   var TOUCH = { ROTATE: 0, PAN: 1, DOLLY_PAN: 2, DOLLY_ROTATE: 3 };
@@ -27520,7 +27520,7 @@ void main() {
     }
   }
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/controls/OrbitControls.js
+  // node_modules/three/examples/jsm/controls/OrbitControls.js
   var _changeEvent = { type: "change" };
   var _startEvent = { type: "start" };
   var _endEvent = { type: "end" };
@@ -28294,7 +28294,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/controls/TransformControls.js
+  // node_modules/three/examples/jsm/controls/TransformControls.js
   var _raycaster = new Raycaster();
   var _tempVector = new Vector3();
   var _tempVector2 = new Vector3();
@@ -29256,7 +29256,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/loaders/TGALoader.js
+  // node_modules/three/examples/jsm/loaders/TGALoader.js
   var TGALoader = class extends DataTextureLoader {
     constructor(manager) {
       super(manager);
@@ -29548,7 +29548,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/loaders/ColladaLoader.js
+  // node_modules/three/examples/jsm/loaders/ColladaLoader.js
   var ColladaLoader = class extends Loader {
     load(url, onLoad, onProgress, onError) {
       const scope = this;
@@ -31882,7 +31882,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/loaders/MTLLoader.js
+  // node_modules/three/examples/jsm/loaders/MTLLoader.js
   var MTLLoader = class extends Loader {
     constructor(manager) {
       super(manager);
@@ -32176,7 +32176,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/loaders/OBJLoader.js
+  // node_modules/three/examples/jsm/loaders/OBJLoader.js
   var _object_pattern = /^[og]\s*(.+)?/;
   var _material_library_pattern = /^mtllib /;
   var _material_use_pattern = /^usemtl /;
@@ -32667,7 +32667,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
+  // node_modules/three/examples/jsm/utils/BufferGeometryUtils.js
   function mergeGeometries(geometries, useGroups = false) {
     const isIndexed = geometries[0].index !== null;
     const attributesUsed = new Set(Object.keys(geometries[0].attributes));
@@ -32963,7 +32963,7 @@ void main() {
     }
   }
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/loaders/GLTFLoader.js
+  // node_modules/three/examples/jsm/loaders/GLTFLoader.js
   var GLTFLoader = class extends Loader {
     constructor(manager) {
       super(manager);
@@ -35444,7 +35444,7 @@ void main() {
     });
   }
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/exporters/OBJExporter.js
+  // node_modules/three/examples/jsm/exporters/OBJExporter.js
   var OBJExporter = class {
     parse(object) {
       let output = "";
@@ -35579,7 +35579,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/utils/TextureUtils.js
+  // node_modules/three/examples/jsm/utils/TextureUtils.js
   var _renderer;
   var fullscreenQuadGeometry;
   var fullscreenQuadMaterial;
@@ -35645,7 +35645,7 @@ void main() {
     return readableTexture;
   }
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/exporters/GLTFExporter.js
+  // node_modules/three/examples/jsm/exporters/GLTFExporter.js
   var KHR_mesh_quantization_ExtraAttrTypes = {
     POSITION: [
       "byte",
@@ -37512,7 +37512,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/utils/SkeletonUtils.js
+  // node_modules/three/examples/jsm/utils/SkeletonUtils.js
   function clone(source) {
     const sourceLookup = /* @__PURE__ */ new Map();
     const cloneLookup = /* @__PURE__ */ new Map();
@@ -37542,7 +37542,7 @@ void main() {
     }
   }
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/modifiers/SimplifyModifier.js
+  // node_modules/three/examples/jsm/modifiers/SimplifyModifier.js
   var _cb2 = new Vector3();
   var _ab2 = new Vector3();
   var SimplifyModifier = class {
@@ -37854,7 +37854,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/app/meshes/factory.js
+  // app/meshes/factory.js
   function round(value, digits = 3) {
     const scale = 10 ** digits;
     return Math.round((Number(value) || 0) * scale) / scale;
@@ -38135,7 +38135,7 @@ void main() {
     };
   }
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/math/ConvexHull.js
+  // node_modules/three/examples/jsm/math/ConvexHull.js
   var Visible = 0;
   var Deleted = 1;
   var _v12 = new Vector3();
@@ -38731,7 +38731,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/geometries/ConvexGeometry.js
+  // node_modules/three/examples/jsm/geometries/ConvexGeometry.js
   var ConvexGeometry = class extends BufferGeometry {
     constructor(points = []) {
       super();
@@ -38754,7 +38754,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/geometries/RoundedBoxGeometry.js
+  // node_modules/three/examples/jsm/geometries/RoundedBoxGeometry.js
   var _tempNormal = new Vector3();
   function getUv(faceDirVector, normal, uvAxis, projectionAxis, radius, sideLength) {
     const totArcLength = 2 * Math.PI * radius / 4;
@@ -38842,7 +38842,7 @@ void main() {
     }
   };
 
-  // BoltWorks3DAIStudio/app/demos/dice-model.js
+  // app/demos/dice-model.js
   function roundedDieGeometry(segments = 3) {
     return new RoundedBoxGeometry(1, 1, 1, segments, 0.1);
   }
@@ -38919,7 +38919,7 @@ void main() {
     return { kind: "modeler-project", version: 1, name: "BWS-die-demo", scene: { groups: [{ id: "dice-demo", name: "Dice", parentId: null }], objects: diceSpecs() }, editor: { projectName: "BWS-die-demo", workspace: "general", view: { cameraPosition: [4, 3, 5], orbitTarget: [0, 1, 0], showGrid: true }, rigging: { tPoseFittingMode: false, showGuides: false, bones: [{ id: "dice-root", name: "Dice root", position: [0, 0.5, 0], rotation: [0, 0, 0], tail: [0, 1, 0], bindPosition: [0, 0.5, 0], bindRotation: [0, 0, 0] }], animation: { activeClipId: "dice-land-1", frame: 0, clips } } } };
   }
 
-  // BoltWorks3DAIStudio/node_modules/cannon-es/dist/cannon-es.js
+  // node_modules/cannon-es/dist/cannon-es.js
   var Mat3 = class _Mat3 {
     /**
      * A vector of length 9, containing all matrix elements.
@@ -45730,7 +45730,7 @@ void main() {
     shapeB: null
   };
 
-  // BoltWorks3DAIStudio/app/demos/dice-polyhedra.js
+  // app/demos/dice-polyhedra.js
   var diceTypes = ["dice", 4, 6, 8, 10, 12, 20, "coin"];
   var typeLabel = (type) => type === "dice" ? "Dice (dots)" : type === "coin" ? "BW coin" : `D${type}`;
   function validateHand(types) {
@@ -45899,7 +45899,7 @@ void main() {
     return root;
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-goblet-liquid.js
+  // app/demos/dice-goblet-liquid.js
   function createGobletLiquid(cup) {
     const group = new Group();
     group.name = "Goblet water and spills";
@@ -45980,7 +45980,7 @@ void main() {
     return { hit, step, reset, snapshot: () => ({ amount, energy, spilled, activeDrops: drops.filter((d) => d.mesh.visible).length, puddles: puddles.filter((p) => p.visible).length }) };
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-ornate-table.js
+  // app/demos/dice-ornate-table.js
   function canvasMap(draw, size = 1024) {
     if (typeof document === "undefined") return null;
     const canvas2 = document.createElement("canvas");
@@ -46223,7 +46223,7 @@ void main() {
     add(feather, "Quill shaft", new CylinderGeometry(0.011, 0.023, 2.15, 8), new MeshStandardMaterial({ color: "#ddc79d" }), [0, 1.02, 0.012]);
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-tabletop.js
+  // app/demos/dice-tabletop.js
   function texture(draw) {
     if (typeof document === "undefined") return null;
     const c2 = document.createElement("canvas");
@@ -46276,7 +46276,7 @@ void main() {
     scene2.add(logo);
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-physics.js
+  // app/demos/dice-physics.js
   function roundedDieCollider() {
     const geometry = roundedDieGeometry(1), p = geometry.attributes.position;
     const vertices = [], faces2 = [], lookup = /* @__PURE__ */ new Map(), ids = [], planes = /* @__PURE__ */ new Map();
@@ -46603,7 +46603,7 @@ void main() {
     return { scene: scene2, camera: camera2, resize: resize2, roll, reset, configure, step, shake, setTopView, setCleanBox, setDecorationsVisible, dispose, snapshot };
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-hand-ui.js
+  // app/demos/dice-hand-ui.js
   function createHandControls(initial, onChange) {
     if (!document.getElementById("dice-hand-styles")) {
       const style = document.createElement("style");
@@ -46768,7 +46768,7 @@ void main() {
     return root;
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-turns.js
+  // app/demos/dice-turns.js
   function createTurnTracker(size = 2) {
     let active = 0, round3 = 1, pending = null, limit = 0, finished = false;
     const history2 = [];
@@ -46848,7 +46848,7 @@ void main() {
     };
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-players.js
+  // app/demos/dice-players.js
   function createPlayers(onTurn = () => {
   }, onRoll = () => {
   }, onFinish = () => {
@@ -47085,7 +47085,7 @@ void main() {
     return root;
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-celebration.js
+  // app/demos/dice-celebration.js
   function createCelebration(host) {
     const layer = document.createElement("div");
     layer.className = "dice-celebration";
@@ -47132,7 +47132,7 @@ void main() {
     return { show, clear };
   }
 
-  // BoltWorks3DAIStudio/app/demos/dice-scoreboard.js
+  // app/demos/dice-scoreboard.js
   function scoreData(snapshot) {
     const groups = /* @__PURE__ */ new Map();
     for (const die of snapshot.dice) {
@@ -47229,7 +47229,7 @@ void main() {
     }, root };
   }
 
-  // BoltWorks3DAIStudio/node_modules/three/examples/jsm/environments/RoomEnvironment.js
+  // node_modules/three/examples/jsm/environments/RoomEnvironment.js
   var RoomEnvironment = class extends Scene {
     constructor(renderer2 = null) {
       super();
@@ -47318,7 +47318,7 @@ void main() {
     return material;
   }
 
-  // BoltWorks3DAIStudio/app/studio-entry.js
+  // app/studio-entry.js
   var BUNDLED_PLUGINS = Object.freeze([]);
   var installedPluginPackages = [];
   var pluginEnabledPreferences = {};
@@ -48227,8 +48227,9 @@ void main() {
   function bwsAttachPluginGraphBridge(pkg, dialog, header, frame) {
     const controller = new AbortController();
     let ready = false, state2 = null, result = null, file = null, pending = null;
+    let previewClearPending = false;
     let previewWindow = null, previewRenderer = null, previewScene = null, previewCamera = null, previewRoot = null, previewFrame = 0, previewTimer = null;
-    let previewTarget = new Vector3(), previewRadius = 10, previewYaw = -0.6, previewPitch = 0.45, previewAxisGuide = null;
+    let previewTarget = new Vector3(), previewRadius = 10, previewYaw = -0.6, previewPitch = 0.45, previewAxisGuide = null, previewPoseUi = null, previewGraphId = null;
     const previewResources = () => {
       if (!previewRoot) return;
       previewRoot.traverse((mesh) => {
@@ -48249,6 +48250,9 @@ void main() {
       previewTimer = null;
       previewAxisGuide?.dispose();
       previewAxisGuide = null;
+      previewPoseUi?.dispose();
+      previewPoseUi = null;
+      previewGraphId = null;
       previewResources();
       previewRenderer?.dispose();
       previewRenderer = null;
@@ -48259,8 +48263,9 @@ void main() {
     }
     function refreshPreview() {
       if (!previewWindow || previewWindow.closed || !result) return;
-      const parts = bwsValidateGraphParts(result.parts);
+      const parts = bwsValidateGraphParts(result.parts), retainCamera = !!previewRoot && previewGraphId === result.graph.id;
       previewResources();
+      previewGraphId = result.graph.id;
       const root = new Group();
       previewRoot = root;
       previewScene.add(root);
@@ -48270,6 +48275,7 @@ void main() {
         mesh.position.fromArray(part.position);
         mesh.rotation.set(...part.rotation.map(MathUtils.degToRad));
         mesh.scale.fromArray(part.scale);
+        mesh.userData.gameAsset = part.gameAsset;
         root.add(mesh);
         if (part.textureUrl) new TextureLoader().load(part.textureUrl, (texture2) => {
           if (previewRoot !== root) {
@@ -48281,9 +48287,12 @@ void main() {
           material.needsUpdate = true;
         });
       }
-      const bounds = new Box3().setFromObject(root);
-      bounds.getCenter(previewTarget);
-      previewRadius = Math.max(1, bounds.getSize(new Vector3()).length() * 1.3);
+      if (!retainCamera) {
+        const bounds = new Box3().setFromObject(root);
+        bounds.getCenter(previewTarget);
+        previewRadius = Math.max(1, bounds.getSize(new Vector3()).length() * 1.3);
+      }
+      previewPoseUi?.refresh();
       previewWindow.document.title = "BWS Preview - " + result.graph.name;
     }
     const button = (label) => {
@@ -48332,6 +48341,26 @@ void main() {
       }
     };
     const detach = button("Detach preview");
+    const clearPreview = button("Clear Preview");
+    clearPreview.title = "Clear plugin previews and stop motion. Keeps recipes and workspace models.";
+    function clearPreviewOutput() {
+      result = null;
+      add2.disabled = replace.disabled = true;
+      finish(Error("Graph preview generation cancelled by Clear Preview."));
+      previewResources();
+      previewGraphId = null;
+      previewPoseUi?.refresh();
+      previewPoseUi?.update();
+      if (previewWindow && !previewWindow.closed) previewWindow.document.title = "BWS Preview - cleared";
+      status.textContent = "Preview cleared. Recipes and workspace models are unchanged.";
+    }
+    function requestClearPreview() {
+      if (!enabled() || !ready) return;
+      previewClearPending = true;
+      clearPreviewOutput();
+      frame.contentWindow.postMessage({ type: "bws-graph-clear-preview" }, "*");
+    }
+    clearPreview.onclick = requestClearPreview;
     detach.onclick = () => {
       if (!enabled() || !ready) return;
       if (previewWindow && !previewWindow.closed) {
@@ -48347,7 +48376,7 @@ void main() {
       try {
         let draw = function() {
           if (previewWindow !== win || win.closed) return;
-          const width = Math.max(1, win.innerWidth), height = Math.max(1, win.innerHeight - 44);
+          const width = Math.max(1, win.innerWidth), height = Math.max(1, win.innerHeight - 44 - (previewPoseUi?.height() || 0));
           if (width !== lastWidth || height !== lastHeight) {
             lastWidth = width;
             lastHeight = height;
@@ -48359,6 +48388,7 @@ void main() {
           previewCamera.lookAt(previewTarget);
           previewRenderer.render(previewScene, previewCamera);
           previewAxisGuide.update();
+          previewPoseUi?.update();
           previewFrame = win.requestAnimationFrame(draw);
         };
         const doc = win.document;
@@ -48367,10 +48397,15 @@ void main() {
         doc.body.style.cssText = "margin:0;overflow:hidden;background:#17262a;color:#dceae5;font:14px Verdana,sans-serif";
         const bar = doc.createElement("div"), label = doc.createElement("span"), back = doc.createElement("button");
         bar.style.cssText = "height:44px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;gap:12px";
-        label.textContent = "Live preview | Left-drag: orbit | Right-drag: pan | Scroll: zoom";
+        label.textContent = "Live preview / Pose controls v2 | Left-drag: orbit | Right-drag: pan | Scroll: zoom";
         back.textContent = "Return preview";
         back.onclick = restorePreview;
-        bar.append(label, back);
+        const clear = doc.createElement("button");
+        clear.type = "button";
+        clear.textContent = "Clear Preview";
+        clear.title = clearPreview.title;
+        clear.onclick = requestClearPreview;
+        bar.append(label, clear, back);
         doc.body.append(bar);
         const canvas2 = doc.createElement("canvas");
         canvas2.style.cssText = "display:block;touch-action:none";
@@ -48397,6 +48432,9 @@ void main() {
             previewPitch = 0;
           }
         }, 52);
+        previewPoseUi = bwsCreateDetachedPoseControls(doc, canvas2, previewCamera, () => previewRoot, (command) => {
+          if (enabled()) frame.contentWindow.postMessage({ type: "bws-graph-pose-command", ...command }, "*");
+        });
         let drag = null, lastWidth = 0, lastHeight = 0;
         canvas2.addEventListener("contextmenu", (event) => event.preventDefault());
         canvas2.addEventListener("pointerdown", (event) => {
@@ -48564,6 +48602,10 @@ void main() {
       error ? job.reject(error) : job.resolve(value);
     }
     dialog.bwsGenerateGraph = (graph) => new Promise((resolve, reject) => {
+      if (previewClearPending) {
+        reject(Error("Preview is clearing. Try generating again."));
+        return;
+      }
       if (pending) {
         reject(Error("A graph is already generating."));
         return;
@@ -48577,12 +48619,23 @@ void main() {
       try {
         if (data?.type === "bws-plugin-ready") {
           ready = true;
-          share.disabled = detach.disabled = download2.disabled = loadNodes.disabled = false;
+          share.disabled = detach.disabled = clearPreview.disabled = download2.disabled = loadNodes.disabled = false;
           if (pending) frame.contentWindow.postMessage({ type: "bws-graph-preview-request", requestId: pending.requestId, graph: pending.graph }, "*");
         }
+        if (data?.type === "bws-graph-preview-cleared") {
+          previewClearPending = false;
+          clearPreviewOutput();
+          return;
+        }
+        if (previewClearPending && ["bws-graph-result", "bws-graph-pose-preview", "bws-graph-preview-result", "bws-graph-preview-error"].includes(data?.type)) return;
         if (data?.type === "bws-graph-state") {
           state2 = bwsGraphState(data.state);
           save.disabled = false;
+        }
+        if (data?.type === "bws-graph-pose-preview" && previewWindow && !previewWindow.closed && result) {
+          bwsValidateGraphParts(data.parts);
+          result = { ...result, parts: data.parts };
+          refreshPreview();
         }
         if (data?.type === "bws-graph-result") {
           result = null;
@@ -48648,6 +48701,193 @@ void main() {
     } finally {
       if (opened && bwsPluginWindows.get("geometry-nodes") === dialog) bwsClosePluginWorkspace("geometry-nodes");
     }
+  }
+  function bwsCreateDetachedPoseControls(doc, canvas2, camera2, getRoot, send) {
+    const bar = doc.createElement("div");
+    bar.style.cssText = "position:absolute;bottom:0;left:0;right:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;background:#122326;border-top:1px solid #476358;z-index:30";
+    const caption = doc.createElement("strong");
+    caption.style.color = "#e1c36c";
+    bar.append(caption);
+    const show = doc.createElement("input");
+    show.type = "checkbox";
+    show.checked = true;
+    const showLabel = doc.createElement("label");
+    showLabel.append(show, doc.createTextNode(" Pose joints"));
+    bar.append(showLabel);
+    const select = doc.createElement("select");
+    select.setAttribute("aria-label", "Preview joint");
+    bar.append(select);
+    const input = (label, type) => {
+      const el = doc.createElement("input");
+      el.type = type;
+      el.setAttribute("aria-label", label);
+      el.style.width = type === "range" ? "140px" : "60px";
+      el.step = "1";
+      const wrap = doc.createElement("label");
+      wrap.append(doc.createTextNode(label + " "), el);
+      bar.append(wrap);
+      return el;
+    };
+    const angle = input("Angle", "number"), slider = input("Bend", "range"), min = input("Min", "number"), max = input("Max", "number");
+    let joints = [], selected2 = "", markers = [], signature = "";
+    const current = () => joints.find((j) => j.key === selected2);
+    const command = (action, extra = {}) => {
+      const j = current();
+      if (j) send({ nodeId: j.nodeId, jointId: j.id, action, ...extra });
+    };
+    const apply = (value) => {
+      const j = current();
+      if (j && Number.isFinite(Number(value))) command("angle", { value: Math.max(j.pose.minimum, Math.min(j.pose.maximum, Number(value))) });
+    };
+    const button = (title, action) => {
+      const b2 = doc.createElement("button");
+      b2.textContent = title;
+      b2.type = "button";
+      b2.onclick = action;
+      bar.append(b2);
+    };
+    button("Play motion", () => command("play"));
+    button("Stop / restore", () => command("stop"));
+    button("Apply angle", () => apply(angle.value));
+    button("-5 degrees", () => apply(Number(angle.value) - 5));
+    button("+5 degrees", () => apply(Number(angle.value) + 5));
+    button("Apply limits", () => {
+      if (min.value !== "" && max.value !== "" && Number(min.value) <= Number(max.value)) command("limits", { minimum: Number(min.value), maximum: Number(max.value) });
+    });
+    button("Reset joint", () => apply(0));
+    button("Keep pose", () => command("keep"));
+    const note = doc.createElement("span");
+    note.textContent = "Local joint angles. Limits are not collision detection.";
+    note.style.fontSize = "11px";
+    bar.append(note);
+    doc.body.append(bar);
+    for (const el of bar.querySelectorAll("button,input,select")) el.style.cssText += ";background:#213338;color:#e2e8df;border:1px solid #52665e;border-radius:4px;padding:4px;font:12px Verdana,sans-serif;";
+    const layer = doc.createElement("div");
+    layer.style.cssText = "position:absolute;inset:44px 0 0;overflow:hidden;pointer-events:none";
+    doc.body.append(layer);
+    const gauge = doc.createElementNS("http://www.w3.org/2000/svg", "svg");
+    gauge.setAttribute("viewBox", "-70 -70 140 165");
+    gauge.style.cssText = "position:absolute;width:140px;height:165px;pointer-events:none;z-index:26";
+    gauge.innerHTML = '<circle r="50" fill="#102321" fill-opacity=".7" stroke="#9aae9d"/><line x1="0" y1="0" x2="50" y2="0" stroke="#aabbac" stroke-dasharray="3 3"/><line data-needle x1="0" y1="0" stroke="#efcb6d" stroke-width="3"/><g fill="#e4eada" font-size="11" text-anchor="middle"><text x="60" y="4">0</text><text x="0" y="-56">90</text><text x="-59" y="4">180</text><text x="0" y="64">-90</text><text data-value x="0" y="85"/></g>';
+    layer.append(gauge);
+    const labels = { slew: "Rotate vehicle body", boom: "Raise main arm", stick: "Bend outer arm", bucket: "Curl excavator bucket", "tractor-loader": "Raise loader arms", "tractor-loader-bucket": "Tilt loader bucket" };
+    function sync() {
+      const j = current();
+      if (!j) return;
+      select.value = j.key;
+      caption.textContent = (labels[j.id] || j.pose.label) + " / " + j.pose.value + " degrees";
+      for (const [el, value] of [[angle, j.pose.value], [slider, j.pose.value], [min, j.pose.minimum], [max, j.pose.maximum]]) if (doc.activeElement !== el) el.value = value;
+      slider.min = angle.min = j.pose.minimum;
+      slider.max = angle.max = j.pose.maximum;
+    }
+    select.onchange = () => {
+      command("stop");
+      selected2 = select.value;
+      sync();
+    };
+    angle.onkeydown = (e) => {
+      if (e.key === "Enter") apply(angle.value);
+    };
+    slider.oninput = () => {
+      angle.value = slider.value;
+    };
+    slider.onchange = () => apply(slider.value);
+    const escape2 = (e) => {
+      if (e.key === "Escape") command("stop");
+    };
+    doc.addEventListener("keydown", escape2);
+    let down;
+    const pointerDown = (e) => {
+      down = [e.clientX, e.clientY];
+    };
+    canvas2.addEventListener("pointerdown", pointerDown);
+    const pick = (e) => {
+      if (!show.checked || e.button !== 0 || !down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 4) return;
+      const b2 = canvas2.getBoundingClientRect(), ray = new Raycaster();
+      ray.setFromCamera(new Vector2((e.clientX - b2.left) / b2.width * 2 - 1, 1 - (e.clientY - b2.top) / b2.height * 2), camera2);
+      const m = ray.intersectObjects(getRoot()?.children || [], false)[0]?.object.userData.gameAsset?.machinery, j = m?.joints?.filter((j2) => j2.pose).at(-1);
+      const match = joints.find((v) => v.nodeId === m?.nodeId && v.id === j?.id);
+      if (match) {
+        command("stop");
+        selected2 = match.key;
+        sync();
+      }
+    };
+    canvas2.addEventListener("pointerup", pick);
+    return {
+      height: () => bar.hidden ? 0 : bar.getBoundingClientRect().height,
+      refresh() {
+        const next = [], seen = /* @__PURE__ */ new Set();
+        for (const mesh of getRoot()?.children || []) {
+          const m = mesh.userData.gameAsset?.machinery;
+          if (!m) continue;
+          for (const j of m.joints || []) {
+            if (!j.pose) continue;
+            const key2 = m.nodeId + ":" + j.id;
+            if (seen.has(key2)) continue;
+            seen.add(key2);
+            next.push({ ...j, nodeId: m.nodeId, key: key2, position: new Vector3(...j.pivot).add(new Vector3(...m.offset || [0, 0, 0])) });
+          }
+        }
+        joints = next;
+        bar.hidden = !getRoot();
+        for (const el of bar.querySelectorAll("button,input,select")) el.disabled = !joints.length;
+        if (!joints.length) caption.textContent = "No editable joints received. Update GN and build a machinery preview.";
+        if (!joints.some((j) => j.key === selected2)) selected2 = joints[0]?.key || "";
+        const sig = joints.map((j) => j.key).join("|");
+        if (sig !== signature) {
+          signature = sig;
+          select.replaceChildren();
+          for (const m of markers) m.remove();
+          markers = [];
+          for (const j of joints) {
+            const option = doc.createElement("option");
+            option.value = j.key;
+            option.textContent = (labels[j.id] || j.pose.label) + " (" + j.nodeId + ")";
+            select.append(option);
+            const marker = doc.createElement("button");
+            marker.textContent = "+";
+            marker.title = option.textContent;
+            marker.style.cssText = "position:absolute;width:24px;height:24px;border:2px solid #dfc56c;border-radius:50%;background:#173b32;color:white;pointer-events:auto;transform:translate(-50%,-50%)";
+            marker.onclick = () => {
+              command("stop");
+              selected2 = j.key;
+              sync();
+            };
+            layer.append(marker);
+            markers.push(marker);
+          }
+        }
+        sync();
+      },
+      update() {
+        layer.hidden = !show.checked || !joints.length;
+        const b2 = canvas2.getBoundingClientRect();
+        joints.forEach((j2, i) => {
+          const p = j2.position.clone().project(camera2), m = markers[i];
+          m.hidden = p.z < -1 || p.z > 1;
+          m.style.left = (p.x + 1) * b2.width / 2 + "px";
+          m.style.top = (1 - p.y) * b2.height / 2 + "px";
+          m.style.background = j2.key === selected2 ? "#947322" : "#173b32";
+        });
+        const j = current();
+        if (j) {
+          const p = j.position.clone().project(camera2), a2 = MathUtils.degToRad(j.pose.value);
+          gauge.style.left = (p.x + 1) * b2.width / 2 - 70 + "px";
+          gauge.style.top = (1 - p.y) * b2.height / 2 - 70 + "px";
+          gauge.querySelector("[data-needle]").setAttribute("x2", String(44 * Math.cos(a2)));
+          gauge.querySelector("[data-needle]").setAttribute("y2", String(-44 * Math.sin(a2)));
+          gauge.querySelector("[data-value]").textContent = j.pose.value + " degrees";
+        }
+      },
+      dispose() {
+        doc.removeEventListener("keydown", escape2);
+        canvas2.removeEventListener("pointerdown", pointerDown);
+        canvas2.removeEventListener("pointerup", pick);
+        bar.remove();
+        layer.remove();
+      }
+    };
   }
   function bwsCreatePreviewAxisGuide(container, camera2, onView, top = 8) {
     const doc = container.ownerDocument, root = doc.createElement("div");

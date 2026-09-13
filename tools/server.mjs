@@ -22,21 +22,30 @@ const mcpSessionFile = process.env.BWS_MCP_SESSION_FILE
 const mcpRelay = createMcpRelay({ token: process.env.BWS_MCP_TOKEN, maxBodyBytes: 12 * 1024 * 1024 });
 // Use the bundle actually referenced by the editor, not a retired version.
 const studioScript = readFileSync(join(root, "index.html"), "utf8")
-  .match(/(?:src|data-bws-bundle)=["']\.\/(studio-v[\d.]+\.js)["']/i)?.[1];
+  .match(/(?:src|data-bws-bundle)=["']\.\/(studio-v[\d.]+\.js)(?:\?[^"']*)?["']/i)?.[1];
 if (!studioScript) throw new Error("Cannot locate the editor studio bundle in index.html.");
 const studioPath = `/${studioScript}`;
-const studioSource = await buildStudioBundle({ outfile: join(root, studioScript) });
+const studioFile = join(root, studioScript);
+await buildStudioBundle({ outfile: studioFile });
 
 const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
   if (await handleVideoExport({ pathname: url.pathname, request, response })) return;
   if (handleHostApi({ pathname: url.pathname, request, response, server, pendingProjectFile, mcpRelay, url })) return;
   if (url.pathname === studioPath || url.pathname === "/app/studio-v49.64.7.js") {
+    // Rebuilds must reach the browser without retaining the server's startup bundle.
+    let source;
+    try { source = readFileSync(studioFile); }
+    catch {
+      response.writeHead(503, { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" });
+      response.end("Studio build is unavailable. Rebuild Studio and reload.");
+      return;
+    }
     response.writeHead(200, {
       "content-type": "text/javascript; charset=utf-8",
       "cache-control": "no-store"
     });
-    response.end(studioSource);
+    response.end(source);
     return;
   }
   serveStatic({ root, pathname: url.pathname, response });

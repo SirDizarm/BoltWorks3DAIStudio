@@ -28,8 +28,9 @@ async function bwsApplyGraphOutput(result,replace){
 }
 function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
  const controller=new AbortController();let ready=false,state=null,result=null,file=null,pending=null;
+ let previewClearPending=false;
  let previewWindow=null,previewRenderer=null,previewScene=null,previewCamera=null,previewRoot=null,previewFrame=0,previewTimer=null;
- let previewTarget=new THREE.Vector3(),previewRadius=10,previewYaw=-.6,previewPitch=.45,previewAxisGuide=null;
+ let previewTarget=new THREE.Vector3(),previewRadius=10,previewYaw=-.6,previewPitch=.45,previewAxisGuide=null,previewPoseUi=null,previewGraphId=null;
  const previewResources=()=>{
   if(!previewRoot)return;
   previewRoot.traverse(mesh=>{if(mesh.isMesh){mesh.geometry.dispose();mesh.material.map?.dispose();mesh.material.dispose();}});
@@ -38,25 +39,25 @@ function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
  function restorePreview(){
   const win=previewWindow;previewWindow=null;
   if(win&&!win.closed)win.cancelAnimationFrame(previewFrame);
-  clearInterval(previewTimer);previewTimer=null;previewAxisGuide?.dispose();previewAxisGuide=null;previewResources();previewRenderer?.dispose();previewRenderer=null;
+  clearInterval(previewTimer);previewTimer=null;previewAxisGuide?.dispose();previewAxisGuide=null;previewPoseUi?.dispose();previewPoseUi=null;previewGraphId=null;previewResources();previewRenderer?.dispose();previewRenderer=null;
   previewScene=previewCamera=null;if(win&&!win.closed)win.close();
   detach.textContent='Detach preview';
   if(frame.isConnected)frame.contentWindow.postMessage({type:'bws-graph-preview-detached',detached:false},'*');
  }
  function refreshPreview(){
   if(!previewWindow||previewWindow.closed||!result)return;
-  const parts=bwsValidateGraphParts(result.parts);previewResources();
+  const parts=bwsValidateGraphParts(result.parts),retainCamera=!!previewRoot&&previewGraphId===result.graph.id;previewResources();previewGraphId=result.graph.id;
   const root=new THREE.Group();previewRoot=root;previewScene.add(root);
   for(const part of parts){
    const material=new THREE.MeshStandardMaterial({color:part.color,roughness:part.roughness,side:part.doubleSided?THREE.DoubleSide:THREE.FrontSide,vertexColors:!!part.geometry.colors});
    const mesh=new THREE.Mesh(geometryFromData(part.geometry),material);
-   mesh.position.fromArray(part.position);mesh.rotation.set(...part.rotation.map(THREE.MathUtils.degToRad));mesh.scale.fromArray(part.scale);root.add(mesh);
+   mesh.position.fromArray(part.position);mesh.rotation.set(...part.rotation.map(THREE.MathUtils.degToRad));mesh.scale.fromArray(part.scale);mesh.userData.gameAsset=part.gameAsset;root.add(mesh);
    if(part.textureUrl)new THREE.TextureLoader().load(part.textureUrl,texture=>{
     if(previewRoot!==root){texture.dispose();return;}texture.colorSpace=THREE.SRGBColorSpace;material.map=texture;material.needsUpdate=true;
    });
   }
-  const bounds=new THREE.Box3().setFromObject(root);bounds.getCenter(previewTarget);
-  previewRadius=Math.max(1,bounds.getSize(new THREE.Vector3()).length()*1.3);
+  if(!retainCamera){const bounds=new THREE.Box3().setFromObject(root);bounds.getCenter(previewTarget);previewRadius=Math.max(1,bounds.getSize(new THREE.Vector3()).length()*1.3);}
+  previewPoseUi?.refresh();
   previewWindow.document.title='BWS Preview - '+result.graph.name;
  }
  const button=label=>{const b=document.createElement('button');b.textContent=label;b.disabled=true;header.append(b);return b;};
@@ -79,6 +80,23 @@ function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
   }catch(error){status.textContent=error.message;}
  };
  const detach=button('Detach preview');
+ const clearPreview=button('Clear Preview');
+ clearPreview.title='Clear plugin previews and stop motion. Keeps recipes and workspace models.';
+ function clearPreviewOutput(){
+  result=null;add.disabled=replace.disabled=true;
+  finish(Error('Graph preview generation cancelled by Clear Preview.'));
+  previewResources();previewGraphId=null;
+  previewPoseUi?.refresh();previewPoseUi?.update();
+  if(previewWindow&&!previewWindow.closed)previewWindow.document.title='BWS Preview - cleared';
+  status.textContent='Preview cleared. Recipes and workspace models are unchanged.';
+ }
+ function requestClearPreview(){
+  if(!enabled()||!ready)return;
+  // Ignore already queued build/pose packets until the iframe acknowledges clearing.
+  previewClearPending=true;clearPreviewOutput();
+  frame.contentWindow.postMessage({type:'bws-graph-clear-preview'},'*');
+ }
+ clearPreview.onclick=requestClearPreview;
  detach.onclick=()=>{
   if(!enabled()||!ready)return;
   if(previewWindow&&!previewWindow.closed){restorePreview();return;}
@@ -90,12 +108,15 @@ function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
    doc.body.style.cssText='margin:0;overflow:hidden;background:#17262a;color:#dceae5;font:14px Verdana,sans-serif';
    const bar=doc.createElement('div'),label=doc.createElement('span'),back=doc.createElement('button');
    bar.style.cssText='height:44px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;padding:8px 12px;gap:12px';
-   label.textContent='Live preview | Left-drag: orbit | Right-drag: pan | Scroll: zoom';back.textContent='Return preview';back.onclick=restorePreview;bar.append(label,back);doc.body.append(bar);
+   label.textContent='Live preview / Pose controls v2 | Left-drag: orbit | Right-drag: pan | Scroll: zoom';back.textContent='Return preview';back.onclick=restorePreview;
+   const clear=doc.createElement('button');clear.type='button';clear.textContent='Clear Preview';clear.title=clearPreview.title;clear.onclick=requestClearPreview;
+   bar.append(label,clear,back);doc.body.append(bar);
    const canvas=doc.createElement('canvas');canvas.style.cssText='display:block;touch-action:none';doc.body.append(canvas);
    previewRenderer=new THREE.WebGLRenderer({canvas,antialias:true});previewRenderer.setPixelRatio(Math.min(win.devicePixelRatio||1,2));
    previewScene=new THREE.Scene();previewScene.background=new THREE.Color('#17262a');previewScene.add(new THREE.HemisphereLight(0xffffff,0x354532,2));
    const sunlight=new THREE.DirectionalLight(0xffffff,3);sunlight.position.set(7,12,-9);previewScene.add(sunlight);
    previewCamera=new THREE.PerspectiveCamera(45,1,.01,100000);doc.body.style.position='relative';previewAxisGuide=bwsCreatePreviewAxisGuide(doc.body,previewCamera,(axis,sign)=>{if(axis===0){previewYaw=sign*Math.PI/2;previewPitch=0;}else if(axis===1){previewYaw=0;previewPitch=sign*(Math.PI/2-.0001);}else{previewYaw=sign>0?Math.PI:0;previewPitch=0;}},52);
+   previewPoseUi=bwsCreateDetachedPoseControls(doc,canvas,previewCamera,()=>previewRoot,command=>{if(enabled())frame.contentWindow.postMessage({type:'bws-graph-pose-command',...command},'*');});
    let drag=null,lastWidth=0,lastHeight=0;
    canvas.addEventListener('contextmenu',event=>event.preventDefault());
    canvas.addEventListener('pointerdown',event=>{if(event.button!==0&&event.button!==2)return;event.preventDefault();drag={x:event.clientX,y:event.clientY,pan:event.button===2};canvas.setPointerCapture(event.pointerId);});
@@ -118,10 +139,10 @@ function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
    refreshPreview();
    function draw(){
     if(previewWindow!==win||win.closed)return;
-    const width=Math.max(1,win.innerWidth),height=Math.max(1,win.innerHeight-44);
+    const width=Math.max(1,win.innerWidth),height=Math.max(1,win.innerHeight-44-(previewPoseUi?.height()||0));
     if(width!==lastWidth||height!==lastHeight){lastWidth=width;lastHeight=height;previewRenderer.setSize(width,height);previewCamera.aspect=width/height;previewCamera.updateProjectionMatrix();}
     previewCamera.position.set(previewTarget.x+Math.sin(previewYaw)*Math.cos(previewPitch)*previewRadius,previewTarget.y+Math.sin(previewPitch)*previewRadius,previewTarget.z-Math.cos(previewYaw)*Math.cos(previewPitch)*previewRadius);
-    previewCamera.lookAt(previewTarget);previewRenderer.render(previewScene,previewCamera);previewAxisGuide.update();previewFrame=win.requestAnimationFrame(draw);
+    previewCamera.lookAt(previewTarget);previewRenderer.render(previewScene,previewCamera);previewAxisGuide.update();previewPoseUi?.update();previewFrame=win.requestAnimationFrame(draw);
    }
    draw();previewTimer=setInterval(()=>{if(win.closed)restorePreview();},500);
    detach.textContent='Return preview';frame.contentWindow.postMessage({type:'bws-graph-preview-detached',detached:true},'*');
@@ -154,12 +175,15 @@ function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
   actions.append(cancel,accept);prompt.append(heading,label,note,actions);dialog.append(prompt);prompt.showModal();input.focus();input.select();
  };
  function finish(error,value){if(!pending)return;const job=pending;pending=null;clearTimeout(job.timer);error?job.reject(error):job.resolve(value);}
- dialog.bwsGenerateGraph=graph=>new Promise((resolve,reject)=>{if(pending){reject(Error('A graph is already generating.'));return;}pending={requestId:crypto.randomUUID(),graph,resolve,reject,timer:setTimeout(()=>finish(Error('Graph generation timed out.')),120000)};if(ready)frame.contentWindow.postMessage({type:'bws-graph-preview-request',requestId:pending.requestId,graph},'*');});
+ dialog.bwsGenerateGraph=graph=>new Promise((resolve,reject)=>{if(previewClearPending){reject(Error('Preview is clearing. Try generating again.'));return;}if(pending){reject(Error('A graph is already generating.'));return;}pending={requestId:crypto.randomUUID(),graph,resolve,reject,timer:setTimeout(()=>finish(Error('Graph generation timed out.')),120000)};if(ready)frame.contentWindow.postMessage({type:'bws-graph-preview-request',requestId:pending.requestId,graph},'*');});
  window.addEventListener('message',event=>{
   if(event.source!==frame.contentWindow||!enabled())return;const data=event.data;
   try{
-   if(data?.type==='bws-plugin-ready'){ready=true;share.disabled=detach.disabled=download.disabled=loadNodes.disabled=false;if(pending)frame.contentWindow.postMessage({type:'bws-graph-preview-request',requestId:pending.requestId,graph:pending.graph},'*');}
+   if(data?.type==='bws-plugin-ready'){ready=true;share.disabled=detach.disabled=clearPreview.disabled=download.disabled=loadNodes.disabled=false;if(pending)frame.contentWindow.postMessage({type:'bws-graph-preview-request',requestId:pending.requestId,graph:pending.graph},'*');}
+   if(data?.type==='bws-graph-preview-cleared'){previewClearPending=false;clearPreviewOutput();return;}
+   if(previewClearPending&&['bws-graph-result','bws-graph-pose-preview','bws-graph-preview-result','bws-graph-preview-error'].includes(data?.type))return;
    if(data?.type==='bws-graph-state'){state=bwsGraphState(data.state);save.disabled=false;}
+   if(data?.type==='bws-graph-pose-preview'&&previewWindow&&!previewWindow.closed&&result){bwsValidateGraphParts(data.parts);result={...result,parts:data.parts};refreshPreview();}
    if(data?.type==='bws-graph-result'){result=null;add.disabled=replace.disabled=true;bwsValidateGraphParts(data.parts);result={graph:sanitizeGeometryNodeGraph(data.graph),parts:data.parts};refreshPreview();add.disabled=false;replace.disabled=false;status.textContent=data.parts.length+' parts ready for '+result.graph.name+'.';}
    if(data?.type==='bws-graph-file'){if(typeof data.text!=='string'||data.text.length>8000000)throw Error('Geometry Nodes file exceeds 8 MB.');JSON.parse(data.text);file={name:safeFileName(String(data.name||'nodes').replace(/\.bwnc$/i,''),'nodes')+'.bwnc',text:data.text};download.disabled=false;if(nodeSaveRequested){nodeSaveRequested=false;downloadBlob(nodeSaveName||file.name,new Blob([file.text],{type:'application/json'}));status.textContent='Download requested: '+(nodeSaveName||file.name);nodeSaveName=null;}else status.textContent='Geometry Nodes file ready. Choose Save Geometry Nodes.';}
    if(data?.requestId===pending?.requestId&&pending&&['bws-graph-preview-result','bws-graph-preview-error'].includes(data.type)){if(data.type==='bws-graph-preview-error')throw Error(String(data.message).slice(0,500));finish(null,bwsValidateGraphParts(data.parts));}
@@ -175,6 +199,45 @@ async function bwsRequestGraphPreview(graph){
 
 
 
+function bwsCreateDetachedPoseControls(doc,canvas,camera,getRoot,send){
+ const bar=doc.createElement('div');bar.style.cssText='position:absolute;bottom:0;left:0;right:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;background:#122326;border-top:1px solid #476358;z-index:30';
+ const caption=doc.createElement('strong');caption.style.color='#e1c36c';bar.append(caption);
+ const show=doc.createElement('input');show.type='checkbox';show.checked=true;const showLabel=doc.createElement('label');showLabel.append(show,doc.createTextNode(' Pose joints'));bar.append(showLabel);
+ const select=doc.createElement('select');select.setAttribute('aria-label','Preview joint');bar.append(select);
+ const input=(label,type)=>{const el=doc.createElement('input');el.type=type;el.setAttribute('aria-label',label);el.style.width=type==='range'?'140px':'60px';el.step='1';const wrap=doc.createElement('label');wrap.append(doc.createTextNode(label+' '),el);bar.append(wrap);return el;};
+ const angle=input('Angle','number'),slider=input('Bend','range'),min=input('Min','number'),max=input('Max','number');
+ let joints=[],selected='',markers=[],signature='';const current=()=>joints.find(j=>j.key===selected);
+ const command=(action,extra={})=>{const j=current();if(j)send({nodeId:j.nodeId,jointId:j.id,action,...extra});};
+ const apply=value=>{const j=current();if(j&&Number.isFinite(Number(value)))command('angle',{value:Math.max(j.pose.minimum,Math.min(j.pose.maximum,Number(value)))});};
+ const button=(title,action)=>{const b=doc.createElement('button');b.textContent=title;b.type='button';b.onclick=action;bar.append(b);};
+ button('Play motion',()=>command('play'));button('Stop / restore',()=>command('stop'));button('Apply angle',()=>apply(angle.value));button('-5 degrees',()=>apply(Number(angle.value)-5));button('+5 degrees',()=>apply(Number(angle.value)+5));
+ button('Apply limits',()=>{if(min.value!==''&&max.value!==''&&Number(min.value)<=Number(max.value))command('limits',{minimum:Number(min.value),maximum:Number(max.value)});});button('Reset joint',()=>apply(0));button('Keep pose',()=>command('keep'));
+ const note=doc.createElement('span');note.textContent='Local joint angles. Limits are not collision detection.';note.style.fontSize='11px';bar.append(note);doc.body.append(bar);
+ for(const el of bar.querySelectorAll('button,input,select'))el.style.cssText+=';background:#213338;color:#e2e8df;border:1px solid #52665e;border-radius:4px;padding:4px;font:12px Verdana,sans-serif;';
+ const layer=doc.createElement('div');layer.style.cssText='position:absolute;inset:44px 0 0;overflow:hidden;pointer-events:none';doc.body.append(layer);
+ const gauge=doc.createElementNS('http://www.w3.org/2000/svg','svg');gauge.setAttribute('viewBox','-70 -70 140 165');gauge.style.cssText='position:absolute;width:140px;height:165px;pointer-events:none;z-index:26';
+ gauge.innerHTML='<circle r="50" fill="#102321" fill-opacity=".7" stroke="#9aae9d"/><line x1="0" y1="0" x2="50" y2="0" stroke="#aabbac" stroke-dasharray="3 3"/><line data-needle x1="0" y1="0" stroke="#efcb6d" stroke-width="3"/><g fill="#e4eada" font-size="11" text-anchor="middle"><text x="60" y="4">0</text><text x="0" y="-56">90</text><text x="-59" y="4">180</text><text x="0" y="64">-90</text><text data-value x="0" y="85"/></g>';layer.append(gauge);
+ const labels={slew:'Rotate vehicle body',boom:'Raise main arm',stick:'Bend outer arm',bucket:'Curl excavator bucket','tractor-loader':'Raise loader arms','tractor-loader-bucket':'Tilt loader bucket'};
+ function sync(){const j=current();if(!j)return;select.value=j.key;caption.textContent=(labels[j.id]||j.pose.label)+' / '+j.pose.value+' degrees';for(const [el,value] of [[angle,j.pose.value],[slider,j.pose.value],[min,j.pose.minimum],[max,j.pose.maximum]])if(doc.activeElement!==el)el.value=value;slider.min=angle.min=j.pose.minimum;slider.max=angle.max=j.pose.maximum;}
+ select.onchange=()=>{command('stop');selected=select.value;sync();};angle.onkeydown=e=>{if(e.key==='Enter')apply(angle.value);};slider.oninput=()=>{angle.value=slider.value;};slider.onchange=()=>apply(slider.value);
+ const escape=e=>{if(e.key==='Escape')command('stop');};doc.addEventListener('keydown',escape);
+ let down;const pointerDown=e=>{down=[e.clientX,e.clientY];};canvas.addEventListener('pointerdown',pointerDown);
+ const pick=e=>{if(!show.checked||e.button!==0||!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>4)return;const b=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((e.clientX-b.left)/b.width*2-1,1-(e.clientY-b.top)/b.height*2),camera);const m=ray.intersectObjects(getRoot()?.children||[],false)[0]?.object.userData.gameAsset?.machinery,j=m?.joints?.filter(j=>j.pose).at(-1);const match=joints.find(v=>v.nodeId===m?.nodeId&&v.id===j?.id);if(match){command('stop');selected=match.key;sync();}};canvas.addEventListener('pointerup',pick);
+ return {
+  height:()=>bar.hidden?0:bar.getBoundingClientRect().height,
+  refresh(){
+   const next=[],seen=new Set();for(const mesh of getRoot()?.children||[]){const m=mesh.userData.gameAsset?.machinery;if(!m)continue;for(const j of m.joints||[]){if(!j.pose)continue;const key=m.nodeId+':'+j.id;if(seen.has(key))continue;seen.add(key);next.push({...j,nodeId:m.nodeId,key,position:new THREE.Vector3(...j.pivot).add(new THREE.Vector3(...(m.offset||[0,0,0])))});}}
+   joints=next;bar.hidden=!getRoot();
+   for(const el of bar.querySelectorAll('button,input,select'))el.disabled=!joints.length;
+   if(!joints.length)caption.textContent='No editable joints received. Update GN and build a machinery preview.';
+   if(!joints.some(j=>j.key===selected))selected=joints[0]?.key||'';
+   const sig=joints.map(j=>j.key).join('|');if(sig!==signature){signature=sig;select.replaceChildren();for(const m of markers)m.remove();markers=[];for(const j of joints){const option=doc.createElement('option');option.value=j.key;option.textContent=(labels[j.id]||j.pose.label)+' ('+j.nodeId+')';select.append(option);const marker=doc.createElement('button');marker.textContent='+';marker.title=option.textContent;marker.style.cssText='position:absolute;width:24px;height:24px;border:2px solid #dfc56c;border-radius:50%;background:#173b32;color:white;pointer-events:auto;transform:translate(-50%,-50%)';marker.onclick=()=>{command('stop');selected=j.key;sync();};layer.append(marker);markers.push(marker);}}
+   sync();
+  },
+  update(){layer.hidden=!show.checked||!joints.length;const b=canvas.getBoundingClientRect();joints.forEach((j,i)=>{const p=j.position.clone().project(camera),m=markers[i];m.hidden=p.z< -1||p.z>1;m.style.left=((p.x+1)*b.width/2)+'px';m.style.top=((1-p.y)*b.height/2)+'px';m.style.background=j.key===selected?'#947322':'#173b32';});const j=current();if(j){const p=j.position.clone().project(camera),a=THREE.MathUtils.degToRad(j.pose.value);gauge.style.left=((p.x+1)*b.width/2-70)+'px';gauge.style.top=((1-p.y)*b.height/2-70)+'px';gauge.querySelector('[data-needle]').setAttribute('x2',String(44*Math.cos(a)));gauge.querySelector('[data-needle]').setAttribute('y2',String(-44*Math.sin(a)));gauge.querySelector('[data-value]').textContent=j.pose.value+' degrees';}},
+  dispose(){doc.removeEventListener('keydown',escape);canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pick);bar.remove();layer.remove();}
+ };
+}
 function bwsCreatePreviewAxisGuide(container,camera,onView,top=8){
  const doc=container.ownerDocument,root=doc.createElement('div');
  root.style.cssText='position:absolute;right:8px;top:'+top+'px;z-index:25;width:130px;background:#102024df;border:1px solid #476358;border-radius:6px;padding:5px;box-sizing:border-box;color:#e6eee9;font:11px Verdana,sans-serif';
