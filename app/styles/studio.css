@@ -97,7 +97,7 @@ textarea {
   background: #141719;
   min-width: 0;
   position: relative;
-  z-index: 20;
+  z-index: 40;
   overflow: visible;
 }
 
