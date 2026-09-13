@@ -484,7 +484,7 @@ async function mcpBridgeCreateMeshFromReferenceImage(params) {
   const objectSpec = mcpBridgeValidateCreateSpec(objectSpecSource, 0);
 
   const { imageData } = await decodeImageDataUrl(imageDataUrl);
-  const { positions, uvs, meta } = buildReliefGeometry({
+  const { positions, uvs, meta } = await buildReliefGeometry({
     imageData, cols, rows, scale: heightScale, depth, back, threshold, smoothPasses, darkForeground,
     sourceMode, buildMode, sourceName: objectSpec.name || "reference match image"
   });

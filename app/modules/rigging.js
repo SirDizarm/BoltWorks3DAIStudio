@@ -391,7 +391,7 @@ function setRigSelectionTarget(target) {
 }
 
 function rigSelectionTargetsBones() {
-  return rigSelectionTarget === "bone";
+  return document.body.dataset.studioWorkspace !== "modeling" && rigSelectionTarget === "bone";
 }
 
 function activeViewportSelectionTarget() {

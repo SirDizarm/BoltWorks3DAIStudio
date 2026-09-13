@@ -1,21 +1,5 @@
-const BUNDLED_PLUGINS = Object.freeze([
-  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "image-relief-mesh-lab", name: "Image to Mesh", version: "1.0.0", bundled: true, enabled: true }),
-  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "minecraft-modeling", name: "Minecraft Modeling", version: "1.0.0", bundled: true, enabled: true,
-    contributes: Object.freeze({ workspaces: ["minecraft"], importers: ["bbmodel"], exporters: ["neoforge-1.21.1"] }) }),
-  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "scene-rendering", name: "Scene Rendering", version: "1.0.0", bundled: true, enabled: false }),
-  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "boltworks-game-engine", name: "BoltWorks Game Engine", version: "1.0.0", bundled: true, enabled: true,
-    contributes: Object.freeze({ exporters: ["glb", "bws-character"], runtimes: ["raylib-layered-character"] }) }),
-  Object.freeze({ kind: "boltworks-plugin", manifestVersion: 1, id: "geometry-nodes", name: "Geometry Nodes", version: "0.1.0", bundled: true, enabled: false,
-    description: "A lightweight procedural node graph for building editable low-poly assets.",
-    contributes: Object.freeze({ panels: ["geometry-nodes"], generators: ["procedural-tree", "procedural-rocks", "procedural-stone-wall"] }) })
-]);
-const pluginRegistry = {
-  imageReliefMeshLab: BUNDLED_PLUGINS[0],
-  minecraftModeling: BUNDLED_PLUGINS[1],
-  sceneRenderingTools: BUNDLED_PLUGINS[2],
-  boltworksGameEngine: BUNDLED_PLUGINS[3],
-  geometryNodes: BUNDLED_PLUGINS[4]
-};
+const BUNDLED_PLUGINS = Object.freeze([]);
+const pluginRegistry = {};
 let installedPluginPackages = [];
 let pluginEnabledPreferences = {};
 
@@ -26,7 +10,11 @@ function validPluginManifest(value) {
   return {
     kind: "boltworks-plugin", manifestVersion: 1, id: String(value.id), name: String(value.name).trim(),
     version: String(value.version || "1.0.0"), description: String(value.description || ""), enabled: value.enabled !== false,
-    contributes: value.contributes && typeof value.contributes === "object" ? value.contributes : {}
+    contributes: value.contributes && typeof value.contributes === "object" ? value.contributes : {},
+    runtime: value.runtime === "sandbox-html" ? "sandbox-html" : "assets",
+    entry: typeof value.entry === "string" ? value.entry : "",
+    apiVersion: Number(value.apiVersion || 1),
+    dependencies: Array.isArray(value.dependencies) ? value.dependencies.map(String) : []
   };
 }
 
@@ -36,29 +24,75 @@ function validPluginPackage(value) {
   }
   if (!value || value.kind !== "boltworks-plugin-package" || Number(value.packageVersion) !== 1) throw new Error("This is not a BoltWorks .bwsplugin package v1.");
   const manifest = validPluginManifest(value.manifest);
-  const files = {};
+  const files = Object.create(null);
+  let totalSize=0;
   for (const [path, file] of Object.entries(value.files || {})) {
     const cleanPath = String(path).replace(/\\/g, "/").replace(/^\/+/, "");
-    if (!cleanPath || cleanPath.includes("..") || cleanPath.length > 180) throw new Error(`Unsafe plugin file path: ${path}`);
+    if (!cleanPath || cleanPath.includes("..") || cleanPath.length > 180 || /[:?#]/.test(cleanPath) || ["__proto__","constructor","prototype"].includes(cleanPath)) throw new Error(`Unsafe plugin file path: ${path}`);
     const data = typeof file === "string" ? file : String(file?.data || "");
-    if (data.length > 2_000_000) throw new Error(`Plugin file is too large: ${cleanPath}`);
+    if (data.length > 4_000_000) throw new Error(`Plugin file is too large: ${cleanPath}`);
+    totalSize+=data.length;if(totalSize>4_000_000||Object.keys(files).length>=128)throw Error("Plugin package exceeds 4 MB or 128 files.");
+    if(Object.prototype.hasOwnProperty.call(files,cleanPath))throw Error("Duplicate plugin file path.");
     files[cleanPath] = { mediaType: String(file?.mediaType || "text/plain"), data };
   }
-  return { kind: "boltworks-plugin-package", packageVersion: 1, manifest, files };
+  if(manifest.runtime==="sandbox-html"&&(!manifest.entry||!Object.prototype.hasOwnProperty.call(files,manifest.entry)))throw Error("Plugin entry HTML is missing from its package.");
+  const installation=value.installation&&typeof value.installation==="object"?{source:String(value.installation.source||"local file"),sha256:String(value.installation.sha256||""),installedAt:String(value.installation.installedAt||"")}:null;
+  return { kind: "boltworks-plugin-package", packageVersion: 1, manifest, files, installation };
 }
 
 function loadInstalledPlugins() {
   try {
     const stored = JSON.parse(localStorage.getItem("boltworks.pluginPackages.v1") || localStorage.getItem("boltworks.plugins.v1") || "[]");
-    installedPluginPackages = Array.isArray(stored) ? stored.map(validPluginPackage) : [];
+    installedPluginPackages=[];
+    if(Array.isArray(stored))for(const item of stored){try{installedPluginPackages.push(validPluginPackage(item));}catch(error){console.warn("A stored plugin was skipped, not deleted:",error.message);}}
   } catch { installedPluginPackages = []; }
   try { pluginEnabledPreferences = JSON.parse(localStorage.getItem("boltworks.pluginEnabled.v1") || "{}"); }
   catch { pluginEnabledPreferences = {}; }
 }
 
-function saveInstalledPlugins() {
-  localStorage.setItem("boltworks.pluginPackages.v1", JSON.stringify(installedPluginPackages));
-  localStorage.setItem("boltworks.pluginEnabled.v1", JSON.stringify(pluginEnabledPreferences));
+let bwsPluginDbPromise=null;
+let bwsPluginWriteQueue=Promise.resolve();
+function bwsPluginDatabase(){
+ if(!bwsPluginDbPromise)bwsPluginDbPromise=new Promise((resolve,reject)=>{
+  const request=indexedDB.open('boltworks-plugin-packages',1);
+  request.onupgradeneeded=()=>request.result.createObjectStore('state');
+  request.onsuccess=()=>resolve(request.result);
+  request.onerror=()=>reject(request.error||Error('Plugin database could not open.'));
+  request.onblocked=()=>reject(Error('Close older BWS tabs and try again.'));
+ });
+ return bwsPluginDbPromise;
+}
+async function bwsPluginDatabaseState(value){
+ const db=await bwsPluginDatabase();
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction('state',value?'readwrite':'readonly'),store=tx.objectStore('state');
+  const request=value?store.put(value,'installed'):store.get('installed');
+  tx.oncomplete=()=>resolve(request.result);
+  tx.onabort=()=>reject(tx.error||Error('Plugin storage transaction failed.'));
+  tx.onerror=()=>{};
+ });
+}
+async function bwsLoadPluginDatabase(){
+ const stored=await bwsPluginDatabaseState();
+ if(stored){
+  if(!Array.isArray(stored.packages)||!stored.preferences||typeof stored.preferences!=='object')throw Error('Plugin database is invalid; it has not been overwritten.');
+  installedPluginPackages=stored.packages.map(validPluginPackage);
+  pluginEnabledPreferences=stored.preferences;
+ }else{
+  await bwsPluginDatabaseState({packages:installedPluginPackages,preferences:pluginEnabledPreferences});
+ }
+ // Keep old localStorage records untouched as a migration backup.
+ renderPluginManager();applyPluginAvailability(els);
+}
+function bwsCommitPluginState(update){
+ const operation=bwsPluginWriteQueue.then(async()=>{
+  await bwsPluginStorageReady;
+  const next=update();
+  await bwsPluginDatabaseState(next);
+  installedPluginPackages=next.packages;pluginEnabledPreferences=next.preferences;
+ });
+ bwsPluginWriteQueue=operation.catch(()=>{});
+ return operation;
 }
 
 function pluginIsEnabled(plugin) {
@@ -68,27 +102,29 @@ function pluginIsEnabled(plugin) {
 }
 
 function allPluginManifests() {
-  return [...BUNDLED_PLUGINS, ...installedPluginPackages.map(pluginPackage => pluginPackage.manifest)]
+  return [...BUNDLED_PLUGINS, ...installedPluginPackages.filter(p=>!BUNDLED_PLUGINS.some(b=>b.id===p.manifest.id)).map(pluginPackage => pluginPackage.manifest)]
     .map(plugin => ({ ...plugin, enabled: pluginIsEnabled(plugin) }));
 }
 
 function pluginManifestById(id) { return allPluginManifests().find(plugin => plugin.id === id) || null; }
 
-function setPluginEnabled(id, enabled) {
-  const plugin = pluginManifestById(id);
-  if (!plugin) return false;
-  pluginEnabledPreferences[id] = Boolean(enabled);
-  saveInstalledPlugins();
+async function setPluginEnabled(id,enabled){
+ try{
+  await bwsPluginStorageReady;
+  const plugin=pluginManifestById(id);if(!plugin)return false;
+  if(enabled){const problem=bwsPluginActivationError(id);if(problem){bwsPluginNotice(problem);return false;}}
+  await bwsCommitPluginState(()=>({packages:installedPluginPackages,preferences:{...pluginEnabledPreferences,[id]:Boolean(enabled)}}));
+  if(!enabled)bwsClosePluginWorkspace(id);
   return true;
+ }catch(error){bwsPluginNotice('Could not save the plugin setting: '+error.message);return false;}
 }
-
-function removeInstalledPlugin(id) {
-  const index = installedPluginPackages.findIndex(pluginPackage => pluginPackage.manifest.id === id);
-  if (index < 0) return false;
-  installedPluginPackages.splice(index, 1);
-  delete pluginEnabledPreferences[id];
-  saveInstalledPlugins();
-  return true;
+async function removeInstalledPlugin(id){
+ try{
+  await bwsPluginStorageReady;
+  if(!installedPluginPackages.some(p=>p.manifest.id===id))return false;
+  await bwsCommitPluginState(()=>{const preferences={...pluginEnabledPreferences};delete preferences[id];return {packages:installedPluginPackages.filter(p=>p.manifest.id!==id),preferences};});
+  bwsClosePluginWorkspace(id);return true;
+ }catch(error){bwsPluginNotice('Could not remove this plugin: '+error.message);return false;}
 }
 
 function pluginTemplate() {
@@ -100,17 +136,16 @@ function pluginTemplate() {
 }
 
 function applyPluginAvailability(elements) {
+  if(typeof bwsRefreshScenesToolbar === "function")bwsRefreshScenesToolbar();
   for (const element of document.querySelectorAll("[data-plugin-id]")) {
     const enabled = pluginManifestById(element.dataset.pluginId)?.enabled === true;
     element.hidden = !enabled;
     element.dataset.pluginEnabled = String(enabled);
   }
-  const minecraftEnabled = pluginManifestById("minecraft-modeling")?.enabled === true;
-  const minecraftOption = elements.workspaceSelect?.querySelector('option[value="minecraft"]');
-  if (minecraftOption) minecraftOption.hidden = !minecraftEnabled;
-  if (!minecraftEnabled && document.body.dataset.workspace === "minecraft") setWorkspace("general", { quiet: true });
   const geometryNodesEnabled = pluginManifestById("geometry-nodes")?.enabled === true;
   if (typeof setGeometryNodesPluginEnabled === "function") setGeometryNodesPluginEnabled(geometryNodesEnabled);
 }
 
 loadInstalledPlugins();
+const bwsPluginStorageReady=bwsLoadPluginDatabase();
+bwsPluginStorageReady.catch(error=>console.error("Plugin storage unavailable; existing records retained:",error));

@@ -10,7 +10,7 @@ const browserExtensions = new Set([
   ".webp", ".gif", ".svg", ".wasm", ".ico"
 ]);
 const excludedRootFiles = new Set([
-  "package.json", "package-lock.json", "fire-comparison.html"
+  "package.json", "package-lock.json", "fire-comparison.html", "fire-fluid-comparison.html"
 ]);
 const runtimeSamples = [
   "3d_ai_modeler.json",
@@ -24,22 +24,27 @@ await mkdir(join(output, "app"), { recursive: true });
 
 for (const entry of await readdir(root, { withFileTypes: true })) {
   if (!entry.isFile() || excludedRootFiles.has(entry.name)) continue;
+  if (/^studio-v[\d.]+\.js$/.test(entry.name)) continue;
   if (!browserExtensions.has(extname(entry.name).toLowerCase())) continue;
   await copyFile(join(root, entry.name), join(output, entry.name));
 }
 
+await mkdir(join(output, "legacy"), { recursive: true });
+await copyFile(join(root, "legacy", "index.html"), join(output, "legacy", "index.html"));
 await cp(join(root, "ai"), join(output, "ai"), { recursive: true });
 await mkdir(join(output, "samples"), { recursive: true });
 for (const file of runtimeSamples) {
   await copyFile(join(root, "samples", file), join(output, "samples", file));
 }
+await mkdir(join(output,"plugins","fireplace"),{recursive:true});
+await copyFile(join(root,"plugins","fireplace","plugin.bwsplugin"),join(output,"plugins","fireplace","plugin.bwsplugin"));
 for (const directory of ["assets", "styles", "panels", "selection", "meshes"]) {
-  await cp(join(root, "app", directory), join(output, "app", directory), { recursive: true });
+  await cp(join(root, "app", directory), join(output, "app", directory), { recursive: true, filter: source => !source.replaceAll("\\","/").includes("/app/assets/fireplace") && !source.endsWith("fireplace-experience.js") });
 }
 await copyFile(join(root, "CNAME"), join(output, "CNAME"));
 
 const studioScript = (await readFile(join(root, "index.html"), "utf8"))
-  .match(/<script\b[^>]*\bsrc=["']\.\/(studio-v[\d.]+\.js)["']/i)?.[1];
+  .match(/(?:src|data-bws-bundle)=["']\.\/(studio-v[\d.]+\.js)["']/i)?.[1];
 if (!studioScript) throw new Error("Cannot locate the editor studio bundle in index.html.");
 await buildStudioBundle({ outfile: join(output, studioScript) });
 await mkdir(join(output, "demos"), { recursive: true });

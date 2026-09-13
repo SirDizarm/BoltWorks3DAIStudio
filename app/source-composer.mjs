@@ -1,6 +1,12 @@
 export const studioModuleOrder = Object.freeze([
   "bootstrap",
   "plugins",
+  "plugin-installer",
+  "plugin-catalogue",
+  "plugin-export-bridge",
+  "plugin-generator-bridge",
+  "plugin-character-bridge",
+  "plugin-graph-bridge",
   "viewport",
   "toolbar",
   "meshes",
@@ -17,13 +23,15 @@ export const studioModuleOrder = Object.freeze([
   "mcp-bridge",
   "ai-viewer",
   "rigging",
-  "minecraft",
+  "workspace-tools",
+  "legacy-clip-compat",
   "animator-workspace",
   "pose-straightener",
   "dice-demo",
   "panels",
-  "house-batch",
-  "scene-studio"
+  "scene-studio",
+  "edition-handoff",
+  "scenes-toolbar"
 ]);
 
 export async function composeStudioSource(readModule) {

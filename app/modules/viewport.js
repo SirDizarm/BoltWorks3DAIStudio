@@ -88,6 +88,51 @@ orbit.screenSpacePanning = true;
 orbit.zoomToCursor = true;
 orbit.target.set(0, 1, 0);
 let modelTileCameraLocked = false;
+// Keep the main viewport directions consistent with Geometry Nodes previews.
+const modelAxisGuide = bwsCreatePreviewAxisGuide(canvas.parentElement, camera, (axis, sign) => {
+  if (activeWorkView || modelTileCameraLocked || !orbit.enabled) return;
+  // Consume and clear pending orbit deltas before setting an exact view.
+  const dampingEnabled = orbit.enableDamping;
+  orbit.enableDamping = false;
+  orbit.update();
+  // Cursor zoom can shift the target across the ground plane in side views.
+  // Keep axis-aligned zoom centred until the user resumes free navigation.
+  orbit.zoomToCursor = false;
+  const bounds = new THREE.Box3();
+  for (const object of objects) {
+    if (object.visible) bounds.expandByObject(object);
+  }
+  if (bounds.isEmpty()) {
+    bounds.setFromCenterAndSize(new THREE.Vector3(0, 1.5, 0), new THREE.Vector3(4, 3, 4));
+  }
+  const center = bounds.getCenter(new THREE.Vector3());
+  const size = bounds.getSize(new THREE.Vector3());
+  // Side views look horizontally through the model, not along the floor.
+  const raisedCenterY = Math.max(.1, center.y);
+  const radius = Math.max(.25, size.length() * .5 + Math.abs(raisedCenterY - center.y));
+  center.y = raisedCenterY;
+  camera.zoom = 1;
+  const halfVertical = THREE.MathUtils.degToRad(camera.fov) * .5;
+  const halfHorizontal = Math.atan(Math.tan(halfVertical) * Math.max(.01, camera.aspect));
+  const distance = radius * 1.15 / Math.sin(Math.min(halfVertical, halfHorizontal));
+  orbit.target.copy(center);
+  camera.near = Math.max(.001, distance / 2000);
+  camera.far = Math.max(1000000, distance * 60);
+  camera.updateProjectionMatrix();
+  const direction = new THREE.Vector3();
+  direction.setComponent(axis, sign);
+  if (axis === 1) direction.z = .0001;
+  camera.position.copy(orbit.target).addScaledVector(direction.normalize(), distance);
+  camera.lookAt(orbit.target);
+  orbit.update();
+  orbit.enableDamping = dampingEnabled;
+  modelAxisGuide.update();
+}, 8);
+orbit.addEventListener('change', () => modelAxisGuide.update());
+modelAxisGuide.update();
+canvas.addEventListener('pointerdown', () => {
+  if (orbit.enabled && !activeWorkView && !modelTileCameraLocked) orbit.zoomToCursor = true;
+});
 
 function closeCameraNavigationPlan(distance, near) {
   const safeDistance = Math.max(0, Number(distance) || 0);
@@ -883,7 +928,6 @@ const els = {
   savePixelRenderBtn: document.querySelector("#savePixelRenderBtn"),
   gameOptimizeStats: document.querySelector("#gameOptimizeStats"),
   imageReliefMeshPlugin: document.querySelector("#imageReliefMeshPlugin"),
-  sceneRenderingTools: document.querySelector("#sceneRenderingTools"),
   bonePlacementSection: document.querySelector("#bonePlacementSection"),
   tPoseFittingStatus: document.querySelector("#tPoseFittingStatus"),
   addGripHandsBtn: document.querySelector("#addGripHandsBtn"),
@@ -1461,20 +1505,6 @@ const els = {
   previewRightBtn: document.querySelector("#previewRightBtn"),
   previewTopBtn: document.querySelector("#previewTopBtn"),
   previewIsoBtn: document.querySelector("#previewIsoBtn"),
-  reliefImageBtn: document.querySelector("#reliefImageBtn"),
-  reliefImageFile: document.querySelector("#reliefImageFile"),
-  reliefImageName: document.querySelector("#reliefImageName"),
-  reliefGridXInput: document.querySelector("#reliefGridXInput"),
-  reliefGridYInput: document.querySelector("#reliefGridYInput"),
-  reliefScaleInput: document.querySelector("#reliefScaleInput"),
-  reliefDepthInput: document.querySelector("#reliefDepthInput"),
-  reliefBackInput: document.querySelector("#reliefBackInput"),
-  reliefThresholdInput: document.querySelector("#reliefThresholdInput"),
-  reliefDetailInput: document.querySelector("#reliefDetailInput"),
-  reliefSourceModeInput: document.querySelector("#reliefSourceModeInput"),
-  reliefBuildModeInput: document.querySelector("#reliefBuildModeInput"),
-  reliefDarkForegroundInput: document.querySelector("#reliefDarkForegroundInput"),
-  createReliefMeshBtn: document.querySelector("#createReliefMeshBtn"),
   saveFrontPngBtn: document.querySelector("#saveFrontPngBtn"),
   saveCurrentPngBtn: document.querySelector("#saveCurrentPngBtn"),
   saveBackPngBtn: document.querySelector("#saveBackPngBtn"),
@@ -1532,13 +1562,6 @@ const textureEditorState = {
 const textureLibrary = new Map();
 const textureEditorDrafts = new Map();
 const textureSourceCache = new Map();
-const reliefImageState = {
-  dataUrl: "",
-  name: "",
-  image: null,
-  canvas: null,
-  imageData: null
-};
 const meshDetailsState = {
   meshId: null
 };

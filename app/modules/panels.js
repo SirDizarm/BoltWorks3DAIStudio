@@ -1248,7 +1248,7 @@ els.unhideAllBtn?.addEventListener("click", () => {
   log(`Showed all ${objects.length} mesh part${objects.length === 1 ? "" : "s"}.`);
 });
 applyPluginAvailability(els);
-initializeMinecraftTools();
+initializeWorkspaceTools();
 els.addRootBoneBtn?.addEventListener("click", () => addRigBone(false));
 els.addChildBoneBtn?.addEventListener("click", () => addRigBone(true));
 els.deleteBoneBtn?.addEventListener("click", deleteSelectedBone);
@@ -1820,18 +1820,7 @@ els.resetZoomBtn.addEventListener("click", () => {
 els.modelTileSnapBtn?.addEventListener("click", snapSelectionToGridSurface);
 els.flat2dLookInput?.addEventListener("change", event => setFlat2dLook(event.target.checked));
 els.modelTileFlat2dLookInput?.addEventListener("change", event => setFlat2dLook(event.target.checked));
-els.reliefImageBtn?.addEventListener("click", () => els.reliefImageFile?.click());
-els.reliefImageFile?.addEventListener("change", async event => {
-  try {
-    await loadReliefImageFile(event.target.files?.[0]);
-  } catch (error) {
-    log(`Could not load relief image: ${error.message}`);
-    alert(error.message);
-  } finally {
-    event.target.value = "";
-  }
-});
-els.createReliefMeshBtn?.addEventListener("click", createReliefMeshFromLoadedImage);
+
 els.previewFrontBtn.addEventListener("click", () => previewShotView("front"));
 els.previewBackBtn.addEventListener("click", () => previewShotView("back"));
 els.previewLeftBtn.addEventListener("click", () => previewShotView("left"));
@@ -2216,21 +2205,6 @@ els.importGltfFile?.addEventListener("change", async event => {
   await importFullModelGltf(file);
   event.target.value = "";
 });
-document.querySelector("#exportGameCharacterBtn")?.addEventListener("click", exportGameCharacterPackage);
-document.querySelector("#exportGameArmsBtn")?.addEventListener("click", exportGameCharacterArmsGlb);
-document.querySelector("#gameItemImageBtn")?.addEventListener("click", () => els.gameItemImageFile?.click());
-els.gameItemImageFile?.addEventListener("change", async event => {
-  const file = event.target.files?.[0];
-  try { await loadGameItemImageFile(file); }
-  catch (error) {
-    console.error(error);
-    if (els.gameItemBuildStatus) els.gameItemBuildStatus.textContent = `Could not load image: ${error.message}`;
-  }
-  event.target.value = "";
-});
-document.querySelector("#gameItemBuildBtn")?.addEventListener("click", buildSolidGameItemFromImage);
-document.querySelector("#gameEngineAutoMapBtn")?.addEventListener("click", () => syncGameEnginePluginUi({ forceAutoMap: true }));
-document.querySelector("#gameEngineValidateBtn")?.addEventListener("click", () => validateGameEngineCharacter({ announce: true }));
 document.querySelector("#exportDaeBtn").addEventListener("click", () => {
   const pkg = exportColladaPackage();
   for (const [name, dataUrl] of pkg.textureAssets) downloadDataUrl(name, dataUrl);
@@ -3412,6 +3386,7 @@ renderCustomCameraViews();
 selectObject(null);
 frameSelected();
 detectLocalHost().then(async localHost => {
+  if(await window.BwsEditionBridge?.restore())return;
   const loaded = localHost ? await tryLoadPendingProjectFromHost() : false;
   const recovered = !loaded && typeof restoreAutoSavedProjectIfBlank === "function"
     ? await restoreAutoSavedProjectIfBlank()

@@ -1,0 +1,21 @@
+{
+  "kind": "boltworks-plugin-package",
+  "packageVersion": 1,
+  "manifest": {
+    "kind": "boltworks-plugin",
+    "manifestVersion": 1,
+    "id": "hello-room",
+    "name": "Hello Room",
+    "version": "1.0.0",
+    "description": "Small isolated workspace for exercising install, enable, open and disable.",
+    "runtime": "sandbox-html",
+    "entry": "main.html",
+    "apiVersion": 1
+  },
+  "files": {
+    "main.html": {
+      "mediaType": "text/html",
+      "data": "<html><body style=\"background:#182b28;color:#f1d59b;font:20px Georgia;padding:30px\"><h1>Hello from an optional BWS plugin</h1><p>This workspace is isolated from the editor.</p><button onclick=\"this.textContent='Plugin interaction works'\">Try me</button></body></html>"
+    }
+  }
+}

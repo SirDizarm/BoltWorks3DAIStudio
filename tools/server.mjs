@@ -22,7 +22,7 @@ const mcpSessionFile = process.env.BWS_MCP_SESSION_FILE
 const mcpRelay = createMcpRelay({ token: process.env.BWS_MCP_TOKEN, maxBodyBytes: 12 * 1024 * 1024 });
 // Use the bundle actually referenced by the editor, not a retired version.
 const studioScript = readFileSync(join(root, "index.html"), "utf8")
-  .match(/<script\b[^>]*\bsrc=["']\.\/(studio-v[\d.]+\.js)["']/i)?.[1];
+  .match(/(?:src|data-bws-bundle)=["']\.\/(studio-v[\d.]+\.js)["']/i)?.[1];
 if (!studioScript) throw new Error("Cannot locate the editor studio bundle in index.html.");
 const studioPath = `/${studioScript}`;
 const studioSource = await buildStudioBundle({ outfile: join(root, studioScript) });

@@ -1033,7 +1033,7 @@ label {
   position: absolute;
   z-index: 15;
   top: 50%;
-  right: 255px;
+  right: 260px;
   width: 22px;
   min-width: 22px;
   min-height: 42px;
@@ -1059,8 +1059,8 @@ label {
 }
 
 .viewport.reference-views-collapsed .reference-viewports-toggle {
-  right: 5px;
-  border-radius: 5px;
+  right: 0;
+  border-radius: 5px 0 0 5px;
 }
 
 .reference-viewport {
@@ -3488,10 +3488,10 @@ body[data-workspace="minecraft"] #addMeshSection button[data-add]:not([data-add=
 .workspace-picker select { min-width: 108px; }
 .plugin-ready { color: #40c7a5; font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
 .plugin-list { display: grid; gap: 6px; margin-top: 8px; }
-.plugin-row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:wrap; padding:7px; border:1px solid var(--line); border-radius:6px; background:#101617; }
-.plugin-row .plugin-summary { min-width:0; display:grid; gap:2px; flex:1 1 120px; }
+.plugin-row { display:flex; align-items:center; justify-content:space-between; gap:8px; flex-wrap:nowrap; padding:7px; border:1px solid var(--line); border-radius:6px; background:#101617; }
+.plugin-row .plugin-summary { min-width:0; display:grid; gap:2px; flex:1 1 0; overflow:hidden; }
 .plugin-row span { color:var(--muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.plugin-row .plugin-actions { display:flex; align-items:center; justify-content:flex-end; gap:5px; flex:0 1 auto; flex-wrap:wrap; }
+.plugin-row .plugin-actions { display:flex; align-items:center; justify-content:flex-end; gap:5px; flex:0 0 auto; flex-wrap:nowrap; }
 .plugin-row .plugin-actions button { min-width:58px; padding:5px 7px; font-size:11px; }
 #minecraftBody > button { width:100%; margin-top:8px; }
 
@@ -3921,3 +3921,27 @@ button.mesh-preview-button {
   pointer-events: none;
 }
 button.mesh-preview-button:focus-visible { outline: 2px solid #73d8bf; outline-offset: 2px; }
+
+.plugin-row .plugin-summary strong { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+/* 50.0.30: Give Animator controls room instead of squeezing the transport. */
+.app.animator-mode #animationBody {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto auto auto minmax(150px, 1fr) auto auto auto auto;
+  grid-template-areas: "controls" "readout" "keys" "scrubber" "tracks" "inspector" "detail" "sequence" "exports";
+}
+.app.animator-mode .animation-toolbar {
+  flex-wrap: wrap;
+  overflow: visible;
+  gap: 8px;
+  align-items: end;
+}
+.app.animator-mode .animation-toolbar > * { flex: 0 0 auto; }
+.app.animator-mode .animation-toolbar button { white-space: nowrap; min-height: 34px; }
+.app.animator-mode .animation-toolbar label { display: flex; flex-direction: column; align-items: start; }
+.app.animator-mode .animation-toolbar select { max-width: 100%; }
+.app.animator-mode .animation-toolbar,
+.app.animator-mode .animation-frame-readout,
+.app.animator-mode .animation-key-actions { position: static; box-shadow: none; }
+.app.animator-mode .animation-frame-readout { min-width: 0; flex-wrap: wrap; gap: 12px; }
+.app.animator-mode .animation-key-actions { justify-content: flex-start; flex-wrap: wrap; }

@@ -1,0 +1,56 @@
+/* Focused workspace layout; existing controls and themes are preserved. */
+.bws-workspace-nav{display:flex;align-items:center;gap:5px;flex-wrap:wrap}
+.bws-workspace-nav button{white-space:nowrap}
+.bws-workspace-nav button.active{background:#24473f;border-color:var(--accent);color:var(--accent)}
+.bws-model-file-actions{display:flex;gap:5px;flex-wrap:wrap}
+body[data-studio-workspace] #bonePlacementSection[hidden],body[data-studio-workspace] #bwsAnimationPosePanel[hidden]{display:none!important}
+body[data-studio-workspace="modeling"] #bonePlacementSection,body[data-studio-workspace="animation"] #bonePlacementSection{display:none!important}
+.app.animator-mode{grid-template-rows:auto minmax(160px,1fr) clamp(220px,34vh,420px)}
+.app.animator-mode.timeline-collapsed{grid-template-rows:auto minmax(160px,1fr) auto}
+.app.animator-mode .top{flex-wrap:wrap;overflow:visible;min-height:0}
+.app.animator-mode > #bwsAnimationPosePanel{grid-area:right;display:flex;flex-direction:column;overflow:auto;min-height:0;min-width:0;padding:12px;border-left:1px solid var(--line);background:var(--panel)}
+#bwsAnimationPosePanel .bone-list{min-height:120px;flex:1 0 120px}
+.app.rigging-mode{height:calc(100dvh - var(--copyright-bar-height) - var(--notice-rail-height));grid-template-columns:220px minmax(0,1fr) 350px;grid-template-rows:auto minmax(0,1fr) auto;grid-template-areas:"top top top" "left view right" "left bottom right"}
+.app.rigging-mode .left > section:not(#sceneTree){display:none}
+.app.rigging-mode .right > :not(#bonePlacementSection):not(#utilitiesSection){display:none!important}
+.app.rigging-mode #utilitiesSection,.app.rigging-mode #utilitiesBody{display:contents!important}
+.app.rigging-mode #utilitiesSection > .section-header,.app.rigging-mode #utilitiesBody > :not(#bonePlacementSection){display:none!important}
+.app.rigging-mode #bonePlacementSection{display:block!important;border:0}
+.app.rigging-mode .top > .toolbar-group:not(.workspace-picker):not(.animator-workspace-launcher):not(#toolbarProjectFilesGroup):not(#toolbarUndoGroup){display:none!important}
+.app.animator-mode .animator-workspace-bar{flex-wrap:wrap;gap:8px}
+@media(max-width:1100px){
+ .app.animator-mode{grid-template-columns:minmax(0,1fr) 250px;grid-template-areas:"top top" "view right" "timeline timeline"}
+ .app.rigging-mode{grid-template-columns:minmax(0,1fr) 300px;grid-template-areas:"top top" "view right" "bottom right"}
+ .app.animator-mode > .left,.app.rigging-mode > .left{display:none!important}
+}
+@media(max-width:600px){
+ .app.animator-mode,.app.rigging-mode{height:auto!important;min-height:100%;overflow:auto;grid-template-columns:minmax(0,1fr)}
+ .app.animator-mode{grid-template-areas:"top" "view" "right" "timeline";grid-template-rows:auto minmax(240px,40vh) minmax(220px,auto) minmax(320px,auto)}
+ .app.animator-mode.timeline-collapsed{grid-template-rows:auto minmax(240px,40vh) minmax(220px,auto) auto}
+ .app.rigging-mode{grid-template-areas:"top" "view" "right" "bottom";grid-template-rows:auto minmax(240px,40vh) auto auto}
+ body:has(.app.animator-mode),body:has(.app.rigging-mode){overflow:auto}
+}
+
+.app.animator-mode .bws-workspace-nav button:not(.active){background:var(--panel);color:var(--text);border-color:var(--line)}
+.app.rigging-mode > .right{min-height:0;overflow-y:auto}
+.app.animator-mode.timeline-collapsed > #animationSection{min-height:62px}
+
+#bwsAnimationPosePanel > *{flex-shrink:0}
+#bwsAnimationPosePanel > .compact-row{height:auto;max-height:none;overflow:visible;flex-wrap:wrap}
+
+
+/* Pose controls use natural rows, with only the whole pane scrolling. */
+#bwsAnimationPosePanel{gap:10px;overflow-x:hidden!important}
+#bwsAnimationPosePanel > .compact-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;max-width:100%;overflow:visible}
+#bwsAnimationPosePanel > .compact-row > *{flex:0 0 auto;min-width:0;max-width:100%}
+#bwsAnimationPosePanel > .compact-row > .api-note:first-child,
+#bwsAnimationPosePanel #selectedBoneLabel,
+#bwsAnimationPosePanel #selectTargetStatus,
+#bwsAnimationPosePanel #boneRotationStepStatus{flex-basis:100%;width:100%;white-space:normal}
+#bwsAnimationPosePanel .compact-row button{width:auto;min-width:38px;flex:0 0 auto}
+#bwsAnimationPosePanel > label{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}
+#bwsAnimationPosePanel > label input[type="range"]{flex:1 1 90px;min-width:0;width:auto}
+#bwsAnimationPosePanel .field-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible}
+#bwsAnimationPosePanel .field-grid label{min-width:0}
+#bwsAnimationPosePanel .field-grid input{width:100%;min-width:0;box-sizing:border-box}
+#bwsAnimationPosePanel .bone-list{flex:0 0 auto;min-height:40px;max-height:none;overflow:visible;box-sizing:border-box}
