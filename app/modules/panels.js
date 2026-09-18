@@ -3400,3 +3400,13 @@ detectLocalHost().then(async localHost => {
       : "Ready. Blank scene loaded.");
 });
 animate();
+
+document.querySelector("#importFbxBtn")?.addEventListener("click", () => document.querySelector("#importFbxFile")?.click());
+document.querySelector("#importFbxFile")?.addEventListener("change", async event => {
+  const button = document.querySelector("#importFbxBtn");
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  try { await importFullModelFbx(event.target.files); }
+  finally { event.target.value = ""; if (button) button.disabled = false; }
+});
+document.querySelector("#exportFbxBtn")?.addEventListener("click", exportFullModelFbx);

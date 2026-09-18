@@ -1916,7 +1916,7 @@ function preserveImportedGltfMesh(mesh, fileName, index) {
   mesh.userData.doubleSided = material?.side === THREE.DoubleSide;
   const textureUrl = importedTextureDataUrl(material?.map);
   if (textureUrl) {
-    const textureName = `${fileName.replace(/\.(?:glb|gltf)$/i, "") || "Imported glTF"} texture ${index + 1}.png`;
+    const textureName = `${fileName.replace(/\.(?:glb|gltf|fbx)$/i, "") || "Imported glTF"} texture ${index + 1}.png`;
     mesh.userData.textureName = registerTextureAsset(textureName, textureUrl) || textureName;
     mesh.userData.textureUrl = textureUrl;
     mesh.userData.textureFlipY = material.map.flipY;
@@ -1924,17 +1924,17 @@ function preserveImportedGltfMesh(mesh, fileName, index) {
   }
 }
 
-async function importFullModelGltf(file) {
+async function importFullModelGltf(file, decodedModel = null, formatName = "glTF/GLB") {
   if (!file) return;
   try {
     const isJsonGltf = /\.gltf$/i.test(file.name) || file.type === "model/gltf+json";
-    const source = isJsonGltf ? await file.text() : await file.arrayBuffer();
-    const gltf = await new GLTFLoader().parseAsync(source, "");
+    const source = decodedModel ? null : isJsonGltf ? await file.text() : await file.arrayBuffer();
+    const gltf = decodedModel || await new GLTFLoader().parseAsync(source, "");
     const loadedRoot = gltf.scene || gltf.scenes?.[0];
     if (!loadedRoot) throw new Error("The glTF file does not contain a scene.");
-    recordHistory("import glTF model");
+    recordHistory("import " + formatName + " model");
     const root = new THREE.Group();
-    root.name = file.name.replace(/\.(?:glb|gltf)$/i, "") || "Imported glTF Model";
+    root.name = file.name.replace(/\.(?:glb|gltf|fbx)$/i, "") || "Imported glTF Model";
     root.userData.bwsImportedAnimations = gltf.animations || [];
     root.userData.bwsImportAnchor = true;
     root.add(loadedRoot);
@@ -2020,7 +2020,7 @@ async function importFullModelGltf(file) {
     });
   } catch (error) {
     console.error(error);
-    log(`glTF/GLB import failed: ${error?.message || error}`);
+    log(`${formatName} import failed: ${error?.message || error}`);
   }
 }
 
@@ -4681,4 +4681,75 @@ function exportBolt2dPackage() {
   const pack = captureBolt2dRightFacingLayers({ prefix });
   download(`${prefix}.bolt2d.json`, JSON.stringify(pack, null, 2), "application/json");
   log(`Exported Bolt 2D sprite package with ${pack.layers.length} right-facing layer${pack.layers.length === 1 ? "" : "s"}.`, `${prefix}.bolt2d.json`);
+}
+
+async function importFullModelFbx(files) {
+  const selectedFiles = Array.from(files || []);
+  const file = selectedFiles.find(entry => /\.fbx$/i.test(entry.name));
+  if (!file) { log("Choose an FBX model, optionally together with its texture images."); return; }
+  if (selectedFiles.filter(entry => /\.fbx$/i.test(entry.name)).length !== 1) {
+    log("Import one FBX model at a time; texture images may be selected with it."); return;
+  }
+  const urls = new Map(), missing = new Set();
+  const basename = path => {
+    let name = String(path).replaceAll("\\", "/").split("/").pop();
+    try { name = decodeURIComponent(name); } catch {}
+    return name.toLowerCase();
+  };
+  try {
+    for (const entry of selectedFiles) if (entry !== file) {
+      const key = basename(entry.name);
+      if (urls.has(key)) throw new Error("Two selected textures have the same filename: " + entry.name);
+      urls.set(key, URL.createObjectURL(entry));
+    }
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier(url => {
+      if (/^(data:|blob:)/i.test(url)) return url;
+      const resolved = urls.get(basename(url));
+      if (resolved) return resolved;
+      missing.add(basename(url));
+      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==";
+    });
+    manager.onError = url => missing.add(basename(url));
+    const ready = new Promise(resolve => { manager.onLoad = resolve; });
+    const buffer = await file.arrayBuffer();
+    manager.itemStart("bws-fbx-import");
+    let loadedRoot;
+    try { loadedRoot = new FBXLoader(manager).parse(buffer, ""); }
+    finally { manager.itemEnd("bws-fbx-import"); }
+    await ready;
+    await importFullModelGltf(file, { scene: loadedRoot, animations: loadedRoot.animations || [] }, "FBX");
+    if (missing.size) log("FBX textures missing or unreadable: " + [...missing].join(", ") + ". Select the model and its texture images together to include them.");
+  } catch (error) {
+    console.error(error);
+    log("FBX import failed: " + (error?.message || error));
+  } finally {
+    for (const url of urls.values()) URL.revokeObjectURL(url);
+  }
+}
+
+async function exportFullModelFbx() {
+  const button = document.querySelector("#exportFbxBtn");
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  try {
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const roots = [...new Set(objects.filter(object => !object.userData?.editorHelper).map(object => {
+      let root = object;
+      while (root.parent && root.parent !== scene) root = root.parent;
+      return root;
+    }))];
+    const animations = roots.flatMap(root => root.userData?.bwsImportedAnimations || root.animations || []);
+    const result = exportBinaryFbx(roots, { animations, textureDataUrl: importedTextureDataUrl });
+    const name = gameCharacterSafeName(currentProjectBaseName(), "boltworks-model") + ".fbx";
+    downloadBlob(name, new Blob([result.buffer], { type: "application/octet-stream" }));
+    log("Exported " + name + " with " + result.meshCount + " meshes and " + result.clipCount + " preserved animation clips.");
+    for (const warning of result.warnings) log("FBX: " + warning);
+    if (Object.keys(animationState.clips || {}).length) log("FBX exports preserved imported clips. Save a project or rig file to retain edits made in the animation timeline.");
+  } catch (error) {
+    console.error(error);
+    log("FBX export failed: " + (error?.message || error));
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
