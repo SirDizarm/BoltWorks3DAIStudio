@@ -11,3 +11,9 @@ import { clone as cloneSkeleton } from "three/addons/utils/SkeletonUtils.js";
 import { SimplifyModifier } from "three/addons/modifiers/SimplifyModifier.js";
 import { mergeGeometries, mergeVertices } from "three/addons/utils/BufferGeometryUtils.js";
 import { createMeshFactory } from "./meshes/factory.js";
+
+import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+import { exportBinaryFbx } from "./exporters/fbx.js";
+
+import { createUsdPackage, loadUsdFiles } from "./exporters/usd.js";
+import * as usdZip from "three/addons/libs/fflate.module.js";

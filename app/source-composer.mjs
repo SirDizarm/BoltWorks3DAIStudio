@@ -19,6 +19,7 @@ export const studioModuleOrder = Object.freeze([
   "geometry-assets",
   "geometry-nodes",
   "import-export",
+  "usd-io",
   "autosave-update",
   "mcp-bridge",
   "ai-viewer",

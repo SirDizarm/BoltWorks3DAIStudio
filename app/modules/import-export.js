@@ -1,3 +1,148 @@
+// v50.0.47: keep imported skins and materials lossless across project recovery.
+function serializeImportedRoots() {
+  const roots = new Set();
+  for (const mesh of objects) {
+    let root = mesh;
+    while (root && root !== scene && !root.userData?.bwsImportAnchor) root = root.parent;
+    if (root?.userData?.bwsImportAnchor) roots.add(root);
+  }
+  return [...roots].map(root => {
+    const runtime = activeSkinRuntime?.importedRoot === root ? activeSkinRuntime : null;
+    const nativeRest = runtime?.nativeRest
+      ? [...runtime.nativeRest].map(([id, rest]) => [id, Object.fromEntries(
+        Object.entries(rest).map(([key, value]) => [key, value.toArray()])
+      )])
+      : root.userData.bwsNativeRestSnapshot || [];
+    // Object3D JSON retains skin indices/weights, inverse binds, mesh groups,
+    // morph targets, every material slot and embedded texture images.
+    // Three's toJSON retains userData by reference. Imported animation tracks
+    // contain function properties, which IndexedDB cannot structured-clone.
+    // Editable animation clips are saved separately in editor.rigging.
+    const savedRoot = cloneProjectSaveData(root.toJSON());
+    return { root: savedRoot, nativeRest };
+  });
+}
+
+// Clone plain save data without allocating a second, scene-sized JSON string.
+function cloneProjectSaveData(value, key = "") {
+  if (key === "bwsImportedAnimations") return undefined;
+  if (value === null || typeof value !== "object") return typeof value === "function" ? undefined : value;
+  if (Array.isArray(value) || ArrayBuffer.isView(value)) return Array.from(value, item => cloneProjectSaveData(item));
+  const result = {};
+  for (const [name, item] of Object.entries(value)) {
+    // The authoritative BufferGeometry is already in the imported hierarchy.
+    if (key === "userData" && name === "geometry") continue;
+    const cloned = cloneProjectSaveData(item, name);
+    if (cloned !== undefined) result[name] = cloned;
+  }
+  return result;
+}
+
+function compactImportedProjectData(sceneData, library) {
+  const names = new Map(library.filter(entry => entry?.dataUrl).map(entry => [entry.dataUrl, entry.name]));
+  const usedNames = new Set(library.map(entry => entry.name));
+  const intern = url => {
+    if (names.has(url)) return names.get(url);
+    let name = `Imported texture ${usedNames.size + 1}`;
+    while (usedNames.has(name)) name += "_";
+    usedNames.add(name);
+    names.set(url, name);
+    library.push({ name, dataUrl: url, robloxAssetId: "" });
+    return name;
+  };
+  const compactTextures = spec => {
+    for (const [urlKey, nameKey] of materialTextureReferenceFields()) {
+      if (typeof spec[urlKey] !== "string" || !spec[urlKey].startsWith("data:")) continue;
+      spec[nameKey] = intern(spec[urlKey]);
+      spec[urlKey] = null;
+    }
+  };
+  const importedIds = new Set();
+  for (const entry of sceneData.importedRoots || []) {
+    for (const image of entry.root.images || []) {
+      if (typeof image.url !== "string" || !image.url.startsWith("data:")) continue;
+      image.bwsTextureLibraryName = intern(image.url);
+      delete image.url;
+    }
+    const visit = node => {
+      if (node.userData) {
+        compactTextures(node.userData);
+        if (node.geometry && node.userData.id) importedIds.add(node.userData.id);
+      }
+      (node.children || []).forEach(visit);
+    };
+    visit(entry.root.object);
+  }
+  for (const spec of sceneData.objects || []) {
+    compactTextures(spec);
+    if (importedIds.has(spec.id)) spec.geometry = null;
+  }
+}
+
+// Blob parts avoid JavaScript's single-string length limit without changing
+// the editable JSON format or rounding/downsampling the model's contents.
+function createProjectJsonBlob(value) {
+  const parts = [];
+  let chunk = "";
+  const emit = text => {
+    if (chunk.length + text.length > 65536) {
+      if (chunk) parts.push(new Blob([chunk]));
+      chunk = "";
+      if (text.length > 65536) { parts.push(new Blob([text])); return; }
+    }
+    chunk += text;
+  };
+  const ancestors = new Set();
+  const write = item => {
+    if (item === null || typeof item !== "object") { emit(JSON.stringify(item) ?? "null"); return; }
+    if (ancestors.has(item)) throw new Error("Project contains a circular reference.");
+    ancestors.add(item);
+    const array = Array.isArray(item);
+    emit(array ? "[" : "{");
+    let first = true;
+    for (const key of Object.keys(item)) {
+      const child = item[key];
+      if (!array && (child === undefined || typeof child === "function" || typeof child === "symbol")) continue;
+      if (!first) emit(",");
+      first = false;
+      if (!array) { emit(JSON.stringify(key)); emit(":"); }
+      write(child);
+    }
+    emit(array ? "]" : "}");
+    ancestors.delete(item);
+  };
+  write(value);
+  if (chunk) parts.push(new Blob([chunk]));
+  return new Blob(parts, { type: "application/json" });
+}
+
+function restoreImportedSkinRuntime() {
+  const avatarId = rigBones.find(bone => bone.avatarObjectId)?.avatarObjectId;
+  const avatar = objects.find(mesh => mesh.userData.id === avatarId && mesh.isSkinnedMesh);
+  if (!avatar) return false;
+  let root = avatar;
+  while (root && root !== scene && !root.userData?.bwsImportAnchor) root = root.parent;
+  const saved = root?.userData?.bwsNativeRestSnapshot;
+  if (!saved?.length) return false;
+  const threeBones = new Map();
+  const importedSkins = [];
+  root.traverse(node => {
+    if (node.isBone && node.userData.rigBoneId) threeBones.set(node.userData.rigBoneId, node);
+    if (node.isSkinnedMesh && objects.includes(node)) importedSkins.push(node);
+  });
+  const nativeRest = new Map(saved.map(([id, fields]) => [id, Object.fromEntries(
+    Object.entries(fields).map(([key, values]) => [key,
+      (key === "quaternion" ? new THREE.Quaternion()
+        : key === "parentWorldInverse" ? new THREE.Matrix4() : new THREE.Vector3()).fromArray(values)
+    ])
+  )]));
+  activeSkinRuntime = {
+    avatar, bones: rigBones.filter(bone => threeBones.has(bone.id)),
+    threeBones, skeleton: avatar.skeleton, importedRoot: root, nativeRest, importedSkins
+  };
+  return true;
+}
+
 function serializeObject(mesh) {
   const material = primaryMeshMaterial(mesh);
   const importedGltfMesh = mesh.userData.shape === "glb";
@@ -126,7 +271,7 @@ function state() {
     },
     groups: serializeGroupRecords(),
     hierarchy: childGroupRecords(null).map(serializeHierarchyNode),
-    objects: objects.map(serializeObject)
+    importedRoots: serializeImportedRoots(), objects: objects.map(serializeObject)
   };
 }
 
@@ -153,6 +298,7 @@ function projectState() {
   const projectName = currentProjectBaseName();
   const textureLibraryEntries = serializeTextureLibrary();
   const scene = state();
+  compactImportedProjectData(scene, textureLibraryEntries);
   const textureNameByUrl = new Map(
     textureLibraryEntries
       .filter(entry => entry?.name && entry?.dataUrl)
@@ -423,7 +569,7 @@ function cloneSceneState() {
   }
 
   return {
-    scene: JSON.parse(JSON.stringify(scene)),
+    scene: cloneProjectSaveData(scene),
     // Data URLs are immutable strings. Keep their shared references instead of
     // recreating every multi-megabyte payload for every history entry.
     textureLibrary: textureEntries.map(entry => ({ ...entry })),
@@ -485,11 +631,41 @@ function undo() {
 }
 
 function loadState(data, { record = true } = {}) {
+  // Parse before clearing the current project, so malformed bundles do not erase it.
+  const restoredImports = (data.importedRoots || []).map(entry => {
+    const rootData = { ...entry.root, images: (entry.root.images || []).map(image => {
+      if (!image.bwsTextureLibraryName) return image;
+      const url = textureLibrary.get(image.bwsTextureLibraryName)?.dataUrl;
+      if (!url) throw new Error(`Missing saved texture: ${image.bwsTextureLibraryName}`);
+      return { ...image, url };
+    }) };
+    const root = new THREE.ObjectLoader().parse(rootData);
+    root.userData.bwsImportAnchor = true;
+    root.userData.bwsNativeRestSnapshot = entry.nativeRest || [];
+    return root;
+  });
+  const restoredMeshIds = new Set();
   if (record) recordHistory("import");
   // Undo snapshots and compact project scenes store one texture payload in the
   // library and lightweight textureName references on their mesh objects.
   hydrateProjectTextureReferences(data, [...textureLibrary.values()]);
   clearObjects({ record: false });
+  activeSkinRuntime = null;
+  for (const root of restoredImports) {
+    scene.add(root);
+    root.updateMatrixWorld(true);
+    root.traverse(node => {
+      if (!node.isMesh) return;
+      // Keep the editing metadata usable while excluding it from future saves.
+      node.userData = { ...node.userData };
+      hydrateProjectTextureReferences({ objects: [node.userData] }, [...textureLibrary.values()]);
+      node.userData.geometry = geometryToData(node.geometry);
+      objects.push(node);
+      restoredMeshIds.add(node.userData.id);
+      const numericId = Number(String(node.userData.id || "").replace(/^obj-/, ""));
+      if (Number.isFinite(numericId)) idCounter = Math.max(idCounter, numericId + 1);
+    });
+  }
   clearLineSketch({ silent: true, keepMode: false });
   checkedIds.clear();
   activeGroupIds = [];
@@ -508,6 +684,7 @@ function loadState(data, { record = true } = {}) {
   }
   let skippedBrokenGltf = 0;
   for (const spec of data.objects || []) {
+    if (restoredMeshIds.has(spec.id)) continue;
     if (spec.shape === "glb" && !spec.geometry?.positions?.length) {
       skippedBrokenGltf += 1;
       continue;
@@ -1814,7 +1991,21 @@ async function exportFullModelGltf({ binary = true } = {}) {
       object.updateWorldMatrix(true, true);
       let hasSkin = false;
       object.traverse(node => { if (node.isSkinnedMesh) hasSkin = true; });
-      const clone = hasSkin ? cloneSkeleton(object) : object.clone(true);
+      // Object3D.clone JSON-stringifies userData before GLTFExporter runs.
+      // Editor geometry/texture caches and imported clips are not glTF extras:
+      // their authoritative data is exported through the normal glTF channels.
+      const originalUserData = new Map();
+      let clone;
+      try {
+        object.traverse(node => {
+          originalUserData.set(node, node.userData);
+          node.userData = node.userData?.gltfExtensions
+            ? { gltfExtensions: node.userData.gltfExtensions } : {};
+        });
+        clone = hasSkin ? cloneSkeleton(object) : object.clone(true);
+      } finally {
+        for (const [node, userData] of originalUserData) node.userData = userData;
+      }
       object.matrixWorld.decompose(clone.position, clone.quaternion, clone.scale);
       clone.visible = object.visible;
       exportRoot.add(clone);
@@ -1829,7 +2020,7 @@ async function exportFullModelGltf({ binary = true } = {}) {
     });
     const extension = binary ? "glb" : "gltf";
     const fileName = `${gameCharacterSafeName(currentProjectBaseName(), "boltworks-model")}.${extension}`;
-    const payload = binary ? exported : JSON.stringify(exported, null, 2);
+    const payload = binary ? exported : createProjectJsonBlob(exported);
     downloadBlob(fileName, new Blob([payload], { type: binary ? "model/gltf-binary" : "model/gltf+json" }));
     log(`Exported ${fileName} as a standard full-model ${binary ? "GLB" : "self-contained glTF"}. No game-engine layer masks or character manifest were added.`);
   } catch (error) {
@@ -1843,7 +2034,7 @@ async function exportFullModelGlb() {
 }
 
 function gameCharacterImportedClipKeys(clip, importedBones, boneNodes) {
-  const fps = 24;
+  const fps = clip.userData?.usdMotion ? Math.max(1,Math.min(120,Number(clip.userData.fps)||24)) : 24;
   const end = Math.max(1, Math.round(Math.max(clip.duration || 0, 1 / fps) * fps));
   const trackMap = new Map();
   for (const track of clip.tracks || []) {
@@ -1856,9 +2047,9 @@ function gameCharacterImportedClipKeys(clip, importedBones, boneNodes) {
   const keys = {};
   for (const bone of importedBones) {
     const node = boneNodes.get(bone.id);
-    const positionTrack = trackMap.get(`${node.name}:position`);
-    const quaternionTrack = trackMap.get(`${node.name}:quaternion`);
-    const scaleTrack = trackMap.get(`${node.name}:scale`);
+    const positionTrack = trackMap.get(`${node.uuid}:position`) || trackMap.get(`${node.name}:position`);
+    const quaternionTrack = trackMap.get(`${node.uuid}:quaternion`) || trackMap.get(`${node.name}:quaternion`);
+    const scaleTrack = trackMap.get(`${node.uuid}:scale`) || trackMap.get(`${node.name}:scale`);
     if (!positionTrack && !quaternionTrack && !scaleTrack) continue;
     keys[bone.id] = [];
     for (let frame = 0; frame <= end; frame += 1) {
@@ -1866,11 +2057,15 @@ function gameCharacterImportedClipKeys(clip, importedBones, boneNodes) {
       const localPosition = positionTrack ? positionTrack.evaluate(time) : node.position.toArray();
       const localQuaternion = quaternionTrack ? quaternionTrack.evaluate(time) : node.quaternion.toArray();
       const positionDelta = new THREE.Vector3().fromArray(localPosition).sub(node.position);
+      if(activeSkinRuntime?.nativeRest && node.parent){
+        positionDelta.applyMatrix4(node.parent.matrixWorld).sub(new THREE.Vector3().setFromMatrixPosition(node.parent.matrixWorld));
+      }
       const rotation = new THREE.Euler().setFromQuaternion(new THREE.Quaternion().fromArray(localQuaternion), "XYZ");
       keys[bone.id].push({
         frame,
         position: bone.bindPosition.clone().add(positionDelta).toArray(),
-        rotation: rotation.toArray().slice(0, 3)
+        rotation: rotation.toArray().slice(0, 3),
+        ...(activeSkinRuntime?.nativeRest ? { scale: Array.from(scaleTrack ? scaleTrack.evaluate(time) : node.scale.toArray()) } : {})
       });
     }
   }
@@ -1916,7 +2111,7 @@ function preserveImportedGltfMesh(mesh, fileName, index) {
   mesh.userData.doubleSided = material?.side === THREE.DoubleSide;
   const textureUrl = importedTextureDataUrl(material?.map);
   if (textureUrl) {
-    const textureName = `${fileName.replace(/\.(?:glb|gltf)$/i, "") || "Imported glTF"} texture ${index + 1}.png`;
+    const textureName = `${fileName.replace(/\.(?:glb|gltf|fbx)$/i, "") || "Imported glTF"} texture ${index + 1}.png`;
     mesh.userData.textureName = registerTextureAsset(textureName, textureUrl) || textureName;
     mesh.userData.textureUrl = textureUrl;
     mesh.userData.textureFlipY = material.map.flipY;
@@ -1924,17 +2119,17 @@ function preserveImportedGltfMesh(mesh, fileName, index) {
   }
 }
 
-async function importFullModelGltf(file) {
+async function importFullModelGltf(file, decodedModel = null, formatName = "glTF/GLB") {
   if (!file) return;
   try {
     const isJsonGltf = /\.gltf$/i.test(file.name) || file.type === "model/gltf+json";
-    const source = isJsonGltf ? await file.text() : await file.arrayBuffer();
-    const gltf = await new GLTFLoader().parseAsync(source, "");
+    const source = decodedModel ? null : isJsonGltf ? await file.text() : await file.arrayBuffer();
+    const gltf = decodedModel || await new GLTFLoader().parseAsync(source, "");
     const loadedRoot = gltf.scene || gltf.scenes?.[0];
     if (!loadedRoot) throw new Error("The glTF file does not contain a scene.");
-    recordHistory("import glTF model");
+    recordHistory("import " + formatName + " model");
     const root = new THREE.Group();
-    root.name = file.name.replace(/\.(?:glb|gltf)$/i, "") || "Imported glTF Model";
+    root.name = file.name.replace(/\.(?:glb|gltf|fbx)$/i, "") || "Imported glTF Model";
     root.userData.bwsImportedAnimations = gltf.animations || [];
     root.userData.bwsImportAnchor = true;
     root.add(loadedRoot);
@@ -1986,7 +2181,26 @@ async function importFullModelGltf(file) {
       if (primaryAvatar?.skeleton) {
         primaryAvatar.userData.rigRole = "skin";
         rigBones.forEach(bone => { bone.avatarObjectId = primaryAvatar.userData.id; });
-        activeSkinRuntime = { avatar: primaryAvatar, bones: rigBones, threeBones: nodeById, skeleton: primaryAvatar.skeleton };
+        const nativeRest = new Map();
+        root.updateMatrixWorld(true);
+        for (const bone of rigBones) {
+          const node = nodeById.get(bone.id);
+          nativeRest.set(bone.id, {
+            position: node.position.clone(), quaternion: node.quaternion.clone(), scale: node.scale.clone(),
+            editorPosition: bone.position.clone(), editorRotation: bone.rotation.clone(),
+            parentWorldInverse: node.parent ? node.parent.matrixWorld.clone().invert() : new THREE.Matrix4(),
+            tailLocal: node.worldToLocal(bone.tail.clone())
+          });
+        }
+        activeSkinRuntime = { avatar: primaryAvatar, bones: rigBones, threeBones: nodeById,
+          skeleton: primaryAvatar.skeleton, importedRoot: root, nativeRest,
+          importedSkins: importedMeshes.filter(node => node.isSkinnedMesh) };
+        rigPoseChannels.clear();
+        animationState.bindingRest = null;
+        if (!(gltf.animations || []).length) {
+          animationState.clips = { idle: { name: "Rest pose", fps: 24, end: 48, keys: {} } };
+          Object.assign(animationState, { activeClipId: "idle", keys: animationState.clips.idle.keys, fps: 24, end: 48, frame: 0, playing: false });
+        }
         bonesGlued = true;
       }
       const importedClips = {};
@@ -2020,7 +2234,7 @@ async function importFullModelGltf(file) {
     });
   } catch (error) {
     console.error(error);
-    log(`glTF/GLB import failed: ${error?.message || error}`);
+    log(`${formatName} import failed: ${error?.message || error}`);
   }
 }
 
@@ -4682,3 +4896,105 @@ function exportBolt2dPackage() {
   download(`${prefix}.bolt2d.json`, JSON.stringify(pack, null, 2), "application/json");
   log(`Exported Bolt 2D sprite package with ${pack.layers.length} right-facing layer${pack.layers.length === 1 ? "" : "s"}.`, `${prefix}.bolt2d.json`);
 }
+
+async function importFullModelFbx(files) {
+  const selectedFiles = Array.from(files || []);
+  const file = selectedFiles.find(entry => /\.fbx$/i.test(entry.name));
+  if (!file) { log("Choose an FBX model, optionally together with its texture images."); return; }
+  if (selectedFiles.filter(entry => /\.fbx$/i.test(entry.name)).length !== 1) {
+    log("Import one FBX model at a time; texture images may be selected with it."); return;
+  }
+  const urls = new Map(), missing = new Set();
+  const basename = path => {
+    let name = String(path).replaceAll("\\", "/").split("/").pop();
+    try { name = decodeURIComponent(name); } catch {}
+    return name.toLowerCase();
+  };
+  try {
+    for (const entry of selectedFiles) if (entry !== file) {
+      const key = basename(entry.name);
+      if (urls.has(key)) throw new Error("Two selected textures have the same filename: " + entry.name);
+      urls.set(key, URL.createObjectURL(entry));
+    }
+    const manager = new THREE.LoadingManager();
+    manager.setURLModifier(url => {
+      if (/^(data:|blob:)/i.test(url)) return url;
+      const resolved = urls.get(basename(url));
+      if (resolved) return resolved;
+      missing.add(basename(url));
+      return "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==";
+    });
+    manager.onError = url => missing.add(basename(url));
+    const ready = new Promise(resolve => { manager.onLoad = resolve; });
+    const buffer = await file.arrayBuffer();
+    manager.itemStart("bws-fbx-import");
+    let loadedRoot;
+    try { loadedRoot = new FBXLoader(manager).parse(buffer, ""); }
+    finally { manager.itemEnd("bws-fbx-import"); }
+    await ready;
+    await importFullModelGltf(file, { scene: loadedRoot, animations: loadedRoot.animations || [] }, "FBX");
+    if (missing.size) log("FBX textures missing or unreadable: " + [...missing].join(", ") + ". Select the model and its texture images together to include them.");
+  } catch (error) {
+    console.error(error);
+    log("FBX import failed: " + (error?.message || error));
+  } finally {
+    for (const url of urls.values()) URL.revokeObjectURL(url);
+  }
+}
+
+async function exportFullModelFbx() {
+  const button = document.querySelector("#exportFbxBtn");
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  try {
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const roots = [...new Set(objects.filter(object => !object.userData?.editorHelper).map(object => {
+      let root = object;
+      while (root.parent && root.parent !== scene) root = root.parent;
+      return root;
+    }))];
+    const animations = roots.flatMap(root => root.userData?.bwsImportedAnimations || root.animations || []);
+    const result = exportBinaryFbx(roots, { animations, textureDataUrl: importedTextureDataUrl });
+    const name = gameCharacterSafeName(currentProjectBaseName(), "boltworks-model") + ".fbx";
+    downloadBlob(name, new Blob([result.buffer], { type: "application/octet-stream" }));
+    log("Exported " + name + " with " + result.meshCount + " meshes and " + result.clipCount + " preserved animation clips.");
+    for (const warning of result.warnings) log("FBX: " + warning);
+    if (Object.keys(animationState.clips || {}).length) log("FBX exports preserved imported clips. Save a project or rig file to retain edits made in the animation timeline.");
+  } catch (error) {
+    console.error(error);
+    log("FBX export failed: " + (error?.message || error));
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+// Shared, non-interactive progress display for large model imports.
+let bwsImportDepth = 0;
+function withModelImportProgress(operation, label) {
+  return async function(...args) {
+    const outer = bwsImportDepth++ === 0;
+    const ownsInput = outer && !bwsUsdUiActive;
+    let indicator;
+    if(outer){
+      if(ownsInput)beginUsdUi();
+      indicator=document.createElement('div');indicator.id='bwsImportProgress';
+      indicator.setAttribute('role','status');indicator.setAttribute('aria-live','polite');
+      indicator.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#172426;color:#eee5d3;border:1px solid #738b77;border-radius:8px;padding:18px 24px;max-width:80vw;pointer-events:none;box-shadow:0 6px 30px #0008';
+      const heading=document.createElement('strong');heading.textContent=label;
+      const detail=document.createElement('div');detail.textContent='Reading model, textures and animation. Large files can take a while.';
+      const progress=document.createElement('progress');progress.style.cssText='display:block;width:100%;margin-top:10px';progress.setAttribute('aria-label','Import in progress');
+      indicator.append(heading,detail,progress);document.body.append(indicator);
+    }
+    try{
+      // Give the browser time to paint before synchronous binary decoding begins.
+      if(outer)await new Promise(resolve=>setTimeout(resolve,80));
+      return await operation.apply(this,args);
+    }finally{
+      bwsImportDepth--;
+      if(outer){indicator?.remove();if(ownsInput)endUsdUi();}
+    }
+  };
+}
+importFullModelGltf=withModelImportProgress(importFullModelGltf,'Importing model...');
+importFullModelFbx=withModelImportProgress(importFullModelFbx,'Importing FBX...');
+importObjFiles=withModelImportProgress(importObjFiles,'Importing OBJ...');

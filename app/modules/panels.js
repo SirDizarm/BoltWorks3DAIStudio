@@ -2066,7 +2066,7 @@ async function saveEditableProjectFromDialog() {
   saveProjectConfirmBtn.disabled = true;
   saveProjectConfirmBtn.textContent = "Preparing project…";
   try {
-    const text = JSON.stringify(projectState(), null, 2);
+    const text = createProjectJsonBlob(projectState());
     if (fileHandle) {
       const writable = await fileHandle.createWritable();
       await writable.write(text);
@@ -3187,7 +3187,7 @@ els.gameplayStrideSyncInput?.addEventListener("change", syncGameplayStrideContro
 els.gameplayStrideScaleInput?.addEventListener("input", syncGameplayStrideControls);
 syncGameplayStrideControls();
 gameplayCanvas?.addEventListener("click", () => {
-  if (!gameplayPreviewVisible()) return;
+  if (bwsUsdUiActive || !gameplayPreviewVisible()) return;
   if(dicePhysicsPreview)return;
   if (gameplayPlaybackPaused) {
     updateGameplayArenaStatus("Paused — press Play before taking control");
@@ -3400,3 +3400,15 @@ detectLocalHost().then(async localHost => {
       : "Ready. Blank scene loaded.");
 });
 animate();
+
+document.querySelector("#importFbxBtn")?.addEventListener("click", () => document.querySelector("#importFbxFile")?.click());
+document.querySelector("#importFbxFile")?.addEventListener("change", async event => {
+  const button = document.querySelector("#importFbxBtn");
+  if (button?.disabled) return;
+  if (button) button.disabled = true;
+  try { await importFullModelFbx(event.target.files); }
+  finally { event.target.value = ""; if (button) button.disabled = false; }
+});
+document.querySelector("#exportFbxBtn")?.addEventListener("click", exportFullModelFbx);
+
+initializeUsdControls();

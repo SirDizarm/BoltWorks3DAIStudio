@@ -1310,7 +1310,8 @@ function animationSetFrame(frame, { render = true, lightweightPanel = false } = 
     const span = Math.max(1, b.frame - a.frame), alpha = a === b ? 0 : (t - a.frame) / span;
     bone.position.fromArray(a.position.map((v, i) => v + (b.position[i] - v) * alpha));
     bone.rotation.fromArray(a.rotation.map((v, i) => v + (b.rotation[i] - v) * alpha));
-    poses.set(bone.id, { position: bone.position.clone(), rotation: bone.rotation.clone() });
+    const scale = a.scale && b.scale ? a.scale.map((v,i)=>v+(b.scale[i]-v)*alpha) : undefined;
+    poses.set(bone.id, { position: bone.position.clone(), rotation: bone.rotation.clone(), scale });
   }
   const jumpLift = animationJumpLift(t);
   if (jumpLift > 0) {
@@ -1496,6 +1497,13 @@ function replaceObjectWithSkinnedMesh(mesh, bones) {
 }
 
 function setupSkinnedRig() {
+  // Imported skins own authoritative weights, inverse binds and shared bones.
+  // A workspace/fitting transition must not replace them with auto-generated weights.
+  if (activeSkinRuntime?.nativeRest && activeSkinRuntime.importedSkins.every(mesh => objects.includes(mesh))) {
+    activeSkinRuntime.bones = rigBones.filter(bone => activeSkinRuntime.threeBones.has(bone.id));
+    return;
+  }
+  if (restoreImportedSkinRuntime()) return;
   if (activeSkinRuntime?.threeBones) {
     const oldBoneObjects = new Set(activeSkinRuntime.threeBones.values());
     for (const threeBone of oldBoneObjects) {
@@ -1553,7 +1561,41 @@ function setupSkinnedRig() {
   if (typeof updateGlueButton === "function") updateGlueButton();
 }
 
+function applyImportedSkinnedPose(poses) {
+  const runtime = activeSkinRuntime;
+  runtime.importedRoot.updateMatrixWorld(true);
+  // Map order follows the imported scene hierarchy, so parents update before children.
+  for (const bone of runtime.bones) {
+    const node = runtime.threeBones.get(bone.id), rest = runtime.nativeRest.get(bone.id);
+    if (!node || !rest) continue;
+    const pose = poses.get(bone.id) || { position: bone.bindPosition, rotation: bone.bindRotation };
+    const position = pose.position?.clone?.() || new THREE.Vector3().fromArray(pose.position || rest.editorPosition.toArray());
+    const worldDelta = position.sub(rest.editorPosition);
+    // Convert displacement through the actual parent matrix, including USD unit scale.
+    if (node.parent) {
+      node.parent.updateWorldMatrix(true, false);
+      const inverse = rest.parentWorldInverse || node.parent.matrixWorld.clone().invert();
+      worldDelta.applyMatrix4(inverse).sub(new THREE.Vector3().applyMatrix4(inverse));
+    }
+    node.position.copy(rest.position).add(worldDelta);
+    const rotation = pose.rotation?.toArray?.() || pose.rotation || rest.editorRotation.toArray();
+    const initial = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rest.editorRotation.toArray(), "XYZ"));
+    const desired = new THREE.Quaternion().setFromEuler(new THREE.Euler(...rotation, "XYZ"));
+    node.quaternion.copy(rest.quaternion).multiply(initial.invert()).multiply(desired);
+    if(pose.scale)node.scale.fromArray(pose.scale);else node.scale.copy(rest.scale);
+    node.updateMatrix();node.updateWorldMatrix(false, true);
+  }
+  runtime.importedRoot.updateMatrixWorld(true);
+  for (const skeleton of new Set(runtime.importedSkins.map(mesh => mesh.skeleton))) skeleton.update();
+  for (const bone of runtime.bones) {
+    const node = runtime.threeBones.get(bone.id), rest = runtime.nativeRest.get(bone.id);
+    bone.displayPosition = node.getWorldPosition(new THREE.Vector3());
+    bone.displayTail = node.localToWorld(rest.tailLocal.clone());
+  }
+}
+
 function applySkinnedPose(poses) {
+  if (activeSkinRuntime?.nativeRest) return applyImportedSkinnedPose(poses);
   const { avatar, bones, threeBones, skeleton } = activeSkinRuntime;
   for (const bone of bones) {
     const threeBone = threeBones.get(bone.id);

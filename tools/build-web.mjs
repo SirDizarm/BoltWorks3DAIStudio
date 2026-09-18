@@ -44,7 +44,7 @@ for (const directory of ["assets", "styles", "panels", "selection", "meshes"]) {
 await copyFile(join(root, "CNAME"), join(output, "CNAME"));
 
 const studioScript = (await readFile(join(root, "index.html"), "utf8"))
-  .match(/(?:src|data-bws-bundle)=["']\.\/(studio-v[\d.]+\.js)["']/i)?.[1];
+  .match(/(?:src|data-bws-bundle)=["']\.\/(studio-v[\d.]+\.js)(?:\?[^"']*)?["']/i)?.[1];
 if (!studioScript) throw new Error("Cannot locate the editor studio bundle in index.html.");
 await buildStudioBundle({ outfile: join(output, studioScript) });
 await mkdir(join(output, "demos"), { recursive: true });

@@ -14,6 +14,8 @@ let bwsWorkspaceGeneration = 0;
 let bwsAutoSavePromise = Promise.resolve(false);
 let bwsRecoveryDatabasePromise = null;
 let bwsUpdateVersion = null;
+let bwsRecoveryDirty = false;
+let bwsRecoveryChangeId = 0;
 
 function setBwsAutoSaveStatus(message, kind = "") {
   if (!bwsAutoSaveStatus) return;
@@ -42,7 +44,7 @@ async function writeBwsRecoveryRecord(project, generation = bwsWorkspaceGenerati
     id: BWS_RECOVERY_KEY,
     appVersion: bwsCurrentVersion,
     savedAt: new Date().toISOString(),
-    project
+    projectBlob: createProjectJsonBlob(project)
   };
   let indexedDbSaved = false;
   let fallbackSaved = false;
@@ -61,7 +63,10 @@ async function writeBwsRecoveryRecord(project, generation = bwsWorkspaceGenerati
   }
   // Avoid serializing a second, potentially enormous copy when IndexedDB worked.
   if (!indexedDbSaved && generation === bwsWorkspaceGeneration) try {
-    localStorage.setItem(BWS_RECOVERY_FALLBACK_KEY, JSON.stringify(record));
+    // localStorage is only a small-project fallback, never duplicate a large blob.
+    if (record.projectBlob.size > 4 * 1024 * 1024) throw new Error("Project requires IndexedDB recovery storage.");
+    const { projectBlob, ...metadata } = record;
+    localStorage.setItem(BWS_RECOVERY_FALLBACK_KEY, JSON.stringify({ ...metadata, project }));
     fallbackSaved = true;
   } catch (error) {
     console.warn("BoltWorks local recovery fallback unavailable", error);
@@ -79,7 +84,10 @@ async function readBwsRecoveryRecord() {
       request.onsuccess = () => resolve(request.result || null);
       request.onerror = () => reject(request.error || new Error("Could not read the recovery save."));
     });
-    if (record) return record;
+    if (record) {
+      if (record.projectBlob) record.project = JSON.parse(await record.projectBlob.text());
+      return record;
+    }
   } catch (error) {
     console.warn("BoltWorks IndexedDB recovery read failed", error);
   }
@@ -117,7 +125,16 @@ function saveProjectAutoRecoveryNow() {
   }
   if (bwsStartingNewWorkspace || isProjectLoading || isRestoring || !objects.length) return Promise.resolve(false);
   const generation = bwsWorkspaceGeneration;
-  const project = projectState();
+  bwsRecoveryDirty = true;
+  const changeId = bwsRecoveryChangeId;
+  let project;
+  try {
+    project = projectState();
+  } catch (error) {
+    console.warn("BoltWorks recovery snapshot failed", error);
+    setBwsAutoSaveStatus(`Not saved: ${error?.message || "snapshot failed"}`, "problem");
+    return Promise.resolve(false);
+  }
   setBwsAutoSaveStatus("Saving recovery…");
   bwsAutoSavePromise = bwsAutoSavePromise
     .catch(() => false)
@@ -125,6 +142,8 @@ function saveProjectAutoRecoveryNow() {
     .then(saved => {
       if (generation !== bwsWorkspaceGeneration) return saved;
       if (!saved) { setBwsAutoSaveStatus("Recovery save unavailable", "problem"); return false; }
+      if (changeId !== bwsRecoveryChangeId) return true;
+      bwsRecoveryDirty = false;
       const time = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
       setBwsAutoSaveStatus(`Auto-saved ${time}`, "saved");
       return true;
@@ -139,6 +158,8 @@ function saveProjectAutoRecoveryNow() {
 
 function scheduleProjectAutoSave() {
   if (bwsStartingNewWorkspace || isProjectLoading || isRestoring || !objects.length) return;
+  bwsRecoveryDirty = true;
+  bwsRecoveryChangeId += 1;
   if (bwsAutoSaveTimer) clearTimeout(bwsAutoSaveTimer);
   setBwsAutoSaveStatus("Unsaved changes…");
   bwsAutoSaveTimer = setTimeout(saveProjectAutoRecoveryNow, BWS_AUTO_SAVE_DELAY_MS);
@@ -150,6 +171,7 @@ async function restoreAutoSavedProjectIfBlank(force = false) {
     const recovery = await readBwsRecoveryRecord();
     if (!recovery?.project?.scene?.objects?.length || (!force && objects.length)) return false;
     loadProjectData(recovery.project, `Automatic recovery (${recovery.savedAt || "latest"})`);
+    bwsRecoveryDirty = false;
     localStorage.removeItem(BWS_RECOVERY_MANUAL_KEY);
     const time = recovery.savedAt ? new Date(recovery.savedAt).toLocaleString() : "latest save";
     setBwsAutoSaveStatus(`Recovered ${time}`, "saved");
@@ -196,7 +218,12 @@ async function checkForBwsUpdate() {
 bwsUpdateAvailableBtn?.addEventListener("click", async () => {
   bwsUpdateAvailableBtn.disabled = true;
   bwsUpdateAvailableBtn.textContent = "Saving before update…";
-  await saveProjectAutoRecoveryNow();
+  const saved = await saveProjectAutoRecoveryNow();
+  if (!saved && objects.length) {
+    bwsUpdateAvailableBtn.disabled = false;
+    bwsUpdateAvailableBtn.textContent = "Save failed - retry update";
+    return;
+  }
   const nextUrl = new URL(location.href);
   nextUrl.searchParams.set("bwsUpdated", bwsUpdateVersion || String(Date.now()));
   location.replace(nextUrl.href);
@@ -204,6 +231,14 @@ bwsUpdateAvailableBtn?.addEventListener("click", async () => {
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "hidden") saveProjectAutoRecoveryNow();
+});
+
+// Unload cannot wait for an IndexedDB transaction. Warn instead of pretending
+// an in-flight or failed recovery write has safely finished.
+window.addEventListener("beforeunload", event => {
+  if (!objects.length || !bwsRecoveryDirty) return;
+  event.preventDefault();
+  event.returnValue = "";
 });
 
 setTimeout(checkForBwsUpdate, 5000);

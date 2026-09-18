@@ -11,6 +11,8 @@ function bwsValidateGraphParts(parts){
   return {shape:'custom',name:String(part.name||'Node part').slice(0,160),geometry,position:vector(part.position,3,[0,0,0]),rotation:vector(part.rotation,3,[0,0,0]).map(THREE.MathUtils.radToDeg),scale:vector(part.scale,3,[1,1,1]),color:part.color,roughness:Math.max(0,Math.min(1,Number(part.roughness)||0)),doubleSided:part.doubleSided===true,textureUrl,textureName:typeof part.textureName==='string'?part.textureName.slice(0,160):null,gameAsset};
  });
 }
+const BWS_GRAPH_FILE_MAX_BYTES=128000000;
+function bwsGraphFileText(text){if(typeof text!=='string'||text.length>BWS_GRAPH_FILE_MAX_BYTES||new Blob([text]).size>BWS_GRAPH_FILE_MAX_BYTES)throw Error('Geometry Nodes file exceeds 128 MB.');return text;}
 function bwsGraphState(value){const text=JSON.stringify(value);if(!text||text.length>8000000)throw Error('Graph recipes exceed 8 MB.');return sanitizeGeometryNodeProjectState(JSON.parse(text),{allowEmpty:true});}
 function bwsKeepGraphOutputIds(state){for(const graph of state.graphs){const original=geometryNodeProjectState.graphs.find(g=>g.id===graph.id);graph.generatedIds=original?.generatedIds?.slice()||[];}return state;}
 async function bwsApplyGraphOutput(result,replace){
@@ -66,6 +68,16 @@ function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
  save.remove();share.remove();replace.remove();
  add.textContent='Import to workspace';add.title='Add this model without removing anything already in your workspace';
  download.textContent='Save Geometry Nodes';
+ const gameExport=button('Export to Cinder Cairn');download.after(gameExport);
+ gameExport.title='Download a compressed runtime-only .bwcasset. Keep Save Geometry Nodes for editable recipes.';
+ let gameExportRequest=null,gameExportTimer=null;
+ const finishGameExport=()=>{clearTimeout(gameExportTimer);gameExportTimer=null;gameExportRequest=null;gameExport.disabled=!ready;};
+ gameExport.onclick=()=>{
+  if(!ready||!enabled()||gameExportRequest)return;
+  gameExportRequest=crypto.randomUUID();gameExport.disabled=true;
+  frame.contentWindow.postMessage({type:'bws-cinder-asset-export-request',requestId:gameExportRequest},'*');status.textContent='Preparing a runtime-only Cinder Cairn asset...';
+  gameExportTimer=setTimeout(()=>{finishGameExport();status.textContent='Cinder Cairn export timed out. Check the plugin status and retry.';},160000);
+ };
  const loadNodes=button('Load Geometry Nodes'),nodeFile=document.createElement('input');
  nodeFile.type='file';nodeFile.accept='.bwnc';nodeFile.hidden=true;header.append(nodeFile);
  let nodeSaveRequested=false,nodeSaveName=null,nodeSaveDialog=null;
@@ -73,8 +85,8 @@ function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
  nodeFile.onchange=async()=>{
   const picked=nodeFile.files?.[0];nodeFile.value='';if(!picked||!enabled())return;
   try{
-   if(!/\.bwnc$/i.test(picked.name)||picked.size>8000000)throw Error('Choose a Geometry Nodes .bwnc file smaller than 8 MB.');
-   const text=await picked.text();if(!enabled())return;
+   if(!/\.bwnc$/i.test(picked.name)||picked.size>BWS_GRAPH_FILE_MAX_BYTES)throw Error('Choose a Geometry Nodes .bwnc file no larger than 128 MB.');
+   const text=bwsGraphFileText(await picked.text());if(!enabled())return;
    frame.contentWindow.postMessage({type:'bws-geometry-nodes-load',text,name:picked.name},'*');
    status.textContent='Geometry Nodes file sent to the editor. Your workspace objects are unchanged.';
   }catch(error){status.textContent=error.message;}
@@ -179,16 +191,23 @@ function bwsAttachPluginGraphBridge(pkg,dialog,header,frame){
  window.addEventListener('message',event=>{
   if(event.source!==frame.contentWindow||!enabled())return;const data=event.data;
   try{
-   if(data?.type==='bws-plugin-ready'){ready=true;share.disabled=detach.disabled=clearPreview.disabled=download.disabled=loadNodes.disabled=false;if(pending)frame.contentWindow.postMessage({type:'bws-graph-preview-request',requestId:pending.requestId,graph:pending.graph},'*');}
+   if(data?.type==='bws-plugin-ready'){ready=true;share.disabled=detach.disabled=clearPreview.disabled=download.disabled=loadNodes.disabled=gameExport.disabled=false;if(pending)frame.contentWindow.postMessage({type:'bws-graph-preview-request',requestId:pending.requestId,graph:pending.graph},'*');}
+   if(gameExportRequest&&data?.requestId===gameExportRequest&&['bws-cinder-asset-export-result','bws-cinder-asset-export-error'].includes(data.type)){
+    finishGameExport();
+    if(data.type==='bws-cinder-asset-export-error')throw Error(String(data.message||'Game export failed.').slice(0,1000));
+    if(!(data.blob instanceof Blob)||data.blob.type!=='application/gzip'||!data.blob.size||data.blob.size>BWS_GRAPH_FILE_MAX_BYTES)throw Error('Invalid or oversized Cinder Cairn export.');
+    const name=safeFileName(String(data.name||'cinder-asset').replace(/\.bwcasset$/i,''),'cinder-asset')+'.bwcasset';
+    downloadBlob(name,data.blob);status.textContent='Game asset download requested: '+name+'. Editable Geometry Nodes files are unchanged.';return;
+   }
    if(data?.type==='bws-graph-preview-cleared'){previewClearPending=false;clearPreviewOutput();return;}
    if(previewClearPending&&['bws-graph-result','bws-graph-pose-preview','bws-graph-preview-result','bws-graph-preview-error'].includes(data?.type))return;
    if(data?.type==='bws-graph-state'){state=bwsGraphState(data.state);save.disabled=false;}
    if(data?.type==='bws-graph-pose-preview'&&previewWindow&&!previewWindow.closed&&result){bwsValidateGraphParts(data.parts);result={...result,parts:data.parts};refreshPreview();}
    if(data?.type==='bws-graph-result'){result=null;add.disabled=replace.disabled=true;bwsValidateGraphParts(data.parts);result={graph:sanitizeGeometryNodeGraph(data.graph),parts:data.parts};refreshPreview();add.disabled=false;replace.disabled=false;status.textContent=data.parts.length+' parts ready for '+result.graph.name+'.';}
-   if(data?.type==='bws-graph-file'){if(typeof data.text!=='string'||data.text.length>8000000)throw Error('Geometry Nodes file exceeds 8 MB.');JSON.parse(data.text);file={name:safeFileName(String(data.name||'nodes').replace(/\.bwnc$/i,''),'nodes')+'.bwnc',text:data.text};download.disabled=false;if(nodeSaveRequested){nodeSaveRequested=false;downloadBlob(nodeSaveName||file.name,new Blob([file.text],{type:'application/json'}));status.textContent='Download requested: '+(nodeSaveName||file.name);nodeSaveName=null;}else status.textContent='Geometry Nodes file ready. Choose Save Geometry Nodes.';}
+   if(data?.type==='bws-graph-file'){bwsGraphFileText(data.text);JSON.parse(data.text);file={name:safeFileName(String(data.name||'nodes').replace(/\.bwnc$/i,''),'nodes')+'.bwnc',text:data.text};download.disabled=false;if(nodeSaveRequested){nodeSaveRequested=false;downloadBlob(nodeSaveName||file.name,new Blob([file.text],{type:'application/json'}));status.textContent='Download requested: '+(nodeSaveName||file.name);nodeSaveName=null;}else status.textContent='Geometry Nodes file ready. Choose Save Geometry Nodes.';}
    if(data?.requestId===pending?.requestId&&pending&&['bws-graph-preview-result','bws-graph-preview-error'].includes(data.type)){if(data.type==='bws-graph-preview-error')throw Error(String(data.message).slice(0,500));finish(null,bwsValidateGraphParts(data.parts));}
   }catch(error){status.textContent=error.message;if(data?.requestId===pending?.requestId&&pending)finish(error);}
- },{signal:controller.signal});const cleanup=dialog.bwsCleanup;dialog.bwsCleanup=()=>{nodeSaveDialog?.remove();nodeSaveDialog=null;restorePreview();cleanup?.();controller.abort();state=result=file=null;finish(Error('Graph workspace closed.'));};
+ },{signal:controller.signal});const cleanup=dialog.bwsCleanup;dialog.bwsCleanup=()=>{finishGameExport();nodeSaveDialog?.remove();nodeSaveDialog=null;restorePreview();cleanup?.();controller.abort();state=result=file=null;finish(Error('Graph workspace closed.'));};
 }
 async function bwsRequestGraphPreview(graph){
  await bwsPluginStorageReady;const plugin=pluginManifestById('geometry-nodes');if(!plugin?.enabled||plugin.apiVersion!==4||plugin.contributes?.graphWorkspace!==true)throw Error('Install and enable Geometry Nodes to generate scene trees or rocks from graph recipes.');
@@ -200,75 +219,140 @@ async function bwsRequestGraphPreview(graph){
 
 
 function bwsCreateDetachedPoseControls(doc,canvas,camera,getRoot,send){
+ const win=doc.defaultView,events=new win.AbortController(),on=(target,type,fn,options={})=>target.addEventListener(type,fn,{...options,signal:events.signal});
  const bar=doc.createElement('div');bar.style.cssText='position:absolute;bottom:0;left:0;right:0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px;background:#122326;border-top:1px solid #476358;z-index:30';
  const caption=doc.createElement('strong');caption.style.color='#e1c36c';bar.append(caption);
  const show=doc.createElement('input');show.type='checkbox';show.checked=true;const showLabel=doc.createElement('label');showLabel.append(show,doc.createTextNode(' Pose joints'));bar.append(showLabel);
  const select=doc.createElement('select');select.setAttribute('aria-label','Preview joint');bar.append(select);
- const input=(label,type)=>{const el=doc.createElement('input');el.type=type;el.setAttribute('aria-label',label);el.style.width=type==='range'?'140px':'60px';el.step='1';const wrap=doc.createElement('label');wrap.append(doc.createTextNode(label+' '),el);bar.append(wrap);return el;};
- const angle=input('Angle','number'),slider=input('Bend','range'),min=input('Min','number'),max=input('Max','number');
- let joints=[],selected='',markers=[],signature='',liveFrame=null,queued=null,localEdit=null,dragging=false,dragAngle=0,dragValue=0,limitDraft=null,limitError='';
- const win=doc.defaultView,current=()=>joints.find(j=>j.key===selected);
- const cancelEdits=()=>{if(liveFrame!==null)win.cancelAnimationFrame(liveFrame);liveFrame=null;queued=null;localEdit=null;dragging=false;};
- const command=(action,extra={})=>{const j=current();if(action!=='live-angle')cancelEdits();if(j)send({nodeId:j.nodeId,jointId:j.id,action,...extra});};
- const valueOf=j=>localEdit?.key===j.key?localEdit.value:j.pose.value;
- const apply=value=>{const j=current();if(!j||!Number.isFinite(Number(value)))return;const next=Math.max(j.pose.minimum,Math.min(j.pose.maximum,Number(value)));command('angle',{value:next});localEdit={key:j.key,value:next};sync();drawGauge();};
+ const input=(label,type)=>{const el=doc.createElement('input');el.type=type;el.setAttribute('aria-label',label);el.style.width=type==='range'?'140px':'85px';el.step=type==='range'?'.1':'any';const wrap=doc.createElement('label');wrap.append(doc.createTextNode(label+' '),el);bar.append(wrap);return el;};
+ const angle=input('Angle','number'),slider=input('Bend','range');
+ let joints=[],selected='',markers=[],signature='',liveFrame=null,queued=null,localEdit=null,drag=null,sliderEditing=false,sliderWindow=null,disposed=false,down=null;
+ const current=()=>joints.find(j=>j.key===selected),valueOf=j=>localEdit?.key===j.key?localEdit.value:j.pose.value;
+ const layer=doc.createElement('div');layer.style.cssText='position:absolute;inset:44px 0 0;overflow:hidden;pointer-events:none';
+ const gauge=doc.createElementNS('http://www.w3.org/2000/svg','svg');gauge.setAttribute('viewBox','-75 -75 150 180');gauge.setAttribute('role','slider');gauge.setAttribute('aria-label','Selected joint angle dial');gauge.setAttribute('tabindex','0');gauge.style.cssText='position:absolute;width:150px;height:180px;pointer-events:auto;touch-action:none;z-index:26';gauge.innerHTML="<path data-ring fill=\"#102321\" fill-opacity=\".75\" stroke=\"#9aae9d\"/><line data-zero x1=\"0\" y1=\"0\" stroke=\"#aabbac\" stroke-dasharray=\"3 3\"/><line data-needle x1=\"0\" y1=\"0\" stroke=\"#efcb6d\" stroke-width=\"3\"/><circle r=\"4\" fill=\"#efcb6d\"/><rect x=\"-74\" y=\"69\" width=\"148\" height=\"35\" rx=\"4\" fill=\"#102321\"/><text data-value x=\"0\" y=\"83\" fill=\"#efcb6d\" font-size=\"12\" text-anchor=\"middle\"/><text data-hint x=\"0\" y=\"99\" fill=\"#dce8df\" font-size=\"10\" text-anchor=\"middle\"/>";layer.append(gauge);
+
+ // This frame lives in the joint's actual world plane. Never infer its
+ // handedness from a fixed screen atan2 or from a camera-side sign alone.
+ function dialFrame(j){
+  if(!j||!Array.isArray(j.axis)||!Array.isArray(j.referenceDirection))return null;
+  const normal=new THREE.Vector3(...j.axis),u=new THREE.Vector3(...j.referenceDirection);
+  if(![...normal.toArray(),...u.toArray()].every(Number.isFinite)||normal.lengthSq()<1e-12)return null;
+  normal.normalize();u.addScaledVector(normal,-u.dot(normal));if(u.lengthSq()<1e-12)return null;u.normalize();
+  const sign=j.pose.rotationSign===-1?-1:1,v=new THREE.Vector3().crossVectors(normal,u).multiplyScalar(sign);
+  camera.updateMatrixWorld();
+  const origin=j.position.clone(),clip=origin.clone().project(camera),rect=canvas.getBoundingClientRect();
+  if(!rect.width||!rect.height||clip.z< -1||clip.z>1)return null;
+  const depth=-origin.clone().applyMatrix4(camera.matrixWorldInverse).z;if(depth<=0)return null;
+  const units=camera.isOrthographicCamera?(camera.top-camera.bottom)/(camera.zoom*rect.height):2*depth*Math.tan(THREE.MathUtils.degToRad(camera.fov/2))/(camera.zoom*rect.height);
+  const radius=50*units,center=new THREE.Vector2((clip.x+1)*rect.width/2,(1-clip.y)*rect.height/2);
+  const view=camera.isOrthographicCamera?camera.getWorldDirection(new THREE.Vector3()):origin.clone().sub(camera.getWorldPosition(new THREE.Vector3())).normalize();
+  const project=direction=>{const p=origin.clone().addScaledVector(direction,radius).project(camera);return new THREE.Vector2((p.x+1)*rect.width/2-center.x,(1-p.y)*rect.height/2-center.y);};
+  return {origin,normal,u,v,sign,radius,rect,center,project,edgeOn:Math.abs(view.dot(normal))<.15};
+ }
+ function dialPointer(event,frame){
+  if(!frame)return null;
+  camera.updateMatrixWorld();const rect=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();
+  ray.setFromCamera(new THREE.Vector2((event.clientX-rect.left)/rect.width*2-1,1-(event.clientY-rect.top)/rect.height*2),camera);
+  if(Math.abs(ray.ray.direction.dot(frame.normal))<.15)return null;
+  const hit=ray.ray.intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(frame.normal,frame.origin),new THREE.Vector3());
+  if(!hit)return null;hit.sub(frame.origin);if(hit.length()<frame.radius*.08)return null;
+  return THREE.MathUtils.radToDeg(Math.atan2(hit.dot(frame.v),hit.dot(frame.u)));
+ }
+ function drawProjectedDial(svg,j,value){
+  const f=dialFrame(j);if(!f){svg.style.display='none';return null;}svg.style.display='block';
+  const base=svg.parentElement.getBoundingClientRect();
+  svg.style.left=(f.rect.left-base.left+f.center.x-75)+'px';svg.style.top=(f.rect.top-base.top+f.center.y-75)+'px';
+  const points=[];for(let i=0;i<=64;i++){const a=i*Math.PI/32,p=f.project(f.u.clone().multiplyScalar(Math.cos(a)).addScaledVector(f.v,Math.sin(a)));points.push((i?'L':'M')+p.x.toFixed(2)+' '+p.y.toFixed(2));}
+  svg.querySelector('[data-ring]').setAttribute('d',points.join(' ')+' Z');
+  const ray=f.u.clone().applyAxisAngle(f.normal,THREE.MathUtils.degToRad(f.sign*(value-j.pose.value))),tip=f.project(ray.multiplyScalar(.88));
+  const needle=svg.querySelector('[data-needle]');needle.setAttribute('x2',String(tip.x));needle.setAttribute('y2',String(tip.y));
+  const zero=f.project(f.u.clone().applyAxisAngle(f.normal,THREE.MathUtils.degToRad(-f.sign*j.pose.value)).multiplyScalar(.9));
+  const baseline=svg.querySelector('[data-zero]');baseline.setAttribute('x2',String(zero.x));baseline.setAttribute('y2',String(zero.y));
+  svg.querySelector('[data-value]').textContent=value+' degrees';
+  svg.querySelector('[data-hint]').textContent=f.edgeOn?'Edge-on: use side view':'Joint rotation plane';
+  svg.setAttribute('aria-valuenow',String(value));svg.setAttribute('aria-valuetext',value+' degrees, free rotation');svg.setAttribute('aria-disabled',String(f.edgeOn));
+  svg.style.cursor=f.edgeOn?'not-allowed':'crosshair';return f;
+ }
+
+ const cancelEdits=()=>{
+  if(liveFrame!==null)win.cancelAnimationFrame(liveFrame);liveFrame=null;queued=null;localEdit=null;sliderEditing=false;
+  const old=drag;drag=null;if(old&&gauge.hasPointerCapture(old.pointer))gauge.releasePointerCapture(old.pointer);
+ };
+ const command=(action,extra={})=>{const j=current();cancelEdits();if(j)send({nodeId:j.nodeId,jointId:j.id,action,...extra});};
+ const apply=value=>{
+  const j=current(),next=Number(value);if(!j||String(value).trim()===''||!Number.isFinite(next))return;
+  cancelEdits();localEdit={key:j.key,value:next};send({nodeId:j.nodeId,jointId:j.id,action:'angle',value:next});sync();drawGauge();
+ };
  const live=value=>{
-  const j=current();if(!j||!Number.isFinite(Number(value)))return;
-  const next=Math.max(j.pose.minimum,Math.min(j.pose.maximum,Math.round(Number(value))));
+  const j=current(),n=Number(value);if(!j||!Number.isFinite(n))return;const next=Math.round(n*10)/10;
   localEdit={key:j.key,value:next};queued={nodeId:j.nodeId,jointId:j.id,action:'live-angle',value:next};sync();drawGauge();
   if(liveFrame===null)liveFrame=win.requestAnimationFrame(()=>{liveFrame=null;const packet=queued;queued=null;if(packet)send(packet);});
  };
- const button=(title,action)=>{const b=doc.createElement('button');b.textContent=title;b.type='button';b.onclick=action;bar.append(b);};
- button('Play motion',()=>command('play'));button('Stop / restore',()=>command('stop'));button('Apply angle',()=>apply(angle.value));button('-5 degrees',()=>apply(Number(angle.value)-5));button('+5 degrees',()=>apply(Number(angle.value)+5));
- button('Apply limits',()=>{
-  const j=current();if(!j)return;
-  const loText=limitDraft?.key===j.key?limitDraft.minimum:min.value,hiText=limitDraft?.key===j.key?limitDraft.maximum:max.value;
-  const lo=Number(loText),hi=Number(hiText);
-  if(!loText.trim()||!hiText.trim()||!Number.isFinite(lo)||!Number.isFinite(hi)||lo>hi){limitError='Enter finite limits with Min <= Max.';sync();return;}
-  if((Number.isFinite(j.pose.hardMin)&&lo<j.pose.hardMin)||(Number.isFinite(j.pose.hardMax)&&hi>j.pose.hardMax)){limitError='Limits must stay inside '+j.pose.hardMin+' to '+j.pose.hardMax+' degrees.';sync();return;}
-  limitError='';limitDraft={key:j.key,minimum:loText,maximum:hiText,submitted:true,lo,hi};
-  command('limits',{minimum:lo,maximum:hi});sync();
- });button('Reset joint',()=>{limitDraft=null;limitError='';apply(0);});button('Keep pose',()=>command('keep'));
- for(const el of [min,max])el.addEventListener('input',()=>{const j=current();if(!j)return;limitDraft={key:j.key,minimum:min.value,maximum:max.value,submitted:false};limitError='';});
- const note=doc.createElement('span');note.textContent='Local joint angles. Limits are not collision detection.';note.style.fontSize='11px';bar.append(note);doc.body.append(bar);
+ const button=(title,action)=>{const b=doc.createElement('button');b.textContent=title;b.type='button';on(b,'click',action);bar.append(b);};
+ button('Play motion',()=>command('play'));button('Stop / restore',()=>command('stop'));button('Apply angle',()=>apply(angle.value));button('-5 degrees',()=>apply(Number(angle.value)-5));button('+5 degrees',()=>apply(Number(angle.value)+5));button('Reset joint',()=>apply(0));button('Keep pose',()=>command('keep'));
+ const note=doc.createElement('span');note.style.fontSize='11px';bar.append(note);doc.body.append(bar,layer);
  for(const el of bar.querySelectorAll('button,input,select'))el.style.cssText+=';background:#213338;color:#e2e8df;border:1px solid #52665e;border-radius:4px;padding:4px;font:12px Verdana,sans-serif;';
- const layer=doc.createElement('div');layer.style.cssText='position:absolute;inset:44px 0 0;overflow:hidden;pointer-events:none';doc.body.append(layer);
- const gauge=doc.createElementNS('http://www.w3.org/2000/svg','svg');gauge.setAttribute('viewBox','-70 -70 140 165');gauge.setAttribute('role','slider');gauge.setAttribute('aria-label','Selected joint angle dial');gauge.setAttribute('tabindex','0');gauge.style.cssText='position:absolute;width:140px;height:165px;pointer-events:auto;touch-action:none;cursor:crosshair;z-index:26';
- gauge.innerHTML='<circle r="50" fill="#102321" fill-opacity=".7" stroke="#9aae9d"/><line x1="0" y1="0" x2="50" y2="0" stroke="#aabbac" stroke-dasharray="3 3"/><line data-needle x1="0" y1="0" stroke="#efcb6d" stroke-width="3"/><g fill="#e4eada" font-size="11" text-anchor="middle"><text x="60" y="4">0</text><text x="0" y="-56">90</text><text x="-59" y="4">180</text><text x="0" y="64">-90</text><text data-value x="0" y="85"/></g>';layer.append(gauge);
  const labels={slew:'Rotate vehicle body',boom:'Raise main arm',stick:'Bend outer arm',bucket:'Curl excavator bucket','tractor-loader':'Raise loader arms','tractor-loader-bucket':'Tilt loader bucket'};
- function sync(){const j=current();if(!j)return;if(limitDraft&&limitDraft.key!==j.key){limitDraft=null;limitError='';}const value=valueOf(j);select.value=j.key;caption.textContent=(labels[j.id]||j.pose.label)+' / '+value+' degrees'+(limitError?' / '+limitError:'');for(const [el,v] of [[angle,value],[slider,value]])if(doc.activeElement!==el||dragging)el.value=v;min.value=limitDraft?.minimum??j.pose.minimum;max.value=limitDraft?.maximum??j.pose.maximum;slider.min=angle.min=j.pose.minimum;slider.max=angle.max=j.pose.maximum;}
- function drawGauge(){const j=current();if(!j)return;const value=valueOf(j),a=THREE.MathUtils.degToRad(value);gauge.querySelector('[data-needle]').setAttribute('x2',String(44*Math.cos(a)));gauge.querySelector('[data-needle]').setAttribute('y2',String(-44*Math.sin(a)));gauge.querySelector('[data-value]').textContent=value+' degrees';gauge.setAttribute('aria-valuenow',String(value));gauge.setAttribute('aria-valuemin',String(j.pose.minimum));gauge.setAttribute('aria-valuemax',String(j.pose.maximum));}
- const dialAngle=e=>{const b=gauge.getBoundingClientRect();return THREE.MathUtils.radToDeg(Math.atan2(-(e.clientY-b.top-b.height*70/165),e.clientX-b.left-b.width/2));};
- gauge.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();const j=current();if(!j||e.button!==0)return;command('stop');dragging=true;dragAngle=dialAngle(e);dragValue=j.pose.value;gauge.setPointerCapture(e.pointerId);});
- gauge.addEventListener('pointermove',e=>{if(!dragging)return;e.preventDefault();e.stopPropagation();const j=current();if(!j)return;const next=dialAngle(e),delta=((next-dragAngle+540)%360)-180;dragAngle=next;dragValue=Math.max(j.pose.minimum,Math.min(j.pose.maximum,dragValue+delta));live(dragValue);});
- const finishDial=e=>{e.preventDefault();e.stopPropagation();if(!dragging)return;const j=current(),value=j?valueOf(j):null;dragging=false;if(gauge.hasPointerCapture(e.pointerId))gauge.releasePointerCapture(e.pointerId);if(value!==null)apply(value);};
- gauge.addEventListener('pointerup',finishDial);gauge.addEventListener('pointercancel',finishDial);
- gauge.addEventListener('lostpointercapture',()=>{if(dragging){const j=current();dragging=false;if(j)apply(valueOf(j));}});
- gauge.addEventListener('wheel',e=>{e.preventDefault();e.stopPropagation();},{passive:false});
- gauge.addEventListener('keydown',e=>{if(['ArrowLeft','ArrowDown','ArrowRight','ArrowUp'].includes(e.key)){e.preventDefault();e.stopPropagation();const j=current();if(j)apply(valueOf(j)+(['ArrowLeft','ArrowDown'].includes(e.key)?-1:1));}});
- for(const type of ['pointerdown','pointermove','pointerup','wheel'])bar.addEventListener(type,e=>e.stopPropagation());
- select.onchange=()=>{const key=select.value;command('stop');selected=key;sync();};angle.onkeydown=e=>{if(e.key==='Enter')apply(angle.value);};slider.oninput=()=>{angle.value=slider.value;live(slider.value);};slider.onchange=()=>apply(slider.value);
- const escape=e=>{if(e.key==='Escape')command('stop');};doc.addEventListener('keydown',escape);
- let down;const pointerDown=e=>{down=[e.clientX,e.clientY];};canvas.addEventListener('pointerdown',pointerDown);
- const pick=e=>{if(!show.checked||e.button!==0||!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>4)return;const b=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((e.clientX-b.left)/b.width*2-1,1-(e.clientY-b.top)/b.height*2),camera);const m=ray.intersectObjects(getRoot()?.children||[],false)[0]?.object.userData.gameAsset?.machinery,j=m?.joints?.filter(j=>j.pose).at(-1);const match=joints.find(v=>v.nodeId===m?.nodeId&&v.id===j?.id);if(match){command('stop');selected=match.key;sync();}};canvas.addEventListener('pointerup',pick);
+ function sync(){
+  const j=current();if(!j)return;const value=valueOf(j);select.value=j.key;caption.textContent=(labels[j.id]||j.pose.label)+' / '+value+' degrees';
+  if(!sliderWindow||sliderWindow.key!==j.key||!sliderEditing)sliderWindow={key:j.key,lo:value-180,hi:value+180};
+  slider.min=sliderWindow.lo;slider.max=sliderWindow.hi;slider.value=value;if(doc.activeElement!==angle)angle.value=value;
+ }
+ function drawGauge(){
+  const j=current();if(!j||!show.checked){gauge.style.display='none';return;}
+  const f=drawProjectedDial(gauge,j,valueOf(j));note.textContent=!f?'Rebuild preview for joint-plane metadata.':f.edgeOn?'Dial edge-on: orbit to a side view. Numeric angle and Bend still work.':'Free rotation. Bend spans one turn and recenters after release. No collision checking.';
+ }
+ on(gauge,'pointerdown',e=>{
+  e.preventDefault();e.stopPropagation();const j=current();if(!j||e.button!==0)return;const frame=dialFrame(j),a=frame&&!frame.edgeOn?dialPointer(e,frame):null;
+  if(a===null){note.textContent='Dial edge-on or missing joint-plane metadata. Use a side view or rebuild.';return;}
+  const value=valueOf(j);command('stop');drag={pointer:e.pointerId,frame,last:a,value};gauge.setPointerCapture(e.pointerId);
+ });
+ on(gauge,'pointermove',e=>{if(!drag)return;e.preventDefault();e.stopPropagation();const a=dialPointer(e,drag.frame);if(a===null)return;const delta=((a-drag.last+540)%360)-180;drag.last=a;drag.value+=delta;live(drag.value);});
+ const finishDial=e=>{e.preventDefault();e.stopPropagation();if(!drag)return;const value=drag.value,pointer=drag.pointer;drag=null;if(gauge.hasPointerCapture(pointer))gauge.releasePointerCapture(pointer);apply(Math.round(value*10)/10);};
+ on(gauge,'pointerup',finishDial);on(gauge,'pointercancel',()=>command('stop'));on(gauge,'lostpointercapture',()=>{if(drag)command('stop');});
+ on(gauge,'wheel',e=>{e.preventDefault();e.stopPropagation();},{passive:false});
+ on(gauge,'keydown',e=>{if(['ArrowLeft','ArrowDown','ArrowRight','ArrowUp'].includes(e.key)){e.preventDefault();e.stopPropagation();const j=current();if(j)apply(valueOf(j)+(['ArrowLeft','ArrowDown'].includes(e.key)?-1:1));}});
+ for(const type of ['pointerdown','pointermove','pointerup','wheel'])on(bar,type,e=>e.stopPropagation());
+ const choose=key=>{command('stop');selected=key;sliderWindow=null;sync();};
+ on(select,'change',()=>choose(select.value));
+ on(angle,'keydown',e=>{if(e.key==='Enter')apply(angle.value);});
+ on(slider,'pointerdown',()=>{command('stop');sliderEditing=true;});on(slider,'keydown',()=>{sliderEditing=true;});
+ on(slider,'input',()=>live(slider.value));on(slider,'change',()=>{const value=slider.value;sliderEditing=false;apply(value);});
+ on(slider,'blur',()=>{sliderEditing=false;sync();});
+ on(doc,'keydown',e=>{if(e.key==='Escape')command('stop');});on(show,'change',()=>{if(!show.checked)command('stop');});
+ on(canvas,'pointerdown',e=>{down=[e.clientX,e.clientY];});
+ on(canvas,'pointerup',e=>{
+  if(!show.checked||e.button!==0||!down||Math.hypot(e.clientX-down[0],e.clientY-down[1])>4)return;
+  const b=canvas.getBoundingClientRect(),ray=new THREE.Raycaster();ray.setFromCamera(new THREE.Vector2((e.clientX-b.left)/b.width*2-1,1-(e.clientY-b.top)/b.height*2),camera);
+  const m=ray.intersectObjects(getRoot()?.children||[],false)[0]?.object.userData.gameAsset?.machinery,j=m?.joints?.filter(j=>j.pose).at(-1),match=joints.find(v=>v.nodeId===m?.nodeId&&v.id===j?.id);if(match)choose(match.key);
+ });
  return {
   height:()=>bar.hidden?0:bar.getBoundingClientRect().height,
   refresh(){
-   const next=[],seen=new Set();for(const mesh of getRoot()?.children||[]){const m=mesh.userData.gameAsset?.machinery;if(!m)continue;for(const j of m.joints||[]){if(!j.pose)continue;const key=m.nodeId+':'+j.id;if(seen.has(key))continue;seen.add(key);next.push({...j,nodeId:m.nodeId,key,position:new THREE.Vector3(...j.pivot).add(new THREE.Vector3(...(m.offset||[0,0,0])))});}}
+   if(disposed)return;const next=[],seen=new Set();
+   for(const mesh of getRoot()?.children||[]){const m=mesh.userData.gameAsset?.machinery;if(!m)continue;for(const j of m.joints||[]){
+    if(!j.pose)continue;const key=m.nodeId+':'+j.id;if(seen.has(key))continue;seen.add(key);next.push({...j,nodeId:m.nodeId,key,position:new THREE.Vector3(...j.pivot).add(new THREE.Vector3(...(m.offset||[0,0,0])))});
+   }}
    joints=next;bar.hidden=!getRoot();
-   if(!joints.length||!joints.some(j=>j.key===selected)){cancelEdits();limitDraft=null;limitError='';}
-   if(limitDraft?.submitted&&joints.some(j=>j.key===limitDraft.key&&j.pose.minimum===limitDraft.lo&&j.pose.maximum===limitDraft.hi)){limitDraft=null;limitError='';}
-   if(localEdit&&!dragging&&liveFrame===null&&joints.some(j=>j.key===localEdit.key&&j.pose.value===localEdit.value))localEdit=null;
+   if(!joints.some(j=>j.key===selected)){cancelEdits();selected=joints[0]?.key||'';sliderWindow=null;}
+   if(localEdit&&!drag&&liveFrame===null&&joints.some(j=>j.key===localEdit.key&&j.pose.value===localEdit.value))localEdit=null;
    for(const el of bar.querySelectorAll('button,input,select'))el.disabled=!joints.length;
-   if(!joints.length)caption.textContent='No editable joints received. Update GN and build a machinery preview.';
-   if(!joints.some(j=>j.key===selected))selected=joints[0]?.key||'';
-   const sig=joints.map(j=>j.key).join('|');if(sig!==signature){signature=sig;select.replaceChildren();for(const m of markers)m.remove();markers=[];for(const j of joints){const option=doc.createElement('option');option.value=j.key;option.textContent=(labels[j.id]||j.pose.label)+' ('+j.nodeId+')';select.append(option);const marker=doc.createElement('button');marker.textContent='+';marker.title=option.textContent;marker.style.cssText='position:absolute;width:24px;height:24px;border:2px solid #dfc56c;border-radius:50%;background:#173b32;color:white;pointer-events:auto;transform:translate(-50%,-50%)';marker.onclick=()=>{command('stop');selected=j.key;sync();};layer.append(marker);markers.push(marker);}}
-   sync();
+   if(!joints.length)caption.textContent='No editable joints received. Build a machinery preview.';
+   const sig=joints.map(j=>j.key).join('|');if(sig!==signature){signature=sig;select.replaceChildren();for(const m of markers)m.remove();markers=[];
+    for(const j of joints){const option=doc.createElement('option');option.value=j.key;option.textContent=(labels[j.id]||j.pose.label)+' ('+j.nodeId+')';select.append(option);
+     const marker=doc.createElement('button');marker.textContent='+';marker.title=option.textContent;marker.style.cssText='position:absolute;width:24px;height:24px;border:2px solid #dfc56c;border-radius:50%;background:#173b32;color:white;pointer-events:auto;transform:translate(-50%,-50%)';
+     on(marker,'click',()=>choose(j.key));layer.append(marker);markers.push(marker);
+    }
+   }sync();
   },
-  update(){layer.hidden=!show.checked||!joints.length;const b=canvas.getBoundingClientRect();joints.forEach((j,i)=>{const p=j.position.clone().project(camera),m=markers[i];m.hidden=p.z< -1||p.z>1;m.style.left=((p.x+1)*b.width/2)+'px';m.style.top=((1-p.y)*b.height/2)+'px';m.style.background=j.key===selected?'#947322':'#173b32';});const j=current();if(j){const p=j.position.clone().project(camera);gauge.style.left=((p.x+1)*b.width/2-70)+'px';gauge.style.top=((1-p.y)*b.height/2-70)+'px';drawGauge();}},
-  dispose(){command('stop');cancelEdits();doc.removeEventListener('keydown',escape);canvas.removeEventListener('pointerdown',pointerDown);canvas.removeEventListener('pointerup',pick);bar.remove();layer.remove();}
+  update(){
+   if(disposed)return;layer.hidden=!show.checked||!joints.length;const b=canvas.getBoundingClientRect(),base=layer.getBoundingClientRect();
+   joints.forEach((j,i)=>{const p=j.position.clone().project(camera),m=markers[i];m.hidden=p.z< -1||p.z>1;m.style.left=(b.left-base.left+(p.x+1)*b.width/2)+'px';m.style.top=(b.top-base.top+(1-p.y)*b.height/2)+'px';m.style.background=j.key===selected?'#947322':'#173b32';});drawGauge();
+  },
+  dispose(){command('stop');cancelEdits();disposed=true;events.abort();bar.remove();layer.remove();}
  };
 }
+
 function bwsCreatePreviewAxisGuide(container,camera,onView,top=8){
  const doc=container.ownerDocument,root=doc.createElement('div');
  root.style.cssText='position:absolute;right:8px;top:'+top+'px;z-index:25;width:130px;background:#102024df;border:1px solid #476358;border-radius:6px;padding:5px;box-sizing:border-box;color:#e6eee9;font:11px Verdana,sans-serif';
