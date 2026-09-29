@@ -4324,6 +4324,46 @@ window.BwsTriangleSculpt = Object.freeze({
 });
 bwsSculptBuildPanel();
 bwsSculptDockPanel();
+queueMicrotask(() => {
+  const toggle = document.getElementById("referenceControlsToggleBtn");
+  const menu = document.querySelector("#toolbarPicker .toolbar-picker-menu");
+  if (!toggle || !menu || menu.querySelector(".toolbar-view-buttons-group")) return;
+  const group = document.createElement("div");
+  group.className = "toolbar-view-buttons-group";
+  const title = document.createElement("span");
+  title.className = "toolbar-view-buttons-title";
+  title.textContent = "Workspace Visibility";
+  toggle.removeAttribute("style");
+  const createVisibilityToggle = (label, storageKey, bodyClass) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    const sync = () => {
+      const hidden = document.body.classList.contains(bodyClass);
+      button.textContent = `${hidden ? "Show" : "Hide"} ${label}`;
+      button.classList.toggle("active", hidden);
+      button.setAttribute("aria-pressed", String(hidden));
+    };
+    const storedHidden = localStorage.getItem(storageKey) === "true";
+    document.body.classList.toggle(bodyClass, storedHidden);
+    sync();
+    button.addEventListener("click", () => {
+      const hidden = !document.body.classList.contains(bodyClass);
+      document.body.classList.toggle(bodyClass, hidden);
+      localStorage.setItem(storageKey, String(hidden));
+      sync();
+      requestAnimationFrame(() => window.dispatchEvent(new Event("resize")));
+    });
+    return button;
+  };
+  const axisToggle = createVisibilityToggle("axis controls", "boltworks.axisControlsHidden", "workspace-axis-hidden");
+  const leftToggle = createVisibilityToggle("left panel", "boltworks.leftPanelHidden", "workspace-left-hidden");
+  const rightToggle = createVisibilityToggle("right panel", "boltworks.rightPanelHidden", "workspace-right-hidden");
+  group.append(title, toggle, axisToggle, leftToggle, rightToggle);
+  menu.append(group);
+  document.querySelector("#toolbarPicker > summary")?.addEventListener("click", () => {
+    if (document.pointerLockElement) document.exitPointerLock?.();
+  });
+});
 function bwsAddReferenceControlsToggle() {
   if (document.getElementById('referenceControlsToggleBtn')) return;
   const controls = ['workViewFrontBtn', 'workViewSideBtn', 'workViewTopBtn', 'gameplayPreviewOpenBtn', 'frontReferenceWorkBtn', 'frontReferencePanBtn', 'frontReferenceFollowBtn', 'frontReferenceFitBtn', 'sideReferenceWorkBtn', 'sideReferencePanBtn', 'sideReferenceFollowBtn', 'sideReferenceFitBtn']

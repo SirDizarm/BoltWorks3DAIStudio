@@ -11,7 +11,7 @@ function bwsPluginDialog(title,message,acceptLabel="Continue",cancelLabel="Cance
 function bwsPluginNotice(message){return bwsPluginDialog("Plugin information",message,"OK","Close");}
 function bwsPluginActivationError(id){
  const p=installedPluginPackages.find(p=>p.manifest.id===id);if(!p)return "";
- if(![1,2,3,4].includes(p.manifest.apiVersion))return "This plugin requires an unsupported BWS plugin API version.";
+ if(![1,2,3,4,5].includes(p.manifest.apiVersion))return "This plugin requires an unsupported BWS plugin API version.";
  const missing=p.manifest.dependencies.filter(id=>!pluginManifestById(id)?.enabled);
  return missing.length?"Enable these plugin dependencies first: "+missing.join(", "):"";
 }
@@ -80,6 +80,10 @@ async function bwsPluginFromUrl(input){
 function bwsPluginContributionSummary(manifest){
  const contributes=manifest.contributes||{};
  const lines=[];
+ if(Array.isArray(contributes.aiTools)&&contributes.aiTools.length){
+  lines.push("What this adds: "+contributes.aiTools.length+" AI modeling tools through BoltWorksConnect while this plugin is enabled.");
+  lines.push("The AI connection is unavailable when this plugin is disabled or removed. Edit tools can change the current scene and remain subject to BWS validation and undo history.");
+ }
  if(manifest.runtime==="sandbox-html"){
   if(contributes.toolbar==="scenes"){
    lines.push("What this adds: a separate scene workspace you can open and interact with.");
@@ -108,7 +112,7 @@ async function bwsReviewPluginInstall(text,source){
   if(new TextEncoder().encode(text).length>4_000_000)throw Error("Plugin package exceeds 4 MB.");
   const p=validPluginPackage(JSON.parse(text)),m=p.manifest;
   if(BUNDLED_PLUGINS.some(b=>b.id===m.id))throw Error("This ID belongs to an included compatibility module. Replacing built-in code is not supported in this first loader release.");
-  if(![1,2,3,4].includes(m.apiVersion))throw Error("Unsupported plugin API version: "+m.apiVersion);
+  if(![1,2,3,4,5].includes(m.apiVersion))throw Error("Unsupported plugin API version: "+m.apiVersion);
   const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)),hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
   const existing=installedPluginPackages.find(p=>p.manifest.id===m.id);
   const approved=await bwsPluginDialog(existing?"Review plugin replacement":"Review plugin installation",m.name+" / "+m.version+"\n"+m.description+"\n\n"+bwsPluginContributionSummary(m)+"\n\nTechnical details\nSource: "+source+"\nRuntime: "+(m.runtime==="sandbox-html"?"Isolated HTML workspace. No direct editor, network or filesystem access. Any model sharing or ZIP download listed above requires your action.":"Data package; no executable workspace.")+"\nDependencies: "+(m.dependencies.join(", ")||"None")+"\nSHA-256: "+hash+"\n\n"+(existing?"Replaces installed version "+existing.manifest.version+". ":"")+"The plugin is off by default after installation. Turn it on in Plugins when you want to use it. Updates are only installed when you choose.",existing?"Update plugin":"Install plugin");

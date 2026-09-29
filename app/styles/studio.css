@@ -2694,6 +2694,86 @@ body.footer-info-collapsed .bottom {
   display: none;
 }
 
+/* The old lower notice rail is empty; retain only the separate copyright bar. */
+body {
+  --bottom-info-height: 0px !important;
+  --notice-rail-height: 0px !important;
+}
+
+.bottom {
+  display: none !important;
+}
+
+.toolbar-view-buttons-group {
+  display: grid;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 7px;
+  border-top: 1px solid var(--border);
+}
+
+.toolbar-view-buttons-title {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.toolbar-picker-menu #referenceControlsToggleBtn {
+  position: static !important;
+  inset: auto !important;
+  z-index: auto !important;
+  width: 100%;
+  min-height: 28px;
+  margin: 0;
+}
+
+body.workspace-axis-hidden [aria-label="Preview axis directions"] {
+  display: none !important;
+}
+
+body.workspace-left-hidden .app:not(.animator-mode) > .left,
+body.workspace-right-hidden .app:not(.animator-mode) > .right {
+  display: none !important;
+}
+
+body.workspace-left-hidden .app:not(.animator-mode) {
+  grid-template-columns: 0 minmax(0, 1fr) 390px;
+}
+
+body.workspace-right-hidden .app:not(.animator-mode) {
+  grid-template-columns: 292px minmax(0, 1fr) 0;
+}
+
+body.workspace-left-hidden.workspace-right-hidden .app:not(.animator-mode) {
+  grid-template-columns: 0 minmax(0, 1fr) 0;
+}
+
+#toolbarPicker .toolbar-picker-menu {
+  max-height: none !important;
+  overflow: visible !important;
+}
+
+.toolbar-view-buttons-group > button {
+  width: 100%;
+  min-height: 31px;
+  height: 31px;
+  margin: 0;
+  padding: 4px 9px;
+  border: 1px solid rgb(52, 59, 66);
+  border-radius: 5px;
+  background: rgba(13, 19, 22, .94);
+  color: rgb(238, 242, 243);
+  box-shadow: none;
+}
+
+.toolbar-view-buttons-group > button:hover,
+.toolbar-view-buttons-group > button:focus-visible {
+  border-color: var(--accent);
+  background: rgba(64, 199, 165, .1);
+}
+
 .persistent-notice {
   display: flex;
   align-items: center;
@@ -2726,6 +2806,39 @@ body.footer-info-collapsed .bottom {
 .support-bws-button:focus-visible {
   border-color: var(--accent);
   background: rgba(64, 199, 165, .14);
+}
+
+/* Compact product status links in the top-left brand block. */
+.brand-copy { display: flex; flex-direction: column; align-items: flex-start; line-height: 1.05; }
+.brand-version { color: #f0bd4f; font-weight: 800; }
+.brand-links { display: flex; align-items: center; gap: 10px; margin-top: 3px; }
+.brand-links .support-bws-button {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #8de2cb;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.1;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  box-shadow: none;
+}
+.brand-links .support-bws-button:hover,
+.brand-links .support-bws-button:focus-visible {
+  border: 0;
+  background: transparent;
+  color: #c6fff0;
+}
+.brand-experimental {
+  margin-top: 3px;
+  color: #d6a94b;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .02em;
+  white-space: nowrap;
 }
 
 .support-bws-window {

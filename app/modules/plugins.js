@@ -3,6 +3,33 @@ const pluginRegistry = {};
 let installedPluginPackages = [];
 let pluginEnabledPreferences = {};
 
+function bwsValidAiTools(value, pluginId) {
+  if (!Array.isArray(value) || !value.length || value.length > 64) throw new Error(`${pluginId} must declare 1-64 AI tools.`);
+  const names = new Set();
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) throw new Error(`${pluginId} AI tool ${index + 1} is invalid.`);
+    const name = String(item.name || "");
+    if (!/^[a-z][a-z0-9_.-]{2,63}$/i.test(name) || names.has(name)) throw new Error(`${pluginId} has an invalid or duplicate AI tool name: ${name}`);
+    names.add(name);
+    const description = String(item.description || "").trim();
+    if (!description || description.length > 1000) throw new Error(`${name} needs a description no longer than 1000 characters.`);
+    const access = item.access === "read" ? "read" : item.access === "edit" ? "edit" : null;
+    if (!access) throw new Error(`${name} access must be read or edit.`);
+    const handler = item.handler && typeof item.handler === "object" && !Array.isArray(item.handler) ? item.handler : {};
+    const kind = ["connection", "bridge", "sculpt"].includes(handler.kind) ? handler.kind : null;
+    if (!kind) throw new Error(`${name} has an unsupported handler.`);
+    const method = kind === "bridge" ? String(handler.method || "") : "";
+    if (kind === "bridge" && !/^[a-z][a-z0-9_.-]{1,79}$/i.test(method)) throw new Error(`${name} has an invalid bridge method.`);
+    const inputSchema = access === "read"
+      ? { type: "object", properties: {}, required: [], additionalProperties: false }
+      : { type: "object", properties: { params: { type: "object" } }, required: ["params"], additionalProperties: false };
+    return {
+      name, description, access, handler: { kind, ...(method ? { method } : {}) }, inputSchema,
+      annotations: { readOnlyHint: access === "read", destructiveHint: item.destructive === true, openWorldHint: false }
+    };
+  });
+}
+
 function validPluginManifest(value) {
   if (!value || value.kind !== "boltworks-plugin" || Number(value.manifestVersion) !== 1) throw new Error("This is not a BoltWorks plugin manifest v1.");
   if (!/^[a-z0-9][a-z0-9._-]{2,63}$/i.test(String(value.id || ""))) throw new Error("Plugin id must contain 3-64 letters, numbers, dots, dashes, or underscores.");
@@ -34,6 +61,16 @@ function validPluginPackage(value) {
     totalSize+=data.length;if(totalSize>4_000_000||Object.keys(files).length>=128)throw Error("Plugin package exceeds 4 MB or 128 files.");
     if(Object.prototype.hasOwnProperty.call(files,cleanPath))throw Error("Duplicate plugin file path.");
     files[cleanPath] = { mediaType: String(file?.mediaType || "text/plain"), data };
+  }
+  const aiToolsFile = String(manifest.contributes?.aiToolsFile || "");
+  if (aiToolsFile) {
+    if (manifest.apiVersion !== 5) throw new Error("AI tool plugins require BWS plugin API version 5.");
+    const source = files[aiToolsFile]?.data;
+    if (!source) throw new Error("The AI tool contract is missing from this package.");
+    let definitions;
+    try { definitions = JSON.parse(source); }
+    catch { throw new Error("The AI tool contract is not valid JSON."); }
+    manifest.contributes = { ...manifest.contributes, aiTools: bwsValidAiTools(definitions, manifest.id) };
   }
   if(manifest.runtime==="sandbox-html"&&(!manifest.entry||!Object.prototype.hasOwnProperty.call(files,manifest.entry)))throw Error("Plugin entry HTML is missing from its package.");
   const installation=value.installation&&typeof value.installation==="object"?{source:String(value.installation.source||"local file"),sha256:String(value.installation.sha256||""),installedAt:String(value.installation.installedAt||"")}:null;
@@ -144,6 +181,18 @@ function applyPluginAvailability(elements) {
   }
   const geometryNodesEnabled = pluginManifestById("geometry-nodes")?.enabled === true;
   if (typeof setGeometryNodesPluginEnabled === "function") setGeometryNodesPluginEnabled(geometryNodesEnabled);
+  window.BwsAiPluginBridge?.refresh?.();
+}
+
+function bwsEnabledAiPluginDefinition() {
+  for (const pluginPackage of installedPluginPackages) {
+    const manifest = pluginManifestById(pluginPackage.manifest.id);
+    const tools = manifest?.contributes?.aiTools;
+    if (manifest?.enabled === true && Array.isArray(tools) && tools.length) {
+      return { id: manifest.id, name: manifest.name, version: manifest.version, tools };
+    }
+  }
+  return null;
 }
 
 loadInstalledPlugins();
