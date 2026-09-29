@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v50.0.52**. This experimental release adds the installable BWS AI modeling tool catalog, plugin-driven AI Connect routing, compact workspace visibility controls, and the matching versioned editor bundle.
+Current preview version: **v50.0.53**. This experimental release makes AI connection controls reflect plugin state immediately, keeps Triangle Sculpt available through MCP without a visible editor panel, and retains Human AI Viewer as the single visible AI workspace panel.
 
 Enjoy BWS? [Star the project on GitHub](https://github.com/SirDizarm/BoltWorks3DAIStudio). Stars show support rather than a scored review.
 

@@ -181,6 +181,7 @@ function applyPluginAvailability(elements) {
   }
   const geometryNodesEnabled = pluginManifestById("geometry-nodes")?.enabled === true;
   if (typeof setGeometryNodesPluginEnabled === "function") setGeometryNodesPluginEnabled(geometryNodesEnabled);
+  if (typeof bwsSculptInstallToolbarMenu === "function") bwsSculptInstallToolbarMenu(null);
   window.BwsAiPluginBridge?.refresh?.();
 }
 

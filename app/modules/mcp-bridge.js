@@ -928,10 +928,12 @@ const mcpBridgeBwcRefresh = async () => {
   await bwsPluginStorageReady;
   const plugin = bwsEnabledAiPluginDefinition();
   const pluginKey = plugin ? `${plugin.id}@${plugin.version}` : "";
-  if (pluginKey === mcpBridgeBwcPluginKey) return;
+  if (pluginKey === mcpBridgeBwcPluginKey) { bwsSculptInstallToolbarMenu(null); return; }
   mcpBridgeBwcHandle?.destroy?.();
+  document.getElementById('bwc-adapter-launcher')?.remove();
   mcpBridgeBwcHandle = null;
   mcpBridgeBwcPluginKey = pluginKey;
+  bwsSculptInstallToolbarMenu(null);
   if (!plugin) return;
   const moduleUrl = 'https://connect.boltworksstudio.com/bwc-adapter-client.mjs';
   const { mountBwcAdapter } = await import(moduleUrl);
@@ -950,6 +952,7 @@ const mcpBridgeBwcRefresh = async () => {
       return mcpBridgeExecuteCommand({ method: tool.handler.method, params: args.params || {} });
     }
   });
+  requestAnimationFrame(() => bwsSculptInstallToolbarMenu(document.querySelector('#bws-sculpt-launcher')));
 };
 window.BwsAiPluginBridge = Object.freeze({ refresh: () => void mcpBridgeBwcRefresh().catch(error => console.warn('BoltWorksConnect is unavailable:', error)) });
 void mcpBridgeBwcRefresh().catch(error => console.warn('BoltWorksConnect is unavailable:', error));

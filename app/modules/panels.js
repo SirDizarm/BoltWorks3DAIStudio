@@ -4242,7 +4242,7 @@ function bwsSculptInstallToolbarMenu(sculptLauncher) {
   const menu = document.querySelector('#toolbarPicker .toolbar-picker-menu');
   if (!menu) return;
   let section = menu.querySelector('#toolbarAiSculptTools');
-  if (!section) { section = document.createElement('section'); section.id = 'toolbarAiSculptTools'; section.setAttribute('aria-label', 'AI and mesh sculpt tools'); const title = document.createElement('h3'); title.textContent = 'AI & Mesh tools'; title.style.cssText = 'margin:10px 0 6px;padding-top:10px;border-top:1px solid #50616c;font-size:12px;color:#d9bd83'; section.append(title); menu.append(section); }
+  if (!section) { section = document.createElement('section'); section.id = 'toolbarAiSculptTools'; section.setAttribute('aria-label', 'AI connection'); const title = document.createElement('h3'); title.textContent = 'AI connection'; title.style.cssText = 'margin:10px 0 6px;padding-top:10px;border-top:1px solid #50616c;font-size:12px;color:#d9bd83'; section.append(title); menu.append(section); }
   const moveLauncher = button => {
     if (!button || section.contains(button)) return;
     button.style.cssText = 'position:static;z-index:auto;right:auto;top:auto;bottom:auto;width:100%;min-height:34px;padding:7px 9px;margin:0;border:1px solid #72958b;border-radius:5px;background:#142125;color:#e6efec;font:600 12px system-ui;cursor:pointer';
@@ -4250,55 +4250,59 @@ function bwsSculptInstallToolbarMenu(sculptLauncher) {
   };
   moveLauncher(sculptLauncher);
   const connect = document.getElementById('bwc-adapter-launcher');
-  if (connect) moveLauncher(connect);
+  const controlId = 'bws-ai-plugin-control';
+  const plugin = pluginManifestById('bws-ai-modeling');
+  if (connect && plugin?.enabled === true) {
+    document.getElementById(controlId)?.remove();
+    moveLauncher(connect);
+  } else {
+    connect?.remove();
+    const needsButton = !!plugin && plugin.enabled !== true;
+    let control = document.getElementById(controlId);
+    if (!control || (needsButton && control.tagName !== 'BUTTON') || (!needsButton && control.tagName !== 'P')) {
+      const replacement = document.createElement(needsButton ? 'button' : 'p');
+      replacement.id = controlId;
+      control?.replaceWith(replacement);
+      control = replacement;
+      section.append(control);
+    }
+    if (!plugin) {
+      control.textContent = 'Ai plugin needed';
+      control.style.cssText = 'margin:4px 0;color:#c6d8d2;font:600 12px system-ui';
+    } else if (plugin.enabled !== true) {
+      control.type = 'button';
+      control.textContent = 'Enable AI plugin';
+      control.style.cssText = '';
+      moveLauncher(control);
+      control.onclick = async () => {
+        control.disabled = true;
+        if (await setPluginEnabled('bws-ai-modeling', true)) {
+          renderPluginManager();
+          applyPluginAvailability(els);
+        }
+        control.disabled = false;
+      };
+    } else {
+      control.textContent = 'Starting Connect AI...';
+      control.style.cssText = 'margin:4px 0;color:#c6d8d2;font:600 12px system-ui';
+    }
+  }
   if (!window.bwsToolbarConnectObserver) {
-    window.bwsToolbarConnectObserver = new MutationObserver(() => { const button = document.getElementById('bwc-adapter-launcher'); if (button) moveLauncher(button); });
+    window.bwsToolbarConnectObserver = new MutationObserver(() => { const button = document.getElementById('bwc-adapter-launcher'); if (button && pluginManifestById('bws-ai-modeling')?.enabled === true) { document.getElementById(controlId)?.remove(); moveLauncher(button); } });
     window.bwsToolbarConnectObserver.observe(document.body, { childList: true, subtree: true });
   }
   section.addEventListener('click', event => { if (event.target.closest('button')) menu.closest('details').open = false; });
 }
 function bwsSculptDockPanel() {
   const panel = document.querySelector('#bws-sculpt-panel');
-  const dock = document.querySelector('#inspectorSection')?.parentElement;
-  if (!panel || !dock || document.querySelector('#bwsAiSculptSection')) return;
-  const section = document.createElement('details');
-  section.className = 'section bws-ai-sculpt-details'; section.id = 'bwsAiSculptSection';
-  section.style.cssText = 'margin:0;padding:12px;overflow:visible';
-  const summary = document.createElement('summary'); summary.className = 'section-header bws-ai-sculpt-header';
-  section.open = true;
-  const heading = document.createElement('h2'); heading.textContent = 'AI';
-  summary.append(heading);
-  const body = document.createElement('div'); body.className = 'section-body'; body.id = 'bwsAiSculptBody';
-  const note = document.createElement('p'); note.className = 'api-note'; note.textContent = 'AI sculpt controls. Tool calls require a live, paired BWS AI connection.'; body.append(note);
-  panel.removeAttribute('hidden');
-  panel.style.position = 'static';
-  panel.style.inset = 'auto';
-  panel.style.width = '100%';
-  panel.style.maxHeight = 'none';
-  panel.style.overflow = 'visible';
-  panel.style.padding = '0';
-  panel.style.border = '0';
-  panel.style.borderRadius = '0';
-  panel.style.background = 'transparent';
-  panel.style.boxShadow = 'none';
-  panel.style.cssText = 'position:static;inset:auto;z-index:auto;width:100%;max-height:none;overflow:visible;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none';
-  body.append(panel); section.append(summary, body);
-  const utilities = dock.querySelector('#utilitiesSection');
-  dock.insertBefore(section, utilities || null);
+  if (!panel) return;
+  document.querySelector('#bwsAiSculptSection')?.remove();
   document.querySelector('#bws-sculpt-launcher')?.remove();
-  const close = [...panel.querySelectorAll('button')].find(button => button.textContent.trim().toLowerCase() === 'close');
-  close?.remove();
-  const setOpen = open => {
-    section.open = open;
-    body.hidden = !open;
-    body.style.display = open ? 'block' : 'none';
-    if (open) requestAnimationFrame(() => bwsSculptRenderPreview());
-  };
-  setOpen(true);
-  section.addEventListener('toggle', () => setOpen(section.open));
-  section.addEventListener('keydown', event => {
-    if (event.key === 'Escape' && !body.hidden) { setOpen(false); summary.focus(); }
-  });
+  panel.removeAttribute('hidden');
+  panel.setAttribute('aria-hidden', 'true');
+  panel.inert = true;
+  panel.style.cssText = 'position:fixed;left:-10000px;top:0;z-index:-1;width:320px;height:240px;overflow:hidden;margin:0;padding:12px;pointer-events:none;opacity:0';
+  requestAnimationFrame(() => bwsSculptRenderPreview());
 }
 window.BwsTriangleSculpt = Object.freeze({
   execute(operation, params = {}) {
