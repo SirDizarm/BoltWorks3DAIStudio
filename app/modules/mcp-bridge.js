@@ -919,3 +919,37 @@ else {
 }
 
 window.addEventListener("pagehide", mcpBridgeStopPolling, { once: true });
+
+// BWC loads a reusable public transport helper; edits still pass through the
+// same explicit BWS command allow-list used by the local MCP bridge.
+const mcpBridgeBwcMethods = Object.freeze({
+  bws_get_capabilities: 'capabilities.get',
+  bws_get_scene: 'scene.get',
+  bws_get_selection: 'selection.get',
+  bws_get_audit: 'audit.get',
+  bws_create_objects: 'objects.create',
+  bws_create_mesh_from_reference_image: 'referenceMatch.createMesh',
+  bws_combine_objects_into_shell: 'objects.combineShell',
+  bws_update_objects: 'objects.update',
+  bws_delete_objects: 'objects.delete',
+  bws_set_selection: 'selection.set',
+  bws_undo: 'undo'
+});
+const mcpBridgeBwcStart = async () => {
+  const moduleUrl = 'https://connect.boltworksstudio.com/bwc-adapter-client.mjs';
+  const { mountBwcAdapter } = await import(moduleUrl);
+  mountBwcAdapter({
+    adapterId: 'bws', label: 'BWS workspace',
+    execute: (operation, args) => {
+      if (operation === 'bws_get_connection') return { adapterId: 'bws', label: 'BWS workspace' };
+      if (operation === 'bws_model_qa_sheet' || operation.startsWith('bws_sculpt_')) {
+        if (!window.BwsTriangleSculpt) throw new Error('The BWS Triangle Sculpt tool is not ready.');
+        return window.BwsTriangleSculpt.execute(operation, args.params || {});
+      }
+      const method = mcpBridgeBwcMethods[operation];
+      if (!method) throw new Error('This operation is not available for BWS.');
+      return mcpBridgeExecuteCommand({ method, params: args.params || {} });
+    }
+  });
+};
+void mcpBridgeBwcStart().catch(error => console.warn('BoltWorksConnect is unavailable:', error));

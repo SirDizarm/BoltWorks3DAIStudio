@@ -4332,21 +4332,26 @@ function loadShotImage(dataUrl) {
   });
 }
 
-async function saveQaSheet() {
+async function saveQaSheet({ download = true } = {}) {
   const prefix = currentProjectBaseName();
-  const shots = await captureViews({ download: false, prefix });
+  await waitForSceneTextures();
+  const shots = ["front", "back", "left", "right", "top", "iso"].map(view => captureView(view, { download: false, prefix }));
+  const hasReference = typeof referenceImageState.dataUrl === "string" && referenceImageState.dataUrl.startsWith("data:image/");
+  if (hasReference) shots.push(await captureReferenceImage({ download: false, prefix }));
   const images = await Promise.all(shots.map(shot => loadShotImage(shot.dataUrl)));
   const cellWidth = 640;
   const cellHeight = 420;
+  const columns = shots.length > 6 ? 4 : 3;
+  const rows = Math.ceil(shots.length / columns);
   const sheet = document.createElement("canvas");
-  sheet.width = cellWidth * 3;
-  sheet.height = cellHeight * 2;
+  sheet.width = cellWidth * columns;
+  sheet.height = cellHeight * rows;
   const context = sheet.getContext("2d");
   context.fillStyle = "#0d1113";
   context.fillRect(0, 0, sheet.width, sheet.height);
   images.forEach((image, index) => {
-    const x = (index % 3) * cellWidth;
-    const y = Math.floor(index / 3) * cellHeight;
+    const x = (index % columns) * cellWidth;
+    const y = Math.floor(index / columns) * cellHeight;
     const scale = Math.min(cellWidth / image.width, cellHeight / image.height);
     const width = image.width * scale;
     const height = image.height * scale;
@@ -4361,14 +4366,18 @@ async function saveQaSheet() {
   });
   const fileName = `${prefix}-qa-sheet.png`;
   const dataUrl = sheet.toDataURL("image/png");
-  downloadDataUrl(fileName, dataUrl);
-  log("Saved one six-panel AI QA sheet after all textures finished loading.", {
+  if (download) downloadDataUrl(fileName, dataUrl);
+  log(download ? `Saved the ${shots.length}-panel AI QA sheet after all textures finished loading.` : `Captured the ${shots.length}-panel AI QA sheet for the connected AI.`, {
     fileName,
     views: shots.map(shot => shot.view),
     objects: objects.length
   });
   return { fileName, width: sheet.width, height: sheet.height, dataUrl, shots };
 }
+window.BwsCaptureQaSheetImage = async () => {
+  const { fileName, width, height, dataUrl } = await saveQaSheet({ download: false });
+  return { fileName, width, height, dataUrl };
+};
 
 const animationSheetViews = ["front", "back", "left", "right", "front-left", "front-right", "back-left", "back-right"];
 

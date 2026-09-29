@@ -75,7 +75,10 @@ textarea {
 }
 
 .app {
-  height: calc(100% - var(--copyright-bar-height) - var(--notice-rail-height));
+  position: fixed;
+  inset: 0 0 calc(var(--copyright-bar-height) + var(--notice-rail-height)) 0;
+  width: 100%;
+  height: auto;
   display: grid;
   grid-template-columns: 292px minmax(0, 1fr) 390px;
   grid-template-rows: minmax(88px, auto) minmax(0, 1fr) auto;
@@ -334,9 +337,29 @@ body:has(#toggleToolbarProjectFiles:not(:checked)) #toolbarProjectFilesGroup {
   flex-direction: column;
   align-items: stretch;
   gap: 0;
+  min-width: 0;
+  min-height: 0;
   overflow-y: auto;
   overflow-x: hidden;
 }
+
+.bws-ai-sculpt-details {
+  flex: 0 0 auto;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  color: var(--text);
+}
+
+.bws-ai-sculpt-details > summary {
+  list-style: none;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.bws-ai-sculpt-details > summary::-webkit-details-marker { display: none; }
+.bws-ai-sculpt-details > summary::after { content: "-"; }
+.bws-ai-sculpt-details:not([open]) > summary::after { content: "+"; }
 
 .bottom {
   grid-area: bottom;
@@ -1061,6 +1084,17 @@ label {
 .viewport.reference-views-collapsed .reference-viewports-toggle {
   right: 0;
   border-radius: 5px 0 0 5px;
+}
+
+#referenceControlsToggleBtn {
+  position: fixed;
+  z-index: 10001;
+  left: 8px;
+  bottom: calc(var(--copyright-bar-height) + 8px);
+  min-height: 30px;
+  padding: 4px 9px;
+  border-radius: 5px;
+  background: rgba(13, 19, 22, .94);
 }
 
 .reference-viewport {
@@ -2595,6 +2629,8 @@ label {
     padding-bottom: var(--notice-rail-height);
   }
   .app {
+    position: static;
+    inset: auto;
     min-height: 100%;
     height: auto;
     grid-template-columns: 1fr;

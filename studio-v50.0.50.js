@@ -85501,21 +85501,26 @@ ${new OBJExporter().parse(group)}`;
       image.src = dataUrl;
     });
   }
-  async function saveQaSheet() {
+  async function saveQaSheet({ download: download2 = true } = {}) {
     const prefix = currentProjectBaseName();
-    const shots = await captureViews({ download: false, prefix });
+    await waitForSceneTextures();
+    const shots = ["front", "back", "left", "right", "top", "iso"].map((view) => captureView(view, { download: false, prefix }));
+    const hasReference = typeof referenceImageState.dataUrl === "string" && referenceImageState.dataUrl.startsWith("data:image/");
+    if (hasReference) shots.push(await captureReferenceImage({ download: false, prefix }));
     const images = await Promise.all(shots.map((shot) => loadShotImage(shot.dataUrl)));
     const cellWidth = 640;
     const cellHeight = 420;
+    const columns = shots.length > 6 ? 4 : 3;
+    const rows = Math.ceil(shots.length / columns);
     const sheet = document.createElement("canvas");
-    sheet.width = cellWidth * 3;
-    sheet.height = cellHeight * 2;
+    sheet.width = cellWidth * columns;
+    sheet.height = cellHeight * rows;
     const context = sheet.getContext("2d");
     context.fillStyle = "#0d1113";
     context.fillRect(0, 0, sheet.width, sheet.height);
     images.forEach((image, index) => {
-      const x2 = index % 3 * cellWidth;
-      const y = Math.floor(index / 3) * cellHeight;
+      const x2 = index % columns * cellWidth;
+      const y = Math.floor(index / columns) * cellHeight;
       const scale = Math.min(cellWidth / image.width, cellHeight / image.height);
       const width = image.width * scale;
       const height = image.height * scale;
@@ -85530,14 +85535,18 @@ ${new OBJExporter().parse(group)}`;
     });
     const fileName = `${prefix}-qa-sheet.png`;
     const dataUrl = sheet.toDataURL("image/png");
-    downloadDataUrl(fileName, dataUrl);
-    log("Saved one six-panel AI QA sheet after all textures finished loading.", {
+    if (download2) downloadDataUrl(fileName, dataUrl);
+    log(download2 ? `Saved the ${shots.length}-panel AI QA sheet after all textures finished loading.` : `Captured the ${shots.length}-panel AI QA sheet for the connected AI.`, {
       fileName,
       views: shots.map((shot) => shot.view),
       objects: objects.length
     });
     return { fileName, width: sheet.width, height: sheet.height, dataUrl, shots };
   }
+  window.BwsCaptureQaSheetImage = async () => {
+    const { fileName, width, height, dataUrl } = await saveQaSheet({ download: false });
+    return { fileName, width, height, dataUrl };
+  };
   var animationSheetViews = ["front", "back", "left", "right", "front-left", "front-right", "back-left", "back-right"];
   function animationExportEndFrame(range = "end") {
     return range === "current" ? Math.max(0, Math.min(animationState.end, Math.round(Number(animationState.frame) || 0))) : Math.max(1, Math.round(Number(animationState.end) || 1));
@@ -87588,6 +87597,38 @@ ${new OBJExporter().parse(group)}`;
     queueMicrotask(mcpBridgeStartPolling);
   }
   window.addEventListener("pagehide", mcpBridgeStopPolling, { once: true });
+  var mcpBridgeBwcMethods = Object.freeze({
+    bws_get_capabilities: "capabilities.get",
+    bws_get_scene: "scene.get",
+    bws_get_selection: "selection.get",
+    bws_get_audit: "audit.get",
+    bws_create_objects: "objects.create",
+    bws_create_mesh_from_reference_image: "referenceMatch.createMesh",
+    bws_combine_objects_into_shell: "objects.combineShell",
+    bws_update_objects: "objects.update",
+    bws_delete_objects: "objects.delete",
+    bws_set_selection: "selection.set",
+    bws_undo: "undo"
+  });
+  var mcpBridgeBwcStart = async () => {
+    const moduleUrl = "https://connect.boltworksstudio.com/bwc-adapter-client.mjs";
+    const { mountBwcAdapter } = await import(moduleUrl);
+    mountBwcAdapter({
+      adapterId: "bws",
+      label: "BWS workspace",
+      execute: (operation, args) => {
+        if (operation === "bws_get_connection") return { adapterId: "bws", label: "BWS workspace" };
+        if (operation === "bws_model_qa_sheet" || operation.startsWith("bws_sculpt_")) {
+          if (!window.BwsTriangleSculpt) throw new Error("The BWS Triangle Sculpt tool is not ready.");
+          return window.BwsTriangleSculpt.execute(operation, args.params || {});
+        }
+        const method = mcpBridgeBwcMethods[operation];
+        if (!method) throw new Error("This operation is not available for BWS.");
+        return mcpBridgeExecuteCommand({ method, params: args.params || {} });
+      }
+    });
+  };
+  void mcpBridgeBwcStart().catch((error) => console.warn("BoltWorksConnect is unavailable:", error));
   (() => {
     const endpoint = "/__modeler/mcp/session";
     const pollIntervalMs = 1e3;
@@ -95818,6 +95859,1120 @@ ${new OBJExporter().parse(group)}`;
   });
   document.querySelector("#exportFbxBtn")?.addEventListener("click", exportFullModelFbx);
   initializeUsdControls();
+  var bwsSculptTargetId = null;
+  var bwsSculptViews = Object.freeze({
+    front: ["x", "y"],
+    side: ["z", "y"],
+    top: ["x", "z"]
+  });
+  var bwsSculptTarget = (id) => objects.find((mesh) => mesh?.userData?.id === id && mesh.geometry?.getAttribute("position")) || null;
+  function bwsSculptTriangles(mesh) {
+    if (!mesh) throw new Error("Prepare a sculpt mesh first.");
+    mesh.updateMatrixWorld(true);
+    const geometry = mesh.geometry, position = geometry.getAttribute("position"), index = geometry.index;
+    const count = Math.floor((index?.count ?? position.count) / 3), faces2 = [];
+    for (let triangle = 0; triangle < count; triangle++) {
+      const points = [0, 1, 2].map((corner) => {
+        const vertex2 = index ? index.getX(triangle * 3 + corner) : triangle * 3 + corner;
+        return new Vector3(position.getX(vertex2), position.getY(vertex2), position.getZ(vertex2));
+      });
+      faces2.push(faceFromLocalTriangle(mesh, points, triangle));
+    }
+    return faces2;
+  }
+  var bwsSculptToolPosition = null;
+  var bwsSculptToolRadius = 0.25;
+  var bwsSculptToolMode = "triangle";
+  function bwsSculptSetTool(params = {}) {
+    const raw = Array.isArray(params.center) ? params.center : [params.x, params.y, params.z];
+    const center = raw.map(Number);
+    const radius = Number(params.radius ?? bwsSculptToolRadius);
+    const mode = params.mode ?? bwsSculptToolMode;
+    if (center.length !== 3 || !center.every(Number.isFinite)) throw new Error("Tool center requires world-space X, Y, and Z coordinates.");
+    if (!Number.isFinite(radius) || radius <= 0 || radius > 1e3) throw new Error("Tool radius must be greater than 0 and at most 1000 model units.");
+    if (!["triangle", "vertex", "edge", "face"].includes(mode)) throw new Error("Tool mode must be triangle, vertex, edge, or face.");
+    bwsSculptToolPosition = new Vector3(...center);
+    bwsSculptToolRadius = radius;
+    bwsSculptToolMode = mode;
+    const panel = document.querySelector("#bws-sculpt-panel");
+    if (panel) {
+      ["X", "Y", "Z"].forEach((axis, index) => {
+        const input = panel.querySelector(`[name="local${axis}"]`);
+        if (input) input.value = String(round2(center[index]));
+      });
+      const radiusInput = panel.querySelector('[name="localRadius"]');
+      if (radiusInput) radiusInput.value = String(radius);
+      const modeInput = panel.querySelector('[name="localMode"]');
+      if (modeInput) modeInput.value = mode;
+      bwsSculptUpdateToolOverlay(panel);
+    }
+    bwsSculptFocusPreviewOnTool();
+    return { toolCenterWorld: center.map((value) => round2(value)), radius, mode };
+  }
+  function bwsSculptUpdateToolOverlay(panel) {
+    const canvas2 = panel?.querySelector("#bws-sculpt-preview-canvas");
+    const preview = bwsSculptPreview;
+    const marker = canvas2?.parentElement?.querySelector(".bws-sculpt-tool-marker");
+    if (!canvas2 || !preview?.camera || !marker || !bwsSculptToolPosition) return;
+    const rect = canvas2.getBoundingClientRect(), host = marker.parentElement.getBoundingClientRect();
+    const project = (point) => point.clone().project(preview.camera);
+    const center = project(bwsSculptToolPosition);
+    if (center.z < -1 || center.z > 1 || Math.abs(center.x) > 1.2 || Math.abs(center.y) > 1.2) {
+      marker.hidden = true;
+      return;
+    }
+    marker.hidden = false;
+    const x2 = rect.left - host.left + (center.x + 1) * 0.5 * rect.width;
+    const y = rect.top - host.top + (1 - center.y) * 0.5 * rect.height;
+    const right = new Vector3().setFromMatrixColumn(preview.camera.matrixWorld, 0).normalize();
+    const edge = project(bwsSculptToolPosition.clone().addScaledVector(right, bwsSculptToolRadius));
+    const radiusPx = Math.max(5, Math.min(rect.width, Math.hypot((edge.x - center.x) * rect.width * 0.5, (edge.y - center.y) * rect.height * 0.5)));
+    marker.style.left = `${x2}px`;
+    marker.style.top = `${y}px`;
+    marker.querySelector(".bws-sculpt-tool-radius").style.width = `${radiusPx * 2}px`;
+    marker.querySelector(".bws-sculpt-tool-radius").style.height = `${radiusPx * 2}px`;
+  }
+  function bwsSculptFocusPreviewOnTool() {
+    const state2 = bwsSculptPreview, canvas2 = document.querySelector("#bws-sculpt-preview-canvas");
+    if (!state2 || !canvas2 || !bwsSculptToolPosition) return;
+    state2.target.copy(bwsSculptToolPosition);
+    state2.radius = Math.max(0.01, bwsSculptToolRadius * 3);
+    bwsSculptPreviewDraw();
+  }
+  function bwsSculptSetSelection(mesh, faces2, mode = "triangle") {
+    if (!mesh || !faces2.length) throw new Error("No triangles matched that sculpt selection.");
+    selectObject(mesh);
+    if (surfaceSelectionSource !== "surface" || surfaceComponentMode !== mode) setSurfaceSelectionMode(mode);
+    else clearSelectedTriangles();
+    setFacePickMode(true);
+    selectedFaces.length = 0;
+    selectedFaces.push(...faces2);
+    selectedFace = selectedFaces.at(-1) || null;
+    bwsSculptTargetId = mesh.userData.id;
+    updateFaceMarker();
+    syncSurfaceEditorUi();
+    updateAll();
+    bwsSculptRenderPreview();
+    return bwsSculptState();
+  }
+  function bwsSculptProjection(faces2, view) {
+    const axes = bwsSculptViews[view];
+    if (!axes) throw new Error("View must be front, side, or top.");
+    const centroids = faces2.map((face) => face.point);
+    const bounds = axes.map((axis) => {
+      let min = Infinity, max2 = -Infinity;
+      for (const point of centroids) {
+        min = Math.min(min, point[axis]);
+        max2 = Math.max(max2, point[axis]);
+      }
+      return { min, max: max2 };
+    });
+    return { axes, bounds, centroids };
+  }
+  function bwsSculptState() {
+    const mesh = bwsSculptTarget(bwsSculptTargetId);
+    if (!mesh) return { ready: false, message: "Prepare checked parts to create a sculpt mesh." };
+    const faces2 = bwsSculptTriangles(mesh);
+    const projection = Object.fromEntries(Object.keys(bwsSculptViews).map((view) => {
+      const { axes, bounds } = bwsSculptProjection(faces2, view);
+      return [view, { axes, bounds: bounds.map((range) => ({ min: round2(range.min), max: round2(range.max) })) }];
+    }));
+    const selected2 = selectedFaces.filter((face) => face.mesh === mesh);
+    const selectedBounds = selected2.length ? [0, 1, 2].map((axis) => {
+      let min = Infinity, max2 = -Infinity;
+      for (const face of selected2) for (const point of face.trianglePoints) {
+        min = Math.min(min, point.getComponent(axis));
+        max2 = Math.max(max2, point.getComponent(axis));
+      }
+      return { min: round2(min), max: round2(max2) };
+    }) : null;
+    const componentPoints = selectedSurfaceEdges.filter((edge) => edge.mesh === mesh).flatMap((edge) => [edge.localA, edge.localB].map((point) => point.clone().applyMatrix4(mesh.matrixWorld))).concat(selectedSurfaceVertices.filter((vertex2) => vertex2.mesh === mesh).map((vertex2) => vertex2.localPoint.clone().applyMatrix4(mesh.matrixWorld)));
+    const selectionCenter = selected2.length ? selected2.reduce((sum, face) => sum.add(face.point), new Vector3()).multiplyScalar(1 / selected2.length).toArray().map((value) => round2(value)) : componentPoints.length ? componentPoints.reduce((sum, point) => sum.add(point), new Vector3()).multiplyScalar(1 / componentPoints.length).toArray().map((value) => round2(value)) : null;
+    const anchor = surfaceGizmoPivot?.visible ? surfaceGizmoPivot.position.toArray().map((value) => round2(value)) : null;
+    return {
+      ready: true,
+      targetId: mesh.userData.id,
+      targetName: mesh.name,
+      triangleCount: faces2.length,
+      selectedTriangles: selected2.length,
+      selectionCenter,
+      selectedWorldBounds: selectedBounds,
+      anchorWorldPosition: anchor,
+      selectedEdges: selectedSurfaceEdges.filter((edge) => edge.mesh === mesh).length,
+      selectedVertices: selectedSurfaceVertices.filter((vertex2) => vertex2.mesh === mesh).length,
+      virtualTool: bwsSculptToolPosition ? { centerWorld: bwsSculptToolPosition.toArray().map((value) => round2(value)), radius: bwsSculptToolRadius, mode: bwsSculptToolMode } : null,
+      selectionMode: surfaceComponentMode,
+      projection
+    };
+  }
+  function bwsSculptSelectLocal(params = {}) {
+    const mesh = bwsSculptTarget(params.targetId || bwsSculptTargetId);
+    const rawCenter = Array.isArray(params.center) ? params.center : params.x !== void 0 || params.y !== void 0 || params.z !== void 0 ? [params.x, params.y, params.z] : null;
+    const center = rawCenter ? new Vector3(...rawCenter.map(Number)) : bwsSculptToolPosition?.clone() || (surfaceGizmoPivot?.visible ? surfaceGizmoPivot.position.clone() : null);
+    const radius = Number(params.radius ?? bwsSculptToolRadius);
+    const mode = ["triangle", "vertex", "edge", "face"].includes(params.mode ?? bwsSculptToolMode) ? params.mode ?? bwsSculptToolMode : "triangle";
+    const maxTriangles = Math.max(1, Math.min(1e4, Math.round(Number(params.maxTriangles ?? 1e4))));
+    if (!center || !center.toArray().every(Number.isFinite)) throw new Error("Select a surface point to place the green gizmo, or provide a world-space center [x,y,z].");
+    if (!Number.isFinite(radius) || radius <= 0 || radius > 1e3) throw new Error("Local selection radius must be greater than 0 and at most 1000 model units.");
+    const faces2 = bwsSculptTriangles(mesh);
+    const candidates = faces2.map((face) => {
+      const triangle = new Triangle(face.trianglePoints[0], face.trianglePoints[1], face.trianglePoints[2]);
+      const nearest = triangle.closestPointToPoint(center, new Vector3());
+      return { face, distance: nearest.distanceTo(center) };
+    }).filter((item) => item.distance <= radius).sort((a3, b3) => a3.distance - b3.distance).slice(0, maxTriangles).map((item) => item.face);
+    let state2;
+    if (mode === "triangle" || mode === "face") {
+      state2 = bwsSculptSetSelection(mesh, candidates, mode);
+    } else {
+      if (surfaceSelectionSource !== "surface" || surfaceComponentMode !== mode) setSurfaceSelectionMode(mode);
+      else clearSelectedTriangles();
+      selectObject(mesh);
+      selectedFaces.length = 0;
+      selectedFace = null;
+      if (mode === "edge") {
+        const edges = /* @__PURE__ */ new Map();
+        for (const face of candidates) for (let index = 0; index < 3; index++) {
+          const localA = face.localTrianglePoints[index];
+          const localB = face.localTrianglePoints[(index + 1) % 3];
+          const a3 = localA.clone().applyMatrix4(mesh.matrixWorld), b3 = localB.clone().applyMatrix4(mesh.matrixWorld);
+          const ab2 = b3.clone().sub(a3), lengthSq = ab2.lengthSq();
+          const t2 = lengthSq > 1e-16 ? MathUtils.clamp(center.clone().sub(a3).dot(ab2) / lengthSq, 0, 1) : 0;
+          if (a3.clone().addScaledVector(ab2, t2).distanceTo(center) > radius) continue;
+          const key2 = surfaceEdgeKey(mesh, localA, localB);
+          if (!edges.has(key2)) edges.set(key2, {
+            mesh,
+            localA: localA.clone(),
+            localB: localB.clone(),
+            key: key2,
+            normalWorld: face.normalWorld.clone(),
+            protectedBevelEdge: (mesh.userData.edgeBevelProtectedEdges || []).includes(localEdgeSignature(localA, localB))
+          });
+        }
+        selectedSurfaceEdges.push(...edges.values());
+      } else {
+        const vertices = /* @__PURE__ */ new Map();
+        for (const face of candidates) for (const localPoint of face.localTrianglePoints) {
+          const key2 = surfaceVertexKey(mesh, localPoint);
+          if (!vertices.has(key2)) vertices.set(key2, { mesh, localPoint: localPoint.clone(), key: key2, normalWorld: face.normalWorld.clone() });
+        }
+        selectedSurfaceVertices.push(...vertices.values());
+      }
+      if (!surfaceComponentSelectionCount()) throw new Error(`No ${mode}s intersect the cursor radius. Increase the tool radius or move its center closer.`);
+      bwsSculptTargetId = mesh.userData.id;
+      updateSurfaceComponentMarker();
+      syncSurfaceEditorUi();
+      updateSurfaceGizmoAttachment();
+      updateAll();
+      state2 = bwsSculptState();
+    }
+    bwsSculptToolPosition = center.clone();
+    bwsSculptToolRadius = radius;
+    bwsSculptToolMode = mode;
+    bwsSculptUpdateToolOverlay(document.querySelector("#bws-sculpt-panel"));
+    state2.anchorWorldPosition = center.toArray().map((value) => round2(value));
+    state2.radius = radius;
+    return state2;
+  }
+  function bwsSculptLookAtSelected(params = {}) {
+    const activeTargets = typeof transformTargetObjects === "function" ? transformTargetObjects() : [];
+    const mesh = params.targetId ? bwsSculptTarget(params.targetId) : selected || activeTargets[0] || checkedObjects()[0] || bwsSculptTarget(bwsSculptTargetId);
+    if (!mesh) throw new Error("Select a model part in the viewport or check it in the parts list first.");
+    mesh.updateWorldMatrix(true, false);
+    const center = new Box3().setFromObject(mesh).getCenter(new Vector3());
+    selectObject(mesh);
+    bwsSculptTargetId = mesh.userData.id;
+    bwsSculptSetTool({ center: center.toArray(), radius: Number(params.radius ?? bwsSculptToolRadius), mode: params.mode ?? bwsSculptToolMode });
+    bwsSculptRenderPreview();
+    bwsSculptFocusPreviewOnTool();
+    bwsSculptStatus(`Preview focused on ${mesh.name}; virtual tool centered on the selected part.`);
+    return bwsSculptState();
+  }
+  function bwsSculptSymmetrizePatch(params = {}) {
+    const strategy = params.strategy || params.mode || "uniform";
+    if (strategy === "uniform" || strategy === "even") {
+      const result = bwsSculptSubdivideLocal({ targetId: params.targetId, levels: params.levels });
+      return { ...result, symmetryStrategy: "uniform", splitPattern: "conforming four-way triangle subdivision" };
+    }
+    if (strategy !== "centerline" && strategy !== "mirror") throw new Error("Choose symmetry strategy uniform or centerline.");
+    const mesh = bwsSculptTarget(params.targetId || bwsSculptTargetId);
+    if (!selectedFaces.some((face) => face.mesh === mesh)) throw new Error("Select a local triangle patch before mirroring it.");
+    const axis = ["x", "y", "z"].includes(params.axis) ? params.axis : els.symmetryAxisSelect?.value || "x";
+    const plane = Number(params.plane ?? els.symmetryPlaneInput?.value ?? 0);
+    if (!Number.isFinite(plane)) throw new Error("Mirror plane must be a finite world-space coordinate.");
+    if (els.symmetryAxisSelect) els.symmetryAxisSelect.value = axis;
+    if (els.symmetryPlaneInput) els.symmetryPlaneInput.value = String(plane);
+    if (!copySelectedTriangles()) throw new Error("Could not copy the selected triangle patch for mirroring.");
+    const mirrored = pasteCopiedTrianglesMirrored();
+    if (!mirrored) throw new Error("The selected patch could not be mirrored.");
+    bwsSculptTargetId = mirrored.userData.id;
+    const mirroredFaces = bwsSculptTriangles(mirrored);
+    bwsSculptSetSelection(mirrored, mirroredFaces, "triangle");
+    if (bwsSculptToolPosition) {
+      const center = bwsSculptToolPosition.clone();
+      center[axis] = 2 * plane - center[axis];
+      bwsSculptSetTool({ center: center.toArray(), radius: bwsSculptToolRadius, mode: bwsSculptToolMode });
+    }
+    bwsSculptStatus(`Mirrored ${mirroredFaces.length} triangles across ${axis.toUpperCase()}=${round2(plane)}.`);
+    return { ...bwsSculptState(), symmetryStrategy: "centerline", axis, plane: round2(plane), mirroredPartId: mirrored.userData.id };
+  }
+  function bwsSculptSubdivideLocal(params = {}) {
+    const mesh = bwsSculptTarget(params.targetId || bwsSculptTargetId);
+    const faces2 = selectedFaces.filter((face) => face.mesh === mesh);
+    if (!faces2.length) throw new Error("Select a local area before subdividing it.");
+    const levels = Math.max(1, Math.min(2, Math.round(Number(params.levels ?? 1))));
+    const currentCount = bwsSculptTriangles(mesh).length;
+    const projectedCount = currentCount + faces2.length * (4 ** levels - 1);
+    if (projectedCount > 1e5) throw new Error(`Local subdivision would create ${projectedCount.toLocaleString()} triangles; the safety limit is 100,000.`);
+    if (els.subdivideLevelsInput) els.subdivideLevelsInput.value = String(levels);
+    subdivideSelectedSurface();
+    bwsSculptTargetId = mesh.userData.id;
+    bwsSculptRenderPreview();
+    return bwsSculptState();
+  }
+  function bwsSculptParts() {
+    return objects.filter((mesh) => mesh?.geometry?.getAttribute("position")).map((mesh) => {
+      const position = mesh.geometry.getAttribute("position");
+      return {
+        id: mesh.userData?.id ?? null,
+        name: mesh.name || "Unnamed part",
+        checked: checkedIds.has(mesh.userData?.id),
+        triangleCount: Math.floor((mesh.geometry.index?.count ?? position.count) / 3)
+      };
+    });
+  }
+  async function bwsSculptPrepare(params = {}) {
+    const ids = Array.isArray(params.targetIds) ? [...new Set(params.targetIds)] : [];
+    const names = Array.isArray(params.targetNames) ? [...new Set(params.targetNames.map((name) => String(name).trim()).filter(Boolean))] : [];
+    let targets;
+    if (ids.length) {
+      targets = ids.map(bwsSculptTarget);
+      if (targets.some((mesh2) => !mesh2)) throw new Error("A requested sculpt part id is not in this scene.");
+    } else if (names.length) {
+      const available = bwsSculptParts();
+      targets = names.map((name) => {
+        const part = available.find((item) => item.name.toLowerCase() === name.toLowerCase());
+        return part ? bwsSculptTarget(part.id) : null;
+      });
+      if (targets.some((mesh2) => !mesh2)) {
+        const missing = names.filter((name) => !available.some((item) => item.name.toLowerCase() === name.toLowerCase()));
+        throw new Error(`Requested sculpt part${missing.length === 1 ? "" : "s"} not found: ${missing.join(", ")}. Use bws_sculpt_parts to list available parts.`);
+      }
+    } else targets = checkedObjects();
+    targets = [...new Set(targets.filter(Boolean))];
+    if (!targets.length) throw new Error("Provide targetIds or targetNames, or check one or more model parts first.");
+    let mesh;
+    if (targets.length > 1) {
+      const before = new Set(objects.map((item) => item.userData.id));
+      checkedIds = new Set(targets.map((item) => item.userData.id));
+      selectedGroupRecordId = null;
+      activeGroupIds = [];
+      await mergeCheckedMeshes();
+      mesh = objects.find((item) => !before.has(item.userData.id)) || null;
+      if (!mesh) throw new Error("The checked parts could not be merged.");
+    } else mesh = targets[0];
+    const levels = Math.round(Number(params.subdivisionLevels ?? 1));
+    if (!Number.isInteger(levels) || levels < 1 || levels > 2) throw new Error("Subdivision levels must be 1 or 2.");
+    const position = mesh.geometry.getAttribute("position");
+    const triangleCount = Math.floor((mesh.geometry.index?.count ?? position.count) / 3);
+    if (!triangleCount || triangleCount * 4 ** levels > 1e5) throw new Error("This subdivision would exceed the 100,000-triangle safety limit. Use fewer parts or one level.");
+    selectObject(mesh);
+    setFacePickMode(true);
+    setSurfaceSelectionMode("triangle");
+    selectedFaces.length = 0;
+    selectedFaces.push(...bwsSculptTriangles(mesh));
+    selectedFace = selectedFaces.at(-1) || null;
+    if (els.subdivideLevelsInput) els.subdivideLevelsInput.value = String(levels);
+    const subdivided = subdivideSelectedSurface();
+    if (!subdivided.length) throw new Error("The surface could not be subdivided.");
+    if (els.showModelingEdgesInput) {
+      els.showModelingEdgesInput.checked = true;
+      els.showModelingEdgesInput.dispatchEvent(new Event("change", { bubbles: true }));
+    }
+    mesh.userData.bwsTriangleSculpt = true;
+    bwsSculptTargetId = mesh.userData.id;
+    updateAll();
+    bwsSculptStatus(`Ready: ${mesh.name} \xB7 ${subdivided.length.toLocaleString()} editable triangles.`);
+    return bwsSculptState();
+  }
+  function bwsSculptSelectGrid(params = {}) {
+    const mesh = bwsSculptTarget(params.targetId || bwsSculptTargetId);
+    const faces2 = bwsSculptTriangles(mesh), { axes, bounds, centroids } = bwsSculptProjection(faces2, params.view || "front");
+    const columns = Math.round(Number(params.columns ?? 16)), rows = Math.round(Number(params.rows ?? 16));
+    const x0 = Math.round(Number(params.x0)), x1 = Math.round(Number(params.x1));
+    const y0 = Math.round(Number(params.y0)), y1 = Math.round(Number(params.y1));
+    if (![columns, rows, x0, x1, y0, y1].every(Number.isInteger) || columns < 1 || rows < 1 || columns > 100 || rows > 100 || x0 < 0 || y0 < 0 || x1 > columns || y1 > rows || x1 <= x0 || y1 <= y0) throw new Error("Grid bounds must be valid integer cell ranges within the grid.");
+    const selectedFacesByGrid = faces2.filter((face, index) => {
+      const x2 = (centroids[index][axes[0]] - bounds[0].min) / Math.max(1e-9, bounds[0].max - bounds[0].min);
+      const y = (centroids[index][axes[1]] - bounds[1].min) / Math.max(1e-9, bounds[1].max - bounds[1].min);
+      const cellX = Math.min(columns - 1, Math.floor(x2 * columns));
+      const cellY = Math.min(rows - 1, Math.floor(y * rows));
+      return cellX >= x0 && cellX < x1 && cellY >= y0 && cellY < y1;
+    });
+    return bwsSculptSetSelection(mesh, selectedFacesByGrid);
+  }
+  function bwsSculptSelectBrush(params = {}) {
+    const mesh = bwsSculptTarget(params.targetId || bwsSculptTargetId);
+    const faces2 = bwsSculptTriangles(mesh), { axes, bounds, centroids } = bwsSculptProjection(faces2, params.view || "front");
+    const x2 = Number(params.x), y = Number(params.y), radius = Number(params.radius ?? 0.12), count = Math.round(Number(params.count));
+    if (![x2, y, radius, count].every(Number.isFinite) || x2 < 0 || x2 > 1 || y < 0 || y > 1 || radius <= 0 || radius > 1 || count < 1 || count > 1e4) throw new Error("Brush center must be 0..1, radius >0..1, and triangle count 1..10000.");
+    const candidates = faces2.map((face, index) => {
+      const nx = (centroids[index][axes[0]] - bounds[0].min) / Math.max(1e-9, bounds[0].max - bounds[0].min);
+      const ny = (centroids[index][axes[1]] - bounds[1].min) / Math.max(1e-9, bounds[1].max - bounds[1].min);
+      return { face, distance: (nx - x2) ** 2 + (ny - y) ** 2 };
+    }).filter((item) => item.distance <= radius ** 2).sort((a3, b3) => a3.distance - b3.distance).slice(0, count).map((item) => item.face);
+    return bwsSculptSetSelection(mesh, candidates);
+  }
+  function bwsSculptPushPull(params = {}) {
+    const mesh = bwsSculptTarget(params.targetId || bwsSculptTargetId);
+    if (surfaceComponentMode === "edge" || surfaceComponentMode === "vertex") {
+      const components = surfaceComponentMode === "edge" ? selectedSurfaceEdges.filter((edge) => edge.mesh === mesh) : selectedSurfaceVertices.filter((vertex2) => vertex2.mesh === mesh);
+      const distance2 = Number(params.distance), direction2 = params.direction || "normal";
+      if (!components.length) throw new Error(`Select one or more ${surfaceComponentMode}s before pushing or pulling.`);
+      if (!Number.isFinite(distance2) || Math.abs(distance2) > 5 || !["normal", "x", "y", "z"].includes(direction2)) throw new Error("Distance must be within \xB15 units; direction must be normal/x/y/z.");
+      const worldDirection2 = new Vector3();
+      if (direction2 === "normal") {
+        for (const component2 of components) if (component2.normalWorld?.lengthSq?.() > 1e-12) worldDirection2.add(component2.normalWorld);
+        if (worldDirection2.lengthSq() < 1e-12) {
+          const fallback = components.find((component2) => component2.normalWorld?.lengthSq?.() > 1e-12)?.normalWorld;
+          if (fallback) worldDirection2.copy(fallback);
+        }
+      } else worldDirection2[direction2] = 1;
+      if (worldDirection2.lengthSq() < 1e-12) worldDirection2.set(0, 1, 0);
+      worldDirection2.normalize().multiplyScalar(distance2);
+      recordHistory(`sculpt ${surfaceComponentMode} push/pull`);
+      moveSelectedSurfaceComponentsByWorldDelta(worldDirection2);
+      updateAll();
+      syncSurfaceEditorUi();
+      updateSurfaceGizmoAttachment();
+      bwsSculptRenderPreview();
+      bwsSculptFocusPreviewOnTool();
+      return bwsSculptState();
+    }
+    const faces2 = selectedFaces.filter((face) => face.mesh === mesh);
+    if (!faces2.length) throw new Error("Select a sculpt region before pushing or pulling.");
+    const distance = Number(params.distance), rings = Math.round(Number(params.falloffRings ?? 2));
+    const direction = params.direction || "normal";
+    const falloffStrength = Number(params.falloffStrength ?? 1), falloffCurve = params.falloffCurve || "smooth";
+    if (!Number.isFinite(distance) || Math.abs(distance) > 5 || !Number.isInteger(rings) || rings < 0 || rings > 12 || !Number.isFinite(falloffStrength) || falloffStrength < 0 || falloffStrength > 1 || !["smooth", "linear", "constant"].includes(falloffCurve) || !["normal", "x", "y", "z"].includes(direction)) throw new Error("Distance must be within \xB15 units; falloff rings 0..12, strength 0..1, curve smooth/linear/constant, direction normal/x/y/z.");
+    const geometry = mesh.geometry, position = geometry.getAttribute("position");
+    if (geometry.index) throw new Error("Prepare the surface first so its triangles are editable.");
+    const triangleCount = Math.floor(position.count / 3), keys = [], vertexTriangles = /* @__PURE__ */ new Map();
+    const pointAt = (index) => new Vector3(position.getX(index), position.getY(index), position.getZ(index));
+    const keyOf = (point) => point.toArray().map((value) => Math.round(value * 1e5)).join(":");
+    for (let tri = 0; tri < triangleCount; tri++) for (let corner = 0; corner < 3; corner++) {
+      const key2 = keyOf(pointAt(tri * 3 + corner));
+      keys[tri * 3 + corner] = key2;
+      if (!vertexTriangles.has(key2)) vertexTriangles.set(key2, []);
+      vertexTriangles.get(key2).push(tri);
+    }
+    const adjacent = Array.from({ length: triangleCount }, () => /* @__PURE__ */ new Set());
+    for (const linked of vertexTriangles.values()) for (const tri of linked) for (const other of linked) if (other !== tri) adjacent[tri].add(other);
+    const weights = new Float32Array(triangleCount), queue = [];
+    for (const face of faces2) if (Number.isInteger(face.faceIndex) && face.faceIndex >= 0 && face.faceIndex < triangleCount && weights[face.faceIndex] === 0) {
+      weights[face.faceIndex] = 1;
+      queue.push(face.faceIndex);
+    }
+    const levels = new Int16Array(triangleCount).fill(-1);
+    for (const seed of queue) levels[seed] = 0;
+    for (let head = 0; head < queue.length; head++) {
+      const current = queue[head], nextLevel = levels[current] + 1;
+      if (nextLevel > rings) continue;
+      for (const next of adjacent[current]) if (levels[next] < 0) {
+        levels[next] = nextLevel;
+        const t2 = 1 - nextLevel / (rings + 1);
+        weights[next] = (falloffCurve === "constant" ? 1 : falloffCurve === "linear" ? t2 : t2 * t2 * (3 - 2 * t2)) * falloffStrength;
+        queue.push(next);
+      }
+    }
+    const vertexWeights = /* @__PURE__ */ new Map();
+    for (let tri = 0; tri < triangleCount; tri++) for (let corner = 0; corner < 3; corner++) {
+      const key2 = keys[tri * 3 + corner];
+      vertexWeights.set(key2, Math.max(vertexWeights.get(key2) || 0, weights[tri]));
+    }
+    const worldDirection = new Vector3();
+    if (direction === "normal") {
+      for (const face of faces2) {
+        let normal = face.normalWorld?.clone?.();
+        if (!normal || !normal.toArray().every(Number.isFinite) || normal.lengthSq() < 1e-12) {
+          const points = face.trianglePoints;
+          if (Array.isArray(points) && points.length >= 3) normal = points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0]));
+        }
+        if (normal?.lengthSq() > 1e-12) {
+          normal.normalize();
+          if (worldDirection.lengthSq() < 1e-12) worldDirection.copy(normal);
+          else worldDirection.add(normal);
+        }
+      }
+    } else worldDirection[direction] = 1;
+    if (worldDirection.lengthSq() < 1e-12 && direction === "normal") {
+      const points = faces2.find((face) => Array.isArray(face.trianglePoints) && face.trianglePoints.length >= 3)?.trianglePoints;
+      if (points) worldDirection.copy(points[1].clone().sub(points[0]).cross(points[2].clone().sub(points[0])));
+    }
+    if (worldDirection.lengthSq() < 1e-12) throw new Error("The selected surface has no usable normal.");
+    worldDirection.normalize();
+    mesh.updateMatrixWorld(true);
+    const localOrigin = mesh.worldToLocal(new Vector3(0, 0, 0));
+    const localTip = mesh.worldToLocal(worldDirection.clone().multiplyScalar(distance));
+    const localDelta = localTip.sub(localOrigin);
+    const nextGeometry = geometry.clone(), nextPosition = nextGeometry.getAttribute("position");
+    for (let vertex2 = 0; vertex2 < position.count; vertex2++) {
+      const delta = localDelta.clone().multiplyScalar(vertexWeights.get(keys[vertex2]) || 0);
+      nextPosition.setXYZ(vertex2, position.getX(vertex2) + delta.x, position.getY(vertex2) + delta.y, position.getZ(vertex2) + delta.z);
+    }
+    nextPosition.needsUpdate = true;
+    nextGeometry.computeVertexNormals();
+    nextGeometry.computeBoundingBox();
+    nextGeometry.computeBoundingSphere();
+    recordHistory("triangle sculpt push/pull");
+    replaceEditableMeshGeometry(mesh, nextGeometry);
+    selectedFaces.length = 0;
+    selectedFaces.push(...bwsSculptTriangles(mesh).filter((face) => faces2.some((old) => old.faceIndex === face.faceIndex)));
+    selectedFace = selectedFaces.at(-1) || null;
+    updateFaceMarker();
+    syncSurfaceEditorUi();
+    updateAll();
+    bwsSculptStatus(`Moved ${faces2.length.toLocaleString()} triangles by ${distance} along ${direction}.`);
+    return bwsSculptState();
+  }
+  function bwsSculptRelax(params = {}) {
+    const mesh = bwsSculptTarget(params.targetId || bwsSculptTargetId);
+    const faces2 = selectedFaces.filter((face) => face.mesh === mesh);
+    if (!faces2.length) throw new Error("Select a triangle patch before relaxing it.");
+    const geometry = mesh.geometry, position = geometry.getAttribute("position");
+    if (geometry.index) throw new Error("Prepare the surface first so its triangles are editable.");
+    const strength = Number(params.strength ?? 0.5), iterations = Math.round(Number(params.iterations ?? 1));
+    const preserveOpenBoundaries = params.preserveOpenBoundaries !== false;
+    if (!Number.isFinite(strength) || strength < 0 || strength > 1 || !Number.isInteger(iterations) || iterations < 1 || iterations > 20) throw new Error("Relax strength must be 0..1 and iterations 1..20.");
+    const keyOfIndex = (index) => [position.getX(index), position.getY(index), position.getZ(index)].map((value) => Math.round(value * 1e5)).join(":");
+    const points = /* @__PURE__ */ new Map(), neighbors = /* @__PURE__ */ new Map(), edgeCounts = /* @__PURE__ */ new Map(), selectedKeys = /* @__PURE__ */ new Set();
+    const addPoint = (index) => {
+      const key2 = keyOfIndex(index);
+      if (!points.has(key2)) points.set(key2, new Vector3(position.getX(index), position.getY(index), position.getZ(index)));
+      if (!neighbors.has(key2)) neighbors.set(key2, /* @__PURE__ */ new Set());
+      return key2;
+    };
+    const edgeKey = (a3, b3) => a3 < b3 ? `${a3}|${b3}` : `${b3}|${a3}`;
+    for (let triangle = 0; triangle < position.count / 3; triangle++) {
+      const keys = [0, 1, 2].map((corner) => addPoint(triangle * 3 + corner));
+      for (let corner = 0; corner < 3; corner++) {
+        const a3 = keys[corner], b3 = keys[(corner + 1) % 3];
+        neighbors.get(a3).add(b3);
+        neighbors.get(b3).add(a3);
+        const key2 = edgeKey(a3, b3);
+        edgeCounts.set(key2, (edgeCounts.get(key2) || 0) + 1);
+      }
+    }
+    for (const face of faces2) if (Number.isInteger(face.faceIndex) && face.faceIndex >= 0 && face.faceIndex < position.count / 3) {
+      for (let corner = 0; corner < 3; corner++) selectedKeys.add(keyOfIndex(face.faceIndex * 3 + corner));
+    }
+    const boundaryKeys = /* @__PURE__ */ new Set();
+    if (preserveOpenBoundaries) {
+      for (const [key2, count] of edgeCounts) if (count === 1) for (const pointKey of key2.split("|")) boundaryKeys.add(pointKey);
+    }
+    if (!selectedKeys.size) throw new Error("The selected patch has no editable vertices.");
+    recordHistory("sculpt relax selected patch");
+    for (let iteration = 0; iteration < iterations; iteration++) {
+      const moves = /* @__PURE__ */ new Map();
+      let centerDelta = new Vector3(), movable = 0;
+      for (const key2 of selectedKeys) {
+        if (boundaryKeys.has(key2)) continue;
+        const adjacent = [...neighbors.get(key2) || []];
+        if (!adjacent.length) continue;
+        const average = adjacent.reduce((sum, neighbor) => sum.add(points.get(neighbor)), new Vector3()).multiplyScalar(1 / adjacent.length);
+        const delta = average.sub(points.get(key2)).multiplyScalar(strength);
+        moves.set(key2, delta);
+        centerDelta.add(delta);
+        movable++;
+      }
+      if (!movable) break;
+      centerDelta.multiplyScalar(1 / movable);
+      for (const [key2, delta] of moves) points.get(key2).add(delta.sub(centerDelta));
+    }
+    for (let index = 0; index < position.count; index++) {
+      const point = points.get(keyOfIndex(index));
+      if (point) position.setXYZ(index, point.x, point.y, point.z);
+    }
+    position.needsUpdate = true;
+    geometry.computeVertexNormals();
+    updateAll();
+    syncSurfaceEditorUi();
+    bwsSculptRenderPreview();
+    bwsSculptFocusPreviewOnTool();
+    return { ...bwsSculptState(), relaxedVertices: selectedKeys.size, strength, iterations, preserveOpenBoundaries };
+  }
+  function bwsSculptPreviewImage() {
+    bwsSculptRenderPreview();
+    const canvas2 = document.querySelector("#bws-sculpt-preview-canvas");
+    if (!canvas2 || !canvas2.width || !canvas2.height) throw new Error("Open or initialize the Triangle Sculpt preview before capturing it.");
+    const dataUrl = canvas2.toDataURL("image/png");
+    return { artifact: { name: "bws-sculpt-preview.png", base64: dataUrl.slice(dataUrl.indexOf(",") + 1) } };
+  }
+  async function bwsModelQaSheet() {
+    if (typeof window.BwsCaptureQaSheetImage !== "function") throw new Error("The full-model QA capture is not initialized yet.");
+    const capture = await window.BwsCaptureQaSheetImage();
+    const dataUrl = capture?.dataUrl;
+    if (typeof dataUrl !== "string" || !dataUrl.startsWith("data:image/png;base64,")) throw new Error("The full-model QA capture returned no PNG image.");
+    return { artifact: { name: capture.fileName || "bws-model-qa-sheet.png", base64: dataUrl.slice(dataUrl.indexOf(",") + 1) } };
+  }
+  async function bwsSculptQaSheet() {
+    bwsSculptRenderPreview();
+    const capture = bwsSculptPreviewImage();
+    capture.artifact.name = "bws-triangle-sculpt-qa.png";
+    const referenceSrc = document.querySelector("#referenceImagePreviewImg")?.src || "";
+    if (!referenceSrc.startsWith("data:image/")) return capture;
+    const loadImage2 = (src) => new Promise((resolve, reject) => {
+      const image = new Image();
+      image.onload = () => resolve(image);
+      image.onerror = () => reject(new Error("A QA image could not be loaded."));
+      image.src = src;
+    });
+    const [sculptImage, referenceImage] = await Promise.all([
+      loadImage2(`data:image/png;base64,${capture.artifact.base64}`),
+      loadImage2(referenceSrc)
+    ]);
+    const sheet = document.createElement("canvas");
+    sheet.width = 1280;
+    sheet.height = 480;
+    const context = sheet.getContext("2d");
+    context.fillStyle = "#0d1113";
+    context.fillRect(0, 0, sheet.width, sheet.height);
+    for (const [index, image] of [sculptImage, referenceImage].entries()) {
+      const x2 = index * 640;
+      const scale = Math.min(640 / image.width, 480 / image.height);
+      const width = image.width * scale, height = image.height * scale;
+      context.drawImage(image, x2 + (640 - width) / 2, (480 - height) / 2, width, height);
+      context.fillStyle = "rgba(5, 8, 9, .82)";
+      context.fillRect(x2 + 12, 12, 180, 34);
+      context.fillStyle = "#f1c65b";
+      context.font = "700 18px system-ui, sans-serif";
+      context.fillText(index === 0 ? "SCULPT PREVIEW" : "REFERENCE", x2 + 24, 35);
+      context.strokeStyle = "#344047";
+      context.strokeRect(x2 + 0.5, 0.5, 639, 479);
+    }
+    capture.artifact.base64 = sheet.toDataURL("image/png").split(",")[1];
+    return capture;
+  }
+  function bwsSculptViewportImage() {
+    const canvas2 = [...document.querySelectorAll("canvas")].filter((item) => !item.closest("#bws-sculpt-panel") && !item.closest("#bwc-adapter-panel")).map((item) => ({ item, rect: item.getBoundingClientRect(), style: getComputedStyle(item) })).filter(({ item, rect, style }) => item.width > 0 && item.height > 0 && rect.width >= 180 && rect.height >= 140 && style.display !== "none" && style.visibility !== "hidden" && Number(style.opacity) > 0).sort((a3, b3) => b3.rect.width * b3.rect.height - a3.rect.width * a3.rect.height)[0]?.item;
+    if (!canvas2) throw new Error("No visible BWS model viewport canvas is available to capture.");
+    try {
+      const dataUrl = canvas2.toDataURL("image/png");
+      return { artifact: { name: "bws-viewport.png", base64: dataUrl.slice(dataUrl.indexOf(",") + 1) } };
+    } catch (error) {
+      throw new Error(`The model viewport could not be captured as an image: ${error.message}`);
+    }
+  }
+  function bwsSculptStatus(text) {
+    const output = document.querySelector("#bws-sculpt-status");
+    if (output) output.textContent = text;
+    bwsSculptRenderPreview();
+    bwsSculptFocusPreviewOnTool();
+  }
+  function bwsSculptNumber(root, name) {
+    return Number(root.querySelector(`[name="${name}"]`)?.value);
+  }
+  function bwsSculptInstallPlacementPreview(panel) {
+    const canvas2 = panel.querySelector("#bws-sculpt-preview-canvas");
+    if (!canvas2 || canvas2.dataset.localPlacement === "true") return;
+    canvas2.dataset.localPlacement = "true";
+    canvas2.title = "The green center and radius show the AI-positioned virtual sculpt tool. Drag to orbit; scroll to zoom.";
+    const host = canvas2.parentElement;
+    if (host) {
+      if (getComputedStyle(host).position === "static") host.style.position = "relative";
+      const marker = document.createElement("div");
+      marker.className = "bws-sculpt-tool-marker";
+      marker.style.cssText = "position:absolute;z-index:5;pointer-events:none;width:0;height:0";
+      marker.innerHTML = '<span class="bws-sculpt-tool-radius" style="position:absolute;left:0;top:0;transform:translate(-50%,-50%);border:2px solid #57ff39;border-radius:50%;background:#57ff3920"></span><span style="position:absolute;left:0;top:0;transform:translate(-50%,-50%);width:12px;height:12px;border:2px solid #fff;border-radius:50%;background:#42ff32"></span>';
+      host.append(marker);
+      let toolbar = host.querySelector(".bws-sculpt-preview-toolbar");
+      if (!toolbar) {
+        toolbar = document.createElement("div");
+        toolbar.className = "bws-sculpt-preview-toolbar";
+        toolbar.style.cssText = "position:absolute;z-index:8;top:7px;left:7px;display:flex;gap:4px;padding:3px;border-radius:5px;background:#071114cc";
+        for (const [action, label] of [["camera-front", "Front"], ["camera-side", "Side"], ["camera-top", "Top"], ["camera-angle", "Angled"]]) {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.dataset.action = action;
+          button.textContent = label;
+          button.style.cssText = "margin:0;padding:4px 6px;font-size:10px";
+          toolbar.append(button);
+        }
+        host.append(toolbar);
+      }
+    }
+    bwsSculptUpdateToolOverlay(panel);
+    canvas2.addEventListener("wheel", (event) => {
+      const camera2 = bwsSculptPreview?.camera;
+      if (!camera2) return;
+      event.preventDefault();
+      camera2.zoom = Math.max(0.5, Math.min(12, (camera2.zoom || 1) * (event.deltaY < 0 ? 1.12 : 1 / 1.12)));
+      camera2.updateProjectionMatrix();
+      bwsSculptRenderPreview();
+    }, { passive: false });
+    const selectAtCurrentPoint = () => {
+      const xyz = ["X", "Y", "Z"].map((axis) => bwsSculptNumber(panel, `local${axis}`));
+      try {
+        const state2 = bwsSculptSelectLocal({ center: xyz, radius: bwsSculptNumber(panel, "localRadius"), mode: panel.querySelector('[name="localMode"]').value });
+        bwsSculptStatus(`${state2.selectedTriangles} triangles selected within radius ${state2.radius} of the preview point.`);
+      } catch (error) {
+        bwsSculptStatus(error.message);
+      }
+    };
+    panel.querySelector('[name="localRadius"]')?.addEventListener("change", selectAtCurrentPoint);
+    panel.querySelector('[name="localMode"]')?.addEventListener("change", selectAtCurrentPoint);
+    const hint = document.createElement("p");
+    hint.textContent = "AI positions the virtual tool with world-space XYZ and radius. This preview shows that location and size; scroll to zoom and drag to orbit. Selected triangles highlight here.";
+    canvas2.insertAdjacentElement("afterend", hint);
+  }
+  var bwsSculptPreview = null;
+  function bwsSculptRenderPreview() {
+    const canvas2 = document.querySelector("#bws-sculpt-preview-canvas");
+    const mesh = bwsSculptTarget(bwsSculptTargetId);
+    if (!canvas2 || !mesh) return;
+    const width = Math.max(1, canvas2.clientWidth), height = Math.max(1, canvas2.clientHeight);
+    try {
+      if (!bwsSculptPreview) {
+        const scene2 = new Scene();
+        scene2.background = new Color("#0b171a");
+        const camera2 = new PerspectiveCamera(38, width / height, 1e-3, 1e5);
+        const renderer2 = new WebGLRenderer({ canvas: canvas2, antialias: true, alpha: false });
+        renderer2.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+        scene2.add(new HemisphereLight(15135999, 3752509, 2.2));
+        const key2 = new DirectionalLight(16777215, 2.5);
+        key2.position.set(4, 7, 6);
+        scene2.add(key2);
+        bwsSculptPreview = { scene: scene2, camera: camera2, renderer: renderer2, target: new Vector3(), radius: 1, azimuth: 0.72, elevation: 0.38, zoom: 3.1, model: null, edges: null, selection: null, marker: null };
+        let drag = null;
+        canvas2.addEventListener("pointerdown", (event) => {
+          drag = { x: event.clientX, y: event.clientY };
+          canvas2.setPointerCapture(event.pointerId);
+        });
+        canvas2.addEventListener("pointermove", (event) => {
+          if (!drag) return;
+          bwsSculptPreview.azimuth -= (event.clientX - drag.x) * 8e-3;
+          bwsSculptPreview.elevation = Math.max(-1.45, Math.min(1.45, bwsSculptPreview.elevation + (event.clientY - drag.y) * 8e-3));
+          drag = { x: event.clientX, y: event.clientY };
+          bwsSculptPreviewDraw();
+        });
+        const endDrag = () => {
+          drag = null;
+        };
+        canvas2.addEventListener("pointerup", endDrag);
+        canvas2.addEventListener("pointercancel", endDrag);
+        canvas2.addEventListener("wheel", (event) => {
+          event.preventDefault();
+          bwsSculptPreview.zoom = Math.max(1.2, Math.min(9, bwsSculptPreview.zoom + Math.sign(event.deltaY) * 0.18));
+          bwsSculptPreviewDraw();
+        }, { passive: false });
+        window.addEventListener("resize", bwsSculptRenderPreview);
+      }
+      const state2 = bwsSculptPreview;
+      state2.renderer.setSize(width, height, false);
+      if (state2.model) state2.scene.remove(state2.model);
+      if (state2.edges) {
+        state2.scene.remove(state2.edges);
+        state2.edges.geometry.dispose();
+        state2.edges.material.dispose();
+      }
+      state2.model = null;
+      state2.edges = null;
+      if (state2.selection) {
+        state2.scene.remove(state2.selection);
+        state2.selection.geometry.dispose();
+        state2.selection.material.dispose();
+        state2.selection = null;
+      }
+      if (state2.marker) {
+        state2.scene.remove(state2.marker);
+        state2.marker.geometry.dispose();
+        state2.marker.material.dispose();
+        state2.marker = null;
+      }
+      mesh.updateWorldMatrix(true, false);
+      const box = new Box3().setFromObject(mesh);
+      const sphere = box.getBoundingSphere(new Sphere());
+      state2.target.copy(sphere.center);
+      state2.radius = Math.max(sphere.radius, 0.01);
+      state2.model = mesh.clone();
+      state2.model.matrixAutoUpdate = false;
+      state2.model.matrix.copy(mesh.matrixWorld);
+      state2.model.updateMatrixWorld(true);
+      state2.scene.add(state2.model);
+      const wireGeometry = new WireframeGeometry(mesh.geometry);
+      state2.edges = new LineSegments(wireGeometry, new LineBasicMaterial({ color: 6326912, transparent: true, opacity: 0.58 }));
+      state2.edges.matrixAutoUpdate = false;
+      state2.edges.matrix.copy(mesh.matrixWorld);
+      state2.edges.updateMatrixWorld(true);
+      state2.scene.add(state2.edges);
+      const picked = selectedFaces.filter((face) => face.mesh === mesh);
+      if (picked.length && surfaceComponentMode !== "edge" && surfaceComponentMode !== "vertex") {
+        const positions = new Float32Array(picked.length * 9);
+        let offset = 0;
+        const center = new Vector3();
+        for (const face of picked) for (const point of face.trianglePoints) {
+          positions[offset++] = point.x;
+          positions[offset++] = point.y;
+          positions[offset++] = point.z;
+          center.add(point);
+        }
+        center.multiplyScalar(1 / (picked.length * 3));
+        const geometry = new BufferGeometry();
+        geometry.setAttribute("position", new BufferAttribute(positions, 3));
+        geometry.computeVertexNormals();
+        state2.selection = new Mesh(geometry, new MeshBasicMaterial({ color: 16733247, side: DoubleSide, transparent: true, opacity: 0.88, depthTest: false }));
+        state2.scene.add(state2.selection);
+        state2.marker = new Mesh(new SphereGeometry(state2.radius * 0.035, 12, 8), new MeshBasicMaterial({ color: 16765040, depthTest: false }));
+        state2.marker.position.copy(center);
+        state2.scene.add(state2.marker);
+      } else if (surfaceComponentMode === "edge") {
+        const selectedEdges = selectedSurfaceEdges.filter((edge) => edge.mesh === mesh);
+        if (selectedEdges.length) {
+          const positions = selectedEdges.flatMap((edge) => [
+            ...edge.localA.clone().applyMatrix4(mesh.matrixWorld).toArray(),
+            ...edge.localB.clone().applyMatrix4(mesh.matrixWorld).toArray()
+          ]);
+          const geometry = new BufferGeometry();
+          geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+          state2.selection = new LineSegments(geometry, new LineBasicMaterial({ color: 16733247, linewidth: 4, depthTest: false }));
+          state2.scene.add(state2.selection);
+        }
+      } else if (surfaceComponentMode === "vertex") {
+        const selectedVertices = selectedSurfaceVertices.filter((vertex2) => vertex2.mesh === mesh);
+        if (selectedVertices.length) {
+          const positions = selectedVertices.flatMap((vertex2) => vertex2.localPoint.clone().applyMatrix4(mesh.matrixWorld).toArray());
+          const geometry = new BufferGeometry();
+          geometry.setAttribute("position", new Float32BufferAttribute(positions, 3));
+          state2.selection = new Points(geometry, new PointsMaterial({ color: 16733247, size: 9, sizeAttenuation: false, depthTest: false }));
+          state2.scene.add(state2.selection);
+        }
+      }
+      bwsSculptPreviewDraw();
+      const detail = document.querySelector("#bws-sculpt-preview-location");
+      if (detail) {
+        const current = bwsSculptState();
+        const components = current.selectionMode === "edge" ? `${current.selectedEdges} edges` : current.selectionMode === "vertex" ? `${current.selectedVertices} vertices` : `${current.selectedTriangles} triangles`;
+        detail.textContent = `${current.targetName} \xB7 ${components} selected${current.selectionCenter ? ` \xB7 center ${current.selectionCenter.map((v) => Number(v).toFixed(2)).join(", ")}` : ""}`;
+      }
+    } catch (error) {
+      const detail = document.querySelector("#bws-sculpt-preview-location");
+      if (detail) detail.textContent = `Preview unavailable: ${error.message}`;
+    }
+  }
+  function bwsSculptPreviewDraw() {
+    const state2 = bwsSculptPreview;
+    if (!state2) return;
+    const canvas2 = state2.renderer.domElement, width = Math.max(1, canvas2.clientWidth), height = Math.max(1, canvas2.clientHeight);
+    state2.renderer.setSize(width, height, false);
+    state2.camera.aspect = width / height;
+    state2.camera.updateProjectionMatrix();
+    const horizontal = Math.cos(state2.elevation) * state2.radius * state2.zoom;
+    state2.camera.position.set(state2.target.x + Math.sin(state2.azimuth) * horizontal, state2.target.y + Math.sin(state2.elevation) * state2.radius * state2.zoom, state2.target.z + Math.cos(state2.azimuth) * horizontal);
+    state2.camera.lookAt(state2.target);
+    state2.renderer.render(state2.scene, state2.camera);
+    bwsSculptUpdateToolOverlay(document.querySelector("#bws-sculpt-panel"));
+  }
+  function bwsSculptBuildPanel() {
+    if (document.querySelector("#bws-sculpt-launcher")) return;
+    const root = document.createElement("div");
+    root.innerHTML = `<style>
+    #bws-sculpt-panel{position:fixed;z-index:2147482991;right:14px;top:62px;width:min(380px,calc(100vw - 36px));max-height:calc(100vh - 86px);overflow:auto;padding:14px;border:1px solid #72958b;border-radius:9px;background:#142125;color:#e6efec;font:13px/1.4 system-ui;box-shadow:0 10px 34px #0008}
+    #bws-sculpt-preview-canvas{display:block;width:100%;height:180px;border:1px solid #35534d;border-radius:5px;touch-action:none;cursor:grab}#bws-sculpt-preview-canvas:active{cursor:grabbing}#bws-sculpt-preview-location{font-size:11px;color:#e7c47b;min-height:1.3em}
+    #bws-sculpt-panel[hidden]{display:none}#bws-sculpt-panel h2{font-size:17px;margin:0 0 8px}#bws-sculpt-panel h3{font-size:14px;margin:14px 0 5px}
+    #bws-sculpt-panel p{margin:7px 0;color:#c6d8d2}#bws-sculpt-panel label{display:inline-grid;gap:3px;margin:4px 5px 4px 0;font-size:11px}
+    #bws-sculpt-panel input,#bws-sculpt-panel select{width:76px;box-sizing:border-box;padding:6px;background:#0b171a;color:#eef8f3;border:1px solid #72958b;border-radius:4px}
+    #bws-sculpt-panel button{margin:5px 5px 0 0;padding:7px 9px;background:#24463d;color:#eef8f3;border:1px solid #72958b;border-radius:4px;cursor:pointer}
+    #bws-sculpt-status{color:#e9c681;overflow-wrap:anywhere;min-height:1.4em}#bws-sculpt-panel .danger{background:#49342a}
+    @media(max-width:700px){#bws-sculpt-panel{right:10px;top:auto;bottom:112px}}
+  </style><button id="bws-sculpt-launcher" type="button">Triangle Sculpt</button>
+  <section id="bws-sculpt-panel" hidden aria-label="Triangle Sculpt tool"><h2>Triangle Sculpt</h2>
+  <p>Check the body parts to combine, then create a dense triangle surface. Selection and deformation are undoable.</p>
+  <canvas id="bws-sculpt-preview-canvas" aria-label="Orbitable 3D preview of the sculpt target and selected triangles"></canvas><p id="bws-sculpt-preview-location">Prepare a mesh to preview the active sculpt area.</p>
+  <label>Subdivision levels<select name="levels"><option value="1">1 \xB7 4\xD7 detail</option><option value="2">2 \xB7 16\xD7 detail</option></select></label>
+  <button type="button" data-action="prepare">Merge checked + prepare</button>
+  <h3>Projected grid area</h3><label>View<select name="view"><option value="front">Front (X/Y)</option><option value="side">Side (Z/Y)</option><option value="top">Top (X/Z)</option></select></label>
+  <label>Columns<input name="columns" type="number" min="1" max="100" value="16"></label><label>Rows<input name="rows" type="number" min="1" max="100" value="16"></label>
+  <label>X start<input name="x0" type="number" min="0" value="5"></label><label>X end<input name="x1" type="number" min="1" value="11"></label>
+  <label>Y start<input name="y0" type="number" min="0" value="7"></label><label>Y end<input name="y1" type="number" min="1" value="12"></label>
+  <button type="button" data-action="grid">Select grid region</button>
+  <h3>Count-limited area brush</h3><label>Center X<input name="brushX" type="number" min="0" max="1" step="0.01" value="0.5"></label><label>Center Y<input name="brushY" type="number" min="0" max="1" step="0.01" value="0.5"></label>
+  <label>Radius<input name="radius" type="number" min="0.01" max="1" step="0.01" value="0.12"></label><label>Triangle count<input name="count" type="number" min="1" max="10000" value="24"></label>
+  <button type="button" data-action="brush">Brush-select triangles</button>
+  <h3>Push / pull selected area</h3><label>Direction<select name="direction"><option value="normal">Surface normal</option><option value="x">X axis</option><option value="y">Y axis</option><option value="z">Z axis</option></select></label>
+  <label>Distance<input name="distance" type="number" min="0.001" max="5" step="0.01" value="0.15"></label><label>Falloff rings<input name="falloff" type="number" min="0" max="12" value="2"></label>
+  <button type="button" data-action="push">Push</button><button type="button" data-action="pull">Pull</button><button type="button" data-action="clear">Clear area</button>
+  <p id="bws-sculpt-status" role="status" aria-live="polite">Check parts and prepare a sculpt mesh.</p><button type="button" data-action="close">Close</button></section>`;
+    document.body.append(root);
+    const launcher = root.querySelector("#bws-sculpt-launcher"), panel = root.querySelector("#bws-sculpt-panel");
+    panel.tabIndex = -1;
+    const localControls = document.createElement("section");
+    localControls.innerHTML = `<h3>Local selection around green handle</h3><p>Selection is measured in model-space XYZ around the active gizmo, not across the whole object.</p>
+    <div class="bws-sculpt-local-center"><label>Tool X<input name="localX" type="number" step="0.01"></label><label>Tool Y<input name="localY" type="number" step="0.01"></label><label>Tool Z<input name="localZ" type="number" step="0.01"></label></div>
+    <div class="bws-sculpt-axis-controls"><button type="button" data-tool-move="-1,0,0">-X</button><button type="button" data-tool-move="1,0,0">+X</button><button type="button" data-tool-move="0,-1,0">-Y</button><button type="button" data-tool-move="0,1,0">+Y</button><button type="button" data-tool-move="0,0,-1">-Z</button><button type="button" data-tool-move="0,0,1">+Z</button><label>Move step<input name="toolStep" type="number" min="0.001" step="0.01" value="0.1"></label></div>
+    <div class="bws-sculpt-radius-controls"><label>Tool radius<input name="localRadius" type="number" min="0.01" step="0.01" value="0.25"></label><button type="button" data-tool-radius="-1">Smaller</button><button type="button" data-tool-radius="1">Larger</button></div>
+    <label>Selection type<select name="localMode"><option value="triangle">Triangles</option><option value="vertex">Vertices</option><option value="edge">Edges</option><option value="face">Whole face</option></select></label>
+    <button type="button" data-action="local-select">Select around handle</button><button type="button" data-action="local-subdivide">Subdivide selected patch</button>
+    `;
+    const pushHeading = [...panel.querySelectorAll("h3")].find((node) => node.textContent.includes("Push / pull selected area"));
+    const lookButton = document.createElement("button");
+    lookButton.type = "button";
+    lookButton.dataset.action = "look";
+    lookButton.textContent = "Look at selected part";
+    localControls.insertBefore(lookButton, localControls.firstChild);
+    const symmetryControls = document.createElement("div");
+    symmetryControls.innerHTML = `<h3>Symmetric triangle topology</h3><label>Strategy<select name="symmetryStrategy"><option value="uniform">Even triangle splits</option><option value="centerline">Mirror selected patch</option></select></label><label>Axis<select name="symmetryAxis"><option value="x">X</option><option value="y">Y</option><option value="z">Z</option></select></label><label>Centerline<input name="symmetryPlane" type="number" step="0.01" value="0"></label><button type="button" data-action="symmetrize">Apply topology strategy</button>`;
+    localControls.append(symmetryControls);
+    if (pushHeading) panel.insertBefore(localControls, pushHeading);
+    const target = bwsSculptTarget(bwsSculptTargetId);
+    const fallbackCenter = target ? new Box3().setFromObject(target).getCenter(new Vector3()) : null;
+    const anchor = bwsSculptToolPosition || (surfaceGizmoPivot?.visible ? surfaceGizmoPivot.position : fallbackCenter);
+    if (anchor) ["x", "y", "z"].forEach((axis, index) => {
+      const input = panel.querySelector(`[name="local${axis.toUpperCase()}"]`);
+      if (input) input.value = String(round2(anchor.getComponent(index)));
+    });
+    if (anchor && !bwsSculptToolPosition) bwsSculptSetTool({ center: anchor.toArray(), radius: bwsSculptToolRadius, mode: bwsSculptToolMode });
+    bwsSculptInstallPlacementPreview(panel);
+    localControls.addEventListener("click", (event) => {
+      const move = event.target.closest("[data-tool-move]");
+      const radiusButton = event.target.closest("[data-tool-radius]");
+      if (!move && !radiusButton) return;
+      event.preventDefault();
+      const current = ["X", "Y", "Z"].map((axis) => bwsSculptNumber(panel, `local${axis}`));
+      const center = current.every(Number.isFinite) ? current : bwsSculptToolPosition?.toArray();
+      if (!center) {
+        bwsSculptStatus("Enter the tool X, Y, and Z position first.");
+        return;
+      }
+      if (move) {
+        const delta = move.dataset.toolMove.split(",").map(Number), step = bwsSculptNumber(panel, "toolStep");
+        bwsSculptSetTool({ center: center.map((value, index) => value + delta[index] * step) });
+      } else {
+        const radius = bwsSculptNumber(panel, "localRadius") + Number(radiusButton.dataset.toolRadius) * bwsSculptNumber(panel, "toolStep");
+        bwsSculptSetTool({ center, radius: Math.max(0.01, radius) });
+      }
+    });
+    for (const name of ["localX", "localY", "localZ", "localRadius", "localMode"]) panel.querySelector(`[name="${name}"]`)?.addEventListener("change", () => {
+      const center = ["X", "Y", "Z"].map((axis) => bwsSculptNumber(panel, `local${axis}`));
+      if (center.every(Number.isFinite)) {
+        try {
+          bwsSculptSetTool({ center, radius: bwsSculptNumber(panel, "localRadius"), mode: panel.querySelector('[name="localMode"]').value });
+        } catch (error) {
+          bwsSculptStatus(error.message);
+        }
+      }
+    });
+    const legacyGridHeading = [...panel.querySelectorAll("h3")].find((node) => node.textContent.includes("Projected grid area"));
+    if (legacyGridHeading) {
+      let node = legacyGridHeading;
+      while (node && node !== pushHeading && node !== localControls) {
+        const next = node.nextElementSibling;
+        node.hidden = true;
+        node = next;
+      }
+    }
+    const legacyBrushHeading = [...panel.querySelectorAll("h3")].find((node) => node.textContent.includes("Count-limited area brush"));
+    if (legacyBrushHeading) {
+      let node = legacyBrushHeading;
+      while (node && node !== pushHeading && node !== localControls) {
+        const next = node.nextElementSibling;
+        node.hidden = true;
+        node = next;
+      }
+    }
+    let restoreTarget = null;
+    launcher.onclick = () => {
+      restoreTarget = document.pointerLockElement;
+      document.exitPointerLock?.();
+      panel.hidden = false;
+      panel.focus();
+      requestAnimationFrame(() => {
+        bwsSculptRenderPreview();
+        bwsSculptFocusPreviewOnTool();
+        bwsSculptUpdateToolOverlay(panel);
+      });
+    };
+    const close = () => {
+      panel.hidden = true;
+      launcher.focus();
+      if (restoreTarget?.isConnected) restoreTarget.requestPointerLock?.();
+    };
+    root.querySelector('[data-action="close"]').onclick = close;
+    panel.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        close();
+      }
+    });
+    panel.addEventListener("click", async (event) => {
+      const action = event.target.closest("[data-action]")?.dataset.action;
+      if (!action || action === "close") return;
+      try {
+        let result;
+        if (action === "look") result = bwsSculptLookAtSelected();
+        else if (action === "prepare") result = await bwsSculptPrepare({ subdivisionLevels: bwsSculptNumber(panel, "levels") });
+        else if (action === "symmetrize") result = bwsSculptSymmetrizePatch({ strategy: panel.querySelector('[name="symmetryStrategy"]').value, axis: panel.querySelector('[name="symmetryAxis"]').value, plane: bwsSculptNumber(panel, "symmetryPlane"), levels: bwsSculptNumber(panel, "levels") });
+        else if (action === "local-select") result = bwsSculptSelectLocal({ center: ["X", "Y", "Z"].map((axis) => bwsSculptNumber(panel, `local${axis}`)), radius: bwsSculptNumber(panel, "localRadius"), mode: panel.querySelector('[name="localMode"]').value });
+        else if (action === "local-subdivide") result = bwsSculptSubdivideLocal({ levels: bwsSculptNumber(panel, "levels") });
+        else if (action.startsWith("camera-")) {
+          if (!bwsSculptPreview) bwsSculptRenderPreview();
+          const views = { "camera-front": [0, 0], "camera-side": [Math.PI / 2, 0], "camera-top": [0, 1.45], "camera-angle": [Math.PI / 4, 0.5] };
+          [bwsSculptPreview.azimuth, bwsSculptPreview.elevation] = views[action];
+          bwsSculptRenderPreview();
+          result = bwsSculptState();
+        } else if (action === "grid") result = bwsSculptSelectGrid({ view: panel.querySelector('[name="view"]').value, columns: bwsSculptNumber(panel, "columns"), rows: bwsSculptNumber(panel, "rows"), x0: bwsSculptNumber(panel, "x0"), x1: bwsSculptNumber(panel, "x1"), y0: bwsSculptNumber(panel, "y0"), y1: bwsSculptNumber(panel, "y1") });
+        else if (action === "brush") result = bwsSculptSelectBrush({ view: panel.querySelector('[name="view"]').value, x: bwsSculptNumber(panel, "brushX"), y: bwsSculptNumber(panel, "brushY"), radius: bwsSculptNumber(panel, "radius"), count: bwsSculptNumber(panel, "count") });
+        else if (action === "push" || action === "pull") result = bwsSculptPushPull({ direction: panel.querySelector('[name="direction"]').value, distance: bwsSculptNumber(panel, "distance") * (action === "pull" ? -1 : 1), falloffRings: bwsSculptNumber(panel, "falloff") });
+        else if (action === "clear") {
+          clearSelectedTriangles();
+          result = bwsSculptState();
+        }
+        const selectedLabel = result?.selectionMode === "edge" ? `${result.selectedEdges || 0} edges` : result?.selectionMode === "vertex" ? `${result.selectedVertices || 0} vertices` : `${result?.selectedTriangles || 0} triangles`;
+        bwsSculptStatus(result ? `${result.targetName || "Sculpt"} \xB7 ${result.triangleCount || 0} triangles \xB7 ${selectedLabel} selected.` : "No result.");
+      } catch (error) {
+        bwsSculptStatus(error.message);
+      }
+    });
+    bwsSculptInstallToolbarMenu(root.querySelector("#bws-sculpt-launcher"));
+  }
+  function bwsSculptInstallToolbarMenu(sculptLauncher) {
+    const menu = document.querySelector("#toolbarPicker .toolbar-picker-menu");
+    if (!menu) return;
+    let section = menu.querySelector("#toolbarAiSculptTools");
+    if (!section) {
+      section = document.createElement("section");
+      section.id = "toolbarAiSculptTools";
+      section.setAttribute("aria-label", "AI and mesh sculpt tools");
+      const title = document.createElement("h3");
+      title.textContent = "AI & Mesh tools";
+      title.style.cssText = "margin:10px 0 6px;padding-top:10px;border-top:1px solid #50616c;font-size:12px;color:#d9bd83";
+      section.append(title);
+      menu.append(section);
+    }
+    const moveLauncher = (button) => {
+      if (!button || section.contains(button)) return;
+      button.style.cssText = "position:static;z-index:auto;right:auto;top:auto;bottom:auto;width:100%;min-height:34px;padding:7px 9px;margin:0;border:1px solid #72958b;border-radius:5px;background:#142125;color:#e6efec;font:600 12px system-ui;cursor:pointer";
+      section.append(button);
+    };
+    moveLauncher(sculptLauncher);
+    const connect = document.getElementById("bwc-adapter-launcher");
+    if (connect) moveLauncher(connect);
+    if (!window.bwsToolbarConnectObserver) {
+      window.bwsToolbarConnectObserver = new MutationObserver(() => {
+        const button = document.getElementById("bwc-adapter-launcher");
+        if (button) moveLauncher(button);
+      });
+      window.bwsToolbarConnectObserver.observe(document.body, { childList: true, subtree: true });
+    }
+    section.addEventListener("click", (event) => {
+      if (event.target.closest("button")) menu.closest("details").open = false;
+    });
+  }
+  function bwsSculptDockPanel() {
+    const panel = document.querySelector("#bws-sculpt-panel");
+    const dock = document.querySelector("#inspectorSection")?.parentElement;
+    if (!panel || !dock || document.querySelector("#bwsAiSculptSection")) return;
+    const section = document.createElement("details");
+    section.className = "section bws-ai-sculpt-details";
+    section.id = "bwsAiSculptSection";
+    section.style.cssText = "margin:0;padding:12px;overflow:visible";
+    const summary = document.createElement("summary");
+    summary.className = "section-header bws-ai-sculpt-header";
+    section.open = true;
+    const heading = document.createElement("h2");
+    heading.textContent = "AI";
+    summary.append(heading);
+    const body = document.createElement("div");
+    body.className = "section-body";
+    body.id = "bwsAiSculptBody";
+    const note = document.createElement("p");
+    note.className = "api-note";
+    note.textContent = "AI sculpt controls. Tool calls require a live, paired BWS AI connection.";
+    body.append(note);
+    panel.removeAttribute("hidden");
+    panel.style.position = "static";
+    panel.style.inset = "auto";
+    panel.style.width = "100%";
+    panel.style.maxHeight = "none";
+    panel.style.overflow = "visible";
+    panel.style.padding = "0";
+    panel.style.border = "0";
+    panel.style.borderRadius = "0";
+    panel.style.background = "transparent";
+    panel.style.boxShadow = "none";
+    panel.style.cssText = "position:static;inset:auto;z-index:auto;width:100%;max-height:none;overflow:visible;margin:0;padding:0;border:0;border-radius:0;background:transparent;box-shadow:none";
+    body.append(panel);
+    section.append(summary, body);
+    const utilities = dock.querySelector("#utilitiesSection");
+    dock.insertBefore(section, utilities || null);
+    document.querySelector("#bws-sculpt-launcher")?.remove();
+    const close = [...panel.querySelectorAll("button")].find((button) => button.textContent.trim().toLowerCase() === "close");
+    close?.remove();
+    const setOpen = (open) => {
+      section.open = open;
+      body.hidden = !open;
+      body.style.display = open ? "block" : "none";
+      if (open) requestAnimationFrame(() => bwsSculptRenderPreview());
+    };
+    setOpen(true);
+    section.addEventListener("toggle", () => setOpen(section.open));
+    section.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !body.hidden) {
+        setOpen(false);
+        summary.focus();
+      }
+    });
+  }
+  window.BwsTriangleSculpt = Object.freeze({
+    execute(operation, params = {}) {
+      if (operation === "bws_sculpt_parts") return bwsSculptParts();
+      if (operation === "bws_sculpt_preview_image") return bwsSculptPreviewImage();
+      if (operation === "bws_model_qa_sheet") return bwsModelQaSheet();
+      if (operation === "bws_sculpt_qa_sheet") return bwsSculptQaSheet();
+      if (operation === "bws_sculpt_viewport_image") return bwsSculptViewportImage();
+      if (operation === "bws_sculpt_prepare") return bwsSculptPrepare(params);
+      if (operation === "bws_sculpt_state") {
+        bwsSculptRenderPreview();
+        return bwsSculptState();
+      }
+      if (operation === "bws_sculpt_look_at_selected") return bwsSculptLookAtSelected(params);
+      if (operation === "bws_sculpt_symmetrize_patch") return bwsSculptSymmetrizePatch(params);
+      if (operation === "bws_sculpt_set_tool") return bwsSculptSetTool(params);
+      if (operation === "bws_sculpt_select_local") return bwsSculptSelectLocal(params);
+      if (operation === "bws_sculpt_subdivide_local") return bwsSculptSubdivideLocal(params);
+      if (operation === "bws_sculpt_select_grid") return bwsSculptSelectGrid(params);
+      if (operation === "bws_sculpt_select_brush") return bwsSculptSelectBrush(params);
+      if (operation === "bws_sculpt_push_pull") return bwsSculptPushPull(params);
+      if (operation === "bws_sculpt_relax") return bwsSculptRelax(params);
+      if (operation === "bws_sculpt_clear_selection") {
+        clearSelectedTriangles();
+        bwsSculptRenderPreview();
+        return bwsSculptState();
+      }
+      throw new Error("Unknown Triangle Sculpt operation.");
+    }
+  });
+  bwsSculptBuildPanel();
+  bwsSculptDockPanel();
+  function bwsAddReferenceControlsToggle() {
+    if (document.getElementById("referenceControlsToggleBtn")) return;
+    const controls = ["workViewFrontBtn", "workViewSideBtn", "workViewTopBtn", "gameplayPreviewOpenBtn", "frontReferenceWorkBtn", "frontReferencePanBtn", "frontReferenceFollowBtn", "frontReferenceFitBtn", "sideReferenceWorkBtn", "sideReferencePanBtn", "sideReferenceFollowBtn", "sideReferenceFitBtn"].map((id) => document.getElementById(id)).filter(Boolean);
+    const toggle = document.createElement("button");
+    toggle.id = "referenceControlsToggleBtn";
+    toggle.type = "button";
+    toggle.textContent = "Hide view buttons";
+    toggle.title = "Show or hide the Front and Side view buttons";
+    toggle.setAttribute("aria-expanded", "true");
+    toggle.style.cssText = "position:fixed;left:8px;bottom:calc(var(--copyright-bar-height) + 8px);z-index:10001";
+    toggle.onclick = () => {
+      const visible = toggle.getAttribute("aria-expanded") === "true";
+      toggle.setAttribute("aria-expanded", String(!visible));
+      toggle.textContent = visible ? "Show view buttons" : "Hide view buttons";
+      controls.forEach((button) => {
+        button.hidden = visible;
+      });
+    };
+    document.body.append(toggle);
+  }
+  bwsAddReferenceControlsToggle();
   var bwsSceneStudio = null;
   function openBwsSceneStudio() {
     if (bwsSceneStudio) {
