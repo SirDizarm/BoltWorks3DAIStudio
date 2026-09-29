@@ -77703,6 +77703,7 @@ ${samplers.join("\n")}
       return false;
     };
     let processed = 0;
+    let nextYieldAt = performance.now() + 8;
     try {
       for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
         const entry = components[componentIndex];
@@ -77748,9 +77749,10 @@ ${samplers.join("\n")}
             }
           }
           processed++;
-          if (processed % 250 === 0) {
+          if (performance.now() >= nextYieldAt) {
             progress?.(0.08 + 0.87 * processed / Math.max(1, sourceTriangles));
             await new Promise((resolve) => requestAnimationFrame(resolve));
+            nextYieldAt = performance.now() + 8;
           }
         }
       }
@@ -78312,12 +78314,13 @@ ${samplers.join("\n")}
     announce = true,
     previewContainment = false,
     containmentTolerance = 0.03,
+    skipContainment = false,
     voxelFallback = true,
     strategy = "auto"
   } = {}) {
     const meshes = [...new Set((targetMeshes || []).filter((mesh) => mesh?.isMesh))];
     if (!meshes.length) throw new Error("Combine into Shell needs a selected mesh or group.");
-    const containment = analyzeContainedMeshes(meshes, { announce: false, tolerance: containmentTolerance });
+    const containment = skipContainment ? { keptMeshes: meshes, removedMeshes: [], removedCount: 0 } : analyzeContainedMeshes(meshes, { announce: false, tolerance: containmentTolerance });
     const filteredMeshes = containment.keptMeshes || meshes;
     if (!filteredMeshes.length) throw new Error("Combine into Shell found no valid outer mesh after removing enclosed meshes.");
     if (containment.removedCount) {
@@ -87376,7 +87379,14 @@ ${new OBJExporter().parse(group)}`;
     const resolution = params.resolution === void 0 ? null : mcpBridgeInteger(params.resolution, "params.resolution", { min: 18, max: 64 });
     const containmentTolerance = params.containmentTolerance === void 0 ? 0.03 : mcpBridgeFiniteNumber(params.containmentTolerance, "params.containmentTolerance", { min: 0, max: 0.2 });
     await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-    const result = await combineMeshesIntoShell(meshes, { name, resolution, announce: false, containmentTolerance });
+    const result = await combineMeshesIntoShell(meshes, {
+      name,
+      resolution,
+      announce: false,
+      containmentTolerance,
+      skipContainment: true,
+      strategy: "boundary-only"
+    });
     mcpBridgeRevision++;
     return {
       revision: mcpBridgeRevision,

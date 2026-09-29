@@ -271,7 +271,7 @@ async function createServer() {
     "bws_combine_objects_into_shell",
     {
       title: "Combine BoltWorks objects into one shell",
-      description: `Convert one multi-part mesh, or fuse multiple touching or overlapping editable meshes, into one watertight outer shell. Hard limit per call: at most ${MAX_SHELL_OBJECTS_PER_CALL} source objects and ${MAX_SHELL_SOURCE_TRIANGLES.toLocaleString()} total source triangles. Read scene triangle counts first; for larger models, fuse nearby parts in smaller groups and then fuse the resulting shells in later calls. Internal faces are removed, tiny one-cell seams are closed, and the source objects are replaced by the generated mesh. Inspect the scene and include expectedRevision before changing it.`,
+      description: `Convert one multi-part mesh, or fuse multiple touching or overlapping editable meshes, into one outer shell through BWS's connection-safe frame-yielding path. Hard limit per call: at most ${MAX_SHELL_OBJECTS_PER_CALL} source objects and ${MAX_SHELL_SOURCE_TRIANGLES.toLocaleString()} total source triangles. Read scene triangle counts first; for larger models, fuse nearby parts in smaller groups and then fuse the resulting shells in later calls. Covered internal faces are removed and the source objects are replaced by the generated mesh. Inspect the scene and include expectedRevision before changing it.`,
       inputSchema: z.object({
         ids: z.array(exactId).min(1).max(MAX_SHELL_OBJECTS_PER_CALL).describe(
           `Exact source object IDs. Maximum ${MAX_SHELL_OBJECTS_PER_CALL} objects and ${MAX_SHELL_SOURCE_TRIANGLES.toLocaleString()} total source triangles per fusion call.`

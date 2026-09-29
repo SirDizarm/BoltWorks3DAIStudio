@@ -19782,6 +19782,7 @@ async function surfaceBoundaryCullSpec(meshes, { name = "Combined Shell", groupI
     return false;
   };
   let processed = 0;
+  let nextYieldAt = performance.now() + 8;
   try {
     for (let componentIndex = 0; componentIndex < components.length; componentIndex++) {
       const entry = components[componentIndex];
@@ -19833,9 +19834,10 @@ async function surfaceBoundaryCullSpec(meshes, { name = "Combined Shell", groupI
           }
         }
         processed++;
-        if (processed % 250 === 0) {
+        if (performance.now() >= nextYieldAt) {
           progress?.(.08 + .87 * processed / Math.max(1, sourceTriangles));
           await new Promise((resolve) => requestAnimationFrame(resolve));
+          nextYieldAt = performance.now() + 8;
         }
       }
     }
@@ -20407,12 +20409,15 @@ async function combineMeshesIntoShell(targetMeshes, {
   announce = true,
   previewContainment = false,
   containmentTolerance = 0.03,
+  skipContainment = false,
   voxelFallback = true,
   strategy = "auto"
 } = {}) {
   const meshes = [...new Set((targetMeshes || []).filter(mesh => mesh?.isMesh))];
   if (!meshes.length) throw new Error("Combine into Shell needs a selected mesh or group.");
-  const containment = analyzeContainedMeshes(meshes, { announce: false, tolerance: containmentTolerance });
+  const containment = skipContainment
+    ? { keptMeshes: meshes, removedMeshes: [], removedCount: 0 }
+    : analyzeContainedMeshes(meshes, { announce: false, tolerance: containmentTolerance });
   const filteredMeshes = (containment.keptMeshes || meshes);
   if (!filteredMeshes.length) throw new Error("Combine into Shell found no valid outer mesh after removing enclosed meshes.");
   if (containment.removedCount) {
@@ -21345,7 +21350,6 @@ function exportCharacterPackage() {
   download(`${assetId}.boltcharacter.json`, JSON.stringify(packageData, null, 2), "application/json");
   if (els.gameAssetStatus) els.gameAssetStatus.textContent = `Exported ${assetId}.boltcharacter.json with ${packageData.parts.length} part${packageData.parts.length === 1 ? "" : "s"}, ${rig.bones.length} bone${rig.bones.length === 1 ? "" : "s"}, and shared animation keys.`;
 }
-
 
 
 

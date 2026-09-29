@@ -596,7 +596,14 @@ async function mcpBridgeCombineShell(params) {
     ? 0.03
     : mcpBridgeFiniteNumber(params.containmentTolerance, "params.containmentTolerance", { min: 0, max: 0.2 });
   await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  const result = await combineMeshesIntoShell(meshes, { name, resolution, announce: false, containmentTolerance });
+  const result = await combineMeshesIntoShell(meshes, {
+    name,
+    resolution,
+    announce: false,
+    containmentTolerance,
+    skipContainment: true,
+    strategy: "boundary-only"
+  });
   mcpBridgeRevision++;
   return {
     revision: mcpBridgeRevision,
