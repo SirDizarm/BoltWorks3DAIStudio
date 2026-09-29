@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v49.64.77**. This release adds a GitHub star link, portable local/MCP setup instructions, and a website build aligned with the current editor bundle.
+Current preview version: **v50.0.51**. This release updates the AI connection's Triangle Sculpt QA-sheet routing and publishes the matching versioned editor bundle.
 
 Enjoy BWS? [Star the project on GitHub](https://github.com/SirDizarm/BoltWorks3DAIStudio). Stars show support rather than a scored review.
 
