@@ -3,7 +3,7 @@
   "manifestVersion": 1,
   "id": "bws-ai-modeling",
   "name": "BWS AI Modeling",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Optional AI-only modeling bridge for BoltWorksConnect. Installs the BWS AI tool catalog without embedding those tool definitions in the editor.",
   "runtime": "assets",
   "apiVersion": 5,

@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v50.0.53**. This experimental release makes AI connection controls reflect plugin state immediately, keeps Triangle Sculpt available through MCP without a visible editor panel, and retains Human AI Viewer as the single visible AI workspace panel.
+Current preview version: **v50.0.54**. This experimental release prevents oversized AI shell-fusion requests from locking the editor and tells connected AI tools to combine complex models in responsive staged batches.
 
 Enjoy BWS? [Star the project on GitHub](https://github.com/SirDizarm/BoltWorks3DAIStudio). Stars show support rather than a scored review.
 

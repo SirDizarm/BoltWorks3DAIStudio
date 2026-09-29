@@ -86778,6 +86778,8 @@ ${new OBJExporter().parse(group)}`;
   var mcpBridgePreflightUrl = "/__modeler/mcp/preflight";
   var mcpBridgeResultUrl = "/__modeler/mcp/result";
   var mcpBridgeMaxBatchSize = 256;
+  var mcpBridgeMaxShellBatchSize = 8;
+  var mcpBridgeMaxShellSourceTriangles = 4e4;
   var mcpBridgeMaxAuditEntries = 200;
   var mcpBridgeMaxStringLength = 512;
   var mcpBridgeAllowedShapes = new Set(Object.keys(shapeFactories));
@@ -87116,7 +87118,15 @@ ${new OBJExporter().parse(group)}`;
         "scene.get": { detail: ["summary", "objects", "project"] },
         "selection.get": {},
         "objects.create": { maxBatchSize: mcpBridgeMaxBatchSize, shapes: [...mcpBridgeAllowedShapes], geometry: { maxVertices: mcpBridgeMaxGeometryVertices } },
-        "objects.combineShell": { minObjects: 1, maxBatchSize: mcpBridgeMaxBatchSize, resolution: { min: 18, max: 64 }, replacesSources: true, undoable: true },
+        "objects.combineShell": {
+          minObjects: 1,
+          maxBatchSize: mcpBridgeMaxShellBatchSize,
+          maxSourceTriangles: mcpBridgeMaxShellSourceTriangles,
+          resolution: { min: 18, max: 64 },
+          replacesSources: true,
+          undoable: true,
+          guidance: "Each fusion call allows at most 8 source objects and 40,000 total source triangles. For larger models, combine nearby parts in smaller groups, then combine the resulting shells in later calls."
+        },
         "objects.update": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
         "objects.delete": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
         "selection.set": { maxBatchSize: mcpBridgeMaxBatchSize, exactIdsRequired: true },
@@ -87348,10 +87358,24 @@ ${new OBJExporter().parse(group)}`;
     mcpBridgeAssertAllowedKeys(params, /* @__PURE__ */ new Set(["ids", "name", "resolution", "containmentTolerance", "expectedRevision"]), "params");
     const ids = mcpBridgeUniqueIds(params.ids);
     mcpBridgeAssert(ids.length >= 1, "INVALID_PARAMS", "objects.combineShell needs at least one object ID.");
+    mcpBridgeAssert(
+      ids.length <= mcpBridgeMaxShellBatchSize,
+      "SHELL_BATCH_TOO_LARGE",
+      `objects.combineShell accepts at most ${mcpBridgeMaxShellBatchSize} source meshes per call so the editor remains responsive. Combine nearby parts in smaller groups, then combine the resulting shells.`,
+      { requested: ids.length, maximum: mcpBridgeMaxShellBatchSize }
+    );
     const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
+    const sourceTriangles = meshes.reduce((total, mesh) => total + Math.floor((mesh.geometry.index?.count || mesh.geometry.getAttribute("position")?.count || 0) / 3), 0);
+    mcpBridgeAssert(
+      sourceTriangles <= mcpBridgeMaxShellSourceTriangles,
+      "SHELL_GEOMETRY_TOO_LARGE",
+      `objects.combineShell accepts at most ${mcpBridgeMaxShellSourceTriangles.toLocaleString()} source triangles per call so the editor remains responsive. Combine simpler groups first or reduce mesh density.`,
+      { sourceTriangles, maximum: mcpBridgeMaxShellSourceTriangles }
+    );
     const name = params.name === void 0 ? "AI Generated Shell" : mcpBridgeString(params.name, "params.name", { required: true, maxLength: 120 });
     const resolution = params.resolution === void 0 ? null : mcpBridgeInteger(params.resolution, "params.resolution", { min: 18, max: 64 });
     const containmentTolerance = params.containmentTolerance === void 0 ? 0.03 : mcpBridgeFiniteNumber(params.containmentTolerance, "params.containmentTolerance", { min: 0, max: 0.2 });
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const result = await combineMeshesIntoShell(meshes, { name, resolution, announce: false, containmentTolerance });
     mcpBridgeRevision++;
     return {

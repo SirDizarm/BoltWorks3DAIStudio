@@ -9,6 +9,8 @@ import { runHostCommand } from "./host-client.mjs";
 import { registerKnowledgeResources } from "./resources.mjs";
 
 const MAX_OBJECTS_PER_CALL = 256;
+const MAX_SHELL_OBJECTS_PER_CALL = 8;
+const MAX_SHELL_SOURCE_TRIANGLES = 40000;
 const MAX_AUDIT_ITEMS = 200;
 
 const REFERENCE_IMAGE_MIME_TYPES = {
@@ -269,9 +271,11 @@ async function createServer() {
     "bws_combine_objects_into_shell",
     {
       title: "Combine BoltWorks objects into one shell",
-      description: "Convert one multi-part mesh, or fuse multiple touching or overlapping editable meshes, into one watertight outer shell. Internal faces are removed, tiny one-cell seams are closed, and the source objects are replaced by the generated mesh. This is the final step for AI-authored models assembled from primitives. Inspect the scene and include expectedRevision before changing it.",
+      description: `Convert one multi-part mesh, or fuse multiple touching or overlapping editable meshes, into one watertight outer shell. Hard limit per call: at most ${MAX_SHELL_OBJECTS_PER_CALL} source objects and ${MAX_SHELL_SOURCE_TRIANGLES.toLocaleString()} total source triangles. Read scene triangle counts first; for larger models, fuse nearby parts in smaller groups and then fuse the resulting shells in later calls. Internal faces are removed, tiny one-cell seams are closed, and the source objects are replaced by the generated mesh. Inspect the scene and include expectedRevision before changing it.`,
       inputSchema: z.object({
-        ids: z.array(exactId).min(1).max(MAX_OBJECTS_PER_CALL).refine(
+        ids: z.array(exactId).min(1).max(MAX_SHELL_OBJECTS_PER_CALL).describe(
+          `Exact source object IDs. Maximum ${MAX_SHELL_OBJECTS_PER_CALL} objects and ${MAX_SHELL_SOURCE_TRIANGLES.toLocaleString()} total source triangles per fusion call.`
+        ).refine(
           (ids) => new Set(ids).size === ids.length,
           "IDs must be unique."
         ),
