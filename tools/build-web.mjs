@@ -38,8 +38,6 @@ for (const file of runtimeSamples) {
 }
 await mkdir(join(output,"plugins","fireplace"),{recursive:true});
 await copyFile(join(root,"plugins","fireplace","plugin.bwsplugin"),join(output,"plugins","fireplace","plugin.bwsplugin"));
-await mkdir(join(output,"plugins","bws-ai-modeling"),{recursive:true});
-await copyFile(join(root,"plugins","bws-ai-modeling","plugin.bwsplugin"),join(output,"plugins","bws-ai-modeling","plugin.bwsplugin"));
 for (const directory of ["assets", "styles", "panels", "selection", "meshes"]) {
   await cp(join(root, "app", directory), join(output, "app", directory), { recursive: true, filter: source => !source.replaceAll("\\","/").includes("/app/assets/fireplace") && !source.endsWith("fireplace-experience.js") });
 }

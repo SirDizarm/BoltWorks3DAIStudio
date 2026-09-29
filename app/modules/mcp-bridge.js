@@ -11,6 +11,8 @@ const mcpBridgeAllowedShapes = new Set(Object.keys(shapeFactories));
 const mcpBridgeAuditEntries = [];
 let mcpBridgeAuditSequence = 0;
 let mcpBridgeRevision = 0;
+const mcpBridgeOperations = new Map();
+let mcpBridgeActiveMutationOperationId = null;
 let mcpBridgePolling = false;
 let mcpBridgePollAbortController = null;
 
@@ -336,6 +338,7 @@ function mcpBridgeCapabilitiesResult() {
     },
     methods: {
       "capabilities.get": {},
+      "operations.get": { statuses: ["queued", "running", "completed", "failed"] },
       "scene.get": { detail: ["summary", "objects", "project"] },
       "selection.get": {},
       "objects.create": { maxBatchSize: mcpBridgeMaxBatchSize, shapes: [...mcpBridgeAllowedShapes], geometry: { maxVertices: mcpBridgeMaxGeometryVertices } },
@@ -595,28 +598,77 @@ async function mcpBridgeCombineShell(params) {
   const containmentTolerance = params.containmentTolerance === undefined
     ? 0.03
     : mcpBridgeFiniteNumber(params.containmentTolerance, "params.containmentTolerance", { min: 0, max: 0.2 });
-  await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
-  const result = await combineMeshesIntoShell(meshes, {
-    name,
-    resolution,
-    announce: false,
-    containmentTolerance,
-    skipContainment: true,
-    strategy: "boundary-only"
+  mcpBridgeAssert(!mcpBridgeActiveMutationOperationId, "OPERATION_IN_PROGRESS", "Another AI mutation is still running. Poll it with bws_get_operation before starting a new edit.", {
+    operationId: mcpBridgeActiveMutationOperationId
   });
-  mcpBridgeRevision++;
-  return {
-    revision: mcpBridgeRevision,
-    createdIds: [result.mesh.userData.id],
-    deletedIds: ids,
-    object: serializeObject(result.mesh),
-    shell: {
-      connectedComponents: result.shellCount,
-      sourceTriangles: result.sourceTriangles,
-      outputTriangles: result.outputTriangles,
-      resolution: result.resolution,
-      dimensions: result.dimensions
+  const operationId = globalThis.crypto?.randomUUID?.() || `bws-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const operation = {
+    operationId,
+    type: "objects.combineShell",
+    status: "queued",
+    progress: 0,
+    sourceIds: [...ids],
+    createdAt: new Date().toISOString(),
+    startedAt: null,
+    completedAt: null,
+    result: null,
+    error: null
+  };
+  mcpBridgeOperations.set(operationId, operation);
+  mcpBridgeActiveMutationOperationId = operationId;
+  while (mcpBridgeOperations.size > 50) {
+    const oldestId = mcpBridgeOperations.keys().next().value;
+    if (!oldestId || oldestId === mcpBridgeActiveMutationOperationId) break;
+    mcpBridgeOperations.delete(oldestId);
+  }
+  setTimeout(() => void (async () => {
+    operation.status = "running";
+    operation.startedAt = new Date().toISOString();
+    try {
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const result = await combineMeshesIntoShell(meshes, {
+        name,
+        resolution,
+        announce: false,
+        containmentTolerance,
+        skipContainment: true,
+        strategy: "boundary-only",
+        progress: ratio => {
+          operation.progress = Math.max(0, Math.min(1, Number(ratio) || 0));
+        }
+      });
+      mcpBridgeRevision++;
+      operation.status = "completed";
+      operation.progress = 1;
+      operation.result = {
+        revision: mcpBridgeRevision,
+        createdIds: [result.mesh.userData.id],
+        deletedIds: ids,
+        object: serializeObject(result.mesh),
+        shell: {
+          connectedComponents: result.shellCount,
+          sourceTriangles: result.sourceTriangles,
+          outputTriangles: result.outputTriangles,
+          resolution: result.resolution,
+          dimensions: result.dimensions
+        }
+      };
     }
+    catch (error) {
+      operation.status = "failed";
+      operation.error = mcpBridgeErrorPayload(error);
+    }
+    finally {
+      operation.completedAt = new Date().toISOString();
+      if (mcpBridgeActiveMutationOperationId === operationId) mcpBridgeActiveMutationOperationId = null;
+    }
+  })(), 0);
+  return {
+    operationId,
+    status: "queued",
+    progress: 0,
+    pollAfterMs: 250,
+    revision: mcpBridgeRevision
   };
 }
 
@@ -648,6 +700,25 @@ function mcpBridgeAuditResult(params) {
     : mcpBridgeInteger(params.sinceSequence, "params.sinceSequence", { min: 0 });
   const entries = mcpBridgeAuditEntries.filter(entry => entry.sequence > sinceSequence).slice(-limit);
   return { revision: mcpBridgeRevision, entries, latestSequence: mcpBridgeAuditSequence };
+}
+
+function mcpBridgeOperationResult(params) {
+  mcpBridgeAssertAllowedKeys(params, new Set(["operationId"]), "params");
+  const operationId = mcpBridgeString(params.operationId, "params.operationId", { required: true, maxLength: 128 });
+  const operation = mcpBridgeOperations.get(operationId);
+  mcpBridgeAssert(operation, "OPERATION_NOT_FOUND", `No background operation exists with ID '${operationId}'.`, { operationId });
+  return {
+    operationId: operation.operationId,
+    type: operation.type,
+    status: operation.status,
+    progress: operation.progress,
+    sourceIds: [...operation.sourceIds],
+    createdAt: operation.createdAt,
+    startedAt: operation.startedAt,
+    completedAt: operation.completedAt,
+    result: operation.result,
+    error: operation.error
+  };
 }
 
 function mcpBridgeNormalizeMethod(method) {
@@ -775,11 +846,18 @@ async function mcpBridgeExecuteCommand(command) {
   try {
     mcpBridgeValidateWorkSession(command, method);
     mcpBridgeValidateExpectedRevision(command, params, method);
+    mcpBridgeAssert(
+      !mcpBridgeActiveMutationOperationId || !mcpBridgeIsMutation(method),
+      "OPERATION_IN_PROGRESS",
+      "An AI mutation is still running. Scene reads remain available; poll bws_get_operation before starting another edit.",
+      { operationId: mcpBridgeActiveMutationOperationId }
+    );
     let result;
     if (method === "capabilities.get") {
       mcpBridgeAssertAllowedKeys(params, new Set(), "params");
       result = mcpBridgeCapabilitiesResult();
     }
+    else if (method === "operations.get") result = mcpBridgeOperationResult(params);
     else if (method === "scene.get") result = mcpBridgeSceneResult(params);
     else if (method === "selection.get") {
       mcpBridgeAssertAllowedKeys(params, new Set(), "params");

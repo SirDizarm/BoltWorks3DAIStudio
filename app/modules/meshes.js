@@ -20411,7 +20411,8 @@ async function combineMeshesIntoShell(targetMeshes, {
   containmentTolerance = 0.03,
   skipContainment = false,
   voxelFallback = true,
-  strategy = "auto"
+  strategy = "auto",
+  progress = null
 } = {}) {
   const meshes = [...new Set((targetMeshes || []).filter(mesh => mesh?.isMesh))];
   if (!meshes.length) throw new Error("Combine into Shell needs a selected mesh or group.");
@@ -20477,9 +20478,9 @@ async function combineMeshesIntoShell(targetMeshes, {
     surfaceMethod: useBoundaryMode ? "boundary-only" : null,
     groupId: parentId,
     groupName: parentRecord?.name || null,
-    progress: announce ? ratio => {
+    progress: progress || (announce ? ratio => {
       if (progressButton) progressButton.textContent = `Shell ${Math.round(ratio * 100)}%`;
-    } : null
+    } : null)
   });
   if (!result?.spec) throw new Error("The selected meshes could not be converted into a shell.");
   recordHistory("combine into shell");
@@ -21350,7 +21351,6 @@ function exportCharacterPackage() {
   download(`${assetId}.boltcharacter.json`, JSON.stringify(packageData, null, 2), "application/json");
   if (els.gameAssetStatus) els.gameAssetStatus.textContent = `Exported ${assetId}.boltcharacter.json with ${packageData.parts.length} part${packageData.parts.length === 1 ? "" : "s"}, ${rig.bones.length} bone${rig.bones.length === 1 ? "" : "s"}, and shared animation keys.`;
 }
-
 
 
 

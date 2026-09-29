@@ -271,7 +271,7 @@ async function createServer() {
     "bws_combine_objects_into_shell",
     {
       title: "Combine BoltWorks objects into one shell",
-      description: `Convert one multi-part mesh, or fuse multiple touching or overlapping editable meshes, into one outer shell through BWS's connection-safe frame-yielding path. Hard limit per call: at most ${MAX_SHELL_OBJECTS_PER_CALL} source objects and ${MAX_SHELL_SOURCE_TRIANGLES.toLocaleString()} total source triangles. Read scene triangle counts first; for larger models, fuse nearby parts in smaller groups and then fuse the resulting shells in later calls. Covered internal faces are removed and the source objects are replaced by the generated mesh. Inspect the scene and include expectedRevision before changing it.`,
+      description: `Queue one multi-part mesh, or multiple touching or overlapping editable meshes, for background fusion into one outer shell. This call returns an operationId immediately; poll bws_get_operation until completed or failed. Hard limit per call: at most ${MAX_SHELL_OBJECTS_PER_CALL} source objects and ${MAX_SHELL_SOURCE_TRIANGLES.toLocaleString()} total source triangles. Read scene triangle counts first; for larger models, fuse nearby parts in smaller groups and then fuse the resulting shells in later calls. Covered internal faces are removed and the source objects are replaced by the generated mesh. Inspect the scene and include expectedRevision before changing it.`,
       inputSchema: z.object({
         ids: z.array(exactId).min(1).max(MAX_SHELL_OBJECTS_PER_CALL).describe(
           `Exact source object IDs. Maximum ${MAX_SHELL_OBJECTS_PER_CALL} objects and ${MAX_SHELL_SOURCE_TRIANGLES.toLocaleString()} total source triangles per fusion call.`
@@ -286,6 +286,20 @@ async function createServer() {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false }
     },
     "objects.combineShell"
+  );
+
+  registerRelayTool(
+    server,
+    "bws_get_operation",
+    {
+      title: "Get BoltWorks background operation",
+      description: "Poll a queued BWS background operation by operationId until its status is completed or failed. Returns progress and the final result or error without blocking the AI connection.",
+      inputSchema: z.object({
+        operationId: z.string().trim().min(1).max(128)
+      }),
+      annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }
+    },
+    "operations.get"
   );
 
   registerRelayTool(

@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v50.0.55**. This experimental release keeps BoltWorksConnect responsive during AI shell fusion by using a frame-yielding AI path while retaining the 8-object and 40,000-source-triangle safety limits.
+Current preview version: **v50.0.57**. This experimental release runs AI shell fusion as a background operation so BoltWorksConnect tool calls return immediately and connected AI clients can poll progress without losing their pairing.
 
 Enjoy BWS? [Star the project on GitHub](https://github.com/SirDizarm/BoltWorks3DAIStudio). Stars show support rather than a scored review.
 

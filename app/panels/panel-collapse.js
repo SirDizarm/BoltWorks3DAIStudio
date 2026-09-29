@@ -29,6 +29,12 @@ document.addEventListener("click", function (event) {
   if (!toggle) return;
   const section = toggle.closest(".section");
   if (!section) return;
+  const releasePointerLock = function () {
+    if (document.pointerLockElement) document.exitPointerLock?.();
+  };
+  releasePointerLock();
+  setTimeout(releasePointerLock, 0);
+  requestAnimationFrame(releasePointerLock);
   const collapsed = section.classList.toggle("collapsed");
   toggle.setAttribute("aria-expanded", String(!collapsed));
   const persistKey = section.dataset.collapsePersist;
