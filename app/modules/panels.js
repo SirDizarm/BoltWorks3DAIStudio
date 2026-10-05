@@ -3187,7 +3187,7 @@ els.gameplayStrideSyncInput?.addEventListener("change", syncGameplayStrideContro
 els.gameplayStrideScaleInput?.addEventListener("input", syncGameplayStrideControls);
 syncGameplayStrideControls();
 gameplayCanvas?.addEventListener("click", () => {
-  if (bwsUsdUiActive || !gameplayPreviewVisible()) return;
+  if (window.BwsStartupDialogOpen || bwsUsdUiActive || !gameplayPreviewVisible()) return;
   if(dicePhysicsPreview)return;
   if (gameplayPlaybackPaused) {
     updateGameplayArenaStatus("Paused — press Play before taking control");
