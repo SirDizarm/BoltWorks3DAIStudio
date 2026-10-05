@@ -1,5 +1,6 @@
 // Curated metadata only. Packages are fetched solely after an explicit install click.
 const bwsPluginCatalogue=[
+ {id:'bws-ai-modeling',folder:'bws-ai-modeling',name:'BWS AI Modeling',version:'1.0.3',text:'Connect AI clients through BoltWorksConnect to inspect and edit models with validated BWS tools. Includes background shell fusion. Requires BWS 50.0.57 or later.'},
  {id:'bws-fireplace',folder:'fireplace',name:'Fireplace',version:'0.1.0',text:'A fireplace scene with adjustable fire audio and fullscreen viewing. Experimental; custom scene transfer is not available.'},
  {id:'image-relief-mesh-lab',folder:'image-to-mesh',name:'Image to Mesh',version:'1.1.0',text:'Turn height images or reference sheets into a mesh, preview it, then add it to BWS. Development preview; generation testing is still pending.'},
  {id:'roblox-exporter',folder:'roblox-exporter',name:'Roblox Exporter',version:'1.1.0',text:'Export a ZIP of OBJ parts, textures and Roblox assembly scripts. 1 stud = 0.28 metres. Roblox Studio import checks are still pending.'},
@@ -19,5 +20,11 @@ async function bwsOpenPluginCatalogue(){
   install.onclick=async()=>{install.disabled=true;status.textContent='Downloading package for review...';try{const url='https://raw.githubusercontent.com/SirDizarm/bws-plugins/main/plugins/'+item.folder+'/plugin.bwsplugin';const download=await bwsPluginFromUrl(url);const candidate=validPluginPackage(JSON.parse(download.text));if(candidate.manifest.id!==item.id)throw Error('The downloaded package does not match this catalogue entry.');const accepted=await bwsReviewPluginInstall(download.text,download.source);status.textContent=accepted?'Installed. It is off by default. Close this catalogue and choose Enable in Plugins.':'Installation cancelled.';}catch(error){status.textContent='Could not install: '+error.message+' Private repositories cannot be downloaded here without access. Use Details and download while signed in to GitHub, then Install from file in BWS. Only plugin.bwsplugin is needed.';}finally{refresh();}};
   card.append(title,version,description,install,document.createElement('br'),info,status);grid.append(card);
  }
- dialog.append(header,intro,grid);dialog.addEventListener('cancel',()=>dialog.remove());document.body.append(dialog);dialog.showModal();close.focus();
+ dialog.append(header,intro,grid);
+ const previousFocus=document.activeElement;
+ dialog.addEventListener('close',()=>{endUsdUi();dialog.remove();if(previousFocus?.isConnected)previousFocus.focus();});
+ dialog.addEventListener('cancel',event=>{event.preventDefault();dialog.close();});
+ dialog.addEventListener('keydown',event=>event.stopPropagation());
+ dialog.addEventListener('keyup',event=>event.stopPropagation());
+ document.body.append(dialog);beginUsdUi();dialog.showModal();close.focus();
 }
