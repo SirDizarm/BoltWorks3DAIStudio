@@ -4,6 +4,7 @@ export const studioModuleOrder = Object.freeze([
   "plugin-installer",
   "plugin-catalogue",
   "plugin-export-bridge",
+  "plugin-minecraft-bridge",
   "plugin-generator-bridge",
   "plugin-character-bridge",
   "plugin-graph-bridge",

@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v50.0.57**. This experimental release runs AI shell fusion as a background operation so BoltWorksConnect tool calls return immediately and connected AI clients can poll progress without losing their pairing.
+Current preview version: **v50.0.60**, as loaded by `index.html`. Editable source lives in `app/`; older versioned bundles are generated outputs. See `D:\Game\PROJECT-LOCATIONS.md` for the BWE/BWS/GN folder map.
 
 Enjoy BWS? [Star the project on GitHub](https://github.com/SirDizarm/BoltWorks3DAIStudio). Stars show support rather than a scored review.
 
@@ -124,3 +124,5 @@ Manual mesh tests use the permanent shorthand documented in `docs/MESH_TEST_CODE
 Copyright (c) 2026 Daniel Rydin.
 
 Source code is licensed under the [Apache License 2.0](LICENSE). BoltWorks branding and visual assets are not part of that license grant; see [trademark policy](docs/legal/TRADEMARKS.md) and [asset license](docs/legal/ASSET-LICENSE.md).
+
+Minecraft block-grid plugin host support (API 6): see [the narrow file bridge contract](docs/MINECRAFT-GRID-API6-50.0.60.md). The optional workspace edits a selected grid file, not the BWS project.

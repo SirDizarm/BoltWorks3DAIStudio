@@ -11,7 +11,7 @@ function bwsPluginDialog(title,message,acceptLabel="Continue",cancelLabel="Cance
 function bwsPluginNotice(message){return bwsPluginDialog("Plugin information",message,"OK","Close");}
 function bwsPluginActivationError(id){
  const p=installedPluginPackages.find(p=>p.manifest.id===id);if(!p)return "";
- if(![1,2,3,4,5].includes(p.manifest.apiVersion))return "This plugin requires an unsupported BWS plugin API version.";
+ if(![1,2,3,4,5,6].includes(p.manifest.apiVersion))return "This plugin requires an unsupported BWS plugin API version.";
  const missing=p.manifest.dependencies.filter(id=>!pluginManifestById(id)?.enabled);
  return missing.length?"Enable these plugin dependencies first: "+missing.join(", "):"";
 }
@@ -27,7 +27,8 @@ function bwsOpenPluginWorkspace(id){
  frame.title=p.manifest.name;frame.style.cssText="width:100%;height:calc(100% - 48px);border:0;background:#fff";frame.setAttribute("sandbox","allow-scripts");frame.referrerPolicy="no-referrer";
  // No same-origin permission, forms, direct downloads, popups or native access.
  // API 2 exposes only an explicit, read-only model snapshot and a reviewed ZIP download.
- if(p.manifest.apiVersion>=2) bwsAttachPluginExportBridge(p,dialog,header,frame);
+ if(p.manifest.apiVersion===6)bwsAttachPluginMinecraftBridge(p,dialog,header,frame);
+ if(p.manifest.apiVersion>=2&&p.manifest.apiVersion!==6) bwsAttachPluginExportBridge(p,dialog,header,frame);
  if(p.manifest.apiVersion===3&&p.manifest.contributes?.generatedMesh===true)bwsAttachPluginGeneratorBridge(p,dialog,header,frame);
  if(p.manifest.apiVersion===4)bwsAttachPluginCharacterBridge(p,dialog,header,frame);
  if(p.manifest.apiVersion===4&&p.manifest.contributes?.graphWorkspace===true)bwsAttachPluginGraphBridge(p,dialog,header,frame);
@@ -93,6 +94,7 @@ function bwsPluginContributionSummary(manifest){
    lines.push("Where to find it: enable the plugin in Plugins, then choose Open on its entry.");
   }
   if(manifest.apiVersion===3&&contributes.generatedMesh===true){lines.push("Can generate a mesh from an image you choose. Choose Add mesh to BWS to insert its validated result without replacing existing objects. An explicitly requested AI generation command can also insert the result. The plugin cannot directly edit or read your scene.");}else lines.push(manifest.apiVersion===2&&contributes.modelSnapshot===true?"Your current model stays unchanged. Choosing Send current model shares a copy of all meshes (including hidden parts), their groups and the texture library with this plugin. It cannot edit your project.":"Your current model stays unchanged. Access is limited to the explicitly listed capabilities below. Without a sharing or insertion capability, it cannot access or change your project.");
+  if(manifest.apiVersion===6&&contributes.minecraftWorkspace===true)lines.push("Can edit only a Minecraft block-grid file you explicitly open. Open block grid shares that one file, including its embedded preview assets and metadata. Save edited block grid downloads the edited file only when you choose it. No current-model sharing, scene import, project editing, network, or general editor commands are available.");
   if(manifest.apiVersion===2&&contributes.exportDownload===true)lines.push("Can return a ZIP for you to download. BWS only saves it when you choose Download ZIP.");
   if(manifest.apiVersion===4&&contributes.characterSnapshot===true)lines.push("Choosing Send character copy shares the rigged character and bound parts (including hidden parts), skeleton, animation clips and their textures. The plugin cannot directly edit the project.");
   if(manifest.apiVersion===4&&contributes.characterExport===true)lines.push("Can prepare a character ZIP or arm GLB. Files are saved only when you choose Download export.");
@@ -112,7 +114,7 @@ async function bwsReviewPluginInstall(text,source){
   if(new TextEncoder().encode(text).length>4_000_000)throw Error("Plugin package exceeds 4 MB.");
   const p=validPluginPackage(JSON.parse(text)),m=p.manifest;
   if(BUNDLED_PLUGINS.some(b=>b.id===m.id))throw Error("This ID belongs to an included compatibility module. Replacing built-in code is not supported in this first loader release.");
-  if(![1,2,3,4,5].includes(m.apiVersion))throw Error("Unsupported plugin API version: "+m.apiVersion);
+  if(![1,2,3,4,5,6].includes(m.apiVersion))throw Error("Unsupported plugin API version: "+m.apiVersion);
   const digest=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(text)),hash=Array.from(new Uint8Array(digest),b=>b.toString(16).padStart(2,"0")).join("");
   const existing=installedPluginPackages.find(p=>p.manifest.id===m.id);
   const approved=await bwsPluginDialog(existing?"Review plugin replacement":"Review plugin installation",m.name+" / "+m.version+"\n"+m.description+"\n\n"+bwsPluginContributionSummary(m)+"\n\nTechnical details\nSource: "+source+"\nRuntime: "+(m.runtime==="sandbox-html"?"Isolated HTML workspace. No direct editor, network or filesystem access. Any model sharing or ZIP download listed above requires your action.":"Data package; no executable workspace.")+"\nDependencies: "+(m.dependencies.join(", ")||"None")+"\nSHA-256: "+hash+"\n\n"+(existing?"Replaces installed version "+existing.manifest.version+". ":"")+"The plugin is off by default after installation. Turn it on in Plugins when you want to use it. Updates are only installed when you choose.",existing?"Update plugin":"Install plugin");

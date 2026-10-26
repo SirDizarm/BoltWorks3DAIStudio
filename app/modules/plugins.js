@@ -34,6 +34,11 @@ function validPluginManifest(value) {
   if (!value || value.kind !== "boltworks-plugin" || Number(value.manifestVersion) !== 1) throw new Error("This is not a BoltWorks plugin manifest v1.");
   if (!/^[a-z0-9][a-z0-9._-]{2,63}$/i.test(String(value.id || ""))) throw new Error("Plugin id must contain 3-64 letters, numbers, dots, dashes, or underscores.");
   if (!String(value.name || "").trim()) throw new Error("Plugin name is required.");
+  if(Number(value.apiVersion||1)===6){
+    if(value.runtime!=="sandbox-html"||value.contributes?.minecraftWorkspace!==true)throw Error("API 6 requires the isolated Minecraft workspace capability.");
+    const allowed=new Set(["minecraftWorkspace","workspaces","importers","exporters"]);
+    if(Object.keys(value.contributes).some(key=>!allowed.has(key)))throw Error("Minecraft API 6 cannot request editor, model, network or other plugin capabilities.");
+  }
   return {
     kind: "boltworks-plugin", manifestVersion: 1, id: String(value.id), name: String(value.name).trim(),
     version: String(value.version || "1.0.0"), description: String(value.description || ""), enabled: value.enabled !== false,

@@ -5,6 +5,23 @@ AI Studio. Update this document whenever a visible tool or exporter behavior is
 added or changed. The project-format and authoring documents remain the format
 contract; this file explains how to use the current editor.
 
+## Minecraft block-grid workspace (50.0.60)
+
+The optional **Minecraft block-grid workspace** plugin (tested package 0.1.1)
+opens a Blockmate `.blockgrid.json` build in its own isolated editor. Install
+and enable the package in Plugins, choose Open, then use the host's
+**Open block grid…** button. The grid can be edited with block movement,
+placement/removal and undo/redo. Embedded preview assets stay local to the file.
+**Save edited block grid** downloads a new grid for importing back into Blockmate
+Connect; it does not change the BWS scene or automatically place anything in Minecraft.
+
+This is API 6's narrow, player-selected file bridge: no scene sharing, generic
+editor commands, same-origin or network capability. The optional plugin is not
+bundled into the editor. See the [API 6 workflow and message contract](../docs/MINECRAFT-GRID-API6-50.0.60.md).
+Browser round-trip verification imported a 353-block cottage, added one brick,
+checked undo/redo and a coordinate move, then downloaded and re-imported the
+354-block edited grid into Connect with its textures preserved.
+
 ## Game Asset Kit
 
 ### Dice Gameplay demo (49.64.1)
