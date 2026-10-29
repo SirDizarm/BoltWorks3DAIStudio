@@ -122,6 +122,8 @@ Supported object fields:
 | `roughness` | Usually `0` to `1`. Low is glossy, high is matte. |
 | `opacity` | `0.05` to `1`. Values below `1` enable transparent rendering and disable depth writing; use about `0.38` for leaded window glass. |
 | `hidden` | Saved visibility flag. |
+| `locked` | Optional boolean. Locked objects remain in the scene and project but refuse direct editor selection, transforms, deletion, and MCP update/delete until explicitly unlocked. |
+| `relativePlacement` | Optional live anchor relationship; see below. Numeric `position` remains required as a fallback for older readers. |
 | `groupId`, `groupName` | Scene hierarchy membership. |
 | `pivot` | Optional object-local XYZ pivot. |
 | `linkId`, `linkColor` | Optional editing/link metadata. |
@@ -141,6 +143,30 @@ Supported object fields:
 If `geometry` exists, it takes precedence over the built-in shape geometry.
 `positions` contains flat XYZ triples. `uvs` contains flat UV pairs. Indices are
 optional. The studio computes normals when valid normals are not supplied.
+
+### Live relative placement
+
+```json
+{
+  "id": "hand-left",
+  "position": [0, 0, 0],
+  "relativePlacement": {
+    "relativeTo": "arm-left",
+    "anchor": "bottom",
+    "ownAnchor": "top",
+    "offset": [0, -0.03, 0.08]
+  }
+}
+```
+
+When loaded, BWS aligns the named world bounds anchor on this object to the
+reference object's anchor plus `offset`. It keeps that relationship when the
+reference moves or changes bounds. Anchors are `center`, `left`, `right`,
+`bottom`, `top`, `back`, and `front` (`front` is +Z). Directly moving a linked
+object changes the saved offset. A missing reference or cycle leaves the last
+numeric position in place. Deleting a reference detaches its children at their
+current positions. Imported meshes with non-scene parents do not participate.
+Use stable unique IDs; the relation does not use names.
 
 ## Texture library
 

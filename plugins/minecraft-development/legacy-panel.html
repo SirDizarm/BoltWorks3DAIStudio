@@ -1,0 +1,29 @@
+        <section class="section minecraft-only" id="minecraftSection" data-collapse-persist="minecraft-tools">
+          <button class="section-header" id="minecraftToggle" type="button" aria-expanded="true" aria-controls="minecraftBody"><h2>Minecraft Model</h2><span class="plugin-ready">NeoForge 1.21.1</span></button>
+          <div class="section-body" id="minecraftBody">
+            <p class="api-note">Import a Blockbench .bbmodel, edit its cuboids and bone animation in BWS, then export Java source for your mod.</p>
+            <div class="compact-row"><button id="minecraftImportBtn" class="primary" type="button">Import .bbmodel</button><span id="minecraftImportStatus" class="api-note">No Blockbench model loaded.</span></div>
+            <div class="compact-row minecraft-player-rig-row">
+              <button id="minecraftPlayerRigBtn" type="button" disabled>Add Player Rig + Animations</button>
+              <span id="minecraftPlayerRigStatus" class="api-note">Import a normal or slim Minecraft player model first.</span>
+            </div>
+            <label>Animation clip<select id="minecraftAnimationSelect" disabled><option value="">No animation clips loaded</option></select></label>
+            <hr />
+            <div class="field-grid">
+              <label>Mod loader<select id="minecraftLoaderSelect"><option value="neoforge-1.21.1">NeoForge 1.21.1</option><option disabled>Forge (later)</option><option disabled>Fabric (later)</option></select></label>
+              <label>Mod id<input id="minecraftModIdInput" type="text" value="examplemod" maxlength="64" /></label>
+              <label>Java package<input id="minecraftPackageInput" type="text" value="com.example.examplemod.client" maxlength="160" /></label>
+              <label>Model name<input id="minecraftModelNameInput" type="text" value="CustomMob" maxlength="80" /></label>
+            </div>
+              <label>Entity class (fully qualified)<input id="minecraftEntityClassInput" type="text" value="com.example.examplemod.entity.CustomMobEntity" maxlength="200" /></label>
+              <label>Texture path<input id="minecraftTextureInput" type="text" value="textures/entity/custom_mob.png" maxlength="200" /></label>
+              <div class="compact-row minecraft-texture-output">
+                <label class="toggle-chip"><input id="minecraftAddColorInput" type="checkbox" /> <span>Add color to output</span></label>
+                <label>Output color <input id="minecraftOutputColorInput" type="color" value="#ffffff" disabled /></label>
+                <button id="minecraftSaveTextureBtn" type="button">Save Output Texture</button>
+              </div>
+              <p id="minecraftTextureOutputStatus" class="api-note">Original texture will be exported unchanged.</p>
+              <button id="minecraftExportJavaBtn" type="button">Export NeoForge Java ZIP</button>
+            <p class="api-note">The ZIP contains the model, renderer, client registration, animation definitions, and a README showing where each file belongs.</p>
+          </div>
+        </section>

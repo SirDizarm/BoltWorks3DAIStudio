@@ -29,7 +29,7 @@ const shapeAliases = new Map([
 function usage() {
   return [
     "Usage:",
-    "  node BoltWorksStudioAi/tools/inspect-project.mjs PROJECT.modelerproj [--json]",
+    "  node BoltWorksStudioAi/tools/inspect-project.mjs PROJECT.modelerproj [--json] [--surface-warnings] [--bounds OBJECT_ID]",
     "",
     "Exit code is non-zero when structural errors are found."
   ].join("\n");
@@ -37,11 +37,17 @@ function usage() {
 
 const args = process.argv.slice(2);
 const jsonOutput = args.includes("--json");
-const inputArg = args.find(arg => !arg.startsWith("--"));
+const boundsIndex = args.indexOf("--bounds");
+const boundsId = boundsIndex >= 0 ? args[boundsIndex + 1] : args.find(arg => arg.startsWith("--bounds="))?.slice(9);
+const inputArg = args.find((arg, index) => !arg.startsWith("--") && !(boundsIndex >= 0 && index === boundsIndex + 1));
 
 if (!inputArg || args.includes("--help") || args.includes("-h")) {
   console.log(usage());
   process.exit(inputArg ? 0 : 2);
+}
+if (boundsIndex >= 0 && (!boundsId || boundsId.startsWith("--"))) {
+  console.error("--bounds requires an object ID.");
+  process.exit(2);
 }
 
 const inputPath = path.resolve(inputArg);
@@ -283,6 +289,50 @@ const belowGround = boundsByObject
   .filter(bounds => bounds.min[1] < -.001)
   .map(bounds => ({ id: bounds.id, name: bounds.name, minimumY: Math.round(bounds.min[1] * 1000) / 1000 }));
 
+const boundsLookup = new Map(boundsByObject.filter(entry => entry.id).map(entry => [entry.id, entry]));
+function boundsSummary(entry) {
+  if (!entry) return null;
+  const size = entry.max.map((value, axis) => value - entry.min[axis]);
+  return {
+    min: roundVec(entry.min), max: roundVec(entry.max), size: roundVec(size),
+    center: roundVec(entry.min.map((value, axis) => (value + entry.max[axis]) / 2)),
+    fractionOfSceneSize: sceneBounds?.size.map((value, axis) => value > 0 ? Math.round(size[axis] / value * 1000) / 1000 : null) || null
+  };
+}
+
+// A conservative axis-aligned heuristic. Intersections can be intentional;
+// these are review candidates, never automatic geometry changes.
+const potentialCoplanarFaces = [];
+const potentialVolumeOverlaps = [];
+if (args.includes("--surface-warnings")) {
+  const candidates = objects.map(object => ({ object, bounds: boundsLookup.get(object.id) }))
+    .filter(entry => entry.bounds && finiteVec3(entry.object.rotation) && entry.object.rotation.every(angle => Math.abs(angle / 90 - Math.round(angle / 90)) < .00001));
+  for (let left = 0; left < candidates.length && (potentialCoplanarFaces.length < 30 || potentialVolumeOverlaps.length < 30); left++) {
+    for (let right = left + 1; right < candidates.length && (potentialCoplanarFaces.length < 30 || potentialVolumeOverlaps.length < 30); right++) {
+      const a = candidates[left], b = candidates[right];
+      if (a.object.hidden || b.object.hidden) continue;
+      const intersection = [0, 1, 2].map(axis => Math.max(0, Math.min(a.bounds.max[axis], b.bounds.max[axis]) - Math.max(a.bounds.min[axis], b.bounds.min[axis])));
+      const intersectionVolume = intersection.reduce((product, value) => product * value, 1);
+      const volumes = [a.bounds, b.bounds].map(bounds => bounds.max.map((value, axis) => value - bounds.min[axis]).reduce((product, value) => product * value, 1));
+      if (intersectionVolume > .000001 && intersectionVolume / Math.min(...volumes) > .1 && potentialVolumeOverlaps.length < 30) {
+        potentialVolumeOverlaps.push({ ids: [a.object.id, b.object.id], approximateSharedVolume: Math.round(intersectionVolume * 1000) / 1000 });
+      }
+      for (let axis = 0; axis < 3; axis++) {
+        const other = [0, 1, 2].filter(value => value !== axis);
+        const overlap = other.map(value => Math.min(a.bounds.max[value], b.bounds.max[value]) - Math.max(a.bounds.min[value], b.bounds.min[value]));
+        if (overlap.some(value => value < .02)) continue;
+        // Opposite min/max faces merely touching are ordinary butt joints.
+        const matchingFace = Math.abs(a.bounds.min[axis] - b.bounds.min[axis]) < .002 ||
+          Math.abs(a.bounds.max[axis] - b.bounds.max[axis]) < .002;
+        if (matchingFace && potentialCoplanarFaces.length < 30) {
+          potentialCoplanarFaces.push({ ids: [a.object.id, b.object.id], axis: "XYZ"[axis], overlap: roundVec(overlap) });
+          break;
+        }
+      }
+    }
+  }
+}
+
 const report = {
   valid: errors.length === 0,
   file: inputPath,
@@ -298,6 +348,8 @@ const report = {
   },
   approximateSceneBounds: sceneBounds,
   belowGroundObjects: belowGround,
+  potentialCoplanarFaces,
+  potentialVolumeOverlaps,
   groups: groups.map(group => ({ id: group.id, name: group.name, parentId: group.parentId || null })),
   objects: objects.map(object => ({
     id: object.id,
@@ -308,7 +360,8 @@ const report = {
     rotation: object.rotation,
     scale: object.scale,
     textureName: object.textureName || null,
-    hidden: !!object.hidden
+    hidden: !!object.hidden,
+    approximateBounds: boundsSummary(boundsLookup.get(object.id))
   })),
   errors,
   warnings,
@@ -317,7 +370,16 @@ const report = {
     : "Load this exact file in BoltWorks Studio, create a fresh QA Sheet, and inspect all six views."
 };
 
-if (jsonOutput) {
+if (boundsId) {
+  const match = objects.find(object => object.id === boundsId);
+  if (!match) {
+    console.error(`Object ID not found: ${boundsId}`);
+    process.exitCode = 1;
+  } else {
+    const detail = { id: boundsId, name: match.name, shape: normalizeShape(match.shape), bounds: boundsSummary(boundsLookup.get(boundsId)) };
+    console.log(jsonOutput ? JSON.stringify(detail, null, 2) : `${detail.id}: min ${detail.bounds.min.join(", ")} | max ${detail.bounds.max.join(", ")} | size ${detail.bounds.size.join(", ")} | fraction of scene size ${detail.bounds.fractionOfSceneSize.join(", ")}`);
+  }
+} else if (jsonOutput) {
   console.log(JSON.stringify(report, null, 2));
 } else {
   console.log(`BoltWorksStudioAi inspection: ${report.projectName}`);
@@ -325,6 +387,8 @@ if (jsonOutput) {
   console.log(`Objects: ${report.counts.objects} | Groups: ${report.counts.groups} | Textures: ${report.counts.textures}`);
   if (sceneBounds) console.log(`Approximate bounds: min ${sceneBounds.min.join(", ")} | max ${sceneBounds.max.join(", ")} | size ${sceneBounds.size.join(", ")}`);
   console.log(`Objects extending below Y=0: ${belowGround.length}`);
+  if (args.includes("--surface-warnings")) console.log(`Potential coplanar face pairs: ${potentialCoplanarFaces.length}${potentialCoplanarFaces.length === 30 ? " (first 30 shown)" : ""}`);
+  if (args.includes("--surface-warnings")) console.log(`Potential volume overlaps: ${potentialVolumeOverlaps.length}${potentialVolumeOverlaps.length === 30 ? " (first 30 shown)" : ""}`);
   if (errors.length) {
     console.log("Errors:");
     for (const message of errors) console.log(`  - ${message}`);
@@ -333,7 +397,9 @@ if (jsonOutput) {
     console.log("Warnings:");
     for (const message of warnings) console.log(`  - ${message}`);
   }
+  for (const pair of potentialCoplanarFaces) console.log(`  - Check coplanar ${pair.axis} faces: ${pair.ids.join(" / ")}`);
+  for (const pair of potentialVolumeOverlaps) console.log(`  - Check intentional overlap: ${pair.ids.join(" / ")} (approximate volume ${pair.approximateSharedVolume})`);
   console.log(errors.length ? "FAILED" : "STRUCTURE OK — visual QA is still required.");
 }
 
-process.exitCode = errors.length ? 1 : 0;
+process.exitCode = process.exitCode || (errors.length ? 1 : 0);

@@ -1968,7 +1968,7 @@ els.showGridInput.addEventListener("change", () => {
 }));
 els.useCurrentZoomInShotsInput.addEventListener("change", () => log(`${els.useCurrentZoomInShotsInput.checked ? "Using current viewport zoom" : "Using Shot Zoom input"} for Save Views.`));
 els.hideGridInShotsInput.addEventListener("change", () => log(`${els.hideGridInShotsInput.checked ? "Hiding" : "Showing"} grid in Save Views screenshots.`));
-document.querySelector("#resetBtn").addEventListener("click", () => { clearObjects(); log("Scene reset."); });
+document.querySelector("#resetBtn").addEventListener("click", () => { if (clearObjects()) log("Scene reset."); });
 document.querySelector("#captureViewsBtn").addEventListener("click", async () => {
   const prefix = currentProjectBaseName();
   const shots = await captureViews({ download: true, prefix });

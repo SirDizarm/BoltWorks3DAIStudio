@@ -32,7 +32,7 @@ const server = createServer(async (request, response) => {
   const url = new URL(request.url || "/", `http://${request.headers.host || "127.0.0.1"}`);
   if (await handleVideoExport({ pathname: url.pathname, request, response })) return;
   if (handleHostApi({ pathname: url.pathname, request, response, server, pendingProjectFile, mcpRelay, url })) return;
-  if (url.pathname === studioPath || url.pathname === "/app/studio-v49.64.7.js") {
+  if (url.pathname === studioPath) {
     // Rebuilds must reach the browser without retaining the server's startup bundle.
     let source;
     try { source = readFileSync(studioFile); }

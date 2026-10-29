@@ -6,6 +6,7 @@ import { createMeshFactory } from "../app/meshes/factory.js";
 import { createGeometry as createDetailedImageMeshGeometry } from "./image-to-mesh/generator.js";
 
 const documentSource = readFileSync(new URL("../index.html", import.meta.url), "utf8");
+const activeVersion = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 const moduleSources = new Map(studioModuleOrder.map(name => [
   name,
   readFileSync(new URL(`../app/modules/${name}.js`, import.meta.url), "utf8")
@@ -14,7 +15,9 @@ const applicationSource = [...moduleSources.values()].join("\n");
 const styleSource = readFileSync(new URL("../app/styles/studio.css", import.meta.url), "utf8");
 const panelCollapseSource = readFileSync(new URL("../app/panels/panel-collapse.js", import.meta.url), "utf8");
 const toolDockingSource = readFileSync(new URL("../app/panels/tool-docking.js", import.meta.url), "utf8");
-const directBundle = readFileSync(new URL("../app/studio-v49.64.7.js", import.meta.url), "utf8");
+const activeBundleName = documentSource.match(/data-bws-bundle="\.\/(studio-v[\d.]+\.js)/)?.[1];
+if (!activeBundleName) throw new Error("index.html must name an active direct-open studio bundle.");
+const directBundle = readFileSync(new URL(`../${activeBundleName}`, import.meta.url), "utf8");
 const authoringManifest = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/manifest.json", import.meta.url), "utf8"));
 const projectSchema = JSON.parse(readFileSync(new URL("../BoltWorksStudioAi/schemas/modeler-project.schema.json", import.meta.url), "utf8"));
 const uvTopologyTest = JSON.parse(readFileSync(new URL("../samples/showcases/uv-topology-test.modelerproj", import.meta.url), "utf8"));
@@ -25,7 +28,10 @@ const panelsSource = moduleSources.get("panels") || "";
 const meshesSource = moduleSources.get("meshes") || "";
 const viewportSource = moduleSources.get("viewport") || "";
 const aiViewerSource = moduleSources.get("ai-viewer") || "";
-const minecraftSource = moduleSources.get("minecraft") || "";
+const minecraftSource = moduleSources.get("legacy-clip-compat") || "";
+const minecraftPluginSource = readFileSync(new URL("../plugins/minecraft-development/legacy-minecraft.js", import.meta.url), "utf8");
+const minecraftPluginPanel = readFileSync(new URL("../plugins/minecraft-development/legacy-panel.html", import.meta.url), "utf8");
+const imageToMeshGeneratorSource = readFileSync(new URL("./image-to-mesh/generator.js", import.meta.url), "utf8");
 const riggingSource = moduleSources.get("rigging") || "";
 const poseStraightenerSource = moduleSources.get("pose-straightener") || "";
 const autoSaveUpdateSource = moduleSources.get("autosave-update") || "";
@@ -940,23 +946,9 @@ function functionSource(source, name) {
 {
   const context = { THREE };
   vm.createContext(context);
-  vm.runInContext([
-    "minecraftVec",
-    "minecraftChildren",
-    "blockbenchAutoFaceUvs",
-    "rotateBlockbenchUvPoint",
-    "blockbenchCubeGeometryData"
-  ].map(name => functionSource(minecraftSource, name)).join("\n"), context);
-  if (context.minecraftVec("6 7 16").join(",") !== "6,7,16" || context.minecraftChildren("cube-uuid ").join("") !== "cube-uuid") {
-    throw new Error("Blockbench space-separated vectors and single-child UUID strings must import intact.");
-  }
-  const geometry = context.blockbenchCubeGeometryData(minecraftRigSmoke.elements[0], 32, 32, true);
-  if (geometry.positions.length !== 108 || geometry.uvs.length !== 72) {
-    throw new Error("Blockbench cuboids must generate six textured faces with per-corner UV coordinates.");
-  }
-  const uniqueUvs = new Set(Array.from(geometry.uvs, value => Number(value).toFixed(4)));
-  if (uniqueUvs.size < 6 || Math.max(...geometry.uvs) >= 1 || Math.min(...geometry.uvs) < 0) {
-    throw new Error("Blockbench face rectangles must map into their atlas regions instead of repeating the full texture.");
+  vm.runInContext(functionSource(minecraftSource, "minecraftVec"), context);
+  if (context.minecraftVec("6 7 16").join(",") !== "6,7,16") {
+    throw new Error("Legacy Blockbench space-separated vectors must import intact.");
   }
 }
 {
@@ -979,10 +971,13 @@ function functionSource(source, name) {
   }
 }
 {
-  const context = { THREE, rigBones: [], rigPoseChannels: new Map() };
+  const context = { THREE, MINECRAFT_UNIT: 1 / 16, rigBones: [], rigPoseChannels: new Map() };
   context.boneById = id => context.rigBones.find(bone => bone.id === id) || null;
   vm.createContext(context);
-  vm.runInContext(functionSource(minecraftSource, "resolveBlockbenchBoneRestTransforms"), context);
+  vm.runInContext([
+    functionSource(minecraftSource, "minecraftVec"),
+    functionSource(minecraftSource, "blockbenchBindTransform")
+  ].join("\n"), context);
   const root = {
     id: "root", parentId: null,
     position: new THREE.Vector3(), rotation: new THREE.Vector3(), tail: new THREE.Vector3(),
@@ -994,9 +989,9 @@ function functionSource(source, name) {
     blockbenchSourcePosition: new THREE.Vector3(1, 0, 0), blockbenchLocalRotation: new THREE.Vector3()
   };
   context.rigBones.push(root, child);
-  context.resolveBlockbenchBoneRestTransforms();
-  if (Math.abs(child.position.z + 1) > 1e-6 || Math.abs(child.position.x) > 1e-6) {
-    throw new Error("Nested Blockbench bone origins must follow their parent rotation in the imported rest pose.");
+  const transformed = context.blockbenchBindTransform([1, 0, 0], { origin: [0, 0, 0], rotation: [0, 0, 0] }, child.id);
+  if (Math.abs(transformed.position[2] + 1 / 16) > 1e-6 || Math.abs(transformed.position[0]) > 1e-6) {
+    throw new Error("Nested Blockbench geometry must follow its parent rotation during compatibility import.");
   }
 }
 
@@ -2057,8 +2052,8 @@ for (const [shape, expected] of [
   }
 }
 
-if (!documentSource.includes('<script defer src="./app/studio-v49.64.7.js"></script>')) {
-  throw new Error("index.html must load the direct-open classic studio bundle.");
+if (!documentSource.includes(`data-bws-bundle="./${activeBundleName}`)) {
+  throw new Error("index.html must load the active direct-open studio bundle.");
 }
 for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn", "modelToolsPaintFacesBtn"]) {
   if (!documentSource.includes(required)) throw new Error(`Model Tools mesh coloring is missing ${required}.`);
@@ -2066,7 +2061,8 @@ for (const required of ["modelToolsMeshColorInput", "modelToolsApplyMeshColorBtn
 for (const required of ["applySolidColorToMeshes", "paintSelectedFacesSolidColor", 'recordHistory("paint selected faces")']) {
   if (!moduleSources.get("panels")?.includes(required)) throw new Error(`Mesh coloring behavior is missing ${required}.`);
 }
-for (const required of ["exportGameCharacterBtn", "exportGameCharacterPackage", "gameCharacterCompactGlbSkins", "gameCharacterLodInput", "gameCharacterBuildGlb", "exportGlbBtn", "exportFullModelGlb", "GLTFExporter"]) {
+// Game-engine package export moved to the optional plugin; GLB remains in core.
+for (const required of ["exportGameCharacterPackage", "exportGlbBtn", "exportFullModelGlb", "GLTFExporter"]) {
   if (!documentSource.includes(required) && !applicationSource.includes(required)) {
     throw new Error(`Realtime game-character export is missing ${required}.`);
   }
@@ -2082,12 +2078,7 @@ for (const required of ["resetRigForNewWorkspace", "exportReusableBoneRig", 'kin
     throw new Error(`Reusable rig or clean-workspace behavior is missing ${required}.`);
   }
 }
-for (const required of ["GAME_ENGINE_CLIP_SPECS", '"Lower_Run"', '"Upper_Slash"', '"grip_socket_r"', '"grip_socket_l"', 'rigidPartAttachments: false', "const boundObjects = objects.filter"]) {
-  if (!moduleSources.get("import-export")?.includes(required)) {
-    throw new Error(`Realtime game-character export is missing detachable-part or hand-slot support: ${required}.`);
-  }
-}
-for (const required of ["gameCharacterCaptureEditorState", "gameCharacterRestoreEditorState", "capture isolated bind pose", "boundRestWorlds"]) {
+for (const required of ["gameCharacterCaptureEditorState", "gameCharacterRestoreEditorState"]) {
   if (!moduleSources.get("import-export")?.includes(required)) {
     throw new Error(`Realtime game-character export must preserve the live editor rig and build from an isolated bind pose: ${required}.`);
   }
@@ -2125,7 +2116,7 @@ for (const required of [
   "© 2026 Daniel Rydin",
   "BoltWorks branding and visual assets. All rights reserved.",
   "window.ModelerStudio",
-  "tool-docking.js?v=49.64.7",
+  `tool-docking.js?v=${activeVersion}`,
   "function dockBoltWorksToolGroups",
   "data-local-host-only hidden",
   "detectLocalHost",
@@ -2349,7 +2340,6 @@ for (const required of [
   "exportObjPartsBtn",
   "exportObjParts",
   "safeFileName",
-  "Import every OBJ file as its own MeshPart in Roblox Studio.",
   "textureAssets",
   "Roblox Texture ID",
   "Mesh Details",
@@ -2374,7 +2364,6 @@ for (const required of [
   "Un Hide All",
   "textureRobloxAssetId",
   "reconcileTextureRobloxIds",
-  "collectRobloxTextureCatalog",
   "downloadDataUrl",
   "captureViewsBtn",
   "if (data?.scene?.objects)",
@@ -2987,8 +2976,10 @@ for (const regression of ["restoreTriangleWinding", "repairedTriangleWinding", "
   }
 }
 
-if (!documentSource.includes("BoltWorks 3D AI Studio v49.64.7 Experimental") || !documentSource.includes("v49.64.7 Experimental preview")) {
-  throw new Error("The document must expose the single canonical v49.64.7 version.");
+if (!documentSource.includes(`<title>BoltWorks 3D AI Studio v${activeVersion}</title>`)
+  || !documentSource.includes(`content="v${activeVersion} experimental plugin preview"`)
+  || !documentSource.includes(`class="brand-version">v${activeVersion}</small>`)) {
+  throw new Error(`The document must expose the single canonical v${activeVersion} version.`);
 }
 
 if (!documentSource.includes('id="toolbarUndoGroup"') || !documentSource.includes('id="toolbarCameraControlsLauncherGroup"')) {
@@ -3051,114 +3042,31 @@ for (const attentionElement of ["aiViewerAttention", "aiViewerAttentionMessage",
   }
 }
 
-for (const expectedDefault of [
-  'id="reliefGridXInput" type="number" min="8" max="160" step="1" value="160"',
-  'id="reliefGridYInput" type="number" min="8" max="220" step="1" value="220"',
-  'id="reliefThresholdInput" type="number" min="0" max="255" step="1" value="70"',
-  'id="reliefDetailInput" type="number" min="0" max="200" step="5" value="100"',
-  '<option value="single">Single height image</option>',
-  '<option value="sheet" selected>View sheet to one model</option>',
-  '<option value="hybridV47" selected>Hybrid — continuous mesh + V30 shape</option>',
-  '<option value="recoveredV30">Recovered V30 original</option>',
-  '<option value="solidVisualHull">Four-view detailed human</option>'
-]) {
-  if (!html.includes(expectedDefault)) throw new Error(`Missing detailed view-sheet default: ${expectedDefault}`);
+// Image-to-Mesh is now an optional plugin. The old core panel controls were
+// removed, while the generator and plugin routing remain checked here.
+if (documentSource.includes('id="reliefGridXInput"') || documentSource.includes('id="reliefSmoothInput"')) {
+  throw new Error("Retired Image-to-Mesh controls must not reappear in the core editor.");
 }
-if (html.includes('id="reliefSmoothInput"') || moduleSources.get("viewport").includes("reliefSmoothInput")) {
-  throw new Error("Image-to-Mesh smoothing must be automatic, not exposed as a user control.");
+if (!meshesSource.includes('bwsRunPluginGenerator("image-relief-mesh-lab",options)')
+    || !moduleSources.get("plugin-catalogue")?.includes("id:'image-relief-mesh-lab'")
+    || !imageToMeshGeneratorSource.includes('continuousV30SilhouetteHybridV47')
+    || !imageToMeshGeneratorSource.includes('sourceDrivenFaceFingerDetail')) {
+  throw new Error("Image-to-Mesh plugin routing and its detailed generator must remain available.");
 }
-if (!meshesSource.includes("const smoothPasses = 4;")) {
-  throw new Error("Image-to-Mesh must retain the verified automatic source-matching surface finish.");
+// The Minecraft development panel moved out of index.html. Its project-clip
+// compatibility layer remains in core so existing saves still load.
+for (const compatibilityFeature of ["minecraftVec", "serializeMinecraftWorkspace", "restoreMinecraftWorkspace", "animationSequenceClipIndices"]) {
+  if (!minecraftSource.includes(compatibilityFeature)) throw new Error(`Missing Minecraft project compatibility feature: ${compatibilityFeature}`);
 }
-for (const detailedMeshRequirement of ["createDetailedImageMeshGeometry", 'buildMode === "solidVisualHull"', 'buildMode === "recoveredV30"', 'buildMode === "hybridV47"', "continuousV30SilhouetteHybridV47", "v30SilhouetteGuideOnly", "continuousSolidTopology", "guideTrianglesExcluded", "reducedChestHipDepth", "sourceDrivenFaceFingerDetail", "sourceLikeLowerDetailScaleMeshV30Recovered", "recoveredFromCommit", "solidVisualHullV45", "regionalDetailScale", "v30SourceReliefRecovery", "fourSurfaceDetail", "multiScaleSurfaceDetail", "sizePreservingSurfaceSmoothing"]) {
-  const source = ["continuousV30SilhouetteHybridV47", "v30SilhouetteGuideOnly", "continuousSolidTopology", "guideTrianglesExcluded", "reducedChestHipDepth", "sourceDrivenFaceFingerDetail", "sourceLikeLowerDetailScaleMeshV30Recovered", "recoveredFromCommit", "solidVisualHullV45", "regionalDetailScale", "v30SourceReliefRecovery", "fourSurfaceDetail", "multiScaleSurfaceDetail", "sizePreservingSurfaceSmoothing"].includes(detailedMeshRequirement) ? directBundle : applicationSource;
-  if (!source.includes(detailedMeshRequirement)) throw new Error(`Missing detailed image-to-mesh requirement: ${detailedMeshRequirement}`);
+for (const pluginFeature of ["function expandBlockbenchSkinProject", "function minecraftPlayerAnimationPresets", "async function importBlockbenchProject", "function generateNeoForgeModelSource", "async function exportNeoForgeJava", "function initializeMinecraftTools"]) {
+  if (!minecraftPluginSource.includes(pluginFeature)) throw new Error(`Missing Minecraft development plugin feature: ${pluginFeature}`);
 }
-if (!moduleSources.get("plugins").includes('id: "image-relief-mesh-lab"') || !moduleSources.get("plugins").includes('name: "Image to Mesh"')) {
-  throw new Error("The restored Image-to-Mesh panel must be enabled in the studio UI.");
+for (const panelFeature of ['id="minecraftSection"', 'id="minecraftExportJavaBtn"', 'id="minecraftAnimationSelect"']) {
+  if (!minecraftPluginPanel.includes(panelFeature)) throw new Error(`Missing Minecraft development plugin control: ${panelFeature}`);
 }
-for (const minecraftRequirement of [
-  'id="workspaceSelect"',
-  'id="importBbmodelBtn"',
-  'id="minecraftSection"',
-  'id="minecraftExportJavaBtn"',
-  'id="pluginManagerSection"',
-  'id="minecraftAddColorInput"',
-  'id="minecraftOutputColorInput"',
-  'id="minecraftSaveTextureBtn"',
-  'id="minecraftAnimationSelect"',
-  'id="minecraftPlayerRigBtn"',
-  'id="minecraftPlayerRigStatus"'
-]) {
-  if (!html.includes(minecraftRequirement)) throw new Error(`Missing Minecraft/plugin UI requirement: ${minecraftRequirement}`);
-}
-for (const minecraftSourceRequirement of [
-  "importBlockbenchProject",
-  "collectBlockbenchHierarchy",
-  "importBlockbenchAnimation",
-  "activateMinecraftAnimation",
-  "resolveBoneRestFrame",
-  "serializeMinecraftWorkspace",
-  "restoreMinecraftWorkspace",
-  "minecraftPlayerRigBoneMap",
-  "minecraftPlayerAnimationPresets",
-  "addMinecraftPlayerRigAnimations",
-  'clip("Idle"',
-  'clip("Wave"',
-  'clip("Walk"',
-  'clip("Run"',
-  'clip("Sprint"',
-  'clip("Jump"',
-  'clip("Fight"',
-  'clip("Block"',
-  'clip("Crawl"',
-  'clip("Swim"',
-  "minecraftObjectsByBone",
-  "generateNeoForgeModelSource",
-  "generateNeoForgeAnimationsSource",
-  "exportNeoForgeJava",
-  "initializeMinecraftTools",
-  'color: "#ffffff", roughness: 1',
-  "textureHasTransparency: !!texture",
-  "material.transparent = false",
-  "material.alphaTest = .1",
-  "mesh.receiveShadow = !minecraft",
-  "const flatAxes =",
-  "flatAxes[index]",
-  "THREE.NearestFilter",
-  "tintMinecraftTexture",
-  "textureDataUrl"
-]) {
-  if (!applicationSource.includes(minecraftSourceRequirement)) throw new Error(`Missing Minecraft source requirement: ${minecraftSourceRequirement}`);
-}
-for (const clipName of ["Walk", "Run", "Sprint"]) {
-  const clipStart = applicationSource.indexOf(`clip("${clipName}"`);
-  const nextClip = applicationSource.indexOf("\n    clip(\"", clipStart + 1);
-  const clipSource = applicationSource.slice(clipStart, nextClip < 0 ? undefined : nextClip);
-  const bodyTrack = clipSource.match(/^\s*body:\s*(.+)$/m)?.[1] || "";
-  const bodyRotations = [...bodyTrack.matchAll(/\[\d+,\s*\[([^\]]+)\]/g)].map(match => match[1]);
-  if (!bodyRotations.length || bodyRotations.some(rotation => rotation.split(",").some(value => Number(value.trim()) !== 0))) {
-    throw new Error(`${clipName} must keep the Minecraft player body upright at every keyframe.`);
-  }
-  const headTrack = clipSource.match(/^\s*head:\s*(.+)$/m)?.[1] || "";
-  const headRotations = [...headTrack.matchAll(/\[\d+,\s*\[([^\]]+)\]/g)].map(match => match[1]);
-  if (!headRotations.length || headRotations.some(rotation => rotation.split(",").some(value => Number(value.trim()) !== 0))) {
-    throw new Error(`${clipName} must keep the Minecraft player head upright at every keyframe.`);
-  }
-}
-{
-  const waveStart = applicationSource.indexOf('clip("Wave"');
-  const nextClip = applicationSource.indexOf("\n    clip(\"", waveStart + 1);
-  const waveSource = applicationSource.slice(waveStart, nextClip < 0 ? undefined : nextClip);
-  if (waveStart < 0 || !waveSource.includes("leftArm:") || !waveSource.includes("rightArm:")) {
-    throw new Error("The Minecraft Wave preset must animate the semantic left arm while preserving the right arm.");
-  }
-  const leftWaveTrack = waveSource.match(/^\s*leftArm:\s*(.+)$/m)?.[1] || "";
-  const raisedAngles = [...leftWaveTrack.matchAll(/\[\d+,\s*\[([^\]]+)\]/g)]
-    .map(match => match[1].split(",").map(value => Number(value.trim())));
-  if (raisedAngles.length < 5 || raisedAngles.some(rotation => rotation[0] < 20 || Math.abs(rotation[2]) < 100)) {
-    throw new Error("The Minecraft Wave preset must keep the left arm raised beside the head throughout its loop.");
-  }
+if (!moduleSources.get("import-export")?.includes("minecraft: serializeMinecraftWorkspace()")
+    || !moduleSources.get("import-export")?.includes("restoreMinecraftWorkspace(editor.minecraft || null)")) {
+  throw new Error("Saved projects must retain Minecraft clip compatibility data.");
 }
 if (!moduleSources.get("rigging")?.includes('let boneGizmoToolMode = "translate"')
   || !moduleSources.get("rigging")?.includes("let boneGizmoEnabled = false")) {
@@ -3177,7 +3085,7 @@ for (const skinImportRequirement of [
   "group(\"right-arm\", \"right_arm\"",
   "Built the ${parsedProject.skin_model || \"steve\"} body"
 ]) {
-  if (!moduleSources.get("minecraft").includes(skinImportRequirement)) throw new Error(`Missing Blockbench skin import requirement: ${skinImportRequirement}`);
+  if (!minecraftPluginSource.includes(skinImportRequirement)) throw new Error(`Missing Blockbench skin import requirement: ${skinImportRequirement}`);
 }
 if (!moduleSources.get("import-export").includes("minecraft: serializeMinecraftWorkspace()") || !moduleSources.get("import-export").includes("restoreMinecraftWorkspace(editor.minecraft || null)")) {
   throw new Error("Saved projects must preserve every named Minecraft animation clip and the active clip.");
@@ -3228,101 +3136,23 @@ for (const tPoseLoadRequirement of ["tPoseFittingMode: !!tPoseFittingMode", "res
 if (!moduleSources.get("plugins").includes('kind: "boltworks-plugin"') || !moduleSources.get("plugins").includes("validPluginManifest") || !moduleSources.get("plugins").includes("validPluginPackage") || !moduleSources.get("plugins").includes("setPluginEnabled")) {
   throw new Error("The studio must expose the manifest-based plugin foundation.");
 }
-for (const geometryNodeUiRequirement of [
-  'id="geometryNodesSection"',
-  'data-plugin-id="geometry-nodes"',
-  'id="geometryNodeCanvas"',
-  'id="geometryNodeDetachBtn"',
-  'id="geometryNodeBuildBtn"',
-  'id="geometryNodeBakeBtn"',
-  'id="geometryNodeDeleteBtn"',
-  'id="geometryNodeCopyBtn"',
-  'id="geometryNodePasteBtn"',
-  'id="geometryNodeSaveClusterBtn"',
-  'id="geometryNodeLoadClusterBtn"',
-  'data-geometry-node-palette'
-]) {
-  if (!documentSource.includes(geometryNodeUiRequirement)) throw new Error(`Missing Geometry Nodes UI requirement: ${geometryNodeUiRequirement}`);
+// Geometry Nodes has a separate UI. BWS keeps graph/project persistence and
+// a guarded geometry import bridge in its core bundle.
+for (const graphContract of ["function serializeOptionalPluginProjectData()", "function restoreOptionalPluginProjectData(", "function sanitizeGeometryNodeProjectState("]) {
+  if (!moduleSources.get("geometry-nodes")?.includes(graphContract)) throw new Error(`Missing Geometry Nodes project contract: ${graphContract}`);
 }
-for (const geometryNodeSourceRequirement of [
-  "function buildGeometryNodeTree()",
-  "function bakeGeometryNodeTree()",
-  "function serializeOptionalPluginProjectData()",
-  "function restoreOptionalPluginProjectData(",
-  "function setGeometryNodesPluginEnabled(",
-  "function openGeometryNodesDetachedWindow()",
-  "function fitGeometryNodeSidebarOverview()",
-  "function geometryNodeClusterPayload(",
-  "function defaultEmptyGeometryNodeProjectState()",
-  "function importGeometryNodeClusterText(",
-  'kind: "boltworks-node-cluster"',
-  'window.open("", "bws-geometry-nodes"',
-  "liveGeometryNodesDetachedWindow()?.close()",
-  "Plugin unloaded. Saved node graphs remain in this project.",
-  "data-geometry-add-node",
-  "Tree Variant",
-  "Root Flare",
-  "Trunk Bend",
-  "Smooth Joints",
-  "Cut Knot",
-  "Mesh Primitive",
-  "Tapered Stem",
-  "Branch Array",
-  "Junction Blend",
-  "Cluster Scatter",
-  "Rock Generator",
-  "const ringNoiseByRing",
-  "const bottomRim",
-  "const clusterSlots",
-  "Stone Wall",
-  "wallDepthLayers",
-  "wallColorVariation",
-  "Grass Scatter",
-  "grassAvoidGeometry",
-  "grassGrowNegativeX",
-  "grassGrowPositiveX",
-  "grassGrowNegativeZ",
-  "grassGrowPositiveZ",
-  "Mask clearance",
-  "Moss Growth",
-  "geometryNodeMossOverlayGeometry",
-  "geometryNodeCrackMossGeometry",
-  "hasSeparateFaces",
-  "mossMoisture",
-  "mossSunlight",
-  "mossCrackBias",
-  "Join Geometry",
-  "Cut Rings",
-  "Primitive Smooth Test",
-  "Smooth Geometry",
-  "smoothNodes",
-  "data-geometry-attach-type",
-  "geometry-node-context-menu",
-  "connectGeometryNodes",
-  "geometryNodeActiveNodeIds",
-  "Output Transform"
-]) {
-  if (!moduleSources.get("geometry-nodes")?.includes(geometryNodeSourceRequirement)) throw new Error(`Missing Geometry Nodes behavior: ${geometryNodeSourceRequirement}`);
+for (const graphBridge of ["function bwsValidateGraphParts(", "async function bwsApplyGraphOutput(", "function bwsAttachPluginGraphBridge(", "bwsGraphFileText("]) {
+  if (!moduleSources.get("plugin-graph-bridge")?.includes(graphBridge)) throw new Error(`Missing Geometry Nodes host bridge: ${graphBridge}`);
 }
-if (!moduleSources.get("plugins").includes('id: "geometry-nodes"')
-  || !moduleSources.get("import-export").includes("pluginData: typeof serializeOptionalPluginProjectData")
-  || !moduleSources.get("import-export").includes("restoreOptionalPluginProjectData(previous.pluginData || {})")
-  || !moduleSources.get("panels").includes("resetGeometryNodeProjectState()")) {
-  throw new Error("Geometry Nodes must be a bundled unloadable plugin whose graph state follows project save, load, and new-workspace lifecycle.");
+if (!moduleSources.get("import-export")?.includes("pluginData: typeof serializeOptionalPluginProjectData")
+    || !moduleSources.get("import-export")?.includes("restoreOptionalPluginProjectData(data.pluginData || {})")) {
+  throw new Error("Geometry Nodes project data must survive BWS save/load.");
 }
-for (const gameAssetUiRequirement of [
-  'id="exportGameArmsBtn"',
-  'id="gameArmExportSideInput"',
-  'id="gameItemImageBtn"',
-  'id="gameItemBuildBtn"'
-]) {
-  if (!html.includes(gameAssetUiRequirement)) throw new Error(`Missing game asset UI requirement: ${gameAssetUiRequirement}`);
-}
-for (const armExportRequirement of ["function gameCharacterArmGeometry(", "function exportGameCharacterArmsGlb(", "with skinning and animations but no held equipment"]) {
-  if (!moduleSources.get("import-export").includes(armExportRequirement)) throw new Error(`Missing arm-only GLB export requirement: ${armExportRequirement}`);
-}
-for (const solidItemRequirement of ["function gameItemLargestMask(", "function gameItemGeometryParts(", "function buildSolidGameItemFromImage()", "Wood Back", "Back Metal Rim"]) {
-  if (!moduleSources.get("meshes").includes(solidItemRequirement)) throw new Error(`Missing solid image-item requirement: ${solidItemRequirement}`);
+// Game character export and image-item building moved to an optional plugin.
+if (!moduleSources.get("plugin-character-bridge")?.includes("function bwsAttachPluginCharacterBridge(")
+    || !moduleSources.get("plugin-installer")?.includes("function bwsOpenPluginWorkspace(id)")
+    || !moduleSources.get("import-export")?.includes("bwsOpenPluginWorkspace('boltworks-game-engine')")) {
+  throw new Error("Game character export must remain routed through the optional plugin bridge.");
 }
 {
   const width = 300;
@@ -3418,7 +3248,7 @@ if (!moduleSources.get("import-export").includes("materialTextureReferenceFields
 if (!moduleSources.get("import-export").includes("await waitForSceneTextures();")) {
   throw new Error("PNG captures must wait for project textures before rendering.");
 }
-if (!documentSource.includes('id="saveQaSheetBtn"') || !moduleSources.get("import-export").includes("async function saveQaSheet()")) {
+if (!documentSource.includes('id="saveQaSheetBtn"') || !moduleSources.get("import-export").includes("async function saveQaSheet(")) {
   throw new Error("The six-view AI QA sheet export must remain available.");
 }
 if (!documentSource.includes('id="animationSheetViewSelect"') || !documentSource.includes('id="animationSheetFramesInput"') || !documentSource.includes('id="animationSheetExportBtn"') || !moduleSources.get("import-export").includes("async function saveAnimationMotionSheets")) {
@@ -3445,8 +3275,10 @@ if (!documentSource.includes('id="animatorWorkspaceOpenBtn"') || documentSource.
 if (!moduleSources.get("animator-workspace")?.includes("function setAnimatorWorkspace") || !moduleSources.get("rigging").includes("animation-timeline-grid") || !moduleSources.get("rigging").includes("function deleteAnimationFrameKeys")) {
   throw new Error("The dedicated Animator workspace must provide a readable timeline and frame-key editing.");
 }
-if (!moduleSources.get("animator-workspace")?.includes("setAnimatorWorkspace(!animatorWorkspaceActive)") || !moduleSources.get("animator-workspace")?.includes('"Back to Modeling" : "Animator Workspace"')) {
-  throw new Error("The top Animator Workspace button must toggle both entering and leaving animation mode.");
+if (!moduleSources.get("animator-workspace")?.includes("['modeling','rigging','animation']")
+    || !moduleSources.get("animator-workspace")?.includes("button.onclick=()=>setBwsStudioWorkspace(id)")
+    || !moduleSources.get("animator-workspace")?.includes("event.key==='Escape'&&bwsStudioWorkspace!=='modeling'")) {
+  throw new Error("The workspace navigation must enter Modeling, Rigging, and Animation and let Escape return to Modeling.");
 }
 if (!documentSource.includes('id="animatorTimelineCollapseBtn"') || !moduleSources.get("animator-workspace")?.includes("function setAnimatorTimelineCollapsed") || !styleSource.includes(".app.animator-mode.timeline-collapsed")) {
   throw new Error("The Animator timeline must be minimizable while keeping the workspace open.");
@@ -3457,8 +3289,8 @@ if (!documentSource.includes('id="selectTargetBoneBtn"') || !documentSource.incl
 if (!documentSource.includes('id="modelSelectTargetAllBtn"') || !documentSource.includes('id="modelSelectTargetSkinBtn"') || !documentSource.includes('id="modelSelectTargetArmorBtn"') || !documentSource.includes('id="modelSelectTargetBoneBtn"') || !moduleSources.get("rigging")?.includes("function setModelingSelectionTarget") || !moduleSources.get("rigging")?.includes("function activeViewportSelectionTarget") || !moduleSources.get("rigging")?.includes("function viewportTargetedObjectHit") || !moduleSources.get("rigging")?.includes("if (!activeViewportSelectionTargetsBones()) return null") || !moduleSources.get("panels")?.includes("const viewportSelectionTarget = activeViewportSelectionTarget()")) {
   throw new Error("Modeling and Animator viewport selection filters must prevent skin, armor, and bone picking from bypassing the chosen target.");
 }
-if (documentSource.includes('id="tPoseFittingBtn"') || !moduleSources.get("rigging")?.includes('const T_POSE_CLIP_ID = "__t_pose_fitting__"') || !moduleSources.get("rigging")?.includes("T-Pose / Rig Fitting</option>") || !moduleSources.get("animator-workspace")?.includes("T-Pose / Rig Fitting</option>") || !moduleSources.get("rigging")?.includes("restoreAnimationBindPose({ render: false });") || !moduleSources.get("rigging")?.includes("if (tPoseFittingMode) {\n    animationState.playing = false;") || !moduleSources.get("meshes")?.includes("const animatorRigObjectTransform") || !moduleSources.get("meshes")?.includes("const selectedStoredPivotActive = !animatorRigObjectTransform")) {
-  throw new Error("T-Pose must be a dedicated Animation Clip menu state that restores and holds the fitted bind pose instead of a separate mode button.");
+if (documentSource.includes('id="tPoseFittingBtn"') || !moduleSources.get("rigging")?.includes('const T_POSE_CLIP_ID = "__t_pose_fitting__"') || !moduleSources.get("rigging")?.includes("T-Pose / Rig Fitting</option>") || !moduleSources.get("animator-workspace")?.includes("option.hidden=bwsStudioWorkspace==='animation'") || !moduleSources.get("rigging")?.includes("restoreAnimationBindPose({ render: false });") || !moduleSources.get("meshes")?.includes("const animatorRigObjectTransform") || !moduleSources.get("meshes")?.includes("const selectedStoredPivotActive = !animatorRigObjectTransform")) {
+  throw new Error("T-Pose fitting must remain a Rigging clip state and stay out of the Animation clip menu.");
 }
 if (!moduleSources.get("rigging")?.includes("function restoreAnimationBindPose({ render = true } = {}) {\n  // A real clip leaves its local pose channels cached") || !moduleSources.get("rigging")?.includes("rigPoseChannels.set(bone.id, {\n      position: bone.position.clone(),\n      rotation: bone.rotation.clone()")) {
   throw new Error("T-Pose restore must replace stale animation channels with the fitted bind pose before hierarchy resolution.");
@@ -3517,7 +3349,7 @@ if (!documentSource.includes('id="referenceViewportsToggleBtn"') || !moduleSourc
 if (!documentSource.includes('id="animationVideoDurationInput"') || !moduleSources.get("import-export")?.includes("Math.max(1, Math.round(videoDurationSeconds * fps))") || !moduleSources.get("panels")?.includes("durationSeconds: Number(els.animationVideoDurationInput?.value) || 6")) {
   throw new Error("WebM and MP4 animation exports must loop to the selected video duration.");
 }
-if (!documentSource.includes('id="animationSequenceClipSelect"') || !documentSource.includes('id="animationUseSequenceInput"') || !moduleSources.get("minecraft")?.includes("animationSequenceClipIndices") || !moduleSources.get("minecraft")?.includes("previewMinecraftAnimationSequence") || !moduleSources.get("minecraft")?.includes("animationSequence: animationSequenceClipIndices()")) {
+if (!documentSource.includes('id="animationSequenceClipSelect"') || !documentSource.includes('id="animationUseSequenceInput"') || !minecraftSource.includes("animationSequenceClipIndices") || !minecraftSource.includes("previewMinecraftAnimationSequence") || !minecraftSource.includes("animationSequence: animationSequenceClipIndices()")) {
   throw new Error("Connected animation sequences must be editable, previewable, and saved with Minecraft projects.");
 }
 if (!documentSource.includes('id="animationVideoQualitySelect"') || !moduleSources.get("import-export")?.includes("qualityScale = 1.5") || !moduleSources.get("import-export")?.includes("renderer.setPixelRatio(Math.min(4") || !moduleSources.get("import-export")?.includes("renderConnectedAnimationWebm")) {

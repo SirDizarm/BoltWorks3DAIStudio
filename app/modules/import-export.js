@@ -177,6 +177,11 @@ function serializeObject(mesh) {
     position: serializedPosition.map(round),
     rotation: serializedRotation.map(round),
     scale: serializedScale.map(round),
+    locked: !!mesh.userData.locked,
+    relativePlacement: mesh.userData.relativePlacement ? {
+      ...mesh.userData.relativePlacement,
+      offset: [...mesh.userData.relativePlacement.offset]
+    } : null,
     color: mesh.userData.color || `#${material?.color?.getHexString?.() || "ffffff"}`,
     roughness: round(material?.roughness ?? mesh.userData.roughness ?? .6),
     tintColor: normalizeHexColor(mesh.userData.tintColor, "#ffffff"),
@@ -278,11 +283,11 @@ function state() {
 function projectCapabilities() {
   return {
     shapes: Object.keys(shapeFactories),
-    transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot"],
+    transforms: ["translate", "rotate", "scale", "flipX", "flipY", "flipZ", "sharedPivot", "relativePlacement"],
     faceTools: ["triangleSelect", "coplanarFaceSelect", "vertexSelect", "edgeSelect", "paintSelect", "areaSelect", "marker", "lineSketch", "makeFaceFromSketch", "fillLineFromSketch", "cutHoleFromSketch", "keyholeCutter", "deleteTriangles", "extractTriangles", "fillHole", "findRepairHoles", "copyTriangles", "pasteTriangles", "extend", "pull", "pullToTarget", "push", "dragPush", "bevelFace", "weldVertices", "dissolveEdge", "dissolveVertex", "liveMirror", "scaleSelectedSurface", "relaxVertices", "smoothVertices", "knifeCut", "planeCut", "bridgeEdgeLoops", "cutTopBottom", "protectedDecimate", "lodGenerator"],
     textureTools: ["addTexture", "changeTexture", "clearTexture", "flipTexture", "rotateTexture", "saveTextureImage", "textureLibrary", "baseColorPaint", "roughnessPaint", "metalnessPaint", "normalPaint", "emissivePaint", "materialPreviewSphere"],
     exports: ["project", "json", "obj", "robloxPack", "dae"],
-    sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes", "combineShell"],
+    sceneGrouping: ["checkedSelection", "nameGroups", "groupOnly", "selectAll", "deselectAll", "nestedGroups", "groupDetails", "mergeMeshes", "combineShell", "objectLocks"],
     lighting: ["mainLamp", "mirrorLamp", "lightGuides", "lampAim", "lampStrength", "coneAngle"],
     notes: [
       "Project files store editable scene state plus editor/view settings.",
@@ -694,10 +699,11 @@ function loadState(data, { record = true } = {}) {
   // Older saved projects can contain duplicated mesh IDs. Checkbox state and
   // selection then leak between unrelated rows because both rows share a key.
   ensureUniqueObjectIds();
+  syncRelativePlacements();
   ensureLinkGroupColors();
   ensureSceneGroups();
   ensureModelGroups();
-  selectObject(objects.at(-1) || null);
+  selectObject([...objects].reverse().find(object => !object.userData?.locked) || null);
   updateAll();
   if (skippedBrokenGltf) log(`Skipped ${skippedBrokenGltf} incomplete legacy glTF recovery object${skippedBrokenGltf === 1 ? "" : "s"}. Re-import the original glTF once; future recovery saves will preserve it correctly.`);
 }
@@ -1133,7 +1139,7 @@ function renderTree() {
     const materialLabel = materialRulePill(mesh.userData.materialRule || "auto");
     row.className = `object-row child${mesh === selected || activeGroupIds.includes(mesh.userData.id) || (transformTargets.length > 1 && checkedIds.has(mesh.userData.id)) ? " selected" : ""}${mesh.userData.hidden ? " hidden-row" : ""}`;
     row.dataset.meshId = mesh.userData.id;
-    row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><label class="row-toggle armor-toggle" title="Include ${mesh.name} in the rigid armor system"><input class="armor-check" type="checkbox" aria-label="Mark ${mesh.name} as armor"><span>Armor</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${rowType}</small>`;
+    row.innerHTML = `<input class="part-check" type="checkbox" aria-label="Select ${mesh.name}"><label class="row-toggle link-toggle" title="Link ${mesh.name} with the current multi-selection"><input class="link-check" type="checkbox" aria-label="Link ${mesh.name}"><span>Link</span></label><label class="hide-toggle" title="Hide or show ${mesh.name}"><input class="hide-check" type="checkbox" aria-label="Hide ${mesh.name}"><span>Hide</span></label><label class="row-toggle armor-toggle" title="Include ${mesh.name} in the rigid armor system"><input class="armor-check" type="checkbox" aria-label="Mark ${mesh.name} as armor"><span>Armor</span></label><span class="swatch" style="background:${swatchColor}"></span><span class="mesh-name"></span><small title="${materialLabel}">${mesh.userData.locked ? "Locked · " : ""}${rowType}</small>`;
     const partCheck = row.querySelector(".part-check");
     const linkToggle = row.querySelector(".link-toggle");
     const linkCheck = row.querySelector(".link-check");
@@ -1142,13 +1148,17 @@ function renderTree() {
     const armorToggle = row.querySelector(".armor-toggle");
     const armorCheck = row.querySelector(".armor-check");
     const meshName = row.querySelector(".mesh-name");
-    partCheck.checked = checkedIds.has(mesh.userData.id);
+    partCheck.checked = checkedIds.has(mesh.userData.id) && !mesh.userData.locked;
+    partCheck.disabled = !!mesh.userData.locked;
     linkCheck.checked = !!mesh.userData.linkId;
+    linkCheck.disabled = !!mesh.userData.locked;
     linkToggle.classList.toggle("linked", !!mesh.userData.linkId);
     linkToggle.style.setProperty("--link-color", linkColor);
     linkCheck.style.accentColor = linkColor;
     hideCheck.checked = !!mesh.userData.hidden;
+    hideCheck.disabled = !!mesh.userData.locked;
     armorCheck.checked = mesh.userData.rigRole === "armor";
+    armorCheck.disabled = !!mesh.userData.locked;
     armorToggle.classList.toggle("armor-enabled", armorCheck.checked);
     meshName.textContent = mesh.name;
     meshName.title = `Open mesh details for ${mesh.name} — double-click`;
@@ -1186,6 +1196,7 @@ function renderTree() {
     });
     meshName.addEventListener("dblclick", event => {
       event.stopPropagation();
+      if (mesh.userData.locked) { log(`${mesh.name} is locked.`); return; }
       openMeshDetails(mesh.userData.id);
     });
     row.addEventListener("click", event => selectObject(mesh, { append: additiveSelectionRequested(event) }));
@@ -1497,7 +1508,7 @@ function applyInspector({ record = true } = {}) {
     updateAll();
     return;
   }
-  if (!selected) return;
+  if (!selected || selected.userData?.locked) return;
   if (record) recordHistory("inspector");
   const normalizedColor = normalizeHexColor(els.colorHexInput?.value || els.colorInput.value, normalizeHexColor(els.colorInput.value, "#ffffff"));
   if (!normalizedColor) return;
@@ -1519,6 +1530,7 @@ function applyInspector({ record = true } = {}) {
     inspectorNumber(els.scaleY, selected.scale.y, { min: .05 }),
     inspectorNumber(els.scaleZ, selected.scale.z, { min: .05 })
   );
+  refreshRelativePlacementOffset(selected);
   const materials = Array.isArray(selected.material) ? selected.material : [selected.material];
   if (selected.userData.colorApplied) materials.forEach(material => material?.color?.set(normalizedColor));
   const reapplyRigOpacity = typeof restoreRigModelMaterials === "function" && restoreRigModelMaterials();
@@ -1628,6 +1640,7 @@ function recoverUnregisteredImportedMeshes() {
 
 function updateAll() {
   recoverUnregisteredImportedMeshes();
+  syncRelativePlacements();
   syncShadowFill();
   syncSpotLightRig();
   syncLiveMirrorPreview();

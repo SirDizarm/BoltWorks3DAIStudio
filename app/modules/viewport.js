@@ -274,6 +274,12 @@ transform.addEventListener("objectChange", () => {
   } else if (activeTransformMode === "scale") {
     applySingleSidedScaleOffset();
   }
+  if (transform.object === groupPivot) {
+    for (const mesh of pivotManagedObjects()) refreshRelativePlacementOffset(mesh);
+  } else if (transform.object) {
+    refreshRelativePlacementOffset(transform.object);
+  }
+  syncRelativePlacements();
   syncPlayerAvatarBones({ object: transform.object, rebuild: true });
   if (typeof updateArmorFittingMirror === "function") updateArmorFittingMirror(transform.object);
   updateTriangleHelpers();

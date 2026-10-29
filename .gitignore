@@ -10,6 +10,12 @@ server.err.log
 .DS_Store
 Thumbs.db
 
+# Generated studio bundles. The active release bundle is intentionally force-added.
+/studio-v*.js
+/studio-test-bundle.js
+/app/studio-v*.js
+/legacy/studio-v*.js
+
 # Local-only planning notes, not for the public repo
 docs/FUTURE-MINECRAFT-WORKFLOW.md
 CLAUDE.md

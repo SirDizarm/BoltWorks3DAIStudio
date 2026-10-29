@@ -1,0 +1,25 @@
+{
+  "protectedIds": ["head"],
+  "operations": [
+    {
+      "action": "add",
+      "id": "hand-left",
+      "fields": {
+        "name": "Left hand",
+        "shape": "box",
+        "position": [0, 0, 0],
+        "rotation": [0, 0, 0],
+        "scale": [0.3, 0.2, 0.3],
+        "color": "#876543",
+        "roughness": 0.9
+      },
+      "positionFrom": {
+        "relativeTo": "arm-left",
+        "anchor": "bottom",
+        "ownAnchor": "top",
+        "offset": [0, 0, 0],
+        "keepLinked": true
+      }
+    }
+  ]
+}

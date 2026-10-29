@@ -166,18 +166,32 @@ function mcpBridgeUniqueIds(ids, label = "ids", { allowEmpty = false } = {}) {
 
 const mcpBridgeCreateKeys = new Set([
   "id", "shape", "name", "position", "rotation", "scale", "color", "roughness", "opacity",
-  "materialRule", "hidden", "groupId", "groupName", "linkId", "linkColor", "bevel", "depth",
+  "materialRule", "hidden", "locked", "relativePlacement", "groupId", "groupName", "linkId", "linkColor", "bevel", "depth",
   "direction", "pivot", "playerAvatar", "playerHeadOffset", "geometry"
 ]);
 
 const mcpBridgeUpdateKeys = new Set([
-  "name", "position", "rotation", "scale", "color", "roughness", "opacity", "materialRule", "hidden",
+  "name", "position", "rotation", "scale", "color", "roughness", "opacity", "materialRule", "hidden", "locked", "relativePlacement",
   "groupId", "groupName", "linkId", "linkColor", "pivot", "playerAvatar", "playerHeadOffset"
 ]);
 
 function mcpBridgeOptionalText(spec, key, label, { nullable = false, maxLength = 256 } = {}) {
   if (!Object.prototype.hasOwnProperty.call(spec, key)) return undefined;
   return mcpBridgeString(spec[key], label, { nullable, maxLength });
+}
+
+function mcpBridgeRelativePlacement(value, label) {
+  if (value === null) return null;
+  mcpBridgeAssert(mcpBridgeIsPlainObject(value), "INVALID_PARAMS", `${label} must be an object or null.`);
+  mcpBridgeAssertAllowedKeys(value, new Set(["relativeTo", "anchor", "ownAnchor", "offset"]), label);
+  const relation = {
+    relativeTo: mcpBridgeString(value.relativeTo, `${label}.relativeTo`, { required: true, maxLength: 128 }),
+    anchor: value.anchor || "center",
+    ownAnchor: value.ownAnchor || "center",
+    offset: value.offset === undefined ? [0, 0, 0] : mcpBridgeVector(value.offset, `${label}.offset`)
+  };
+  mcpBridgeAssert(relativePlacementAnchors.has(relation.anchor) && relativePlacementAnchors.has(relation.ownAnchor), "INVALID_PARAMS", `${label} has an unknown anchor.`);
+  return relation;
 }
 
 function mcpBridgeValidateCreateSpec(value, index) {
@@ -208,6 +222,11 @@ function mcpBridgeValidateCreateSpec(value, index) {
     mcpBridgeAssert(typeof value.hidden === "boolean", "INVALID_PARAMS", `${label}.hidden must be a boolean.`);
     spec.hidden = value.hidden;
   }
+  if (Object.prototype.hasOwnProperty.call(value, "locked")) {
+    mcpBridgeAssert(typeof value.locked === "boolean", "INVALID_PARAMS", `${label}.locked must be a boolean.`);
+    spec.locked = value.locked;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "relativePlacement")) spec.relativePlacement = mcpBridgeRelativePlacement(value.relativePlacement, `${label}.relativePlacement`);
   for (const key of ["groupId", "groupName", "linkId", "linkColor", "direction"]) {
     const text = mcpBridgeOptionalText(value, key, `${label}.${key}`, { nullable: true });
     if (text !== undefined) spec[key] = text;
@@ -247,6 +266,11 @@ function mcpBridgeValidateUpdatePatch(value, label) {
     mcpBridgeAssert(typeof value.hidden === "boolean", "INVALID_PARAMS", `${label}.hidden must be a boolean.`);
     patch.hidden = value.hidden;
   }
+  if (Object.prototype.hasOwnProperty.call(value, "locked")) {
+    mcpBridgeAssert(typeof value.locked === "boolean", "INVALID_PARAMS", `${label}.locked must be a boolean.`);
+    patch.locked = value.locked;
+  }
+  if (Object.prototype.hasOwnProperty.call(value, "relativePlacement")) patch.relativePlacement = mcpBridgeRelativePlacement(value.relativePlacement, `${label}.relativePlacement`);
   for (const key of ["groupId", "groupName", "linkId", "linkColor"]) {
     const text = mcpBridgeOptionalText(value, key, `${label}.${key}`, { nullable: true });
     if (text !== undefined) patch[key] = text;
@@ -267,6 +291,7 @@ function mcpBridgeMeshMaterials(mesh) {
 }
 
 function mcpBridgeApplyUpdate(mesh, patch) {
+  if (patch.locked !== undefined) mesh.userData.locked = patch.locked;
   if (patch.name !== undefined) mesh.name = patch.name;
   if (patch.position) mesh.position.fromArray(patch.position);
   if (patch.rotation) {
@@ -277,6 +302,8 @@ function mcpBridgeApplyUpdate(mesh, patch) {
     );
   }
   if (patch.scale) mesh.scale.fromArray(patch.scale);
+  if (Object.prototype.hasOwnProperty.call(patch, "relativePlacement")) mesh.userData.relativePlacement = normalizeRelativePlacement(patch.relativePlacement, mesh.userData.id);
+  else if (patch.position || patch.rotation || patch.scale) refreshRelativePlacementOffset(mesh);
   if (patch.color !== undefined) {
     mesh.userData.color = patch.color;
     for (const material of mcpBridgeMeshMaterials(mesh)) material?.color?.set(patch.color);
@@ -438,6 +465,7 @@ function mcpBridgeCreateObjects(params) {
   mcpBridgeAssertAllowedKeys(params, new Set(["objects", "expectedRevision"]), "params");
   const batch = mcpBridgeBatch(params, "objects");
   const specs = batch.map(mcpBridgeValidateCreateSpec);
+  for (const spec of specs) mcpBridgeAssert(spec.relativePlacement?.relativeTo !== spec.id, "INVALID_PARAMS", `${spec.id} cannot be positioned relative to itself.`);
   const requestedIds = specs.filter(spec => spec.id).map(spec => spec.id);
   mcpBridgeAssert(new Set(requestedIds).size === requestedIds.length, "INVALID_PARAMS", "The batch contains duplicate object IDs.");
   for (const id of requestedIds) {
@@ -535,16 +563,21 @@ function mcpBridgeUpdateObjects(params) {
     if (Object.prototype.hasOwnProperty.call(entry, "patch")) {
       mcpBridgeAssertAllowedKeys(entry, new Set(["id", "patch"]), `objects[${index}]`);
     }
+    const mesh = mcpBridgeExactObject(id, `objects[${index}].id`);
+    const patch = mcpBridgeValidateUpdatePatch(patchSource, `objects[${index}].patch`);
+    mcpBridgeAssert(patch.relativePlacement?.relativeTo !== id, "INVALID_PARAMS", `${id} cannot be positioned relative to itself.`);
+    mcpBridgeAssert(!mesh.userData.locked || (Object.keys(patch).length === 1 && patch.locked === false), "OBJECT_LOCKED", `${id} is locked. Unlock it in a separate update before editing.`, { id });
     return {
       id,
-      mesh: mcpBridgeExactObject(id, `objects[${index}].id`),
-      patch: mcpBridgeValidateUpdatePatch(patchSource, `objects[${index}].patch`)
+      mesh,
+      patch
     };
   });
   mcpBridgeAssert(new Set(updates.map(update => update.id)).size === updates.length, "INVALID_PARAMS", "The batch contains duplicate object IDs.");
   recordHistory();
   updates.forEach(update => mcpBridgeApplyUpdate(update.mesh, update.patch));
-  updateAll();
+  if (selected?.userData?.locked) selectObject(null, { keepGroup: true });
+  else updateAll();
   mcpBridgeRevision++;
   return {
     revision: mcpBridgeRevision,
@@ -557,6 +590,7 @@ function mcpBridgeDeleteObjects(params) {
   mcpBridgeAssertAllowedKeys(params, new Set(["ids", "expectedRevision"]), "params");
   const ids = mcpBridgeUniqueIds(params.ids);
   const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
+  for (const mesh of meshes) mcpBridgeAssert(!mesh.userData.locked, "OBJECT_LOCKED", `${mesh.userData.id} is locked.`, { id: mesh.userData.id });
   const removesPrimarySelection = !!selected && ids.includes(selected.userData.id);
   recordHistory();
   if (removesPrimarySelection) selected = null;
@@ -580,6 +614,7 @@ async function mcpBridgeCombineShell(params) {
     { requested: ids.length, maximum: mcpBridgeMaxShellBatchSize }
   );
   const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
+  for (const mesh of meshes) mcpBridgeAssert(!mesh.userData.locked, "OBJECT_LOCKED", `${mesh.userData.id} is locked.`, { id: mesh.userData.id });
   const sourceTriangles = meshes.reduce((total, mesh) => (
     total + Math.floor((mesh.geometry.index?.count || mesh.geometry.getAttribute("position")?.count || 0) / 3)
   ), 0);
@@ -676,6 +711,7 @@ function mcpBridgeSelectObjects(params) {
   mcpBridgeAssertAllowedKeys(params, new Set(["ids", "expectedRevision"]), "params");
   const ids = mcpBridgeUniqueIds(params.ids, "ids", { allowEmpty: true });
   const meshes = ids.map((id, index) => mcpBridgeExactObject(id, `ids[${index}]`));
+  for (const mesh of meshes) mcpBridgeAssert(!mesh.userData.locked, "OBJECT_LOCKED", `${mesh.userData.id} is locked and cannot enter an edit selection.`, { id: mesh.userData.id });
   activeGroupIds = ids.length > 1 ? [...ids] : [];
   selectedGroupRecordId = null;
   selectObject(meshes[0] || null, { keepGroup: true });

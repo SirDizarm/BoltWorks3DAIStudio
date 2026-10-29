@@ -3592,7 +3592,7 @@ function makeGeometryDataForShape(shape, scale = [1, 1, 1], action = {}) {
 }
 
 function createMesh(spec = {}) {
-  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#8d8d8d", roughness = .6, opacity = 1, tintColor = "#ffffff", tintStrength = 0, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, normalTextureUrl = null, normalTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, generatedShell = false, shellResolution = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [], manualTopologyEdges = [] } = spec;
+  let { id = null, shape = "box", geometry, name, position = [0, .5, 0], rotation = [0, 0, 0], scale = [1, 1, 1], color = "#8d8d8d", roughness = .6, opacity = 1, tintColor = "#ffffff", tintStrength = 0, textureUrl = null, textureName = null, textureRobloxAssetId = "", textureFlipY = true, textureRotation = 0, tileTextureRepeatU = 1, tileTextureRepeatV = 1, tileTextureEdgeTrim = 0, textureHasTransparency = false, doubleSided = false, roughnessTextureUrl = null, roughnessTextureName = null, metalnessTextureUrl = null, metalnessTextureName = null, normalTextureUrl = null, normalTextureName = null, emissiveTextureUrl = null, emissiveTextureName = null, materialRule = "auto", bevel = null, depth = null, direction = null, pivot = null, hidden = false, locked = false, relativePlacement = null, linkId = null, linkColor = null, groupId = null, groupName = null, rigBoneId = null, rigRole = null, rigArmorMountId = null, rigAttachment = null, playerAvatar = false, playerHeadOffset = null, gameAsset = null, liveMirror = null, lod = null, minecraft = null, generatedShell = false, shellResolution = null, edgeBevelProtectedEdges = [], dissolvedSurfaceEdges = [], manualTopologyEdges = [] } = spec;
   shape = normalizeShapeName(shape);
   const defaultOrdinal = idCounter;
   const preferredId = typeof id === "string" && id.trim() ? id.trim() : null;
@@ -3645,6 +3645,8 @@ function createMesh(spec = {}) {
     materialRule: normalizedMaterialRule,
     pivot: Array.isArray(pivot) ? pivot.map(Number) : null,
     hidden: !!hidden,
+    locked: !!locked,
+    relativePlacement: normalizeRelativePlacement(relativePlacement, objectId),
     linkId: typeof linkId === "string" && linkId.trim() ? linkId.trim() : null,
     linkColor: typeof linkColor === "string" && linkColor.trim() ? linkColor.trim() : null,
     groupId: typeof groupId === "string" && groupId.trim() ? groupId.trim() : null,
@@ -3719,6 +3721,73 @@ function addObject(spec = {}, { record = true, select = false, update = true } =
   if (select) selectObject(mesh);
   if (update) updateAll();
   return mesh;
+}
+
+const relativePlacementAnchors = new Set(["center", "left", "right", "bottom", "top", "back", "front"]);
+
+function normalizeRelativePlacement(value, ownId) {
+  if (value == null) return null;
+  const ref = String(value.relativeTo || "").trim();
+  const anchor = value.anchor || "center";
+  const ownAnchor = value.ownAnchor || "center";
+  const offset = value.offset || [0, 0, 0];
+  if (!ref || ref === ownId || !relativePlacementAnchors.has(anchor) || !relativePlacementAnchors.has(ownAnchor)
+    || !Array.isArray(offset) || offset.length !== 3 || !offset.every(Number.isFinite)) {
+    throw new Error(`Invalid relativePlacement on ${ownId}. Check reference ID, anchors, and offset.`);
+  }
+  return { relativeTo: ref, anchor, ownAnchor, offset: [...offset] };
+}
+
+function relativePlacementAnchor(mesh, side) {
+  const box = new THREE.Box3().setFromObject(mesh);
+  if (box.isEmpty()) return null;
+  const point = box.getCenter(new THREE.Vector3());
+  if (side === "left") point.x = box.min.x;
+  else if (side === "right") point.x = box.max.x;
+  else if (side === "bottom") point.y = box.min.y;
+  else if (side === "top") point.y = box.max.y;
+  else if (side === "back") point.z = box.min.z;
+  else if (side === "front") point.z = box.max.z;
+  return point;
+}
+
+function refreshRelativePlacementOffset(mesh) {
+  const relation = mesh?.userData?.relativePlacement;
+  if (!relation || mesh.parent !== scene) return;
+  const reference = objects.find(object => object.userData?.id === relation.relativeTo);
+  if (!reference) return;
+  const from = relativePlacementAnchor(reference, relation.anchor);
+  const to = relativePlacementAnchor(mesh, relation.ownAnchor);
+  if (from && to) relation.offset = to.sub(from).toArray().map(round);
+}
+
+function syncRelativePlacements() {
+  const byId = new Map(objects.map(mesh => [mesh.userData?.id, mesh]));
+  const done = new Map(), visiting = new Set();
+  const visit = mesh => {
+    if (done.has(mesh)) return done.get(mesh);
+    if (visiting.has(mesh)) return false;
+    visiting.add(mesh);
+    const relation = mesh.userData?.relativePlacement;
+    let valid = true;
+    if (relation && mesh.parent === scene) {
+      const reference = byId.get(relation.relativeTo);
+      if (reference && (valid = visit(reference))) {
+        reference.updateWorldMatrix(true, false);
+        mesh.updateWorldMatrix(true, false);
+        const from = relativePlacementAnchor(reference, relation.anchor);
+        const to = relativePlacementAnchor(mesh, relation.ownAnchor);
+        if (from && to) {
+          mesh.position.add(from.add(new THREE.Vector3(...relation.offset)).sub(to));
+          mesh.updateMatrixWorld(true);
+        }
+      }
+    }
+    visiting.delete(mesh);
+    done.set(mesh, valid);
+    return valid;
+  };
+  for (const mesh of objects) visit(mesh);
 }
 
 function addObjectAtPointer(shape, event) {
@@ -4805,6 +4874,10 @@ function additiveSelectionRequested(event) {
 }
 
 function selectObject(mesh, { keepGroup = false, append = false, skipKeyholeCapture = false } = {}) {
+  if (mesh?.userData?.locked) {
+    log(`${mesh.name} is locked. Set locked to false in the project or use an explicit MCP unlock before editing.`);
+    return;
+  }
   if (append && !mesh) return;
   if (selectedHoleLoopInfo?.targetId) {
     const nextTargetId = mesh?.userData?.id || null;
@@ -4853,7 +4926,7 @@ function selectObject(mesh, { keepGroup = false, append = false, skipKeyholeCapt
 }
 
 function checkedObjects() {
-  return objects.filter(mesh => checkedIds.has(mesh.userData.id));
+  return objects.filter(mesh => checkedIds.has(mesh.userData.id) && !mesh.userData.locked);
 }
 
 function ensureUniqueObjectIds() {
@@ -4896,7 +4969,7 @@ function makeMeshUnique(mesh = meshDetailsMesh()) {
 }
 
 function activeGroupObjects() {
-  return objects.filter(mesh => activeGroupIds.includes(mesh.userData.id));
+  return objects.filter(mesh => activeGroupIds.includes(mesh.userData.id) && !mesh.userData.locked);
 }
 
 function uniqueMeshList(meshes) {
@@ -4911,7 +4984,7 @@ function uniqueMeshList(meshes) {
 }
 
 function selectedFaceMeshes() {
-  return uniqueMeshList(selectedFaces.map(face => face.mesh).filter(Boolean));
+  return uniqueMeshList(selectedFaces.map(face => face.mesh).filter(mesh => mesh && !mesh.userData?.locked));
 }
 
 function meshActionCandidates() {
@@ -4919,14 +4992,14 @@ function meshActionCandidates() {
     checked: checkedObjects(),
     active: activeGroupObjects(),
     faceMeshes: selectedFaceMeshes(),
-    selectedOnly: selected ? [selected] : []
+    selectedOnly: selected && !selected.userData?.locked ? [selected] : []
   };
 }
 
 function resolveSelectionTargets(mode = "single") {
   const candidates = meshActionCandidates();
   const selectedGroup = selectedGroupRecordId && groupRecord(selectedGroupRecordId)
-    ? descendantMeshesForGroup(selectedGroupRecordId)
+    ? descendantMeshesForGroup(selectedGroupRecordId).filter(mesh => !mesh.userData?.locked)
     : [];
   if (mode === "faces") return candidates.faceMeshes;
   if (mode === "group") return uniqueMeshList(selectedGroup);
@@ -5219,7 +5292,7 @@ function textureTargetObjects() {
 function pivotManagedObjects() {
   const groupObjects = transformTargetObjects();
   if (groupObjects.length) return groupObjects;
-  return selected ? [selected] : [];
+  return selected && !selected.userData?.locked ? [selected] : [];
 }
 
 function syncTextureButtonLabel() {
@@ -5331,7 +5404,7 @@ function editTargetObjects() {
   if (groupObjects.length > 1) return groupObjects;
   const checked = checkedObjects();
   if (checked.length > 1) return checked;
-  return selected ? [selected] : [];
+  return selected && !selected.userData?.locked ? [selected] : [];
 }
 
 function flipSelectedParts(axis, { fromCenter = false } = {}) {
@@ -5374,6 +5447,11 @@ function meshSelectionGroupKey(mesh) {
 }
 
 function setChecked(mesh, checked, { append = false } = {}) {
+  if (checked && mesh?.userData?.locked) {
+    log(`${mesh.name} is locked and cannot be added to an edit selection.`);
+    renderTree();
+    return;
+  }
   if (checked && !append) {
     const groupKey = meshSelectionGroupKey(mesh);
     for (const other of checkedObjects()) {
@@ -5436,7 +5514,7 @@ function clearTriangleSelectionForMeshes(meshes) {
 }
 
 function setHiddenTargets(meshes, hidden) {
-  const targets = [...new Set((meshes || []).filter(Boolean))];
+  const targets = [...new Set((meshes || []).filter(mesh => mesh && !mesh.userData?.locked))];
   if (!targets.length) return;
   for (const mesh of targets) {
     mesh.userData.hidden = !!hidden;
@@ -5465,8 +5543,9 @@ function linkCandidateObjects(mesh) {
 
 function setLinked(mesh, linked) {
   if (!mesh) return;
+  if (mesh.userData?.locked) return;
   if (linked) {
-    const targets = linkCandidateObjects(mesh);
+    const targets = linkCandidateObjects(mesh).filter(object => !object.userData?.locked);
     if (targets.length < 2) {
       log("Select or check at least two parts before linking them.");
       renderTree();
@@ -20761,7 +20840,14 @@ function applyGroupPivotDelta() {
 
 function removeObject(mesh, { record = true, update = true } = {}) {
   if (!mesh) return;
+  if (mesh.userData?.locked) {
+    log(`${mesh.name} is locked and was not deleted.`);
+    return;
+  }
   if (record) recordHistory("delete");
+  for (const child of objects) {
+    if (child.userData?.relativePlacement?.relativeTo === mesh.userData.id) child.userData.relativePlacement = null;
+  }
   const previousLinkId = mesh.userData.linkId || null;
   const previousSceneGroupId = mesh.userData.groupId || null;
   const index = objects.indexOf(mesh);
@@ -20821,6 +20907,10 @@ function duplicateSelected() {
 }
 
 function clearObjects({ record = true } = {}) {
+  if (record && objects.some(mesh => mesh.userData?.locked)) {
+    log("Scene reset blocked: unlock protected objects first.");
+    return false;
+  }
   if (record && objects.length) recordHistory("clear");
   clearKnifeCutGuide({ keepMode: false });
   clearPlaneCutPreview();
@@ -20875,6 +20965,7 @@ function clearObjects({ record = true } = {}) {
   selectObject(null);
   refreshTextureLibraryUi();
   updateAll();
+  return true;
 }
 
 function modelTileMaterialImage() {

@@ -2,7 +2,7 @@
 
 > Experimental preview: this application is under active development. Features may be incomplete and bugs can occur.
 
-Current preview version: **v50.0.60**, as loaded by `index.html`. Editable source lives in `app/`; older versioned bundles are generated outputs. See `D:\Game\PROJECT-LOCATIONS.md` for the BWE/BWS/GN folder map.
+Current preview version: **v50.0.63**, as loaded by `index.html`. Editable source lives in `app/`; older versioned bundles are generated outputs. See `D:\Game\PROJECT-LOCATIONS.md` for the BWE/BWS/GN folder map.
 
 Enjoy BWS? [Star the project on GitHub](https://github.com/SirDizarm/BoltWorks3DAIStudio). Stars show support rather than a scored review.
 

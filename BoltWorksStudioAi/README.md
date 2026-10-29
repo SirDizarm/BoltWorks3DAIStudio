@@ -25,6 +25,11 @@ ska kunna:
 8. [`schemas/modeler-project.schema.json`](schemas/modeler-project.schema.json) – maskinläsbart schema.
 9. [`examples/minimal-valid.modelerproj`](examples/minimal-valid.modelerproj) – litet fungerande exempel.
 
+For AIs without MCP, see [`FILE_BASED_AI_EDITING.md`](FILE_BASED_AI_EDITING.md)
+for relative placement, protected partial edits, and surface diagnostics.
+For curved straps and textured layer stacks, see
+[`AI_GEOMETRY_RECIPES.md`](AI_GEOMETRY_RECIPES.md).
+
 ## AI work sessions
 
 [`AI_WORK_SESSIONS.md`](AI_WORK_SESSIONS.md) defines bounded AI work sessions,

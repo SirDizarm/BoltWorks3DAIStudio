@@ -43,6 +43,12 @@ const nonZeroScale3 = vector3.refine(
   "Scale components cannot be zero."
 );
 const hexColor = z.string().regex(/^#[0-9a-f]{6}$/i).describe("Color in #RRGGBB format, for example #40C7A5.");
+const relativePlacement = z.object({
+  relativeTo: exactId,
+  anchor: z.enum(["center", "left", "right", "bottom", "top", "back", "front"]).default("center"),
+  ownAnchor: z.enum(["center", "left", "right", "bottom", "top", "back", "front"]).default("center"),
+  offset: vector3.default([0, 0, 0])
+}).strict();
 const createObjectSpec = z.object({
   id: exactId.optional().describe("Optional immutable object ID. Omit it to let BoltWorks generate one."),
   shape: z.enum([
@@ -60,6 +66,8 @@ const createObjectSpec = z.object({
   opacity: z.number().min(0.05).max(1).optional(),
   materialRule: z.string().trim().min(1).max(64).optional(),
   hidden: z.boolean().optional(),
+  locked: z.boolean().optional().describe("Protect this object from normal editor and MCP edits until explicitly unlocked."),
+  relativePlacement: relativePlacement.nullable().optional().describe("Live anchor relationship to another object ID. Keeps numeric position as fallback."),
   groupId: z.string().trim().max(256).nullable().optional(),
   groupName: z.string().trim().max(256).nullable().optional(),
   linkId: z.string().trim().max(256).nullable().optional(),

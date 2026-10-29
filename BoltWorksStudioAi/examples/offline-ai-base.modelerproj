@@ -1,0 +1,37 @@
+{
+  "kind": "modeler-project",
+  "version": 1,
+  "name": "Offline AI placement example",
+  "textureLibrary": [],
+  "scene": {
+    "version": 2,
+    "coordinateSystem": {},
+    "shapeConventions": {},
+    "groups": [],
+    "objects": [
+      {
+        "id": "head",
+        "name": "Approved head",
+        "shape": "box",
+        "position": [0, 3.25, 0],
+        "rotation": [0, 0, 0],
+        "scale": [1, 0.8, 0.8],
+        "color": "#765432",
+        "roughness": 0.9,
+        "locked": true
+      },
+      {
+        "id": "arm-left",
+        "name": "Left arm",
+        "shape": "box",
+        "position": [1, 2, 0],
+        "rotation": [0, 0, 0],
+        "scale": [0.4, 2, 0.4],
+        "color": "#765432",
+        "roughness": 0.9
+      }
+    ],
+    "boneHierarchy": []
+  },
+  "editor": {}
+}

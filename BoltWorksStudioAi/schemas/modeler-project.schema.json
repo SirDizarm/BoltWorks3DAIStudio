@@ -108,6 +108,23 @@
           ]
         },
         "position": { "$ref": "#/$defs/vec3" },
+        "locked": { "type": "boolean" },
+        "relativePlacement": {
+          "anyOf": [
+            { "type": "null" },
+            {
+              "type": "object",
+              "required": ["relativeTo", "anchor", "ownAnchor", "offset"],
+              "properties": {
+                "relativeTo": { "type": "string", "minLength": 1 },
+                "anchor": { "enum": ["center", "left", "right", "bottom", "top", "back", "front"] },
+                "ownAnchor": { "enum": ["center", "left", "right", "bottom", "top", "back", "front"] },
+                "offset": { "$ref": "#/$defs/vec3" }
+              },
+              "additionalProperties": false
+            }
+          ]
+        },
         "rotation": { "$ref": "#/$defs/vec3" },
         "scale": { "$ref": "#/$defs/vec3" },
         "color": { "$ref": "#/$defs/color" },

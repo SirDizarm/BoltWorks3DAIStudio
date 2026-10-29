@@ -17,7 +17,7 @@ Write-Host ""
 Write-Host "--- Step 2/4: Commit the rebuilt bundle, if it changed ---"
 
 $packageJson = Get-Content (Join-Path $appRoot "package.json") -Raw | ConvertFrom-Json
-$bundleRelPath = "app/studio-v$($packageJson.version).js"
+$bundleRelPath = "studio-v$($packageJson.version).js"
 $bundleFullPath = Join-Path $appRoot $bundleRelPath
 
 if (-not (Test-Path $bundleFullPath)) {
@@ -27,7 +27,7 @@ if (-not (Test-Path $bundleFullPath)) {
 $bundleStatus = git status --porcelain -- $bundleRelPath
 if ($bundleStatus) {
   Write-Host "Committing rebuilt bundle: $bundleRelPath"
-  git add -- $bundleRelPath
+  git add -f -- $bundleRelPath
   git commit -m "Rebuild bundle for v$($packageJson.version)"
   if ($LASTEXITCODE -ne 0) {
     throw "git commit for the rebuilt bundle failed. Nothing was pushed."
